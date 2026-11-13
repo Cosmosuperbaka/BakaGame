@@ -1,9 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
-import * as Sentry from "@sentry/react";
 import "./index.css";
 import App from "./App";
+import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { AppErrorFallback } from "./components/common/AppErrorFallback";
 import { createAppRouter } from "./AppRouter";
 import { installChunkLoadRecovery } from "./lib/ChunkRecovery";
@@ -34,14 +34,9 @@ const router = createAppRouter();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <HelmetProvider>
-      <Sentry.ErrorBoundary
-        onError={(error) => {
-          recoverFromDomInvariant(error);
-        }}
-        fallback={<AppErrorFallback />}
-      >
+      <AppErrorBoundary onError={recoverFromDomInvariant} fallback={<AppErrorFallback />}>
         <App router={router} />
-      </Sentry.ErrorBoundary>
+      </AppErrorBoundary>
     </HelmetProvider>
   </StrictMode>
 );

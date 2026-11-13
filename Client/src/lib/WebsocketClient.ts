@@ -1,4 +1,3 @@
-import type { Span } from "@sentry/react";
 import type { AckPacket, ErrorPacket, ServerMessage } from "@bakagame/shared";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
@@ -19,6 +18,7 @@ import {
   countClientMetric,
   recordClientMetric,
   withClientSpan,
+  type ClientSpan,
 } from "@/lib/Sentry";
 
 type MessageHandler = (message: ServerMessage) => void;
@@ -87,7 +87,7 @@ export function generateUuid(): string {
  * 命令的追踪号取当前活动跨度的追踪号，与同一跨度里的错误上报同号，排障时能从前端跨度直接串到
  * 服务端日志。没有活动跨度（SDK 未初始化时追踪号是全零）就自造 UUID，保持每条命令各有一个标识。
  */
-const commandTraceId = (span: Span): string => {
+const commandTraceId = (span: ClientSpan): string => {
   const { traceId } = span.spanContext();
   return /^[0-9a-f]{32}$/.test(traceId) && !/^0+$/.test(traceId) ? traceId : generateUuid();
 };

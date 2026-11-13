@@ -1,4 +1,5 @@
-import * as Sentry from "@sentry/react";
+// 只引类型：SDK 本体（含 Replay 与 Tracing，约占入口脚本三成）留在 SentryRuntime，空闲时才下载。
+import type * as Sentry from "@sentry/react";
 import { currentCommit } from "virtual:build-info";
 // 展示版本号构建期从 changelog.json 解析，遥测初始化不背整份日志。
 import appVersion from "virtual:app-version";
@@ -6,6 +7,9 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
 import { bakaChannel, bakaClientType } from "@/lib/BakaChannel";
 
 export type ClientLogLevel = "info" | "warning" | "error";
+
+/** 调用方实际会用到的跨度能力；SDK 还没加载时由惰性实现顶替，调用方不必区分。 */
+export type ClientSpan = Pick<Sentry.Span, "spanContext" | "setAttribute" | "setStatus">;
 
 /** 传输相关类型别名：@sentry/react 未直接导出 `Transport`，从 SDK 运行时符号派生。 */
 export type ClientSentryTransport = ReturnType<typeof Sentry.makeFetchTransport>;
@@ -82,29 +86,29 @@ export const wrapTelemetryTransport = (
   flush: (timeout?: number) => base.flush(timeout),
 });
 
-const defaultDriver: SentrySdkDriver = {
-  init: (opts) => Sentry.init(opts),
-  captureException: (err) => Sentry.captureException(err),
-  withScope: (cb) => Sentry.withScope(cb),
-  log: (level, message, attributes) => {
-    const attrs = attributes as never;
-    if (level === "error") Sentry.logger.error(message, attrs);
-    else if (level === "warning") Sentry.logger.warn(message, attrs);
-    else Sentry.logger.info(message, attrs);
-  },
-  metricCount: (name, value, attributes) => Sentry.metrics.count(name, value, { attributes }),
-  metricDistribution: (name, value, attributes) =>
-    Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes }),
-  startSpan: async (name, attributes, callback) =>
-    Sentry.startSpan({ name, op: "bakagame.client", attributes }, callback),
-  makeTransport: (options) =>
-    wrapTelemetryTransport(Sentry.makeFetchTransport(options), notifyClientTelemetryEgressFailure),
+/** 加载默认 driver（真实 SDK）；失败时由调用方降级，不在这里重试。 */
+const loadDefaultDriver = (): Promise<SentrySdkDriver> =>
+  import("./SentryRuntime").then((runtime) => runtime.createSentryDriver());
+
+type SentryState = "off" | "loading" | "ready" | "failed";
+let state: SentryState = "off";
+let activeDriver: SentrySdkDriver | undefined;
+
+/** SDK 加载期间排队的出口调用上限：超出的丢弃，加载期很短，不值得无界缓存。 */
+const MAX_PENDING_CALLS = 100;
+/** 加载完成前发生的未捕获错误的缓存上限。 */
+const MAX_EARLY_ERRORS = 20;
+let pendingCalls: Array<(driver: SentrySdkDriver) => void> = [];
+let earlyErrors: unknown[] = [];
+let stopEarlyErrorBuffer: (() => void) | undefined;
+
+/** 已初始化或正在加载：出口调用会被接受（加载期间排队）。 */
+export const isClientSentryEnabled = (): boolean => state === "loading" || state === "ready";
+
+const dispatch = (call: (driver: SentrySdkDriver) => void): void => {
+  if (state === "ready" && activeDriver) call(activeDriver);
+  else if (state === "loading" && pendingCalls.length < MAX_PENDING_CALLS) pendingCalls.push(call);
 };
-
-let activeDriver: SentrySdkDriver = defaultDriver;
-let isInitialized = false;
-
-export const isClientSentryEnabled = (): boolean => isInitialized;
 
 export interface SentryOptions {
   dsn?: string;
@@ -142,17 +146,55 @@ export function isInjectedBrowserAdRejection(reason: unknown): boolean {
 const BENIGN_CLIENT_NOISE_TEXT =
   /(ResizeObserver loop|removeChild' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
 
-export const initClientSentry = (
-  options?: SentryOptions,
-  driver: SentrySdkDriver = defaultDriver
-): void => {
-  if (isInitialized) return;
+/**
+ * 把 window 级未捕获错误与未处理拒绝先缓存起来：SDK 的全局处理器要等它加载完才装上，
+ * 这段空窗里的错误不能丢，加载后补报。
+ */
+const startEarlyErrorBuffer = (): void => {
+  const onError = (event: ErrorEvent): void => {
+    if (earlyErrors.length < MAX_EARLY_ERRORS) earlyErrors.push(event.error ?? event.message);
+  };
+  const onRejection = (event: PromiseRejectionEvent): void => {
+    if (earlyErrors.length < MAX_EARLY_ERRORS) earlyErrors.push(event.reason);
+  };
+  window.addEventListener("error", onError);
+  window.addEventListener("unhandledrejection", onRejection);
+  stopEarlyErrorBuffer = () => {
+    window.removeEventListener("error", onError);
+    window.removeEventListener("unhandledrejection", onRejection);
+    stopEarlyErrorBuffer = undefined;
+  };
+};
 
-  const dsn = options?.dsn ?? import.meta.env.VITE_SENTRY_DSN;
-  if (!dsn) return;
+/** 页面载入完成后、浏览器空闲时再开始下载 SDK，不与首屏资源抢带宽与主线程。 */
+const whenIdle = (task: () => void): void => {
+  const run = (): void => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(task, { timeout: 3000 });
+    } else {
+      window.setTimeout(task, 1);
+    }
+  };
+  if (document.readyState === "complete") run();
+  else window.addEventListener("load", run, { once: true });
+};
 
-  activeDriver = driver;
+const replayEarlyErrors = (driver: SentrySdkDriver): void => {
+  const errors = earlyErrors;
+  earlyErrors = [];
+  for (const error of errors) {
+    driver.withScope((scope) => {
+      scope.setTag("early_error", "true");
+      driver.captureException(error);
+    });
+  }
+};
 
+const buildInitOptions = (
+  dsn: string,
+  options: SentryOptions | undefined,
+  driver: SentrySdkDriver
+): Sentry.BrowserOptions => {
   // Sentry 隧道同样走同源相对路径：既避免跨域，也不再需要被 AdBlock 拦的第三方域名。
   const tunnel = resolveServerUrl("/api/monitoring/sentry", options?.serverUrl);
 
@@ -161,14 +203,11 @@ export const initClientSentry = (
   // 是同一权威字段），网页环境探测不到该对象即记为 web。不硬编码任何现网标识。
   const channel = bakaChannel();
 
-  activeDriver.init({
+  return {
     dsn,
     tunnel,
     environment: import.meta.env.MODE,
-    release:
-      currentCommit !== "dev"
-        ? `V${appVersion || "0.0.0"}（${currentCommit}）`
-        : undefined,
+    release: currentCommit !== "dev" ? `V${appVersion || "0.0.0"}（${currentCommit}）` : undefined,
     // 壳版本与网页发布号是两套命名空间，混进 release 会互相污染；壳身份版本放 dist。
     dist: channel ? `${channel.clientType}@${channel.clientVersion}` : undefined,
     initialScope: {
@@ -178,11 +217,7 @@ export const initClientSentry = (
     replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,
     replaysOnErrorSampleRate: options?.replaysOnErrorSampleRate ?? 1,
     enableLogs: true,
-    integrations: [
-      Sentry.browserTracingIntegration(),
-      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
-      Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
-    ],
+    // integrations（Tracing / Replay / 控制台日志）由 SentryRuntime 在加载 SDK 时装配，这里不碰 SDK。
     ignoreErrors: [
       "ResizeObserver loop limit exceeded",
       "ResizeObserver loop completed with undelivered notifications",
@@ -207,23 +242,69 @@ export const initClientSentry = (
       return event;
     },
     beforeSendLog: (log) => (BENIGN_CLIENT_NOISE_TEXT.test(String(log.message)) ? null : log),
-    transport: (transportOptions) => activeDriver.makeTransport(transportOptions),
-  });
+    transport: (transportOptions) => driver.makeTransport(transportOptions),
+  };
+};
 
-  isInitialized = true;
+/**
+ * 初始化遥测。没有配置上报地址时什么都不加载。传入 driver 表示同步初始化（测试注入假 driver）；
+ * 默认则在页面空闲时才下载真实 SDK：加载期间出口调用排队、未捕获错误缓存，加载完成后补发；
+ * 加载失败不重试，应用照常运行，只留一条本机可见告警。
+ */
+export const initClientSentry = (
+  options?: SentryOptions,
+  source: SentrySdkDriver | (() => Promise<SentrySdkDriver>) = loadDefaultDriver
+): void => {
+  if (state !== "off") return;
+
+  const dsn = options?.dsn ?? import.meta.env.VITE_SENTRY_DSN;
+  if (!dsn) return;
+
+  if (typeof source !== "function") {
+    source.init(buildInitOptions(dsn, options, source));
+    activeDriver = source;
+    state = "ready";
+    return;
+  }
+
+  state = "loading";
+  startEarlyErrorBuffer();
+  whenIdle(() => {
+    source().then(
+      (driver) => {
+        driver.init(buildInitOptions(dsn, options, driver));
+        activeDriver = driver;
+        state = "ready";
+        stopEarlyErrorBuffer?.();
+        replayEarlyErrors(driver);
+        const calls = pendingCalls;
+        pendingCalls = [];
+        for (const call of calls) call(driver);
+      },
+      (error: unknown) => {
+        state = "failed";
+        stopEarlyErrorBuffer?.();
+        earlyErrors = [];
+        pendingCalls = [];
+        notifyClientTelemetryEgressFailure(
+          `SDK 加载失败：${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    );
+  });
 };
 
 export const captureClientException = (error: unknown, context?: Record<string, unknown>): void => {
-  if (!isInitialized) return;
-
-  activeDriver.withScope((scope) => {
-    if (context) {
-      if (context.traceId && typeof context.traceId === "string") {
-        scope.setTag("traceId", context.traceId);
+  dispatch((driver) => {
+    driver.withScope((scope) => {
+      if (context) {
+        if (context.traceId && typeof context.traceId === "string") {
+          scope.setTag("traceId", context.traceId);
+        }
+        scope.setExtras(context);
       }
-      scope.setExtras(context);
-    }
-    activeDriver.captureException(error);
+      driver.captureException(error);
+    });
   });
 };
 
@@ -247,8 +328,7 @@ export const captureClientLog = (
   level: ClientLogLevel = "info",
   context?: Record<string, unknown>
 ): void => {
-  if (!isInitialized) return;
-  activeDriver.log(level, message, toClientAttributes(context));
+  dispatch((driver) => driver.log(level, message, toClientAttributes(context)));
 };
 
 export const countClientMetric = (
@@ -256,8 +336,8 @@ export const countClientMetric = (
   value = 1,
   attributes?: Record<string, string | number | boolean>
 ): void => {
-  if (!isInitialized || !Number.isFinite(value)) return;
-  activeDriver.metricCount(name, value, attributes);
+  if (!Number.isFinite(value)) return;
+  dispatch((driver) => driver.metricCount(name, value, attributes));
 };
 
 export const recordClientMetric = (
@@ -265,21 +345,32 @@ export const recordClientMetric = (
   value: number,
   attributes?: Record<string, string | number | boolean>
 ): void => {
-  if (!isInitialized || !Number.isFinite(value)) return;
-  activeDriver.metricDistribution(name, value, attributes);
+  if (!Number.isFinite(value)) return;
+  dispatch((driver) => driver.metricDistribution(name, value, attributes));
+};
+
+/** SDK 未就绪（未配置、加载中、加载失败）时顶替跨度：追踪号全零，调用方会自造标识。 */
+const inertSpan: ClientSpan = {
+  spanContext: () => ({ traceId: "0".repeat(32), spanId: "0".repeat(16), traceFlags: 0 }),
+  setAttribute: () => inertSpan as never,
+  setStatus: () => inertSpan as never,
 };
 
 export const withClientSpan = async <T>(
   name: string,
-  callback: (span: Sentry.Span) => Promise<T> | T,
+  callback: (span: ClientSpan) => Promise<T> | T,
   attributes?: Record<string, string | number | boolean>
 ): Promise<T> => {
-  return activeDriver.startSpan(name, attributes, callback);
+  if (state === "ready" && activeDriver) return activeDriver.startSpan(name, attributes, callback);
+  return callback(inertSpan);
 };
 
 /** 单测重置辅助函数，消除测试间的状态污染 */
 export const resetClientSentryForTest = (): void => {
-  isInitialized = false;
-  activeDriver = defaultDriver;
+  stopEarlyErrorBuffer?.();
+  state = "off";
+  activeDriver = undefined;
+  pendingCalls = [];
+  earlyErrors = [];
   lastEgressFailureNoticeAt = 0;
 };
