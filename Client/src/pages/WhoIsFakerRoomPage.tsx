@@ -31,11 +31,10 @@ import { iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Mo
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
   FakerPlayerList,
-  type PlayerListHistory,
   type PlayerMark,
   type PlayerMarks,
 } from "@/components/whoisfaker/layout/FakerPlayerList";
-import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
+import { buildSpeechHistory } from "@/components/whoisfaker/layout/FakerSpeechHistory";
 import { FakerAssignedWord } from "@/components/whoisfaker/layout/FakerAssignedWord";
 import { FakerGameArea } from "@/components/whoisfaker/layout/FakerGameArea";
 import { ChatPanel } from "@/components/common/ChatPanel";
@@ -44,7 +43,7 @@ import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { isValidRoomId } from "@bakagame/shared/values";
-import type { WhoIsFakerPrivateState, WhoIsFakerRole, PublicPlayerView } from "@bakagame/shared";
+import type { WhoIsFakerPrivateState, WhoIsFakerRole } from "@bakagame/shared";
 
 interface RoomHeaderCenterProps {
   day: number;
@@ -503,40 +502,12 @@ export default function WhoIsFakerRoomPage() {
     };
   }, [phase, day, assignedWordText]);
 
-  const speechStatus = snapshot?.status;
-
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
-  const history = useMemo<PlayerListHistory>(() => {
-    const descriptions = snapshot?.descriptions ?? [];
-    const { columns, byPlayer, playerOrder } = buildDescriptionColumns(descriptions, speechStatus);
-    const present = new Set((snapshot?.players ?? []).map((player) => player.id));
-    const departed = new Map<string, PublicPlayerView>();
-    for (const record of descriptions) {
-      if (present.has(record.playerId) || departed.has(record.playerId)) continue;
-      departed.set(record.playerId, {
-        id: record.playerId,
-        name: record.playerName,
-        score: 0,
-        membership: "active",
-        online: false,
-        isReady: false,
-        isBot: false,
-        isHost: false,
-        roundStatus: "waiting",
-      });
-    }
-    // 进行中那一列里已提交但顺序未到的玩家：格子显示对勾而不是等待占位。
-    const active = speechStatus ? pendingColumn(speechStatus) : null;
-
-    return {
-      columns,
-      byPlayer,
-      playerOrder,
-      departedPlayers: [...departed.values()],
-      submittedColumnKey: active?.key,
-      submittedPlayerIds: new Set(speechStatus?.submittedSpeechPlayerIds ?? []),
-    };
-  }, [snapshot?.descriptions, snapshot?.players, speechStatus]);
+  const history = useMemo(
+    () =>
+      buildSpeechHistory(snapshot?.descriptions ?? [], snapshot?.players ?? [], snapshot?.status),
+    [snapshot?.descriptions, snapshot?.players, snapshot?.status]
+  );
 
   // 身份分配与出词阶段还没有发言，历史入口从描述阶段起才提供。
   const historyAvailable = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);

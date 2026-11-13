@@ -11,8 +11,8 @@ import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
   descriptionCellShadeForPlayer,
-  type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
+import type { PlayerListHistory } from "./FakerSpeechHistory";
 import { FakerPendingSpeech, SubmittedSpeech } from "./FakerPendingSpeech";
 import { FakerRoleBadge } from "./FakerRoleBadge";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
@@ -82,22 +82,6 @@ export interface PlayerListProps {
    * 宽度让给发言列。身份标记与房主操作留在「玩家列表」面板里。
    */
   compact?: boolean;
-}
-
-/** 玩家行右侧续接的发言列 */
-export interface PlayerListHistory {
-  columns: DescriptionColumn[];
-  byPlayer: Map<string, Map<string, DescriptionRecord>>;
-  /** playerId → columnKey → 1-based 发言顺位序号 */
-  playerOrder?: Map<string, Map<string, number>>;
-  /** 只在发言记录里出现、已离场的玩家，附在旁观分组之后 */
-  departedPlayers: PublicPlayerView[];
-  /**
-   * 进行中那一列里已提交但尚未公开的玩家。
-   * 这些格子显示对勾而不是等待占位 —— 内容已经有了，等的只是揭示时机。
-   */
-  submittedColumnKey?: string;
-  submittedPlayerIds?: Set<string>;
 }
 
 export function FakerPlayerList(props: PlayerListProps) {

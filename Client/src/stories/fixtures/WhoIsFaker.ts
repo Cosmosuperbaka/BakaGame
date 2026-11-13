@@ -12,9 +12,11 @@ import type {
   RoundSummary,
   VoteRecord,
 } from "@bakagame/shared";
-import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import type { PlayerListHistory } from "@/components/whoisfaker/layout/FakerPlayerList";
+import {
+  buildSpeechHistory,
+  type PlayerListHistory,
+} from "@/components/whoisfaker/layout/FakerSpeechHistory";
 import { presetWhoIsFaker } from "@/stories/StorePresets";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS } from "./Common";
 
@@ -1039,30 +1041,11 @@ export function seedWifUsername(name: string) {
 
 // ==================== 发言历史列 ====================
 
-/**
- * 玩家栏展开发言历史时的列模型，与房间页 `useMemo` 里的算法一致：
- * 按“正常轮次 → 平票 PK → 补充发言”展开列，进行中的那一列补上待提交格子。
- */
+/** 玩家栏展开发言历史时的列模型，与房间页共用 `buildSpeechHistory`。 */
 export function wifHistory(stage: WifStage): PlayerListHistory {
-  const status = stageStatus(stage, SUBMITTED_IN_PROGRESS);
-  const descriptions = publicDescriptions(stage);
-  const { columns, byPlayer, playerOrder } = buildDescriptionColumns(descriptions, status);
-  const players = roundPlayers(stage);
-  const present = new Set(players.map((player) => player.id));
-  const departed = new Map<string, PublicPlayerView>();
-  for (const record of descriptions) {
-    if (present.has(record.playerId) || departed.has(record.playerId)) continue;
-    departed.set(
-      record.playerId,
-      wifPlayer({ id: record.playerId, name: record.playerName }, { online: false })
-    );
-  }
-  return {
-    columns,
-    byPlayer,
-    playerOrder,
-    departedPlayers: [...departed.values()],
-    submittedColumnKey: pendingColumn(status)?.key,
-    submittedPlayerIds: new Set(status.submittedSpeechPlayerIds ?? []),
-  };
+  return buildSpeechHistory(
+    publicDescriptions(stage),
+    roundPlayers(stage),
+    stageStatus(stage, SUBMITTED_IN_PROGRESS)
+  );
 }
