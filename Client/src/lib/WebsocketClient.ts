@@ -1,5 +1,5 @@
 import type { Span } from "@sentry/react";
-import type { ErrorPacket, ServerMessage } from "@bakagame/shared";
+import type { AckPacket, ErrorPacket, ServerMessage } from "@bakagame/shared";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -12,6 +12,7 @@ import {
 import { resolveServerBase } from "@/lib/ServerEndpoint";
 import { rejectProtocol } from "@/lib/ProtocolFailure";
 import type { PreludeExchange } from "@/lib/TabSession";
+import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import {
   captureClientLog,
   captureClientException,
@@ -68,6 +69,8 @@ interface PendingRequest {
   timer?: ReturnType<typeof setTimeout>;
   /** 请求发出所在的连接：连接关闭只拒绝它自己的请求，不连累后建的新连接。 */
   socket: WebSocket;
+  /** 写进连接前一刻的本机时刻：确认帧带回的服务端时刻据此估算时钟偏差。 */
+  sentAt: number;
 }
 
 export function generateUuid(): string {
@@ -217,16 +220,7 @@ export class WebSocketClient {
         return;
       }
       if (message.type === "ack" || message.type === "error") {
-        const pending = this.pendingRequests.get(message.id);
-        if (pending) {
-          if (pending.timer !== undefined) clearTimeout(pending.timer);
-          this.pendingRequests.delete(message.id);
-          if (message.type === "ack") {
-            pending.resolve((message.payload ?? {}) as Record<string, unknown>);
-          } else {
-            pending.reject(message.error);
-          }
-        }
+        this.settlePending(message, Date.now());
       }
       for (const handler of [...this.messageHandlers]) {
         try {
@@ -246,12 +240,30 @@ export class WebSocketClient {
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       this.statusHandlers.forEach((handler) => handler(false));
+      // 偏差样本属于这次连接：断线后作废，重连的第一个确认帧重新取样。
+      resetClockSample();
       this.scheduleReconnect();
     };
 
     socket.onerror = () => {
       // 浏览器随后会触发 close，由统一路径处理重连与请求拒绝。
     };
+  }
+
+  /** 按帧号配对请求并落定；确认帧顺带带回服务端时刻，用来估算本机时钟偏差。 */
+  private settlePending(message: AckPacket | ErrorPacket, receivedAt: number): void {
+    const pending = this.pendingRequests.get(message.id);
+    if (!pending) return;
+    if (pending.timer !== undefined) clearTimeout(pending.timer);
+    this.pendingRequests.delete(message.id);
+    if (message.type === "error") {
+      pending.reject(message.error);
+      return;
+    }
+    if (typeof message.serverNow === "number" && Number.isFinite(message.serverNow)) {
+      recordClockSample(message.serverNow, pending.sentAt, receivedAt);
+    }
+    pending.resolve((message.payload ?? {}) as Record<string, unknown>);
   }
 
   /** 拒绝某条连接上还没应答的请求；其它连接的请求不受影响。 */
@@ -285,6 +297,7 @@ export class WebSocketClient {
       pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
     }
     this.pendingRequests.clear();
+    resetClockSample();
     for (const waiter of this.connectWaiters)
       waiter.reject({ code: "DISCONNECTED", message: "连接已断开" });
     this.connectWaiters = [];
@@ -333,7 +346,7 @@ export class WebSocketClient {
         this.pendingRequests.delete(id);
         rejectProtocol(reject, { code: "TIMEOUT", message: "请求超时" });
       }, PRELUDE_REQUEST_TIMEOUT_MS);
-      this.pendingRequests.set(id, { resolve, reject, timer, socket });
+      this.pendingRequests.set(id, { resolve, reject, timer, socket, sentAt: Date.now() });
       socket.send(JSON.stringify({ id, traceId: generateUuid(), type, payload }));
     });
   }
@@ -431,6 +444,7 @@ export class WebSocketClient {
               reject,
               timer,
               socket,
+              sentAt: Date.now(),
             });
 
             const envelope: Record<string, unknown> = { id, traceId, type, payload };

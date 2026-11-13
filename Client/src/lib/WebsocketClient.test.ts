@@ -28,6 +28,7 @@ import {
   type ConnectionPrelude,
 } from "./WebsocketClient";
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/config/Constants";
+import { getClockOffsetMs, resetClockSample } from "@/stores/UseServerClock";
 
 interface MockSocketInstance {
   url: string;
@@ -486,5 +487,98 @@ describe("传输边界与命令诊断", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+  describe("时钟偏差取样", () => {
+    const openClock = () => {
+      const Socket = createMockSocketClass();
+      vi.stubGlobal("WebSocket", Socket);
+      const client = new WebSocketClient("/api/ws");
+      client.connect();
+      return { client, socket: Socket.instances[0] };
+    };
+    const requestIdOf = (socket: MockSocketInstance, index = 0) =>
+      (JSON.parse(socket.sent[index]) as { id: string }).id;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(10_000);
+      resetClockSample();
+    });
+    afterEach(() => {
+      resetClockSample();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("确认帧带服务端时刻：按发送与接收的中点记下偏差", async () => {
+      const { client, socket } = openClock();
+      const pending = client.send("room.get");
+      vi.setSystemTime(10_200);
+      // 本机时钟比服务端快 6 秒：服务端时刻 4_100 对应本机中点 10_100。
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestIdOf(socket), serverNow: 4_100 }),
+      });
+      await pending;
+      expect(getClockOffsetMs()).toBe(-6_000);
+      client.disconnect();
+    });
+
+    it("不带服务端时刻的确认帧与事件帧、错误帧都不产生样本", async () => {
+      const { client, socket } = openClock();
+      const first = client.send("room.get");
+      socket.onmessage!({ data: JSON.stringify({ type: "ack", id: requestIdOf(socket) }) });
+      await first;
+      socket.onmessage!({
+        data: JSON.stringify({ type: "event", event: "x", payload: {}, serverNow: 1 }),
+      });
+      const second = client.send("room.get");
+      const rejected = second.catch((error: unknown) => error);
+      socket.onmessage!({
+        data: JSON.stringify({
+          type: "error",
+          id: requestIdOf(socket, 1),
+          error: { code: "X", message: "m" },
+          serverNow: 1,
+        }),
+      });
+      await rejected;
+      expect(getClockOffsetMs()).toBe(0);
+      client.disconnect();
+    });
+
+    it("往返长的确认帧不覆盖往返短的样本", async () => {
+      const { client, socket } = openClock();
+      const fast = client.send("room.get");
+      vi.setSystemTime(10_040);
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestIdOf(socket), serverNow: 4_020 }),
+      });
+      await fast;
+      expect(getClockOffsetMs()).toBe(-6_000);
+
+      const slow = client.send("room.get");
+      vi.setSystemTime(11_240);
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestIdOf(socket, 1), serverNow: 5_900 }),
+      });
+      await slow;
+      expect(getClockOffsetMs()).toBe(-6_000);
+      client.disconnect();
+    });
+
+    it("连接断开后样本作废，重连后重新取样", async () => {
+      const { client, socket } = openClock();
+      const pending = client.send("room.get");
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestIdOf(socket), serverNow: 4_000 }),
+      });
+      await pending;
+      expect(getClockOffsetMs()).toBe(-6_000);
+
+      socket.readyState = 3;
+      socket.onclose!();
+      expect(getClockOffsetMs()).toBe(0);
+      client.disconnect();
+    });
   });
 });
