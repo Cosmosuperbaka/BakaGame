@@ -25,7 +25,6 @@ describe("storage utilities", () => {
     saveSonGuessrSessionToken("1234", "song");
     window.sessionStorage.setItem("cee_session:1234", "cee");
     window.sessionStorage.setItem("songuessr_solo_room", "9999");
-    window.sessionStorage.setItem("wif_session_1234", "legacy");
     window.sessionStorage.setItem("bakagame:unrelated", "keep");
 
     clearSeatCredentials();
@@ -34,7 +33,6 @@ describe("storage utilities", () => {
     expect(getSonGuessrSessionToken("1234")).toBeNull();
     expect(window.sessionStorage.getItem("cee_session:1234")).toBeNull();
     expect(window.sessionStorage.getItem("songuessr_solo_room")).toBeNull();
-    expect(window.sessionStorage.getItem("wif_session_1234")).toBeNull();
     expect(window.sessionStorage.getItem("bakagame:unrelated")).toBe("keep");
     expect(getSavedUsername()).toBe("测试玩家");
   });
@@ -74,29 +72,13 @@ describe("storage utilities", () => {
     expect(getSessionToken("5678")).toBe("other-token");
   });
 
-  it("migrates legacy wif_ keys to the namespaced keys once", () => {
+  it("不再读取或搬迁旧版 wif_ 键：读取热路径不碰无关存储键", () => {
     window.localStorage.setItem("wif_username", "老玩家");
     window.sessionStorage.setItem("wif_session_9012", "legacy-token");
 
-    expect(getSavedUsername()).toBe("老玩家");
-    expect(getSessionToken("9012")).toBe("legacy-token");
-    expect(window.localStorage.getItem("bakagame:username")).toBe("老玩家");
-    expect(window.sessionStorage.getItem("whoisfaker_session_9012")).toBe("legacy-token");
-    expect(window.localStorage.getItem("wif_username")).toBeNull();
-    expect(window.sessionStorage.getItem("wif_session_9012")).toBeNull();
-  });
-
-  it("does not overwrite a newer value when migrating", () => {
-    window.localStorage.setItem("wif_username", "老玩家");
-    saveUsername("新玩家");
-
-    expect(getSavedUsername()).toBe("新玩家");
-  });
-
-  it("keeps the legacy localStorage token untouched", () => {
-    window.localStorage.setItem("wif_session_3456", "legacy-token");
-
-    expect(getSessionToken("3456")).toBeNull();
-    expect(window.localStorage.getItem("wif_session_3456")).toBe("legacy-token");
+    expect(getSavedUsername()).toBe("");
+    expect(getSessionToken("9012")).toBeNull();
+    expect(window.localStorage.getItem("wif_username")).toBe("老玩家");
+    expect(window.sessionStorage.getItem("wif_session_9012")).toBe("legacy-token");
   });
 });
