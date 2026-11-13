@@ -4,12 +4,8 @@ import { listItem, listContainer } from "@/lib/motion/Choreography";
 import { iconTappable, pressable } from "@/lib/motion/Feedback";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
 import { Activity, ArrowUpRight } from "lucide-react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-// 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
-import { faQq } from "@fortawesome/free-brands-svg-icons/faQq";
-import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
-import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
+import { BrandIcon } from "@/components/common/BrandIcon";
+import type { BrandIconName } from "@/data/BrandIconPaths";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
@@ -133,13 +129,13 @@ const FRIEND_LINKS: FriendLink[] = [
 interface ExternalLink {
   href: string;
   label: string;
-  icon: IconDefinition;
+  icon: BrandIconName;
 }
 
 const EXTERNAL_LINKS: ExternalLink[] = [
-  { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: faQq },
-  { href: REPOSITORY_URL, label: "GitHub 仓库", icon: faGithub },
-  { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
+  { href: "https://qm.qq.com/q/yIoCHg85iK", label: "加入 QQ 群", icon: "qq" },
+  { href: REPOSITORY_URL, label: "GitHub 仓库", icon: "github" },
+  { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: "bilibili" },
 ];
 
 const STATUS_PAGE_PATH = "/status";
@@ -331,8 +327,8 @@ function FooterLink({ link }: { link: ExternalLink }) {
             variants={listItem}
             {...iconTappable}
           >
-            {/* Font Awesome 的内置样式不进层叠层，按 em 定尺寸并压过 w-4 这类工具类，尺寸只能经字号给。 */}
-            <FontAwesomeIcon icon={link.icon} className="text-base" />
+            {/* 品牌图标按 em 定尺寸，尺寸只能经字号给。 */}
+            <BrandIcon name={link.icon} className="text-base" />
           </motion.a>
         </Button>
       </TooltipTrigger>

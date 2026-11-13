@@ -2,9 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useActiveTabIntoView, useScrollFade } from "@/hooks/UseScrollFade";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-// 逐图标引入：品牌图标包的聚合入口无法摇树，整包会进产物。
-import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
+import { BrandIcon } from "@/components/common/BrandIcon";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
@@ -179,8 +177,8 @@ export function CreditsView({
                 aria-label="GitHub 仓库"
                 {...iconTappable}
               >
-                {/* Font Awesome 的内置样式不进层叠层，尺寸只能经字号给出。 */}
-                <FontAwesomeIcon icon={faGithub} className="text-base" />
+                {/* 品牌图标按 em 定尺寸，尺寸只能经字号给出。 */}
+                <BrandIcon name="github" className="text-base" />
               </motion.a>
             </HeaderIconButton>
           </div>
