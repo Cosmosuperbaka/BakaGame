@@ -2526,6 +2526,1789 @@
         "description": "向所有在线对局房间广播停机通知并摘除就绪状态，需要独立维护令牌授权，不信任客户端来源头。"
       }
     },
+    "/api/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observedAt": {
+                      "type": "number"
+                    },
+                    "level": {
+                      "anyOf": [
+                        {
+                          "const": "operational",
+                          "type": "string"
+                        },
+                        {
+                          "const": "degraded",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "level",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "level": {
+                            "anyOf": [
+                              {
+                                "const": "operational",
+                                "type": "string"
+                              },
+                              {
+                                "const": "degraded",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "observedAt",
+                    "level",
+                    "version",
+                    "components"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observedAt": {
+                      "type": "number"
+                    },
+                    "level": {
+                      "anyOf": [
+                        {
+                          "const": "operational",
+                          "type": "string"
+                        },
+                        {
+                          "const": "degraded",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "level",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "level": {
+                            "anyOf": [
+                              {
+                                "const": "operational",
+                                "type": "string"
+                              },
+                              {
+                                "const": "degraded",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "observedAt",
+                    "level",
+                    "version",
+                    "components"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observedAt": {
+                      "type": "number"
+                    },
+                    "level": {
+                      "anyOf": [
+                        {
+                          "const": "operational",
+                          "type": "string"
+                        },
+                        {
+                          "const": "degraded",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unknown",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "level",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "level": {
+                            "anyOf": [
+                              {
+                                "const": "operational",
+                                "type": "string"
+                              },
+                              {
+                                "const": "degraded",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "observedAt",
+                    "level",
+                    "version",
+                    "components"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApiStatus",
+        "tags": [
+          "System"
+        ],
+        "summary": "公开站点状态",
+        "description": "返回前端、后端、四个上游接口（含当前延迟）与本项目内部各能力的归一化状态。只暴露白名单字段，不含地址、容器名、凭据或内部拓扑。"
+      }
+    },
+    "/api/status/history": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "days",
+                                "ratio"
+                              ],
+                              "properties": {
+                                "days": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "day",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "day": {
+                                  "type": "string"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "days",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "days",
+                                "ratio"
+                              ],
+                              "properties": {
+                                "days": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "day",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "day": {
+                                  "type": "string"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "days",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells",
+                          "latencyMs"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "days",
+                                "ratio"
+                              ],
+                              "properties": {
+                                "days": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "day",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "day": {
+                                  "type": "string"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "latencyMs": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "days",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApiStatusHistory",
+        "tags": [
+          "System"
+        ],
+        "summary": "公开站点状态历史",
+        "description": "按北京时间自然日聚合的可用率窗口与日格，覆盖最近 30 天。含日均延迟。"
+      }
+    },
+    "/api/status/realtime": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "intervalMs": {
+                      "type": "number"
+                    },
+                    "windowMs": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "start",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "start": {
+                                  "type": "number"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "intervalMs",
+                    "windowMs",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "intervalMs": {
+                      "type": "number"
+                    },
+                    "windowMs": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "start",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "start": {
+                                  "type": "number"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "intervalMs",
+                    "windowMs",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "intervalMs": {
+                      "type": "number"
+                    },
+                    "windowMs": {
+                      "type": "number"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "uptime",
+                          "cells"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "const": "frontend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "backend",
+                                "type": "string"
+                              },
+                              {
+                                "const": "bangumi",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qqmusic",
+                                "type": "string"
+                              },
+                              {
+                                "const": "netease",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qq",
+                                "type": "string"
+                              },
+                              {
+                                "const": "rooms",
+                                "type": "string"
+                              },
+                              {
+                                "const": "search",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dataset",
+                                "type": "string"
+                              },
+                              {
+                                "const": "images",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "uptime": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cells": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "start",
+                                "total",
+                                "ratio",
+                                "level",
+                                "latencyMs"
+                              ],
+                              "properties": {
+                                "start": {
+                                  "type": "number"
+                                },
+                                "total": {
+                                  "type": "number"
+                                },
+                                "ratio": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "level": {
+                                  "anyOf": [
+                                    {
+                                      "const": "operational",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "degraded",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "unknown",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "nullable": true,
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "intervalMs",
+                    "windowMs",
+                    "generatedAt",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApiStatusRealtime",
+        "tags": [
+          "System"
+        ],
+        "summary": "公开站点实时条带",
+        "description": "按采样间隔（3 分钟）聚合的近 6 小时格子：可用率、等级与平均延迟，只含本环境的数据。"
+      }
+    },
+    "/api/status/events": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "body",
+                          "status",
+                          "components",
+                          "startedAt",
+                          "plannedEndAt",
+                          "resolvedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "const": "incident",
+                                "type": "string"
+                              },
+                              {
+                                "const": "maintenance",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "components": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "const": "frontend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "backend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bangumi",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qqmusic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "netease",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qq",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "rooms",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "search",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "dataset",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "images",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "startedAt": {
+                            "type": "number"
+                          },
+                          "plannedEndAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolvedAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "events"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "body",
+                          "status",
+                          "components",
+                          "startedAt",
+                          "plannedEndAt",
+                          "resolvedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "const": "incident",
+                                "type": "string"
+                              },
+                              {
+                                "const": "maintenance",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "components": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "const": "frontend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "backend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bangumi",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qqmusic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "netease",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qq",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "rooms",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "search",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "dataset",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "images",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "startedAt": {
+                            "type": "number"
+                          },
+                          "plannedEndAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolvedAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "events"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "body",
+                          "status",
+                          "components",
+                          "startedAt",
+                          "plannedEndAt",
+                          "resolvedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "const": "incident",
+                                "type": "string"
+                              },
+                              {
+                                "const": "maintenance",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "components": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "const": "frontend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "backend",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bangumi",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qqmusic",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "netease",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "qq",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "rooms",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "search",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "dataset",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "images",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "startedAt": {
+                            "type": "number"
+                          },
+                          "plannedEndAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolvedAt": {
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "events"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getApiStatusEvents",
+        "tags": [
+          "System"
+        ],
+        "summary": "公开状态事件",
+        "description": "进行中的故障事件与维护窗口一律返回，已结束的回看一个月；正文与管理操作不出现在这个接口。"
+      }
+    },
     "/api/site/config": {
       "get": {
         "responses": {
@@ -2644,6 +4427,42 @@
         "description": "返回各模式入口的可用性，由后台运行期旋钮控制；响应不缓存，开关改完即生效。关掉的入口在页面上仍然呈现，置灰并标注「暂时关闭」。"
       }
     },
+    "/mcp/server-card": {
+      "get": {
+        "operationId": "getMcpServer-card",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/mcp/server-card": {
+      "get": {
+        "operationId": "getApiMcpServer-card",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/mcp": {
+      "post": {
+        "operationId": "postApiMcp",
+        "responses": {
+          "200": {}
+        }
+      },
+      "get": {
+        "operationId": "getApiMcp",
+        "responses": {
+          "200": {}
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiMcp",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
     "/api/monitoring/sentry": {
       "post": {
         "operationId": "postApiMonitoringSentry",
@@ -2652,6 +4471,924 @@
         ],
         "summary": "Sentry 异常与遥测同源反向代理隧道",
         "description": "接收前端 Sentry 信封包，安全校验后中转至 Sentry Ingest，免疫浏览器广告拦截插件并保障中国大陆连通性。",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/songuessr/audio/{roomId}/{ticket}": {
+      "get": {
+        "operationId": "getApiSonguessrAudioByRoomIdByTicket",
+        "tags": [
+          "System"
+        ],
+        "summary": "猜歌站内播放地址（跳转到上游音频）",
+        "description": "票据地址即凭证：房间在且票据对应当前回合时回 302 跳转到上游音频，否则一律 404。音频数据不经过本服务，响应不可缓存。",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roomId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ticket",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/register": {
+      "post": {
+        "parameters": [],
+        "operationId": "postApiClientRegister",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientType",
+                  "platform",
+                  "clientVersion",
+                  "keyAlgorithm",
+                  "publicKey",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "platform": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "type": "string"
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "keyAlgorithm": {
+                    "anyOf": [
+                      {
+                        "const": "ed25519",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ec-p256",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "publicKey": {
+                    "minLength": 32,
+                    "maxLength": 1024,
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "attestation": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "attestationChallenge",
+                      "chain"
+                    ],
+                    "properties": {
+                      "attestationChallenge": {
+                        "minLength": 8,
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "chain": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "minLength": 64,
+                          "maxLength": 8192,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientType",
+                  "platform",
+                  "clientVersion",
+                  "keyAlgorithm",
+                  "publicKey",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "platform": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "type": "string"
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "keyAlgorithm": {
+                    "anyOf": [
+                      {
+                        "const": "ed25519",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ec-p256",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "publicKey": {
+                    "minLength": 32,
+                    "maxLength": 1024,
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "attestation": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "attestationChallenge",
+                      "chain"
+                    ],
+                    "properties": {
+                      "attestationChallenge": {
+                        "minLength": 8,
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "chain": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "minLength": 64,
+                          "maxLength": 8192,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientType",
+                  "platform",
+                  "clientVersion",
+                  "keyAlgorithm",
+                  "publicKey",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "platform": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "type": "string"
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "keyAlgorithm": {
+                    "anyOf": [
+                      {
+                        "const": "ed25519",
+                        "type": "string"
+                      },
+                      {
+                        "const": "ec-p256",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "publicKey": {
+                    "minLength": 32,
+                    "maxLength": 1024,
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "attestation": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "attestationChallenge",
+                      "chain"
+                    ],
+                    "properties": {
+                      "attestationChallenge": {
+                        "minLength": 8,
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "chain": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "minLength": 64,
+                          "maxLength": 8192,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/challenge": {
+      "post": {
+        "parameters": [],
+        "operationId": "postApiClientChallenge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/attest": {
+      "post": {
+        "parameters": [],
+        "operationId": "postApiClientAttest",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId",
+                  "challenge",
+                  "signature",
+                  "clientType",
+                  "clientVersion",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "challenge": {
+                    "minLength": 16,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "signature": {
+                    "minLength": 32,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId",
+                  "challenge",
+                  "signature",
+                  "clientType",
+                  "clientVersion",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "challenge": {
+                    "minLength": 16,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "signature": {
+                    "minLength": 32,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "clientId",
+                  "challenge",
+                  "signature",
+                  "clientType",
+                  "clientVersion",
+                  "selfCheck"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "challenge": {
+                    "minLength": 16,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "signature": {
+                    "minLength": 32,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "clientType": {
+                    "anyOf": [
+                      {
+                        "const": "desktop",
+                        "type": "string"
+                      },
+                      {
+                        "const": "mobile",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "clientVersion": {
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^\\d+(\\.\\d+){0,3}$",
+                    "type": "string"
+                  },
+                  "selfCheck": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "hardFail",
+                      "softFail"
+                    ],
+                    "properties": {
+                      "hardFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "softFail": {
+                        "type": "array",
+                        "items": {
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      },
+                      "keyProtection": {
+                        "anyOf": [
+                          {
+                            "const": "hardware",
+                            "type": "string"
+                          },
+                          {
+                            "const": "software",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "attestationLevel": {
+                        "anyOf": [
+                          {
+                            "const": "trusted",
+                            "type": "string"
+                          },
+                          {
+                            "const": "degraded",
+                            "type": "string"
+                          },
+                          {
+                            "const": "rejected",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/update-check": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "desktop",
+                  "type": "string"
+                },
+                {
+                  "const": "mobile",
+                  "type": "string"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "clientType",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^\\d+(\\.\\d+){0,3}$"
+            },
+            "in": "query",
+            "name": "clientVersion",
+            "required": true
+          }
+        ],
+        "operationId": "getApiClientUpdate-check",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/web-bundle": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "desktop",
+                  "type": "string"
+                },
+                {
+                  "const": "mobile",
+                  "type": "string"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "clientType",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^\\d+(\\.\\d+){0,3}$"
+            },
+            "in": "query",
+            "name": "shellVersion",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?!.*\\.\\.)(?!\\.$)[A-Za-z0-9._-]+$"
+            },
+            "in": "query",
+            "name": "build",
+            "required": true
+          }
+        ],
+        "operationId": "getApiClientWeb-bundle",
+        "responses": {
+          "200": {}
+        }
+      }
+    },
+    "/api/client/packages": {
+      "get": {
+        "operationId": "getApiClientPackages",
         "responses": {
           "200": {}
         }

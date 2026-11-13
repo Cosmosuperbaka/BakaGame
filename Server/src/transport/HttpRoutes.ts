@@ -26,7 +26,8 @@ import type { SitePages } from "./SitePages";
 
 export interface HttpRouteDependencies {
   env: AppEnv;
-  games: GameServices;
+  /** 缺省仅用于接口文档导出：健康快照全为零、站内播放地址恒不存在，路由形状不变。 */
+  games?: GameServices;
   logger: EventLogger;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
@@ -44,6 +45,8 @@ export interface HttpRouteDependencies {
   clientArtifacts?: ClientArtifacts;
   clientWebBundle?: ClientWebBundle;
 }
+
+const NO_AUDIO = { resolveAudioRedirect: () => undefined };
 
 /** 全部 HTTP 路由插件，按固定顺序组合；实时升级路由不在其中。 */
 export const createHttpRoutes = ({
@@ -117,7 +120,7 @@ export const createHttpRoutes = ({
     // ==================== 自建图床（avif 分片缓存） ====================
     .use(bangumiImageRoutes(bangumiImages))
     // ==================== 猜歌站内播放地址（只回跳转，音频不经过服务端） ====================
-    .use(songAudioRoutes({ song: games.song }))
+    .use(songAudioRoutes({ song: games?.song ?? NO_AUDIO }))
     // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
     .use(accountRoutes(account, logger))
     .use(clientChannelRoutes(clientChannel, clientArtifacts, clientWebBundle));

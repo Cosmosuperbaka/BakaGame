@@ -5,9 +5,15 @@ import { Elysia } from "elysia";
 import { compareDottedVersion } from "../shared/ModelValues";
 import { createSwaggerPlugin } from "../transport/Openapi";
 import { RPC_BASE_PATH } from "../transport/routes/Account";
-import { systemRoutes } from "../transport/routes/System";
-import { siteConfigRoutes } from "../transport/routes/SiteConfig";
-import { sentryTunnelRoutes } from "../transport/routes/SentryTunnel";
+import type { AppEnv } from "../config/Env";
+import { EventLogger } from "../infrastructure/EventLogger";
+import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
+import { StatusSampleStore } from "../infrastructure/StatusSampleStore";
+import type { StatusEventRepository } from "../infrastructure/db/StatusEventRepository";
+import { RemoteMcpSessions } from "../mcp/Remote";
+import { createHttpRoutes } from "../transport/HttpRoutes";
+import { createStatusAggregator } from "../transport/routes/Status";
+import { SitePages } from "../transport/SitePages";
 import { RPC_PROTOCOL_NOTES, buildRpcOpenApiFragment } from "./RpcOpenapi";
 
 type Json = Record<string, unknown>;
@@ -18,13 +24,47 @@ type Json = Record<string, unknown>;
  */
 export const DOC_SERVER_URL = "http://localhost:4850";
 
-/** 只装配 HTTP 契约，不构造游戏服务、SQLite Worker 或遥测出口。 */
+/** 状态事件接口只需要存在：文档导出从不读它。 */
+const NO_STATUS_EVENTS: StatusEventRepository = {
+  list: async () => ({ items: [], total: 0 }),
+  get: async () => null,
+  create: () => Promise.reject(new Error("文档装配不写状态事件")),
+  update: () => Promise.reject(new Error("文档装配不写状态事件")),
+  remove: () => Promise.reject(new Error("文档装配不写状态事件")),
+};
+
+/**
+ * 只装配 HTTP 契约，不构造游戏服务、SQLite Worker 或遥测出口。
+ * 路由集合与运行时同源（`createHttpRoutes`）：账本类依赖传入空实例，保证按依赖有无才注册的路由全部出现在文档里。
+ */
 export function createDocumentationApp(serverUrl = DOC_SERVER_URL) {
-  return new Elysia({ normalize: false })
-    .use(createSwaggerPlugin({ serverUrl }))
-    .use(systemRoutes({}))
-    .use(siteConfigRoutes({}))
-    .use(sentryTunnelRoutes({}));
+  const env = {
+    clientUrl: serverUrl,
+    serverUrl,
+    serverListenHost: "127.0.0.1",
+    serverPort: 0,
+    bangumiApiUrl: "",
+    bangumiImageUrl: "",
+  } satisfies AppEnv;
+  const logger = new EventLogger(() => undefined);
+  const environment = "documentation";
+  const statusHistory = new StatusHistoryStore({ environment });
+  return new Elysia({ normalize: false }).use(createSwaggerPlugin({ serverUrl })).use(
+    createHttpRoutes({
+      env,
+      logger,
+      statusAggregator: createStatusAggregator({
+        isServiceAvailable: () => true,
+        roomsAvailable: true,
+        history: statusHistory,
+      }),
+      statusHistory,
+      statusSamples: new StatusSampleStore({ environment }),
+      statusEvents: NO_STATUS_EVENTS,
+      remoteMcpSessions: new RemoteMcpSessions(logger, { selfUrl: serverUrl, siteUrl: serverUrl }),
+      sitePages: new SitePages(),
+    })
+  );
 }
 
 // ==================== 产品版本 ====================
@@ -106,6 +146,9 @@ if (import.meta.main) {
   const document = await renderOpenApiDocument(DOC_SERVER_URL);
   const paths = document.paths as Json;
   if (!paths["/readyz"]) throw new Error("生成文档遗漏就绪契约");
+  if (!paths["/api/status"]) throw new Error("生成文档遗漏状态页契约");
+  if (!paths["/api/client/register"]) throw new Error("生成文档遗漏客户端通道契约");
+  if (!paths["/api/mcp"]) throw new Error("生成文档遗漏远程 MCP 契约");
   if (!paths[`${RPC_BASE_PATH}/account/me`]) throw new Error("生成文档遗漏账号 RPC 契约");
   await mkdir(dirname(OPENAPI_DOC_PATH), { recursive: true });
   await writeFile(OPENAPI_DOC_PATH, `${JSON.stringify(document, null, 2)}\n`, "utf8");

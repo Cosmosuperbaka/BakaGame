@@ -69,8 +69,32 @@ const EXPECTED_OPERATIONS = [
   "admin.stats.sentry",
 ];
 
-/** Elysia 自己声明的那几条 HTTP 路径：打点、探活、站点配置、优雅停机、Sentry 隧道。 */
-const HTTP_PATH_COUNT = 6;
+/**
+ * Elysia 声明的 HTTP 路径：探活、优雅停机、公开状态页、站点配置、MCP 发现与远程入口、Sentry 隧道、
+ * 猜歌播放跳转、客户端通道。与运行时共用同一份路由组合，路由集合一致性由 HttpRoutesParity 守着。
+ */
+const EXPECTED_HTTP_PATHS = [
+  "/livez",
+  "/readyz",
+  "/health",
+  "/api/system/notify-shutdown",
+  "/api/status",
+  "/api/status/history",
+  "/api/status/realtime",
+  "/api/status/events",
+  "/api/site/config",
+  "/mcp/server-card",
+  "/api/mcp/server-card",
+  "/api/mcp",
+  "/api/monitoring/sentry",
+  "/api/songuessr/audio/{roomId}/{ticket}",
+  "/api/client/register",
+  "/api/client/challenge",
+  "/api/client/attest",
+  "/api/client/update-check",
+  "/api/client/web-bundle",
+  "/api/client/packages",
+];
 
 const pathOf = (operationId: string): string =>
   `${RPC_BASE_PATH}/${operationId.replaceAll(".", "/")}`;
@@ -215,7 +239,8 @@ test("合并后的文档版本取自更新日志，且每个 $ref 都解析得�
   expect(paths).toContain("/readyz");
   expect(paths).toContain("/health");
   expect(paths).toContain(pathOf("settings.get"));
-  expect(paths).toHaveLength(EXPECTED_OPERATIONS.length + HTTP_PATH_COUNT);
+  for (const path of EXPECTED_HTTP_PATHS) expect(paths).toContain(path);
+  expect(paths).toHaveLength(EXPECTED_OPERATIONS.length + EXPECTED_HTTP_PATHS.length);
 
   const components = document.components as Json;
   for (const ref of collectRefs(document)) {
