@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
 import { useAudioClipPlayer } from "./UseAudioClipPlayer";
 
 describe("useAudioClipPlayer", () => {
@@ -125,6 +126,101 @@ describe("useAudioClipPlayer", () => {
       mockAudio.dispatchEvent(new Event("error"));
     });
     expect(sendCommand).toHaveBeenCalledTimes(2);
+  });
+
+  describe("站内票据地址：上游地址过期后重新请求同一个地址", () => {
+    const TICKET_URL = "https://api.example.com/api/songuessr/audio/1234/TICKET";
+
+    const mountPlayer = (sendCommand: SonGuessrSendCommand) => {
+      const load = vi.spyOn(mockAudio, "load").mockImplementation(() => {});
+      const hook = renderHook(
+        ({ audioUrl, roundNumber }) =>
+          useAudioClipPlayer({
+            roomId: "test-room",
+            phase: "playing",
+            currentPhaseRoundNumber: roundNumber,
+            currentAudioUrl: audioUrl,
+            currentClipStartTime: 10_000,
+            currentClipEndTime: 20_000,
+            isPlayingPhase: true,
+            sendCommand,
+          }),
+        { initialProps: { audioUrl: undefined as string | undefined, roundNumber: 1 } }
+      );
+      hook.result.current.audioRef.current = mockAudio;
+      hook.rerender({ audioUrl: TICKET_URL, roundNumber: 1 });
+      return { ...hook, load };
+    };
+
+    const fail = () => act(async () => void mockAudio.dispatchEvent(new Event("error")));
+
+    it("服务端刷新成功后，地址没变也要重新请求同一个地址", async () => {
+      const sendCommand = vi.fn().mockResolvedValue({ refreshed: true });
+      const { load, result } = mountPlayer(sendCommand);
+      expect(load).toHaveBeenCalledTimes(1);
+
+      await fail();
+
+      expect(sendCommand).toHaveBeenCalledWith("song.game.audioFailed", { roundNumber: 1 });
+      // 站内地址在刷新前后是同一个：不主动重载就永远停在失败态。
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(mockAudio.src).toBe(TICKET_URL);
+      expect(result.current.audioStatus).toBe("loading");
+    });
+
+    it("服务端没有刷新（回合已换或无可刷新）时不重载", async () => {
+      const sendCommand = vi.fn().mockResolvedValue({ ignored: true });
+      const { load, result } = mountPlayer(sendCommand);
+
+      await fail();
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(result.current.audioStatus).toBe("error");
+    });
+
+    it("刷新结果回来之前换了回合，不为旧回合重载", async () => {
+      let resolveAck!: (value: unknown) => void;
+      const sendCommand = vi.fn().mockReturnValue(new Promise((resolve) => (resolveAck = resolve)));
+      const { load, rerender } = mountPlayer(sendCommand);
+
+      await fail();
+      rerender({
+        audioUrl: "https://api.example.com/api/songuessr/audio/1234/NEXT",
+        roundNumber: 2,
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+
+      await act(async () => resolveAck({ refreshed: true }));
+
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it("连续失败时自动重载有上限，之后停在失败态等玩家手动重试", async () => {
+      const sendCommand = vi.fn().mockResolvedValue({ refreshed: true });
+      const { load, result } = mountPlayer(sendCommand);
+
+      for (let attempt = 0; attempt < 6; attempt += 1) await fail();
+
+      // 首次装载加上有限次自动重载，不会无限循环。
+      expect(load.mock.calls.length).toBeGreaterThan(1);
+      expect(load.mock.calls.length).toBeLessThanOrEqual(4);
+      expect(result.current.audioStatus).toBe("error");
+
+      // 手动重试仍然可用，且重新请求同一个地址。
+      const before = load.mock.calls.length;
+      await act(async () => result.current.retryAudio());
+      expect(load).toHaveBeenCalledTimes(before + 1);
+    });
+
+    it("上报失败的命令被拒时不重载", async () => {
+      const sendCommand = vi.fn().mockRejectedValue(new Error("RATE_LIMITED"));
+      const { load, result } = mountPlayer(sendCommand);
+
+      await fail();
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(result.current.audioStatus).toBe("error");
+    });
   });
 
   describe("初始音量", () => {
