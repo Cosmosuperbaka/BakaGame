@@ -638,18 +638,20 @@ export const receiptMarkFollow = {
 /**
  * 结算答案卡的抬起：卡片先轻轻下沉，再被抬起来亮给所有人看（略放大、投影拉远），最后放回原位。
  * 揭晓是一轮的高潮，比回执多一个「翻牌」的动作；落定后不留重阴影，流内内容保持轻阴影。
+ * 卡片以原大显出（显影比沉段短，沉的时候已经看得见），再被压下去约 4% 并下坠几像素，读作「接住了」；
+ * 沉段用两端缓的曲线，前半段几乎不动，留给显影。沉得太浅或与显影重叠，整段会读成「淡入后放大一下」。
  * 三段关键帧（沉、抬、放）弹簧给不了，用确定时长的分段缓动；投影由 `.reveal-lift` 的伪元素按同一组 `times` 淡入淡出，
  * 时长经 `--motion-reveal-lift-duration` 传给 CSS。`settle` 是卡片放稳的时刻（秒），卡外的分数从这时开始滚。
  */
 const revealLiftDuration = duration.slow + duration.base;
 export const revealCard = {
-  initial: { opacity: 0, scale: 0.97, y: 0 },
-  animate: { opacity: 1, scale: [0.97, 0.96, 1.02, 1], y: [0, 4, -1, 0] },
+  initial: { opacity: 0, scale: 1, y: 0 },
+  animate: { opacity: 1, scale: [1, 0.96, 1.025, 1], y: [0, 6, -2, 0] },
   transition: {
     duration: revealLiftDuration,
-    times: [0, 0.25, 0.65, 1],
-    ease: [ease.out, ease.emphasized, ease.inOut],
-    opacity: { duration: duration.quick, ease: ease.out },
+    times: [0, 0.3, 0.68, 1],
+    ease: [ease.inOut, ease.emphasized, ease.inOut],
+    opacity: { duration: duration.instant, ease: ease.out },
   },
   settle: revealLiftDuration,
 } satisfies {
@@ -658,6 +660,18 @@ export const revealCard = {
   transition: Transition;
   settle: number;
 };
+
+/**
+ * 排位结算的分数变化徽章（「+15」）：分数从卡片放稳时开始逐位滚动，徽章等数字滚到位才盖上去，
+ * 不先于数字把结果说出来。时刻取 `digitRoll` 的弹簧走到 95%（读作「到了」，早于完全静止）。
+ */
+export const ratingReveal = {
+  ...receiptMark,
+  transition: {
+    ...receiptMark.transition,
+    delay: revealCard.settle + springReachMs(digitRoll.transition, 0.95) / 1000,
+  },
+} as const;
 
 /**
  * 阶段标题自基线下方的遮罩里升起：外层裁切，内层整行上移到位，读作「翻到了新的一页」。

@@ -5,7 +5,7 @@ import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { phaseTitleRise, revealCard } from "@/lib/Motion";
+import { phaseTitleRise, ratingReveal, revealCard } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { formatRankedDelta, formatRankedPoints } from "./CEERankedFormat";
 import { RankedGameMark, RankedOutcomeMark } from "./CEERankedMarks";
@@ -167,10 +167,16 @@ function RatingBlock({
         delay={revealCard.settle}
         className="font-serif text-4xl font-semibold tabular-nums"
       />
-      <Badge variant={delta > 0 ? "matched" : delta < 0 ? "muted" : "subtle"} className="font-mono">
-        {/* 负号用数学减号，与战绩列表的分差同一写法 */}
-        {formatRankedDelta(delta)}
-      </Badge>
+      <motion.span
+        initial={ratingReveal.initial}
+        animate={ratingReveal.animate}
+        transition={ratingReveal.transition}
+      >
+        <Badge variant={delta > 0 ? "matched" : delta < 0 ? "muted" : "subtle"} className="font-mono">
+          {/* 负号用数学减号，与战绩列表的分差同一写法 */}
+          {formatRankedDelta(delta)}
+        </Badge>
+      </motion.span>
     </div>
   );
 }

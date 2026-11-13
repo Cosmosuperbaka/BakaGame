@@ -70,6 +70,14 @@ describe("Motion tokens", () => {
     expect(parseFloat(motionCssVariables()["reveal-lift-duration"])).toBeCloseTo(revealCard.settle);
   });
 
+  it("答案卡的「沉」要看得见：起点就是第一帧的尺寸，卡片在沉到底之前已完全显出", () => {
+    const { initial, animate, transition } = revealCard;
+    expect(initial.scale).toBe(animate.scale[0]);
+    expect(Math.min(...animate.scale)).toBeLessThan(animate.scale[0]);
+    const sinkEnd = transition.times[1] * transition.duration;
+    expect(transition.opacity.duration).toBeLessThan(sinkEnd);
+  });
+
   it("复读台阶封顶：最高一级放大不超过 1.15，猜中行的翻牌不错峰", () => {
     expect(1 + repeatStair.grow * repeatStair.maxSteps).toBeLessThanOrEqual(1.15);
     const animate = clueFlipRow.animate as (correct: boolean) => {
