@@ -6,6 +6,7 @@ import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 import { createEvent } from "../../transport/Packets";
 import { ConnectionRegistry } from "../ConnectionRegistry";
 import { LobbyFanout } from "../LobbyFanout";
+import { ChatLimiter } from "../room/ChatLog";
 import { IdCounter } from "../room/IdCounter";
 import { publishRoomState } from "../room/RoomPublisher";
 import type { SonGuessrServiceOptions } from "./Options";
@@ -34,6 +35,8 @@ export interface SonGuessrContext {
    * 没有按连接的配额时，一个人仍会先把本进程的并发与队列打满，搜歌与出题一起排队。
    */
   readonly musicLimiter: SlidingWindowRateLimiter;
+  /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */
+  readonly chatLimiter: ChatLimiter;
   /**
    * 每个房间在等号的请求。所有可用号都达到单号并发上限时在这里排队，任一租约归还
    * 或池子变化即唤醒重试；只在进程内，房间关闭时整段丢弃。
@@ -66,6 +69,7 @@ export const createSonGuessrContext = (options: SonGuessrServiceOptions): SonGue
       windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
       maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
     }),
+    chatLimiter: new ChatLimiter({ now: () => now() }),
     musicPoolWaiters: new Map(),
     nextMusicRefreshSweepAt: 0,
     musicRefreshSweepInFlight: false,

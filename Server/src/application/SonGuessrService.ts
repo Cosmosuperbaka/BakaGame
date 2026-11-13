@@ -39,7 +39,6 @@ import { AppError } from "../domain/Errors";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { ensureRoomId, normalizeName, normalizeWord } from "../domain/Rules";
 import {
-  ChatMessage,
   SERVER_SHUTDOWN_MESSAGE,
   SONGUESSR_MAX_TEAM,
   SonGuessrClientMessage,
@@ -90,9 +89,9 @@ import { installRound } from "./songuessr/RoundInstall";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { dispatchCommand } from "./room/CommandTable";
 import { requireMusicQuota } from "./songuessr/MusicCommands";
+import { broadcastRoomEvent } from "./songuessr/Chat";
 
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
-import { ChatLimiter, acceptChatText, appendChat } from "./room/ChatLog";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
@@ -143,9 +142,6 @@ import {
 import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
 /** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
-/** 与协议里单条聊天的长度上限一致，服务层再截一次，不依赖入口校验。 */
-const SONG_CHAT_TEXT_MAX_LENGTH = 200;
-
 const normalizeRoomPassword = (password: string): string => password.trim();
 
 /** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
@@ -164,8 +160,6 @@ type RoundSweep = {
 export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   readonly ctx: SonGuessrContext;
   private readonly dispatcher: SonGuessrDispatcher;
-  /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */
-  private readonly chatLimiter: ChatLimiter;
   /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
   private readonly reservations = new RoomIdReservations();
   private readonly passwordGate: RoomPasswordGate;
@@ -190,7 +184,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
       hasher: options.passwordHasher,
     });
-    this.chatLimiter = new ChatLimiter({ now: () => ctx.now() });
     this.dispatcher = {
       table: createSonGuessrCommands(ctx),
       deps: { ctx, handlers: this },
@@ -405,7 +398,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     const emptyRoomExempt = isTestRoom(this.ctx, room);
     if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
       markIdleWarningSent(room);
-      this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
+      broadcastRoomEvent(this.ctx, room, "song.room.expiring", { roomId: room.id, idle: true });
     }
     const verdict = judgeReclaim(room, onlineCount, currentTime, { emptyRoomExempt });
     switch (verdict) {
@@ -978,36 +971,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     return { hostPlayerId: room.hostPlayerId };
-  }
-
-  sendChat(at: SongCommandAt, rawText: string) {
-    const { connection, room, seat: player } = at;
-    this.chatLimiter.consume(connection.id);
-    const text = acceptChatText(rawText, {
-      maxLength: SONG_CHAT_TEXT_MAX_LENGTH,
-      emptyError: { code: "INVALID_MESSAGE", message: "消息不能为空" },
-    });
-    const message: ChatMessage = {
-      id: this.ctx.ids.next("song_chat"),
-      playerId: player.id,
-      playerName: player.name,
-      text,
-      createdAt: this.ctx.now(),
-      system: false,
-    };
-    appendChat(room, message);
-    this.ctx.touch(room);
-    // 只走增量事件，不再为一条聊天广播整套房间快照：
-    // N 人房间刷 M 条消息会从 O(N×M) 次全量序列化降到 O(N) 次小事件。
-    this.broadcastRoomEvent(room, "song.chat.message", { message });
-    return { sent: true };
-  }
-
-  /** 向房间内所有连接下发一条非状态事件（差量同步通道之外的独立事件）。 */
-  private broadcastRoomEvent(room: SonGuessrRoomRecord, name: string, payload: unknown) {
-    for (const connection of this.ctx.connections.getRoomConnections(room.id)) {
-      connection.send(createEvent(name, payload));
-    }
   }
 
   addBots(at: SongCommandAt, countValue?: number) {

@@ -17,6 +17,7 @@ import {
   searchBangumi,
   searchMusic,
 } from "./MusicCommands";
+import { sendChat } from "./Chat";
 import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import { isRoomStarting, isTestRoom } from "./RoomAccess";
@@ -38,7 +39,6 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "sendChat"
   | "addBots"
   | "removeBots"
   | "startGame"
@@ -219,7 +219,7 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.chat.send": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.sendChat(at, m.payload.text),
+    run: (deps, at, m) => sendChat(deps.ctx, at, m.payload.text),
   },
   "song.auth.qr.create": {
     access: "seat",
