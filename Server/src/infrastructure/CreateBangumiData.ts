@@ -1,8 +1,7 @@
 import { BangumiWorkerProvider } from "./BangumiWorkerProvider";
 import { CEECharacterWorkerProvider } from "./CEECharacterWorkerProvider";
 import { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
-import type { BangumiProviderInit } from "./LocalBangumiProvider";
-import type { CEEDataInit } from "./CEEData";
+import type { DatasetInit } from "./OpenDataset";
 import type { TagDiffOptions } from "./BangumiDataWorker";
 import type { SubjectUpdaterInit } from "./SubjectUpdater";
 import type { R2Config } from "./R2ImageStore";
@@ -18,8 +17,8 @@ export interface BangumiDataBundle {
 
 /** 起**一个**数据 Worker（合流理由见 `BangumiDataWorker`），并给出猜歌与 CEE 两个门面。 */
 export function createBangumiData(options: {
-  song: BangumiProviderInit;
-  cee: CEEDataInit;
+  /** 猜歌与 CEE 共用的数据集与上游配置。 */
+  dataset: DatasetInit;
   tagDiff?: TagDiffOptions;
   imagesDir?: string;
   /** 配上就把新图写进 R2（本地只留索引）；不配则沿用本地分片。 */
@@ -30,8 +29,7 @@ export function createBangumiData(options: {
   // 一次 init 同时建两边的数据源；两个门面共用这个 Promise，不会各发起一次。
   const ready = client.init({
     method: "init",
-    song: options.song,
-    cee: options.cee,
+    dataset: options.dataset,
     tagDiff: options.tagDiff,
     imagesDir: options.imagesDir,
     r2: options.r2,

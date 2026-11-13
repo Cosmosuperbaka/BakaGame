@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
+import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 
 /**
  * 打开本地数据集。
@@ -26,4 +27,23 @@ export function openDataset(path: string, readonly = false): Database {
   const db = readonly ? new Database(path, { readonly: true }) : new Database(path);
   db.exec("PRAGMA busy_timeout = 5000");
   return db;
+}
+
+/**
+ * 数据集的初始化参数：猜歌与 CEE 共用同一个库、同一个回填缓存与同一套上游配置，
+ * 只写一份，由数据线程派生各自链路的选项。只含可结构化克隆的值，所以能跨线程传递。
+ */
+export interface DatasetInit {
+  /** 唯一的数据集路径：猜歌与 CEE 共用同一个库（见 tools/build_bangumi_db.py）。 */
+  dbPath: string;
+  /**
+   * 以**只读**打开 `dbPath`。多进程分片时只有主片可写，其余片必须传 true，
+   * 否则跨进程写同一个库文件会互相等锁。
+   */
+  readonly?: boolean;
+  /** 回填缓存（可写 SQLite）；缺省时不落盘。分片部署时每片应指向各自的文件。 */
+  enrichmentPath?: string;
+  apiBase?: string;
+  imageBase?: string;
+  meilisearch?: Omit<BangumiSearchOptions, "client">;
 }

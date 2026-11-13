@@ -1,12 +1,11 @@
-import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import type { Database } from "bun:sqlite";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { AppError } from "../domain/Errors";
 import { rewriteBangumiImageUrl } from "./BangumiImagePaths";
+import { EnrichmentStore, type BangumiEnrichment } from "./EnrichmentStore";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import type { CEEDirectoryResult, CEEImageSize } from "../shared/CEE";
 import type { CEEDataOptions } from "./CEEData";
@@ -41,14 +40,6 @@ const isHttpUrl = (candidate: string | null | undefined): candidate is string =>
   }
 };
 
-/** 回填缓存的图片载荷。只存**上游原始 URL**，镜像地址在读取时重写。 */
-export interface BangumiEnrichment {
-  /** 长条大图（`large`）：竖版作品海报、图片提示、答案卡。 */
-  image?: string;
-  /** 方格图（`grid`），只有角色存：列表的方形缩略图。 */
-  grid?: string;
-}
-
 /**
  * 一次回源挑出本次要存的**原始**地址，之后按用途各取所需。只有两档，不留中间档：
  *
@@ -81,6 +72,9 @@ export interface CEECharacterSupplement {
 /** 与 LocalBangumiProvider 共用图片表；可变角色资料与目录有各自的版本表。 */
 export class CEEEnrichment {
   readonly db: Database;
+  private readonly store: EnrichmentStore;
+  /** 回填缓存是自己打开的才由自己关闭。 */
+  private readonly ownsStore: boolean;
   private readonly queue = new PQueue({ concurrency: 3 });
   /** 键为 `实体:编号`：角色立绘与作品封面各自合并、各自负缓存 */
   private readonly inFlight = new Map<string, Promise<string | undefined>>();
@@ -93,14 +87,11 @@ export class CEEEnrichment {
   private closed = false;
 
   constructor(options: CEEDataOptions) {
-    if (options.enrichmentPath && options.enrichmentPath !== ":memory:")
-      mkdirSync(dirname(options.enrichmentPath), { recursive: true });
-    this.db = new Database(options.enrichmentPath ?? ":memory:", { create: true });
+    this.store = options.enrichment ?? new EnrichmentStore(options.enrichmentPath);
+    this.ownsStore = !options.enrichment;
+    this.db = this.store.db;
     this.renameLegacyTables();
-    this.db.exec(`PRAGMA busy_timeout=1000;
-      CREATE TABLE IF NOT EXISTS enrichment (
-        entity TEXT NOT NULL, id INTEGER NOT NULL, payload TEXT NOT NULL, fetched_at INTEGER NOT NULL,
-        PRIMARY KEY(entity,id));
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS cee_character_enrichment (
         id INTEGER PRIMARY KEY, schema_version INTEGER NOT NULL, payload TEXT NOT NULL, fetched_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS cee_directories (
@@ -147,13 +138,8 @@ export class CEEEnrichment {
     entity: ImageEntity = "character",
     size: CEEImageSize = "large"
   ): string | undefined {
-    const row = this.db
-      .query<{ payload: string }, [string, number]>(
-        "SELECT payload FROM enrichment WHERE entity=? AND id=?"
-      )
-      .get(entity, id);
-    if (!row) return undefined;
-    const payload = JSON.parse(row.payload) as BangumiEnrichment;
+    const payload = this.store.read(entity, id);
+    if (!payload) return undefined;
     const raw = size === "grid" ? (payload.grid ?? payload.image) : (payload.image ?? payload.grid);
     return rewriteBangumiImageUrl(raw, this.imageBase);
   }
@@ -213,11 +199,7 @@ export class CEEEnrichment {
       this.misses.set(`subject:${id}`, this.now() + MISS_TTL_MS);
       return undefined;
     }
-    this.db
-      .query(
-        "INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=json_patch(payload,excluded.payload),fetched_at=excluded.fetched_at"
-      )
-      .run(id, JSON.stringify(picked), this.now());
+    this.store.merge("subject", id, picked, this.now());
     return rewriteBangumiImageUrl(chosen, this.imageBase);
   }
 
@@ -254,12 +236,7 @@ export class CEEEnrichment {
             "INSERT INTO cee_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at"
           )
           .run(id, JSON.stringify(next), this.now());
-      if (chosen)
-        this.db
-          .query(
-            "INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=json_patch(payload,excluded.payload),fetched_at=excluded.fetched_at"
-          )
-          .run(id, JSON.stringify(picked), this.now());
+      if (chosen) this.store.merge("character", id, picked, this.now());
     })();
     if (!chosen) this.misses.set(`character:${id}`, this.now() + MISS_TTL_MS);
     return chosen ? rewriteBangumiImageUrl(chosen, this.imageBase) : undefined;
@@ -334,6 +311,6 @@ export class CEEEnrichment {
     this.closed = true;
     await Promise.allSettled(this.inFlight.values());
     await this.queue.onIdle();
-    this.db.close();
+    if (this.ownsStore) this.store.close();
   }
 }

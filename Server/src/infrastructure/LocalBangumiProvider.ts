@@ -1,8 +1,7 @@
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
+import { EnrichmentStore, type BangumiEnrichment, type EnrichmentEntity } from "./EnrichmentStore";
 import { bangumiImageUrl } from "./BangumiImagePaths";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index";
 import type {
@@ -87,14 +86,6 @@ const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult =
   metaTags: parseJsonStrings(row.meta_tags),
 });
 
-/** 回填缓存的实体类型：番剧与角色共用同一张表。 */
-export type EnrichmentEntity = "subject" | "character";
-
-/** 回填缓存保存的补充字段。只存**上游原始 URL**，镜像地址在读取时重写。 */
-export interface BangumiEnrichment {
-  image?: string;
-}
-
 export interface LocalBangumiProviderOptions {
   /** 唯一的数据集路径：猜歌与 CEE 共用同一个库（见 tools/build_bangumi_db.py）。 */
   dbPath: string;
@@ -109,6 +100,8 @@ export interface LocalBangumiProviderOptions {
    * 分片部署时每片应指向各自的文件（`BANGUMI_ENRICHMENT_PATH`），别再共用一份。
    */
   enrichmentPath?: string;
+  /** 已构造好的回填缓存；注入后不再按 `enrichmentPath` 另开，由注入方负责关闭。 */
+  enrichment?: EnrichmentStore;
   imageBase?: string;
   apiBase?: string;
   meilisearch?: BangumiSearchOptions;
@@ -126,20 +119,14 @@ export interface LocalBangumiProviderOptions {
   logger?: { warn(message: string, context?: Record<string, unknown>): void };
 }
 
-/** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
-export type BangumiProviderInit = Omit<
-  LocalBangumiProviderOptions,
-  "fetcher" | "meilisearch" | "search" | "logger"
-> & {
-  meilisearch?: Omit<BangumiSearchOptions, "client">;
-};
-
 /** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
 const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
 
 export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly db: Database;
-  private readonly enrichment?: Database;
+  private readonly enrichment?: EnrichmentStore;
+  /** 回填缓存是自己打开的才由自己关闭。 */
+  private readonly ownsEnrichment: boolean;
   private readonly imageBase: string;
   private readonly apiBase: string;
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -156,22 +143,12 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     this.fetcher = options.fetcher ?? fetch;
     this.logger = options.logger;
     this.db = openDataset(options.dbPath, options.readonly);
-    if (options.enrichmentPath) {
-      // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
-      // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。
-      mkdirSync(dirname(options.enrichmentPath), { recursive: true });
-      const enrichment = new Database(options.enrichmentPath, { create: true });
-      // 与 CEE 的回填连接指向同一个文件，两边写入时要互相等锁而不是直接报 busy。
-      enrichment.run("PRAGMA busy_timeout = 1000");
-      enrichment.run(`
-        CREATE TABLE IF NOT EXISTS enrichment (
-          entity TEXT NOT NULL, id INTEGER NOT NULL,
-          payload TEXT NOT NULL, fetched_at INTEGER NOT NULL,
-          PRIMARY KEY(entity, id)
-        )
-      `);
-      this.enrichment = enrichment;
-    }
+    // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
+    // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。
+    this.enrichment =
+      options.enrichment ??
+      (options.enrichmentPath ? new EnrichmentStore(options.enrichmentPath) : undefined);
+    this.ownsEnrichment = !options.enrichment;
     this.search =
       options.search ??
       (options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined);
@@ -191,16 +168,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
 
   /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
   private readEnrichment(entity: EnrichmentEntity, id: number): BangumiEnrichment | undefined {
-    if (!this.enrichment) return undefined;
     try {
-      // bun:sqlite 的 Statement 泛型在多参数下会被推断成数组形态，这里显式声明参数元组。
-      const row = this.enrichment
-        .query<{ payload: string }, [string, number]>(
-          "SELECT payload FROM enrichment WHERE entity = ? AND id = ?"
-        )
-        .get(entity, id);
-      if (!row) return undefined;
-      return JSON.parse(row.payload) as BangumiEnrichment;
+      return this.enrichment?.read(entity, id);
     } catch (error) {
       this.warn("Bangumi 回填缓存读取失败，本次跳过", error);
       return undefined;
@@ -208,13 +177,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   }
 
   private writeEnrichment(entity: EnrichmentEntity, id: number, payload: BangumiEnrichment): void {
-    if (!this.enrichment) return;
     try {
-      this.enrichment
-        .query<null, [string, number, string, number]>(
-          "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = json_patch(payload, excluded.payload), fetched_at = excluded.fetched_at"
-        )
-        .run(entity, id, JSON.stringify(payload), Date.now());
+      this.enrichment?.merge(entity, id, payload, Date.now());
     } catch (error) {
       this.warn("Bangumi 回填缓存写入失败，本次跳过", error);
     }
@@ -414,6 +378,6 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   }
   close() {
     this.db.close();
-    this.enrichment?.close();
+    if (this.ownsEnrichment) this.enrichment?.close();
   }
 }

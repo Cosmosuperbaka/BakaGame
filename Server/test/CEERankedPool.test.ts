@@ -209,8 +209,7 @@ test("Worker 路径返回同一份题库，首猜排名在 Worker 内算好", as
   const client = new BangumiDataWorkerClient();
   const ready = client.init({
     method: "init",
-    song: { dbPath: fixture.dbPath },
-    cee: { dbPath: fixture.dbPath },
+    dataset: { dbPath: fixture.dbPath },
   });
   const provider = new CEECharacterWorkerProvider(client, ready);
   const local = new CEECharacterRepository({

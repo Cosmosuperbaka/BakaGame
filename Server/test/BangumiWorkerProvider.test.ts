@@ -104,8 +104,7 @@ describe("BangumiWorkerProvider", () => {
     const client = new BangumiDataWorkerClient();
     const ready = client.init({
       method: "init",
-      song: { dbPath: songPath },
-      cee: { dbPath: songPath },
+      dataset: { dbPath: songPath },
     });
     const provider = new BangumiWorkerProvider(client, ready);
     const rows = await provider.searchSubjects("测试中", 3);
@@ -127,8 +126,7 @@ describe("BangumiWorkerProvider", () => {
       const client = new BangumiDataWorkerClient();
       void client.init({
         method: "init",
-        song: { dbPath: "unused.sqlite" },
-        cee: { dbPath: "unused.sqlite" },
+        dataset: { dbPath: "unused.sqlite" },
       });
       const delays = spy.mock.calls.map((call) => Number(call[1]));
       // 索引重建分钟级：init 必须是长窗口，否则 ready 被拒后所有查询永久失败。
@@ -144,8 +142,7 @@ describe("BangumiWorkerProvider", () => {
       const client = new BangumiDataWorkerClient();
       const ready = client.init({
         method: "init",
-        song: { dbPath: "unused.sqlite" },
-        cee: { dbPath: "unused.sqlite" },
+        dataset: { dbPath: "unused.sqlite" },
       });
       const provider = new BangumiWorkerProvider(client, ready);
       const worker = DeferredWorker.latest!;
@@ -170,8 +167,7 @@ describe("BangumiWorkerProvider", () => {
       const client = new BangumiDataWorkerClient();
       const ready = client.init({
         method: "init",
-        song: { dbPath: "unused.sqlite" },
-        cee: { dbPath: "unused.sqlite" },
+        dataset: { dbPath: "unused.sqlite" },
       });
       const provider = new BangumiWorkerProvider(client, ready);
       await expect(provider.searchSubjects("关键词", 3)).rejects.toMatchObject({

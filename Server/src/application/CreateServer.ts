@@ -97,22 +97,12 @@ export function createServer(
   // 其余片传 readonly —— 数据集是单一可写文件，跨进程写会等锁，备份与更新器还会互踩。
   const datasetReadonly = env.bangumiDatasetWriter === false;
   const data = createBangumiData({
-    song: {
+    dataset: {
       dbPath: env.bangumiDbPath!,
       readonly: datasetReadonly,
       enrichmentPath: env.bangumiEnrichmentPath,
       imageBase: env.bangumiImageUrl,
       apiBase: env.bangumiApiUrl,
-      meilisearch: env.meilisearchKey
-        ? { apiKey: env.meilisearchKey, host: env.meilisearchUrl }
-        : undefined,
-    },
-    cee: {
-      dbPath: env.bangumiDbPath!,
-      readonly: datasetReadonly,
-      enrichmentPath: env.bangumiEnrichmentPath,
-      apiBase: env.bangumiApiUrl,
-      imageBase: env.bangumiImageUrl,
       meilisearch: env.meilisearchKey
         ? { apiKey: env.meilisearchKey, host: env.meilisearchUrl }
         : undefined,

@@ -226,8 +226,7 @@ test("真实数据 Worker 经只读连接给出快照：只读分片没有更新
   try {
     await client.init({
       method: "init",
-      song: { dbPath, readonly: true },
-      cee: { dbPath, readonly: true },
+      dataset: { dbPath, readonly: true },
     });
     const snapshot = await client.request({ method: "mirror.status" });
     expect(snapshot).toMatchObject({

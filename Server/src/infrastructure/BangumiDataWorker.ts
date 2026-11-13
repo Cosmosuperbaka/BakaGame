@@ -10,12 +10,12 @@ import { scheduleTagDiffSync, syncTagDiff } from "./TagDiffSync";
 import { BangumiImageStore, type ImageStore } from "./BangumiImageStore";
 import { R2ImageStore, R2ImageUploader, type R2Config } from "./R2ImageStore";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { EnrichmentStore } from "./EnrichmentStore";
 import { openDataset } from "./OpenDataset";
 import { SubjectUpdater, type SubjectUpdaterInit } from "./SubjectUpdater";
 import type { AnimeAutoFilters } from "../shared/Index";
 import type { BangumiMirrorSnapshot } from "../shared/BangumiMirror";
-import type { BangumiProviderInit } from "./LocalBangumiProvider";
-import type { CEEDataInit } from "./CEEData";
+import type { DatasetInit } from "./OpenDataset";
 import type { CEECharacterView, CEEImageSize, CEESettings } from "../shared/CEE";
 
 /**
@@ -32,8 +32,8 @@ export type BangumiDataRequest =
   | {
       id: number;
       method: "init";
-      song: BangumiProviderInit;
-      cee: CEEDataInit;
+      /** 猜歌与 CEE 共用的数据集与上游配置，两条链路的选项由本线程派生。 */
+      dataset: DatasetInit;
       tagDiff?: TagDiffOptions;
       imagesDir?: string;
       /** 配上就写 R2（字节上云、本地只留索引）；不配则维持本地分片。 */
@@ -167,6 +167,8 @@ let tagDiff: TagDiffOptions | undefined;
 let images: ImageStore | undefined;
 let updater: SubjectUpdater | undefined;
 let searchIndex: BangumiSearchIndex | undefined;
+/** 两条链路共用的回填缓存：同一个文件只开一条连接，建表与合并写入只有一份。 */
+let enrichment: EnrichmentStore | undefined;
 let datasetPath: string | undefined;
 let datasetWriter = false;
 
@@ -194,14 +196,21 @@ type InitRequest = Extract<BangumiDataRequest, { method: "init" }>;
 type SongRequest = Extract<BangumiDataRequest, { method: `song.${string}` }>;
 type CeeRequest = Extract<BangumiDataRequest, { method: `cee.${string}` }>;
 
+/**
+ * 两条链路共用的选项：数据集路径与上游配置来自同一份初始化参数，
+ * 搜索适配器与回填缓存是本线程唯一的一份——索引只初始化一次、同一个文件只开一条连接。
+ */
+const linkOptions = (request: InitRequest) => {
+  const { meilisearch: _unused, ...dataset } = request.dataset;
+  return { ...dataset, search: searchIndex, enrichment };
+};
+
 /** 猜歌链路建库：失败只记在本侧（两链路可用性各自判定，见文件头）。 */
 const initSongLink = async (request: InitRequest): Promise<void> => {
   try {
     // 玩家点开的条目登记到更新器：闭包引用，更新器晚一步创建也没关系。
     song = new LocalBangumiProvider({
-      ...request.song,
-      // 与 CEE 链路共用同一个搜索适配器：索引只初始化一次，也只有一份连接池。
-      search: searchIndex,
+      ...linkOptions(request),
       onSubjectView: (id) => updater?.requestRefresh(id),
       logger: bridgedLogger("song"),
     });
@@ -215,7 +224,7 @@ const initSongLink = async (request: InitRequest): Promise<void> => {
 /** CEE 链路建库：同样失败只记在该侧，查询时再抛出来。 */
 const initCeeLink = async (request: InitRequest): Promise<void> => {
   try {
-    cee = new CEECharacterRepository({ ...request.cee, search: searchIndex });
+    cee = new CEECharacterRepository(linkOptions(request));
     await cee.initialize();
   } catch (error) {
     cee = undefined;
@@ -259,9 +268,9 @@ const bridgedLogger = (source: string) => ({
 const createUpdater = (request: InitRequest): void => {
   try {
     updater =
-      request.updater && !request.song.readonly
+      request.updater && !request.dataset.readonly
         ? new SubjectUpdater({
-            db: openDataset(request.song.dbPath),
+            db: openDataset(request.dataset.dbPath),
             // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
             search: searchIndex,
             images,
@@ -279,7 +288,7 @@ const createUpdater = (request: InitRequest): void => {
 
 /** 每日维护：补上两份 dump 之间新出的作品与角色。没有这一步，搜索永远搜不到新番。 */
 const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => {
-  const base = (request.song.apiBase ?? "").trim();
+  const base = (request.dataset.apiBase ?? "").trim();
   if (!base) return; // 未配置上游地址时静默跳过（本地开发常见）。
   try {
     const result = await requireCee().discoverNewSubjects(base);
@@ -321,10 +330,10 @@ const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => 
  * 在只读连接上跑只会拿到 `SQLITE_READONLY`，还会把 `discoverNewSubjects` 变成重复打上游。
  */
 const scheduleRuntimeMaintenance = (request: InitRequest): void => {
-  if (request.song.readonly) return;
+  if (request.dataset.readonly) return;
   stopBackup = scheduleDatasetBackup({
-    dbPath: request.song.dbPath,
-    backupPath: `${request.song.dbPath}.backup`,
+    dbPath: request.dataset.dbPath,
+    backupPath: `${request.dataset.dbPath}.backup`,
     logger: bridgedLogger("maintenance.backup"),
     onResult: ({ ok, error }) =>
       updater?.recordMaintenanceRun({
@@ -393,14 +402,22 @@ const readMirrorSnapshot = async (): Promise<BangumiMirrorSnapshot> => ({
 
 /** 两条链路共用一次 init，但分别容错；两边的库各自建索引，串行初始化。 */
 const initRuntime = async (request: InitRequest): Promise<true> => {
-  datasetPath = request.song.dbPath;
-  datasetWriter = !request.song.readonly;
-  searchIndex = request.song.meilisearch?.apiKey
+  datasetPath = request.dataset.dbPath;
+  datasetWriter = !request.dataset.readonly;
+  searchIndex = request.dataset.meilisearch?.apiKey
     ? new BangumiSearchIndex({
-        apiKey: request.song.meilisearch.apiKey,
-        host: request.song.meilisearch.host,
+        apiKey: request.dataset.meilisearch.apiKey,
+        host: request.dataset.meilisearch.host,
       })
     : undefined;
+  // 回填缓存打不开时不在这里一刀切：交给两条链路各自按路径再开一次，各自带着自己的错误码失败。
+  try {
+    enrichment = request.dataset.enrichmentPath
+      ? new EnrichmentStore(request.dataset.enrichmentPath)
+      : undefined;
+  } catch {
+    enrichment = undefined;
+  }
   // 同一进程内共用一个 Meilisearch 客户端即可，但索引写入仍由各自适配器排队，
   // 并发只会让两边互相拖慢。
   await initSongLink(request);
@@ -426,6 +443,8 @@ const closeRuntime = async (): Promise<true> => {
   stopBackup?.();
   stopBackup = undefined;
   await Promise.allSettled([cee, song].map((database) => Promise.resolve(database?.close())));
+  enrichment?.close();
+  enrichment = undefined;
   images?.close();
   images = undefined;
   song = undefined;

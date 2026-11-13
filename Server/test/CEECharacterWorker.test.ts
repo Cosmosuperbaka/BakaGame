@@ -21,7 +21,7 @@ const rejectionOf = (request: Promise<unknown>) =>
  */
 const startCee = (dbPath: string) => {
   const client = new BangumiDataWorkerClient();
-  const ready = client.init({ method: "init", song: { dbPath }, cee: { dbPath } });
+  const ready = client.init({ method: "init", dataset: { dbPath }, });
   return { client, provider: new CEECharacterWorkerProvider(client, ready) };
 };
 
@@ -77,8 +77,7 @@ test("库缺失时两个门面各报自己的错误码，不互相顶替", async
   const client = new BangumiDataWorkerClient();
   const ready = client.init({
     method: "init",
-    song: { dbPath: missing },
-    cee: { dbPath: missing },
+    dataset: { dbPath: missing },
   });
   const song = new BangumiWorkerProvider(client, ready);
   const cee = new CEECharacterWorkerProvider(client, ready);
