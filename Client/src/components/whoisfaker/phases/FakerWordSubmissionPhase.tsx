@@ -9,15 +9,9 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import type { WhoIsFakerRole } from "@bakagame/shared";
-
-const ROLE_FULL_LABELS: Record<WhoIsFakerRole, string> = {
-  civilian: "平民",
-  undercover: "卧底",
-  angel: "天使",
-  blank: "白板",
-};
 
 type WordDraft = { civilianWord: string; undercoverWord: string; blankHint: string };
 
@@ -82,7 +76,7 @@ export function FakerWordSubmissionPhase({
   );
   const roleOptions: SegmentedOption<WhoIsFakerRole>[] = availableRoles.map((availableRole) => ({
     value: availableRole,
-    label: ROLE_FULL_LABELS[availableRole],
+    label: ROLE_LABELS[availableRole],
   }));
 
   const handleRandomRoleChange = (randomRole: boolean) => {
@@ -216,9 +210,7 @@ export function FakerWordSubmissionPhase({
                         key={availableRole}
                         className="flex items-center justify-between gap-2 text-xs"
                       >
-                        <span className="text-muted-foreground">
-                          {ROLE_FULL_LABELS[availableRole]}
-                        </span>
+                        <span className="text-muted-foreground">{ROLE_LABELS[availableRole]}</span>
                         <span
                           className={cn(
                             "font-semibold tabular-nums",
