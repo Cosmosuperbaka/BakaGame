@@ -24,6 +24,15 @@ export const normalizeHttpsUrl = (value: unknown): string | undefined => {
 
 export const normalizeAudioUrl = normalizeHttpsUrl;
 
+/** 只取地址的主机，供日志使用：完整地址可能带令牌。 */
+export const urlHost = (value: string): string => {
+  try {
+    return new URL(value).host;
+  } catch {
+    return "unknown";
+  }
+};
+
 export const responseBody = (response: ApiResponse): Record<string, unknown> => {
   const record = asRecord(response);
   return asRecord("body" in record ? record.body : response);

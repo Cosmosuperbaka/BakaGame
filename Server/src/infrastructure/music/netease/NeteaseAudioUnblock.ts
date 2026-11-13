@@ -62,12 +62,13 @@ const isNeteaseFallbackUrl = (raw: string): boolean => {
 /** 全局音乐解灰：官方接口无可用地址时，按显式优先级逐个音源换取可播放直链。 */
 export class NeteaseAudioUnblocker {
   private readonly generalUnblockEnabled: () => boolean;
+
   /**
-   * 现读解灰开关，并把结果同步回 `process.env.ENABLE_GENERAL_UNBLOCK`：
+   * 把开关值写回 `process.env.ENABLE_GENERAL_UNBLOCK`：
    * 上游封装库读的是那一份，不同步的话后台改了这里、上游那边仍按旧值走。
+   * 只在构造与受限歌曲的解灰判定这两处做，开关本身的读取（`generalUnblockEnabled`）没有副作用。
    */
-  readonly readGeneralUnblock = (): boolean => {
-    const enabled = this.generalUnblockEnabled();
+  private syncLibraryEnv(enabled: boolean): void {
     if (
       typeof process !== "undefined" &&
       process.env &&
@@ -75,8 +76,7 @@ export class NeteaseAudioUnblocker {
     ) {
       process.env.ENABLE_GENERAL_UNBLOCK = String(enabled);
     }
-    return enabled;
-  };
+  }
 
   constructor(
     private readonly gateway: NeteaseApiGateway,
@@ -92,10 +92,18 @@ export class NeteaseAudioUnblocker {
             (typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
               ? process.env.ENABLE_GENERAL_UNBLOCK === "true"
               : true);
-    this.readGeneralUnblock();
+    this.syncLibraryEnv(this.generalUnblockEnabled());
   }
 
-  async unblockSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
+  /** 受限歌曲的解灰入口：按当时的开关值同步环境变量；开关关闭时不发起解灰，返回空串。 */
+  async unblockIfEnabled(songId: string, cookie?: MusicCookieInput): Promise<string> {
+    const enabled = this.generalUnblockEnabled();
+    this.syncLibraryEnv(enabled);
+    if (!enabled) return "";
+    return this.unblockSongAudio(songId, cookie);
+  }
+
+  private async unblockSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
     const sourceTimeoutMs =
       this.options.unblockSourceTimeoutMs ?? DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS;
     const deadline =

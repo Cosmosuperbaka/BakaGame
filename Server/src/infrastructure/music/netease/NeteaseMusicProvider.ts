@@ -26,6 +26,7 @@ import {
   normalizeHttpsUrl,
   normalizeSong,
   readWiki,
+  urlHost,
   responseBody,
 } from "./NeteaseResponse";
 import type { NeteaseMusicProviderOptions } from "./NeteaseTypes";
@@ -603,11 +604,12 @@ export class NeteaseMusicProvider implements MusicProvider {
         let audioUrl = trialOnly ? "" : (normalizeAudioUrl(songData.url) ?? "");
         const isRestricted = !audioUrl || trialOnly || songData.code === 404;
 
-        if (isRestricted && this.unblocker.readGeneralUnblock()) {
-          const unblockedUrl = await this.unblocker.unblockSongAudio(songId, cookie);
+        if (isRestricted) {
+          const unblockedUrl = await this.unblocker.unblockIfEnabled(songId, cookie);
           if (unblockedUrl) {
             audioUrl = unblockedUrl;
-            this.logger?.info("网易云歌曲解灰成功", { songId, audioUrl });
+            // 解灰直链来自第三方聚合站，可能带令牌：日志只记主机。
+            this.logger?.info("网易云歌曲解灰成功", { songId, audioHost: urlHost(audioUrl) });
           }
         }
 
