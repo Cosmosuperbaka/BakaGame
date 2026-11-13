@@ -105,17 +105,9 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   // 一旦声明 crossOrigin="anonymous"，浏览器就会按 CORS 模式拉取媒体、直接判 net::ERR_FAILED，
   // 症状是「服务端解灰成功但客户端立刻 audioFailed」；官方歌曲的网易云 CDN 带 ACAO 所以看不出问题。
   // 全站没有任何 Web Audio / createMediaElementSource 用法，不需要该属性。
-  const audioNode = (
-    <audio
-      ref={(node) => {
-        audioRef.current = node;
-        if (node) node.volume = volume;
-      }}
-      className="hidden"
-      preload="auto"
-      playsInline
-    />
-  );
+  // ref 必须是稳定对象：内联回调每次渲染换身份，React 会先摘后挂并重跑它，
+  // 把淡入淡出中的音量重设成基础音量。初始音量由播放器 Hook 装载时负责。
+  const audioNode = <audio ref={audioRef} className="hidden" preload="auto" playsInline />;
 
   const seoNode = (
     <Seo

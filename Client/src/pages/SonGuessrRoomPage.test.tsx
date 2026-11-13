@@ -764,6 +764,42 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(audio).not.toHaveAttribute("crossorigin");
   });
 
+  it("页面重渲染不得把 audio 音量重设成基础音量，否则起播淡入会被打断", () => {
+    const { container } = renderRoomPage();
+    act(() => {
+      useSonGuessrStore.setState({
+        snapshot: createMockSnapshot({
+          phase: "playing",
+          currentRound: {
+            roundNumber: 1,
+            submitterPlayerId: "player-1",
+            audioUrl: "https://audio.example.com/star.mp3",
+            lyricClip: { startTime: 10_000, endTime: 15_000, lines: [] },
+          },
+        }),
+        privateState: createMockPrivateState({ canGuess: true }),
+      });
+    });
+    const audio = container.querySelector("audio")!;
+    // 淡入包络正把音量压在很低的位置；别人发聊天等快照推送会让页面重渲染。
+    audio.volume = 0.05;
+
+    act(() => {
+      const current = useSonGuessrStore.getState().snapshot!;
+      useSonGuessrStore.setState({
+        snapshot: {
+          ...current,
+          chat: [
+            { id: "m1", playerId: "player-2", playerName: "玩家小红", text: "来了", timestamp: 1 },
+          ] as unknown as SonGuessrRoomSnapshot["chat"],
+        },
+      });
+    });
+
+    expect(container.querySelector("audio")).toBe(audio);
+    expect(audio.volume).toBe(0.05);
+  });
+
   it("听歌猜番结算展示关联歌曲、曲目类型和过滤后的作品标签", () => {
     renderRoomPage();
 
