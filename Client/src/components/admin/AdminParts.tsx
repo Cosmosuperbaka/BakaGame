@@ -12,6 +12,7 @@ import {
 import { Spinner } from "@/components/ui/Spinner";
 import { FormAlert } from "@/components/account/FormAlert";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
+import { apiErrorMessage } from "@/lib/Api";
 import { formatNumber } from "@/lib/AdminFormat";
 import { cn } from "@/lib/Utils";
 
@@ -314,8 +315,15 @@ export function ConfirmDialog({
   const confirm = async () => {
     setBusy(true);
     setError(null);
-    const failure = await onConfirm();
-    setBusy(false);
+    let failure: string | null;
+    try {
+      failure = await onConfirm();
+    } catch (cause) {
+      // 契约是返回失败文案；回调漏接异常时也不能让弹窗永远忙碌。
+      failure = apiErrorMessage(cause, "操作失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
     if (failure) setError(failure);
     else onOpenChange(false);
   };
