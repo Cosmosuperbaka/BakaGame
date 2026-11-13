@@ -7,6 +7,12 @@ import { cn } from "@/lib/Utils";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import { FakerRoleBadge } from "./FakerRoleBadge";
+import {
+  buildNightRows,
+  buildVoteRows,
+  countVotes,
+  voteTargetsOf,
+} from "./FakerPrivilegedActionRows";
 
 interface Props {
   mode: "vote" | "night";
@@ -19,59 +25,15 @@ export function FakerPrivilegedActionPreview({ mode }: Props) {
 
   if (!snapshot || !privateState?.questionerView || !preview) return null;
 
-  const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const roleByPlayerId = new Map(
     privateState.questionerView.map((player) => [player.playerId, player.role])
   );
-  const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
-  const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
-  const eligibleVoters = alivePlayers.filter(
-    (player) => !(snapshot.status.phase === "tieBreak" && tieBreakCandidateIds.includes(player.id))
-  );
-
   const rows =
     mode === "vote"
-      ? eligibleVoters.map((player) => {
-          const vote = preview.votes.find((item) => item.voterId === player.id);
-          return {
-            id: player.id,
-            name: player.name,
-            role: roleByPlayerId.get(player.id),
-            value: vote
-              ? vote.targetId === ABSTAIN_TARGET_ID
-                ? "弃票"
-                : (playerNames.get(vote.targetId) ?? "未知玩家")
-              : "等待投票",
-            pending: !vote,
-          };
-        })
-      : privateState.questionerView
-          .filter(
-            (player) => player.alive && (player.role === "civilian" || player.role === "undercover")
-          )
-          .map((player) => {
-            const action = preview.nightActions.find((item) => item.actorId === player.playerId);
-            return {
-              id: player.playerId,
-              name: playerNames.get(player.playerId) ?? "未知玩家",
-              role: player.role,
-              value: action
-                ? action.targetId
-                  ? (playerNames.get(action.targetId) ?? "未知玩家")
-                  : "无行动"
-                : "等待行动",
-              pending: !action,
-            };
-          });
-
-  const voteTargets =
-    snapshot.status.phase === "tieBreak" && tieBreakCandidateIds.length > 0
-      ? alivePlayers.filter((player) => tieBreakCandidateIds.includes(player.id))
-      : alivePlayers;
-  const voteCounts = new Map<string, number>();
-  for (const vote of preview.votes) {
-    voteCounts.set(vote.targetId, (voteCounts.get(vote.targetId) ?? 0) + 1);
-  }
+      ? buildVoteRows(snapshot, privateState.questionerView, preview)
+      : buildNightRows(snapshot, privateState.questionerView, preview);
+  const voteTargets = voteTargetsOf(snapshot);
+  const voteCounts = countVotes(preview.votes);
   const abstainCount = voteCounts.get(ABSTAIN_TARGET_ID) ?? 0;
 
   return (
