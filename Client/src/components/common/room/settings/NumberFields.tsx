@@ -1,5 +1,6 @@
-import { useEffect, useId, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, type KeyboardEvent } from "react";
 import { Slider } from "@/components/ui/Slider";
+import { useNumberDraft } from "@/components/common/room/settings/UseNumberDraft";
 import { useValueChange } from "@/hooks/UseValueChange";
 import { iconTappable, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -82,22 +83,14 @@ export function SettingStepper({
   const id = useId();
   const descriptionId = useId();
   const readOnly = useSettingsReadOnly();
-  const [draft, setDraft] = useState(String(value));
-  const [synced, setSynced] = useState(value);
-  if (synced !== value) {
-    setSynced(value);
-    setDraft(String(value));
-  }
-  const commit = (next: number) => {
-    const clamped = Math.max(minimum, Math.min(maximum, Math.round(next)));
-    setDraft(String(clamped));
-    if (clamped !== value) onChange(clamped);
-  };
-  const commitDraft = () => {
-    const parsed = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(parsed)) setDraft(String(value));
-    else commit(parsed);
-  };
+  const { draft, setDraft, commit, commitDraft } = useNumberDraft({
+    value,
+    minimum,
+    maximum,
+    onCommit: (next) => {
+      if (next !== undefined) onChange(next);
+    },
+  });
   const change = useValueChange(value);
   const readout = useAnimationControls();
   useEffect(() => {
@@ -310,26 +303,13 @@ function YearInput({
   onCommit: (value: number | undefined) => void;
   disabled: boolean;
 }) {
-  const [draft, setDraft] = useState(value === undefined ? "" : String(value));
-  const [synced, setSynced] = useState(value);
-  if (synced !== value) {
-    setSynced(value);
-    setDraft(value === undefined ? "" : String(value));
-  }
-  const commit = () => {
-    const parsed = Number(draft);
-    if (draft.trim() === "" && optional) {
-      if (value !== undefined) onCommit(undefined);
-      return;
-    }
-    if (draft.trim() === "" || !Number.isFinite(parsed)) {
-      setDraft(value === undefined ? "" : String(value));
-      return;
-    }
-    const clamped = Math.max(minimum, Math.min(maximum, Math.round(parsed)));
-    setDraft(String(clamped));
-    if (clamped !== value) onCommit(clamped);
-  };
+  const { draft, setDraft, commit, commitDraft } = useNumberDraft({
+    value,
+    minimum,
+    maximum,
+    optional,
+    onCommit,
+  });
   // 焦点环由外层「至」凹槽统一画，这里只把落点垫亮，保证数字在 muted 上仍读得清
   return (
     <input
@@ -344,17 +324,14 @@ function YearInput({
       disabled={disabled}
       placeholder={optional ? "不限" : undefined}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      onBlur={commitDraft}
       onKeyDown={(event) => {
-        if (event.key === "Enter") commit();
+        if (event.key === "Enter") commitDraft();
         else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
           event.preventDefault();
           // 留空（不限）时上键落到下限、下键落到上限，与方向键「从哪头进来」的直觉一致
           const up = event.key === "ArrowUp";
-          const next = value === undefined ? (up ? minimum : maximum) : value + (up ? 1 : -1);
-          const clamped = Math.max(minimum, Math.min(maximum, next));
-          setDraft(String(clamped));
-          if (clamped !== value) onCommit(clamped);
+          commit(value === undefined ? (up ? minimum : maximum) : value + (up ? 1 : -1));
         }
       }}
       className="h-7 w-14 rounded-full bg-transparent text-center text-sm font-medium tabular-nums outline-none placeholder:font-normal placeholder:text-muted-foreground focus-visible:bg-background disabled:cursor-not-allowed dark:focus-visible:bg-secondary"

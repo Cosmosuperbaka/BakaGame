@@ -118,37 +118,25 @@ export function StackedField({
   label,
   description,
   htmlFor,
-  labelId,
   descriptionId,
   disabled = false,
   children,
 }: {
   label: string;
   description?: string;
-  htmlFor?: string;
-  labelId?: string;
+  htmlFor: string;
   descriptionId?: string;
   disabled?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="grid gap-2">
-      {htmlFor ? (
-        <Label
-          id={labelId}
-          htmlFor={htmlFor}
-          className={cn("font-serif leading-snug font-normal", disabled && "opacity-50")}
-        >
-          {label}
-        </Label>
-      ) : (
-        <span
-          id={labelId}
-          className={cn("font-serif text-sm leading-snug", disabled && "opacity-50")}
-        >
-          {label}
-        </span>
-      )}
+      <Label
+        htmlFor={htmlFor}
+        className={cn("font-serif leading-snug font-normal", disabled && "opacity-50")}
+      >
+        {label}
+      </Label>
       {children}
       {description ? (
         <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">
