@@ -1,25 +1,21 @@
 import { useState } from "react";
 import type { GameRecordDetail, RecordedGameKind } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
-import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
+  AdminDetailDialog,
+  AdminFilterSelect,
   AdminTable,
   AdminToolbar,
+  ListState,
   Pager,
-  QueryState,
+  QueryStatus,
   RowButton,
 } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList, useDebouncedValue } from "@/hooks/UseAdminList";
 import { api } from "@/lib/Api";
 import {
   GAME_LABELS,
@@ -143,14 +139,7 @@ function GameLoader({ id }: { id: string }) {
   const query = useAdminQuery(`game:${id}`, () => api.admin.games.get({ id }), "对局详情加载失败");
   return (
     <>
-      <QueryState
-        loading={query.loading}
-        error={query.error}
-        empty={false}
-        hasData={Boolean(query.data)}
-        onRetry={query.reload}
-        emptyText=""
-      />
+      <QueryStatus query={query} />
       {query.data ? <GameDetail record={query.data} /> : null}
     </>
   );
@@ -159,54 +148,41 @@ function GameLoader({ id }: { id: string }) {
 export function GamesPanel() {
   const [game, setGame] = useState("");
   const [roomId, setRoomId] = useState("");
-  const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState<{
     id: string;
     game: RecordedGameKind;
     roomId: string;
     roundCount: number;
   } | null>(null);
-  const room = roomId.trim();
-  const input = {
-    ...(game ? { game: game as RecordedGameKind } : {}),
-    ...(room ? { roomId: room } : {}),
+  // 房号是精确匹配，停止输入后再查：输入过程中的中间串不会各发一次请求。
+  const room = useDebouncedValue(roomId.trim());
+  const list = useAdminList({
+    name: "games",
+    filters: {
+      ...(game ? { game: game as RecordedGameKind } : {}),
+      ...(room ? { roomId: room } : {}),
+    },
     limit: LIMIT,
-    offset,
-  };
-  const list = useAdminQuery(
-    `games:${JSON.stringify(input)}`,
-    () => api.admin.games.list(input),
-    "对局记录加载失败"
-  );
-  const items = list.data?.items ?? [];
+    fallback: "对局记录加载失败",
+    fetch: (input) => api.admin.games.list(input),
+  });
+  const { items } = list;
 
   return (
     <div>
-      <AdminToolbar
-        title="对局记录"
-        count={list.data?.total ?? null}
-        onReload={list.reload}
-        loading={list.loading && Boolean(list.data)}
-      >
-        <div className="w-36">
-          <SettingSelect
-            label="游戏"
-            value={game}
-            options={GAME_FILTER}
-            onChange={(value) => {
-              setGame(value);
-              setOffset(0);
-            }}
-          />
-        </div>
+      <AdminToolbar title="对局记录" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-36"
+          label="游戏"
+          value={game}
+          options={GAME_FILTER}
+          onChange={setGame}
+        />
         <div className="w-36">
           <SettingTextField
             label="房间号"
             value={roomId}
-            onChange={(value) => {
-              setRoomId(value.slice(0, 32));
-              setOffset(0);
-            }}
+            onChange={(value) => setRoomId(value.slice(0, 32))}
             placeholder="完整房间号"
           />
         </div>
@@ -214,14 +190,7 @@ export function GamesPanel() {
       <p className="mb-3 text-xs text-muted-foreground">
         对局记录永久保留；一局 = 一个房间从创建到销毁。
       </p>
-      <QueryState
-        loading={list.loading}
-        error={list.error}
-        empty={Boolean(list.data) && !items.length}
-        hasData={Boolean(list.data)}
-        onRetry={list.reload}
-        emptyText="没有符合条件的对局"
-      />
+      <ListState list={list} emptyText="没有符合条件的对局" />
       {items.length ? (
         <AdminTable label="对局列表">
           <thead>
@@ -266,27 +235,17 @@ export function GamesPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={LIMIT} total={list.data?.total ?? 0} onChange={setOffset} />
-      <Dialog
+      <Pager {...list.pager} />
+      <AdminDetailDialog
         open={open !== null}
-        onOpenChange={(next) => {
-          if (!next) setOpen(null);
-        }}
+        onClose={() => setOpen(null)}
+        title={
+          open ? `${GAME_LABELS[open.game]} · ${open.roomId} · ${open.roundCount} 回合` : "对局详情"
+        }
+        description="一局（房间）的回合摘要与全房关键事件时间线；不含歌词、音频与头像等大字段。"
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {open
-                ? `${GAME_LABELS[open.game]} · ${open.roomId} · ${open.roundCount} 回合`
-                : "对局详情"}
-            </DialogTitle>
-            <DialogDescription>
-              一局（房间）的回合摘要与全房关键事件时间线；不含歌词、音频与头像等大字段。
-            </DialogDescription>
-          </DialogHeader>
-          {open ? <GameLoader key={open.id} id={open.id} /> : null}
-        </DialogContent>
-      </Dialog>
+        {open ? <GameLoader key={open.id} id={open.id} /> : null}
+      </AdminDetailDialog>
     </div>
   );
 }
