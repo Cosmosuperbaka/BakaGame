@@ -28,7 +28,8 @@
     "coverage": "pnpm --filter server test:coverage && pnpm --filter client test:coverage",
     "e2e": "pnpm --filter client test:e2e",
     "verify": "pnpm --filter server verify && pnpm --filter client verify",
-    "knip": "knip"
+    "knip": "knip",
+    "knip:prod": "knip --production --config knip.production.jsonc --workspace Client"
   },
   "devDependencies": {
     "knip": "6.41.0",
