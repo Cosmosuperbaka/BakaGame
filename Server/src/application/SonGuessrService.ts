@@ -1,10 +1,5 @@
-import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
-import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
-import { resolveAnimeSong } from "./songuessr/AnimeAutoPick";
-import { resolveSpecifiedAnimeSong } from "./songuessr/AnimeManualList";
 import { clearMusicSession } from "./songuessr/MusicAuth";
-import { loadSongWithSources } from "./songuessr/MusicSongLoading";
 import { scheduleMusicSessionRefresh } from "./songuessr/MusicSessionRefresh";
 import { wakeMusicPoolWaiters, withSongAccount } from "./songuessr/MusicPool";
 import { normalizeAnimeAutoFilters, normalizeAutoFilters } from "./songuessr/AutomaticRounds";
@@ -24,8 +19,6 @@ import {
   SONGUESSR_MAX_TEAM,
   SonGuessrClientMessage,
   SonGuessrRoomSummary,
-  SongClipPreview,
-  SongClipRange,
   type ConnectionRecord,
 } from "../shared/Index";
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
@@ -49,16 +42,10 @@ import {
   requireRoomPlayer,
 } from "./songuessr/RoomAccess";
 import { ensureRoundPlayerState } from "./songuessr/RoundParticipants";
-import { installRound } from "./songuessr/RoundInstall";
-import {
-  extendSubmitterDeadline,
-  isRoomStarting,
-  releasePendingSubmitter,
-} from "./songuessr/RoundFlow";
+import { isRoomStarting, releasePendingSubmitter } from "./songuessr/RoundFlow";
 import { finishRound, isRoundComplete, settlePlayingRound } from "./songuessr/RoundEngine";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { CommandQuota, dispatchCommand } from "./room/CommandTable";
-import { requireMusicQuota } from "./songuessr/MusicCommands";
 import { broadcastRoomEvent } from "./songuessr/Chat";
 import { exportSnapshots, restoreSnapshots } from "./songuessr/SnapshotCodec";
 
@@ -765,151 +752,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     return { hostPlayerId: room.hostPlayerId };
-  }
-
-  /**
-   * 出题人预览自己选中的歌：完整音频地址与逐字歌词，用于片段编辑器。
-   *
-   * 只允许当前待出题人调用，且猜歌阶段一律拒绝：否则猜测者可以借这个命令拿到答案的
-   * 歌词与试听。
-   */
-  async getSongClipPreview(
-    at: SongCommandAt,
-    songId: string,
-    sources?: readonly string[],
-    requiresVip?: boolean
-  ): Promise<{ song: SongClipPreview }> {
-    const { room, seat: player } = at;
-    requireMusicQuota(this.ctx, at);
-    const submitterId = player.id;
-    const { song, alternateSongIds } = await loadSongWithSources(
-      this.ctx,
-      room,
-      songId,
-      sources,
-      requiresVip
-    );
-    if (
-      room.phase !== "submittingSong" ||
-      room.pendingSubmitterPlayerId !== submitterId ||
-      room.players[submitterId] !== player
-    ) {
-      throw new AppError("NOT_SUBMITTER", "出题人已变更，请重新选歌");
-    }
-    // 与自动抽题共用同一套切片：编辑器的默认区间就是「不手动改会播的那一段」。
-    const suggested = createSongLyricClip(
-      song.lyrics,
-      room.settings.lyricsLineCount,
-      this.ctx.random,
-      song.durationMs,
-      songTitleNames(song)
-    );
-    return {
-      song: {
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        pictureUrl: song.pictureUrl,
-        durationMs: song.durationMs,
-        audioUrl: song.audioUrl,
-        lyrics: song.lyrics,
-        chorus: song.chorus,
-        sources: [song.id, ...alternateSongIds],
-        requiresVip: song.requiresVip,
-        suggestedClip: { startTime: suggested.startTime, endTime: suggested.endTime },
-      },
-    };
-  }
-
-  async submitSong(
-    at: SongCommandAt,
-    songId: string,
-    clip?: SongClipRange,
-    sources?: readonly string[],
-    requiresVip?: boolean
-  ) {
-    const { room, seat: player } = at;
-    const submitterId = player.id;
-    // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
-    extendSubmitterDeadline(this.ctx, room);
-    const { song, alternateSongIds } = await loadSongWithSources(
-      this.ctx,
-      room,
-      songId,
-      sources,
-      requiresVip
-    );
-    // 音乐接口是异步的，返回时出题人可能已经退出或被踢；不能再安装一个失去归属的回合。
-    if (
-      room.phase !== "submittingSong" ||
-      room.pendingSubmitterPlayerId !== submitterId ||
-      room.players[submitterId] !== player ||
-      player.membership === "kicked" ||
-      !player.online
-    ) {
-      return { ignored: true };
-    }
-    // 不再按会员状态拦截会员专享曲：`getSong` 已经负责把受限歌曲交给解灰链路取回完整音频，
-    // 拿不到地址时会直接抛 `SONG_UNAVAILABLE`，出题资格以「实际有没有音频」为准。
-    const roundNumber = installRound(
-      this.ctx,
-      room,
-      song,
-      player.id,
-      undefined,
-      undefined,
-      // 关闭自选片段后忽略客户端带来的区间，与没传片段完全一致。
-      createManualLyricClip(song, room.settings.allowCustomClip === false ? undefined : clip)
-    );
-    if (room.currentRound?.number === roundNumber) {
-      room.currentRound.alternateSongIds = alternateSongIds;
-    }
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    this.ctx.publishLobby();
-
-    if (isRoundComplete(this.ctx, room)) {
-      finishRound(this.ctx, room);
-      this.ctx.publishRoom(room);
-    }
-    return { roundNumber };
-  }
-
-  async submitAnime(at: SongCommandAt, subjectId: string, songId?: string) {
-    const { room, seat: player } = at;
-    const provider = this.options.bangumiProvider;
-    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-    const submitterId = player.id;
-    extendSubmitterDeadline(this.ctx, room);
-    const anime = await provider.getSubject(subjectId);
-    const resolved = songId
-      ? await resolveSpecifiedAnimeSong(this.ctx, room, anime, songId)
-      : await resolveAnimeSong(this.ctx, room, anime);
-    if (
-      room.phase !== "submittingSong" ||
-      room.pendingSubmitterPlayerId !== submitterId ||
-      room.players[submitterId] !== player ||
-      player.membership === "kicked" ||
-      !player.online
-    )
-      return { ignored: true };
-    const roundNumber = installRound(
-      this.ctx,
-      room,
-      resolved.song,
-      player.id,
-      anime,
-      resolved.track
-    );
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    this.ctx.publishLobby();
-    if (isRoundComplete(this.ctx, room)) {
-      finishRound(this.ctx, room);
-      this.ctx.publishRoom(room);
-    }
-    return { roundNumber };
   }
 
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {

@@ -23,6 +23,7 @@ import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import { isTestRoom } from "./RoomAccess";
 import { chooseSubmitter, finishGame, isRoomStarting, nextRound, startGame } from "./RoundFlow";
+import { getSongClipPreview, submitAnime, submitSong } from "./SongSubmission";
 import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from "./RoundEngine";
 
 /**
@@ -42,9 +43,6 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "getSongClipPreview"
-  | "submitSong"
-  | "submitAnime"
 >;
 
 export interface SonGuessrCommandDeps {
@@ -249,12 +247,7 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     phases: "any",
     guards: [pendingSubmitterOnly("只有当前出题人可以预览歌曲"), customClipAllowed],
     run: (deps, at, m) =>
-      deps.handlers.getSongClipPreview(
-        at,
-        m.payload.songId,
-        m.payload.sources,
-        m.payload.requiresVip
-      ),
+      getSongClipPreview(deps.ctx, at, m.payload.songId, m.payload.sources, m.payload.requiresVip),
   },
   "song.music.playlist.resolve": {
     access: "seat",
@@ -297,7 +290,8 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     phases: "any",
     guards: [pendingSubmitterOnly("只有当前出题人可以提交歌曲")],
     run: (deps, at, m) =>
-      deps.handlers.submitSong(
+      submitSong(
+        deps.ctx,
         at,
         m.payload.songId,
         m.payload.clip,
@@ -309,7 +303,7 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     access: "seat",
     phases: "any",
     guards: [animeQuestionOnly, pendingSubmitterOnly("只有当前出题人可以提交番剧")],
-    run: (deps, at, m) => deps.handlers.submitAnime(at, m.payload.subjectId, m.payload.songId),
+    run: (deps, at, m) => submitAnime(deps.ctx, at, m.payload.subjectId, m.payload.songId),
   },
   "song.game.audioReady": {
     access: "seat",
