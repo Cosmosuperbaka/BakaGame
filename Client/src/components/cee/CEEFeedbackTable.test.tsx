@@ -113,6 +113,22 @@ describe("角色反馈", () => {
     expect(screen.getByRole("columnheader", { name: "作品数与最高分" })).toBeInTheDocument();
   });
 
+  it("新到的猜中行先翻格、后落锤：「猜中」与成功竖条起步不可见，挂载时已有的猜中行直接显示", () => {
+    const correct: CEEGuess = { ...guess, id: "correct", correct: true, createdAt: 2 };
+    const { rerender } = render(<CEEFeedbackTable guesses={[guess]} />);
+    rerender(<CEEFeedbackTable guesses={[guess, correct]} />);
+    const fresh = screen.getAllByRole("rowheader")[0]!;
+    const mark = within(fresh).getByText("猜中");
+    expect(Number(getComputedStyle(mark).opacity)).toBe(0);
+    expect(fresh.querySelector<HTMLElement>("span[aria-hidden]")?.style.transform).toContain(
+      "scaleY(0)"
+    );
+
+    render(<CEEFeedbackTable guesses={[correct]} />);
+    const settled = screen.getAllByRole("rowheader").at(-1)!;
+    expect(Number(getComputedStyle(within(settled).getByText("猜中")).opacity)).toBe(1);
+  });
+
   it("同步模式才在角色名下标出轮次", () => {
     const { rerender } = render(<CEEFeedbackTable guesses={[guess]} />);
     expect(screen.queryByText(/第 1 轮/)).not.toBeInTheDocument();

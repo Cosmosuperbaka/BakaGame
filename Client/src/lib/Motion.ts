@@ -711,6 +711,28 @@ export const clueFlipChip: Variants = {
   },
 };
 
+/**
+ * 线索开奖的落锤：猜中那一行的格子同时翻到位后，「猜中」标记像回执一样盖上去，给这一轮一个收尾的重音。
+ * 时刻取翻格弹簧第一次翻到位（不等回弹结束），读作「翻完——咚」。只用于新到的猜中行。
+ */
+export const clueHammer = {
+  ...receiptMark,
+  transition: {
+    ...receiptMark.transition,
+    delay: clueFlip.rowDelay + springReachMs(spring.impulse, 1) / 1000,
+  },
+} as const;
+
+/**
+ * 与落锤同一拍：猜中行左侧的成功竖条自上而下落满整行高度。
+ * 竖条贴着行的上下边，用几乎不过冲的 snap：impulse 的回弹会让它戳进下一行。
+ */
+export const clueHammerBar = {
+  initial: { scaleY: 0 },
+  animate: { scaleY: 1 },
+  transition: { ...spring.snap, delay: clueHammer.transition.delay },
+} as const;
+
 export const clueFlipName: Variants = {
   initial: { x: clueFlip.slide, opacity: 0 },
   animate: { x: 0, opacity: 1, transition: spring.swift },

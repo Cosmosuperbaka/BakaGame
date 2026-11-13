@@ -13,6 +13,8 @@ import {
   clueFlipFade,
   clueFlipName,
   clueFlipRow,
+  clueHammer,
+  clueHammerBar,
   listContainer,
   listItem,
   skeletonFade,
@@ -150,9 +152,21 @@ function GuessRow({
           pinned,
           "z-panel w-[6rem] min-w-[6rem] bg-panel py-2 pr-2 pl-3 text-left font-normal @[30rem]:w-[9rem] @[30rem]:min-w-[9rem]",
           guess.correct &&
-            "shadow-[inset_3px_0_0_var(--color-success),inset_-1px_0_0_var(--color-border)]"
+            (fresh
+              ? "shadow-[inset_-1px_0_0_var(--color-border)]"
+              : "shadow-[inset_3px_0_0_var(--color-success),inset_-1px_0_0_var(--color-border)]")
         )}
       >
+        {/* 新到的猜中行：左侧成功竖条与「猜中」一起在格子翻完后落下，作为开奖的落锤；落定后与静态竖条同一位置同一宽度。 */}
+        {guess.correct && fresh ? (
+          <motion.span
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 w-[3px] origin-top bg-success"
+            initial={clueHammerBar.initial}
+            animate={clueHammerBar.animate}
+            transition={clueHammerBar.transition}
+          />
+        ) : null}
         <motion.span
           variants={fresh ? clueFlipName : undefined}
           className="flex items-center gap-2"
@@ -171,10 +185,14 @@ function GuessRow({
                 <span className="whitespace-nowrap">· 第 {guess.syncRound} 轮</span>
               ) : null}
               {guess.correct ? (
-                <span className="inline-flex items-center gap-0.5 text-success">
+                // 新到的猜中行：格子翻完后「猜中」才盖上去，作为这一轮开奖的落锤。
+                <motion.span
+                  {...(fresh ? clueHammer : {})}
+                  className="inline-flex items-center gap-0.5 text-success"
+                >
                   <Check className="size-3" aria-hidden="true" />
                   猜中
-                </span>
+                </motion.span>
               ) : guess.partial ? (
                 <span className="inline-flex items-center gap-0.5 text-warning">
                   <Lightbulb className="size-3" aria-hidden="true" />
