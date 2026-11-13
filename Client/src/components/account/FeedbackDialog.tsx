@@ -182,9 +182,7 @@ function FeedbackForm({
           </span>
         </div>
       </SettingsFields>
-      {error ? (
-        <FormAlert>{error}</FormAlert>
-      ) : null}
+      {error ? <FormAlert>{error}</FormAlert> : null}
       {guest && confirming ? (
         <div
           ref={confirmRef}
