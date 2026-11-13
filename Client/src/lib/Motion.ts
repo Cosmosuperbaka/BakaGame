@@ -214,10 +214,14 @@ export function installMotionTokens(doc: Document = document): void {
  */
 export const countdownTickMs = 100;
 
-/** 倒计时进入最后阶段的脉动：表达真实的持续状态「快到时间了」，不做纯装饰。 */
+/**
+ * 倒计时进入最后阶段的脉动：表达真实的持续状态「快到时间了」，不做纯装饰。
+ * 一拍正好一秒、从进入末段那一刻（读秒换数的时刻）起拍，每次读秒换数都跟着跳一下，像秒针在敲；
+ * 起跳快、回落慢。幅度按 12–16px 的小图标定：再大就从「跳」变成「胀」。
+ */
 export const urgentPulse: { animate: TargetAndTransition; transition: Transition } = {
-  animate: { scale: [1, 1.2, 1] },
-  transition: { duration: 0.8, ease: ease.inOut, repeat: Infinity },
+  animate: { scale: [1, 1.12, 1] },
+  transition: { duration: 1, times: [0, 0.25, 1], ease: [ease.out, ease.inOut], repeat: Infinity },
 };
 
 /** 歌词播放与总览：同一批文字同时移动和缩小，原生布局负责两端位置。 */

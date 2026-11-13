@@ -1,8 +1,9 @@
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Clock3 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
-import { readoutTick, urgentPulse } from "@/lib/Motion";
+import { useUrgentPulse } from "@/hooks/UseUrgentPulse";
+import { readoutTick } from "@/lib/Motion";
 
 /** 剩余秒数不超过该值时转为警示色，图标开始脉动。 */
 const URGENT_SECONDS = 10;
@@ -26,18 +27,18 @@ export function CountdownBadge(props: { deadlineAt: number } | { secondsLeft: nu
   const secondsLeft = "secondsLeft" in props ? props.secondsLeft : ticking;
   const urgent = secondsLeft <= URGENT_SECONDS;
   const milestone = announcedMilestone(secondsLeft);
+  const iconPulse = useUrgentPulse<HTMLSpanElement>(
+    urgent,
+    useReducedMotion(),
+    "deadlineAt" in props ? props.deadlineAt : undefined
+  );
   return (
     <>
       <Badge variant={urgent ? "destructive" : "outline"} className="font-mono" role="timer">
-        {/* 末段的脉动表达「快到时间了」这一持续状态；换 key 让脉动从头开始，回到常态时直接静止。 */}
-        <motion.span
-          key={urgent ? "urgent" : "calm"}
-          className="flex"
-          aria-hidden="true"
-          {...(urgent ? urgentPulse : undefined)}
-        >
+        {/* 末段的脉动表达「快到时间了」这一持续状态，从进入末段的那一秒起拍，与读秒同步。 */}
+        <span ref={iconPulse} className="flex" aria-hidden="true">
           <Clock3 className="h-3.5 w-3.5" />
-        </motion.span>
+        </span>
         {/* 每秒换一个节点，新值从贴近终值的位置顶上来，连续刷新不闪。 */}
         <motion.span
           key={secondsLeft}

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
-import { countdownTickMs, dropIn, readoutSwap, spring, urgentPulse } from "@/lib/Motion";
+import { useUrgentPulse } from "@/hooks/UseUrgentPulse";
+import { countdownTickMs, dropIn, readoutSwap, spring } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -73,12 +74,6 @@ const formatTime = (seconds: number) => {
   const s = seconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
-
-/** 末段图标只在严重警示时呼吸，其余状态静止。 */
-const iconPulse = (isCritical: boolean) =>
-  isCritical
-    ? { animate: urgentPulse.animate, transition: urgentPulse.transition }
-    : { animate: { scale: 1 }, transition: spring.snap };
 
 interface Props {
   className?: string;
@@ -165,7 +160,12 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
   // 有倒计时时全员可见；没有时只有能开启的人看到限时栏。两态共用同一个外框，只替换框内内容。
   const visible = Boolean(phaseTimer) || canControl;
   const tone: TimerTone | "idle" = phaseTimer ? runningTone : "idle";
-  const { animate: iconMotion, transition: iconTransition } = iconPulse(isCritical);
+  // 末段图标只在严重警示时脉动，其余状态静止。
+  const iconPulse = useUrgentPulse<HTMLSpanElement>(
+    isCritical,
+    useReducedMotion(),
+    phaseTimer?.endsAt
+  );
 
   return (
     <AnimatePresence initial={false}>
@@ -204,13 +204,9 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="mr-auto flex min-w-0 items-center gap-2">
-                      <motion.span
-                        animate={iconMotion}
-                        transition={iconTransition}
-                        className="flex shrink-0"
-                      >
+                      <span ref={iconPulse} className="flex shrink-0">
                         <Timer className={cn("h-4 w-4", TONE_ICON[runningTone])} />
-                      </motion.span>
+                      </span>
                       <span className="truncate text-xs font-medium text-muted-foreground">
                         本阶段倒计时
                       </span>
