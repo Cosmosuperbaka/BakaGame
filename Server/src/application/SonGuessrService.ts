@@ -32,7 +32,8 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
 import { tabSeatId } from "./TabSeat";
-import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
+import { ADMIN_CLOSE_REASON, AdminRoomView } from "../domain/AdminRoom";
+import type { GameService } from "./GameService";
 import { AppError } from "../domain/Errors";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { ensureRoomId, normalizeName, normalizeWord } from "../domain/Rules";
@@ -159,7 +160,7 @@ type RoundSweep = {
   units: Set<SonGuessrRoundPlayerState>;
 };
 
-export class SonGuessrService implements AdminRoomControl {
+export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   readonly ctx: SonGuessrContext;
   private readonly dispatcher: SonGuessrDispatcher;
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */

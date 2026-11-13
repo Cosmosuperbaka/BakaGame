@@ -1,4 +1,3 @@
-import { WhoIsFakerService } from "./application/WhoIsFakerService";
 import { readEnv } from "./config/Env";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "./config/Constants";
 import { describeError } from "./infrastructure/EventLogger";
@@ -13,12 +12,10 @@ import {
   SERVER_HEARTBEAT_INTERVAL_MS,
 } from "./infrastructure/Sentry";
 import { createDatabase } from "./infrastructure/db/Database";
-import { DatabaseWordBankRepository } from "./infrastructure/WordBankRepository";
 import { DatabaseGameRecordRepository } from "./infrastructure/db/GameRecordRepository";
 import { GameRecordService } from "./application/GameRecordService";
 import { AppSettings } from "./application/AppSettings";
 import { DatabaseAppSettingRepository } from "./infrastructure/db/AppSettingRepository";
-import { skipTestRooms } from "./domain/GameRecord";
 import { createTestRoomPolicy } from "./domain/TestRooms";
 import { createServer } from "./application/CreateServer";
 import { join } from "node:path";
@@ -58,7 +55,7 @@ database?.ready.then(
 const gameRecords = database
   ? new GameRecordService({ repository: new DatabaseGameRecordRepository(database), logger })
   : undefined;
-// 运行期旋钮在此创建：测试房开关要在三款玩法构造之前就位，且三款共用同一份策略。
+// 运行期旋钮在此创建：测试房开关要在三款玩法构造之前就位（组合根装配时取用），三款共用同一份策略。
 // 缺省关闭——策略现读开关，关闭时测试房号是非法房号。
 const settings = new AppSettings({
   repository: database ? new DatabaseAppSettingRepository(database) : undefined,
@@ -66,20 +63,13 @@ const settings = new AppSettings({
   logger,
 });
 const testRooms = createTestRoomPolicy(() => settings.boolean("enableTestRooms"));
-const whoIsFakerService = new WhoIsFakerService({
-  eventLogger: logger,
-  wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,
-  gameRecorder: gameRecords && skipTestRooms(gameRecords, testRooms),
-  testRooms,
-});
 
 let isShuttingDown = false;
 
 const {
   app,
   dispose,
-  sonGuessrService,
-  ceeService,
+  games,
   reportBangumiLoad,
   statusHistory,
   statusSamples,
@@ -89,7 +79,6 @@ const {
   gameRecords,
   settings,
   testRooms,
-  whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,
   onTriggerShutdown: async () => {
@@ -121,13 +110,13 @@ statusFlushIntervalId.unref();
 // 定时执行房间闲置清理与掉线超时检查。
 // 最短超时窗口为 10 分钟，10 s 轮询足够精度，无需1 s 高频空转。
 const intervalId = setInterval(() => {
-  void whoIsFakerService.runHousekeeping().catch((error: unknown) => {
+  void games.faker.runHousekeeping().catch((error: unknown) => {
     logger.error("房间清理任务执行失败", describeError(error));
   });
-  void sonGuessrService.runHousekeeping().catch((error: unknown) => {
+  void games.song.runHousekeeping().catch((error: unknown) => {
     logger.error("SonGuessr 房间清理任务执行失败", describeError(error));
   });
-  void ceeService.runHousekeeping().catch((error: unknown) => {
+  void games.cee.runHousekeeping().catch((error: unknown) => {
     logger.error("CEE 房间清理任务执行失败", describeError(error));
   });
 }, 10_000);
@@ -145,20 +134,20 @@ function reportRuntimeMetrics(): void {
   // 按游戏分系列上报，不报进程内的和：实时平面全在内存，一个进程只看得见自己承载的流量。
   // 分成多进程部署（一款游戏一个进程）时，同名 gauge 会被后上报的进程覆盖成局部值，
   // 面板上的「在线人数」就凭空少一半；带 game 标签后各进程互不覆盖，跨系列求和仍是全站总数。
-  const games: Array<
+  const perGame: Array<
     [
       game: GameId,
       snapshot: { roomCount: number; connectionCount: number; onlinePlayerCount: number },
     ]
   > = [
-    ["faker", whoIsFakerService.getHealthSnapshot()],
-    ["song", sonGuessrService.getHealthSnapshot()],
-    ["cee", ceeService.getHealthSnapshot()],
+    ["faker", games.faker.getHealthSnapshot()],
+    ["song", games.song.getHealthSnapshot()],
+    ["cee", games.cee.getHealthSnapshot()],
   ];
   // 只累加 players：更新器按它调上游速率。房间/连接数不再聚合上报 —— 分系列之后
   // 全站口径由面板跨系列求和得到，再报一份无标签的 gauge 会被后上报的进程覆盖成局部值。
   let players = 0;
-  for (const [game, snapshot] of games) {
+  for (const [game, snapshot] of perGame) {
     players += snapshot.onlinePlayerCount;
     gaugeServerMetric("bakagame.players.online", snapshot.onlinePlayerCount, { game });
     gaugeServerMetric("bakagame.rooms.active", snapshot.roomCount, { game });
@@ -179,7 +168,7 @@ const snapshotStore = new RoomSnapshotStore({
 const snapshotTargets: RoomSnapshotTargets = {
   store: snapshotStore,
   games: env.shardGames ?? [...ROOM_SNAPSHOT_GAMES],
-  services: { faker: whoIsFakerService, song: sonGuessrService, cee: ceeService },
+  services: games,
   logger,
 };
 // 必须在 listen 之前：先恢复房间，再开始收连接，避免第一条 join 撞上空房间表。
@@ -221,7 +210,7 @@ export const SHUTDOWN_BUDGET_MS =
  * 新增可排队写入的服务时往这张表里加，不在编排里散写。
  */
 const drainTargets: ReadonlyArray<readonly [stage: string, drain: () => unknown]> = [
-  ["drain.faker", () => whoIsFakerService.drainPendingWrites()],
+  ["drain.faker", () => games.faker.drainPendingWrites()],
   ["drain.records", () => gameRecords?.close()],
 ];
 
@@ -263,9 +252,9 @@ const shutdown = (signal?: string): Promise<void> => {
     clearInterval(statusFlushIntervalId);
 
     // 每款游戏独立通知，不能因一款广播失败跳过剩余资源。
-    await attempt("notify.faker", () => whoIsFakerService.notifyShutdown());
-    await attempt("notify.song", () => sonGuessrService.notifyShutdown());
-    await attempt("notify.cee", () => ceeService.notifyShutdown());
+    await attempt("notify.faker", () => games.faker.notifyShutdown());
+    await attempt("notify.song", () => games.song.notifyShutdown());
+    await attempt("notify.cee", () => games.cee.notifyShutdown());
     await attempt("buffer", () => Bun.sleep(SHUTDOWN_BUFFER_MS));
     // 先落盘再排空：排空可能要等对局记录收尾，而快照必须赶在进程退出前写完。
     await attempt("persist", () => {

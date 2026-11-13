@@ -3,6 +3,9 @@ import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../config/env/Observability";
 import { warmUpSensitiveText } from "../infrastructure/SensitiveText";
 import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
+import { WhoIsFakerService } from "./WhoIsFakerService";
+import type { GameServices } from "./GameRegistry";
+import { DatabaseWordBankRepository } from "../infrastructure/WordBankRepository";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
 import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import { StatusSampleStore } from "../infrastructure/StatusSampleStore";
@@ -65,10 +68,13 @@ import type { TestRoomPolicy } from "../domain/TestRooms";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
 export function createServer(
-  options: Omit<AppDependencies, "sonGuessrService" | "ceeService" | "disposeResources"> & {
+  options: Omit<
+    AppDependencies,
+    "whoIsFakerService" | "sonGuessrService" | "ceeService" | "disposeResources"
+  > & {
     database?: Database;
     gameRecords?: GameRecordService;
-    /** 运行期旋钮快照：由入口创建，因为卧底服务要在 `createServer` 之前就拿到测试房策略。 */
+    /** 运行期旋钮快照：由入口创建，测试房策略与它的开关同源。 */
     settings: AppSettings;
     /** 测试房策略：三款玩法共用同一份，与 `settings` 的开关同源。 */
     testRooms: TestRoomPolicy;
@@ -180,6 +186,13 @@ export function createServer(
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   // 测试房的记录与关房收尾不进永久保留的复盘与统计。
   const gameRecorder = gameRecords && skipTestRooms(gameRecords, testRooms);
+  // 三款游戏在这一处装配：缺哪一款，下面的 `GameServices` 都无法成立。
+  const faker = new WhoIsFakerService({
+    eventLogger: logger,
+    wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,
+    gameRecorder,
+    testRooms,
+  });
   const song = new SonGuessrService({
     eventLogger: logger,
     musicProvider: music,
@@ -206,6 +219,7 @@ export function createServer(
     // 账号装配在 CEE 之后（它要拿 CEE 做后台房间控制），所以昵称在调用时才去取。
     resolveRankedName: async (userId) => (await account?.service.displayName(userId)) ?? null,
   });
+  const games: GameServices = { faker, song, cee };
   // 状态事件的部署环境标记与仓储：与状态账本同一口径，先于账号装配创建，两边共用一个实例。
   // 标记缺省读作 development，与 `resolveDeploymentEnvironment` 的缺省一致。
   const statusEnvironment = env.otelDeploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
@@ -214,7 +228,7 @@ export function createServer(
     env,
     database,
     logger,
-    { faker: appOptions.whoIsFakerService, song, cee },
+    games,
     antiCheatReviews,
     settings,
     statusEvents,
@@ -301,6 +315,7 @@ export function createServer(
     statusSamples,
     statusEvents,
     statusExternalProbe,
+    whoIsFakerService: faker,
     sonGuessrService: song,
     ceeService: cee,
     account,
@@ -333,6 +348,8 @@ export function createServer(
   });
   return {
     ...app,
+    /** 三款游戏服务：入口的巡检、停机通知、排空与快照都按它取用。 */
+    games,
     /** 状态账本：启动时读回窗口、运行期定时 flush，由 Index 掌握节奏。 */
     statusHistory,
     statusSamples,

@@ -1,4 +1,4 @@
-import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
+import { ADMIN_CLOSE_REASON, type AdminRoomView } from "../domain/AdminRoom";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { AppError } from "../domain/Errors";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { tabSeatId } from "./TabSeat";
+import type { GameService } from "./GameService";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -122,7 +123,7 @@ interface SettingsPatch {
   password?: string;
 }
 
-export class WhoIsFakerService implements AdminRoomControl {
+export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   // ==================== 房间与状态机总控 ====================
 
   /** 上下文：数据与叶子工具都在这里，子模块只拿它，不拿门面。 */

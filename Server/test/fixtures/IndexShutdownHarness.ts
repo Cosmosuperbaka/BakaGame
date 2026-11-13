@@ -137,14 +137,6 @@ export async function createIndexShutdownHarness(
         return { saved: 0 };
       },
     },
-    "./application/WhoIsFakerService": {
-      WhoIsFakerService: class {
-        constructor() {
-          return service("faker");
-        }
-      },
-    },
-    "./infrastructure/WordBankRepository": { DatabaseWordBankRepository: class {} },
     "./infrastructure/db/Database": {
       createDatabase: () => ({
         ready: Promise.resolve(),
@@ -170,7 +162,6 @@ export async function createIndexShutdownHarness(
       },
     },
     "./infrastructure/db/AppSettingRepository": { DatabaseAppSettingRepository: class {} },
-    "./domain/GameRecord": { skipTestRooms: (recorder: unknown) => recorder },
     "./domain/TestRooms": {
       createTestRoomPolicy: () => ({ isEnabled: () => false, isTestRoom: () => false }),
     },
@@ -223,8 +214,7 @@ export async function createIndexShutdownHarness(
           // 真实装配下 Index 会读回状态历史与实时样本并定时落库；这里空转，只验证它们不拖停机。
           statusHistory: { load: async () => {}, flush: async () => {} },
           statusSamples: { load: async () => {}, flush: async () => {} },
-          sonGuessrService: service("song"),
-          ceeService: service("cee"),
+          games: { faker: service("faker"), song: service("song"), cee: service("cee") },
           // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。
           reportBangumiLoad: () => {},
         };

@@ -2,7 +2,8 @@ import {
   CEE_ORIGINAL_ENTER_MAX_PER_WINDOW,
   CEE_ORIGINAL_ENTER_WINDOW_MS,
 } from "../config/Constants";
-import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
+import type { AdminRoomView } from "../domain/AdminRoom";
+import type { GameService } from "./GameService";
 import { normalizeRoomId } from "../domain/Rules";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
@@ -46,7 +47,7 @@ type CEERankedClientMessage = Extract<CEEClientMessage, { type: CEERankedCommand
 const isCEERankedMessage = (message: CEEClientMessage): message is CEERankedClientMessage =>
   message.type.startsWith("cee.ranked.");
 
-export class CEEService implements AdminRoomControl {
+export class CEEService implements GameService<CEEClientMessage> {
   readonly native: CEENativeService;
   readonly original: CEEOriginalService;
   readonly ranked: CEERankedService;
