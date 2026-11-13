@@ -69,6 +69,29 @@ describe("Agent 动作", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("等待与安静检测正常结束后，signal 上不残留监听（逐字输入也不随字数增长）", async () => {
+    mount(`<input data-agent-control="chat.input" /><button data-agent-control="go">去</button>`);
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+
+    // 带画面回执的步骤要等页面安静（waitForQuiet），逐字输入则是每个字一次等待。
+    await run({ action: "click", control: "go", withView: true });
+    await run({ action: "type", control: "chat.input", text: "一二三四五六七八" });
+    expect(add.mock.calls.length).toBeGreaterThan(8);
+    // 每次挂上的监听都要配对摘除：计时器正常到点时没人再需要它。
+    expect(remove).toHaveBeenCalledTimes(add.mock.calls.length);
+  });
+
+  it("按键事件的 code 与真实键盘一致：字母 KeyX、数字 DigitN、空格 Space，具名键原样，其余为空", async () => {
+    mount(`<input data-agent-control="chat.input" />`);
+    const codes: string[] = [];
+    document.addEventListener("keydown", (event) => codes.push(`${event.key}:${event.code}`));
+
+    await run({ action: "type", control: "chat.input", text: "aB1 嗨" });
+    await run({ action: "press", control: "chat.input", key: "Enter" });
+    expect(codes).toEqual(["a:KeyA", "B:KeyB", "1:Digit1", " :Space", "嗨:", "Enter:Enter"]);
+  });
+
   it("type 省略控件时只能写进当前焦点，焦点不是输入框就失败", async () => {
     mount(`<input data-agent-control="a" /><button data-agent-control="b">按钮</button>`);
     await run({ action: "focus", control: "a" });

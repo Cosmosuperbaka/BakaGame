@@ -36,15 +36,16 @@ const wait = (ms: number, signal: AbortSignal): Promise<void> =>
       reject(new PageActionError("接管已结束"));
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new PageActionError("接管已结束"));
-      },
-      { once: true }
-    );
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new PageActionError("接管已结束"));
+    };
+    // 正常到点也要摘掉监听：接管期间 signal 常驻，逐字输入每个字都挂一个会无限增长。
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 
 /** 等页面安静下来：路由切换、弹窗展开与服务端回包都表现为 DOM 变化，定时刷新的页面靠上限兜底。 */
@@ -54,6 +55,7 @@ const waitForQuiet = (context: PageActionContext): Promise<void> =>
       clearTimeout(quietTimer);
       clearTimeout(limitTimer);
       observer.disconnect();
+      context.signal.removeEventListener("abort", finish);
       resolve();
     };
     let quietTimer = setTimeout(finish, agentPace.quietMs);
@@ -167,11 +169,19 @@ const isTextField = (element: Element | null): element is HTMLInputElement | HTM
   element instanceof HTMLTextAreaElement ||
   (element instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(element.type));
 
+/** 真实键盘的 `code`：字母 `KeyX`、数字 `DigitN`、空格 `Space`，具名键（Enter、Escape……）与键名相同，其余字符没有对应物理键。 */
+const codeOfKey = (key: string): string => {
+  if (/^[a-z]$/i.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  if (key === " " || key === "Space") return "Space";
+  return /^[A-Za-z][A-Za-z0-9]+$/.test(key) ? key : "";
+};
+
 const fireKey = (element: Element, type: string, key: string): boolean =>
   element.dispatchEvent(
     new KeyboardEvent(type, {
       key: key === "Space" ? " " : key,
-      code: key,
+      code: codeOfKey(key),
       bubbles: true,
       cancelable: true,
       composed: true,
