@@ -57,6 +57,23 @@ const roomValidationText = (
     ? "私密房间需要密码，填写后才会保存"
     : "";
 
+/**
+ * 反作弊房里旁观要房主逐个批准，批准过的旁观者局中可见答案，房间开关不参与判定：
+ * 这一项在那里恒为开启、不可改，摘要与说明都改说「由审批把关」。其余增强房读房间设置。
+ */
+const seeAnswersOf = (snapshot: CEERoomSnapshot): boolean =>
+  snapshot.bakaAntiCheat || snapshot.settings.spectatorsSeeAnswers === true;
+
+const seeAnswersSummary = (snapshot: CEERoomSnapshot): string => {
+  if (snapshot.bakaAntiCheat) return "旁观经批准可见答案";
+  return seeAnswersOf(snapshot) ? "旁观可见答案" : "旁观隐藏答案";
+};
+
+const seeAnswersDescription = (snapshot: CEERoomSnapshot): string =>
+  snapshot.bakaAntiCheat
+    ? "反作弊房由旁观审批把关：房主批准的旁观者局中可见答案，其余人要等揭晓。"
+    : "局中把答案与全场猜测发给旁观者与中途加入的人；关闭时他们看不到答案，揭晓后照常公开。";
+
 /** 折叠面板收起时显示的摘要，与面板里的开关口径一致；原版房没有「旁观可见答案」这一项。 */
 const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
   snapshot.visibility === "private"
@@ -65,11 +82,7 @@ const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
       : "私密房间"
     : "公开房间",
   snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-  snapshot.source === "native"
-    ? snapshot.settings.spectatorsSeeAnswers
-      ? "旁观可见答案"
-      : "旁观隐藏答案"
-    : "",
+  snapshot.source === "native" ? seeAnswersSummary(snapshot) : "",
 ];
 
 /**
@@ -80,11 +93,9 @@ const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
 async function saveSpectatorsSeeAnswers(roomId: string, value: boolean): Promise<void> {
   const live = waitingSnapshotOf(roomId);
   if (!live) return;
-  await useCEEStore
-    .getState()
-    .sendCommand("cee.room.settings", {
-      settings: { ...live.settings, spectatorsSeeAnswers: value },
-    });
+  await useCEEStore.getState().sendCommand("cee.room.settings", {
+    settings: { ...live.settings, spectatorsSeeAnswers: value },
+  });
   updateRoomSettingsMemory("cee", (current) => ({
     settings: {
       ...(current?.settings ?? { ...live.settings, allowAgents: false }),
@@ -194,10 +205,10 @@ function RoomSettingsSection({
             />
             <SettingSwitchRow
               label="旁观者可见答案"
-              description="局中把答案与全场猜测发给旁观者与中途加入的人；关闭时他们看不到答案，揭晓后照常公开。"
-              icon={snapshot.settings.spectatorsSeeAnswers ? Eye : EyeOff}
-              checked={snapshot.settings.spectatorsSeeAnswers === true}
-              disabled={seeAnswersPending}
+              description={seeAnswersDescription(snapshot)}
+              icon={seeAnswersOf(snapshot) ? Eye : EyeOff}
+              checked={seeAnswersOf(snapshot)}
+              disabled={seeAnswersPending || snapshot.bakaAntiCheat}
               onCheckedChange={onSeeAnswersChange}
             />
           </>

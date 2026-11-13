@@ -195,6 +195,29 @@ describe("等待页的房间设置草稿", () => {
     expect(screen.getByText("旁观者可见答案")).toBeInTheDocument();
   });
 
+  it("反作弊房：这一项锁定为开启并说明由旁观审批把关，房主也改不了", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const snapshot = room("房名", "me");
+    snapshot.bakaAntiCheat = true;
+    snapshot.settings = { ...snapshot.settings, bakaAntiCheat: true, spectatorsSeeAnswers: false };
+    render(<CEEWaiting snapshot={snapshot} privateState={me} />);
+    // 服务端在反作弊房里不看房间开关：批准过的旁观者局中可见。界面不能照着开关的取值说「隐藏」。
+    expect(screen.getByText("旁观经批准可见答案")).toBeInTheDocument();
+    expect(screen.queryByText("旁观隐藏答案")).not.toBeInTheDocument();
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    const toggle = screen.getByRole("switch", { name: "旁观者可见答案" });
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAccessibleDescription(/旁观审批把关/);
+    await user.click(toggle);
+    expect(send).not.toHaveBeenCalledWith(
+      "cee.room.settings",
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
   it("原版房没有这个设置：不显示该行", async () => {
     const user = userEvent.setup();
     const snapshot = ceeSnapshot({
