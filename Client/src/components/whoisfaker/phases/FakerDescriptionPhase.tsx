@@ -13,6 +13,8 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 
+const EMPTY_ORDER: readonly string[] = [];
+
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
   supplement: { title: "补充发言", icon: MessageSquarePlus, tone: "text-info" },
@@ -74,21 +76,9 @@ const clampToLimit = (text: string): string => {
 };
 
 /**
- * 三种发言阶段统一使用服务端下发的顺序，确保所有客户端看到同一行序；
- * 顺序缺失时才退回各模式自己的待发名单。
- */
-const selectSpeechOrder = (
-  status: WhoIsFakerRoomSnapshot["status"],
-  mode: SpeechMode
-): string[] => {
-  if (status.speechOrder) return status.speechOrder;
-  if (mode === "supplement") return status.pendingSupplementPlayerIds ?? [];
-  if (mode === "tieBreak") return status.tieBreakCandidateIds ?? [];
-  return status.descriptionOrder ?? [];
-};
-
-/**
- * 发言模式：服务端没下发时按阶段回退，PK 阶段的语气仍是 PK。
+ * 发言模式：普通描述时服务端不下发 speechMode，按阶段回退，PK 阶段的语气仍是 PK。
+ * 应发言名单与已提交名单没有回退：描述、补充发言与平票 PK 描述阶段，服务端快照总会下发
+ * speechOrder 与 submittedSpeechPlayerIds，它们是「当前这一列」的唯一定义。
  */
 const resolveSpeechMode = (status: WhoIsFakerRoomSnapshot["status"]): SpeechMode =>
   status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : "normal");
@@ -171,20 +161,13 @@ export function FakerDescriptionPhase() {
   ]);
 
   const submittedPlayerIds = useMemo(
-    () =>
-      new Set(
-        snapshot.status.submittedSpeechPlayerIds ??
-          currentDescriptions.map((description) => description.playerId)
-      ),
-    [currentDescriptions, snapshot.status.submittedSpeechPlayerIds]
+    () => new Set(snapshot.status.submittedSpeechPlayerIds ?? []),
+    [snapshot.status.submittedSpeechPlayerIds]
   );
 
   const myId = privateState?.playerId ?? "";
 
-  const speechOrder = useMemo<string[]>(
-    () => selectSpeechOrder(snapshot.status, mode),
-    [mode, snapshot.status]
-  );
+  const speechOrder = snapshot.status.speechOrder ?? EMPTY_ORDER;
 
   const waitingPlayerIds = useMemo(() => {
     return speechOrder.filter((playerId) => !submittedPlayerIds.has(playerId));

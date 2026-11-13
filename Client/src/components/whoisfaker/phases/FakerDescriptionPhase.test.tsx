@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +30,9 @@ const snapshot: WhoIsFakerRoomSnapshot = {
     day: 1,
     questionerPlayerId: "host_1",
     descriptionOrder: ["player_2", "player_3"],
+    // 服务端在发言阶段总会下发当前这一列的名单，客户端只认它
+    speechOrder: ["player_2", "player_3"],
+    submittedSpeechPlayerIds: [],
   },
   players: [
     {
@@ -126,6 +129,30 @@ describe("DescriptionPhase", () => {
   afterEach(() => {
     resetClockSample();
     vi.useRealTimers();
+  });
+
+  it("发言表只按服务端下发的 speechOrder 与 submittedSpeechPlayerIds 排列", () => {
+    useWhoIsFakerStore.setState({
+      snapshot: {
+        ...snapshot,
+        status: {
+          ...snapshot.status,
+          // 与下发的名单不一致的旧字段不能影响结果
+          descriptionOrder: ["player_2", "player_3"],
+          speechOrder: ["player_3", "player_2"],
+          submittedSpeechPlayerIds: ["player_3"],
+        },
+      },
+      privateState,
+    });
+    render(<FakerDescriptionPhase />);
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows.map((row) => within(row).getByRole("rowheader").textContent)).toEqual([
+      "玩家3",
+      "玩家2",
+    ]);
+    // 玩家3 已提交但内容未公开；轮到本人（玩家2）发言
+    expect(screen.getByPlaceholderText("输入你的描述...")).toBeInTheDocument();
   });
 
   it("当阶段倒计时归零且输入框有内容时，自动提交发言", async () => {
