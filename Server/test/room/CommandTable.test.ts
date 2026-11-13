@@ -208,6 +208,20 @@ describe("命令分发与准入", () => {
       "UNSUPPORTED_COMMAND"
     );
   });
+
+  test("命令类型撞上对象原型上的名字时同样回不支持，不把继承来的成员当命令", async () => {
+    const setup = createSetup();
+    for (const type of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      await expectAppErrorAsync(
+        () =>
+          dispatchCommand(setup.dispatcher, setup.as("host"), {
+            type,
+            payload: {},
+          } as unknown as Message),
+        "UNSUPPORTED_COMMAND"
+      );
+    }
+  });
 });
 
 describe("await 之后的复核 recheck", () => {

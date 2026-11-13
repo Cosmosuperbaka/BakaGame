@@ -129,9 +129,12 @@ export const dispatchCommand = async <
   dispatcher.quota?.(connection, message);
   // 映射类型按命令类型逐条收窄，按运行时的 type 取出来时 TS 只能给出并集；
   // 表的键与 message.type 来自同一份协议类型，这里放宽到整条消息的口径是等价的。
-  const spec = (
-    dispatcher.table as Record<string, CommandSpec<TMessage, TDeps, TRoom, TSeat, TPhase>>
-  )[message.type];
+  const table = dispatcher.table as Record<
+    string,
+    CommandSpec<TMessage, TDeps, TRoom, TSeat, TPhase>
+  >;
+  // 只认表自己的键：`constructor`、`toString` 这类名字在原型上取得到东西，不能被当成命令。
+  const spec = Object.hasOwn(table, message.type) ? table[message.type] : undefined;
   if (!spec) return unsupportedCommand();
   if (spec.access === "lobby") return spec.run(dispatcher.deps, connection, message);
   const { room, seat } = dispatcher.resolveSeat(connection, message);
