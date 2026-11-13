@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { restoreInterruptedTimer } from "../src/application/whoisfaker/PhaseFlow";
+import { restoreInterruptedTimer } from "../src/application/whoisfaker/PhaseTimers";
 import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 

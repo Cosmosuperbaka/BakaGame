@@ -71,13 +71,12 @@ import {
   shouldAutoCloseWhenEmpty,
 } from "./whoisfaker/OfflineSettlement";
 import { clearPendingDisconnect, requeuePendingDisconnects } from "./whoisfaker/PendingDisconnects";
+import { finishRound, handlePhaseTimeout } from "./whoisfaker/PhaseFlow";
 import {
   armPhaseTimer,
   clearPhaseTimer,
   completeSupplementIfReady,
-  finishRound,
-  handlePhaseTimeout,
-} from "./whoisfaker/PhaseFlow";
+} from "./whoisfaker/PhaseTimers";
 import { runBots } from "./whoisfaker/dev/BotActors";
 import {
   clampRoleConfig,

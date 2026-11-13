@@ -18,7 +18,8 @@ import type {
 } from "../../shared/Index";
 import { runBots } from "./dev/BotActors";
 import { broadcastPhaseAndPublish, requeuePendingDisconnects } from "./PendingDisconnects";
-import { armPhaseTimer, clearPhaseTimer, finishRound, restoreInterruptedTimer } from "./PhaseFlow";
+import { finishRound } from "./PhaseFlow";
+import { armPhaseTimer, clearPhaseTimer, restoreInterruptedTimer } from "./PhaseTimers";
 import { publishRoom } from "./RoomPublish";
 import { ensurePhaseNotBlocked } from "./RoundRules";
 import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";

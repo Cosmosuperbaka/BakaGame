@@ -9,7 +9,8 @@ import type { WhoIsFakerClientMessage } from "../../transport/WhoIsFakerProtocol
 import type { WhoIsFakerService } from "../WhoIsFakerService";
 import type { CommandDispatcher, CommandTable, Guard } from "../room/CommandTable";
 import { resolveDisconnect } from "./OfflineSettlement";
-import { advancePhase, startPhaseTimer, stopPhaseTimer } from "./PhaseFlow";
+import { advancePhase } from "./PhaseFlow";
+import { startPhaseTimer, stopPhaseTimer } from "./PhaseTimers";
 import {
   enterBlankGuess,
   reviewBlankGuess,

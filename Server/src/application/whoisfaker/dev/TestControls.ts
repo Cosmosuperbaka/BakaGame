@@ -12,7 +12,8 @@ import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../../config/C
 import { pickBotName, runBots } from "./BotActors";
 import { forceRemovePlayer } from "../OfflineSettlement";
 import { broadcastPhaseAndPublish } from "../PendingDisconnects";
-import { clearPhaseTimer, finishRound, returnRoomToWaiting, startRound } from "../PhaseFlow";
+import { finishRound, returnRoomToWaiting, startRound } from "../PhaseFlow";
+import { clearPhaseTimer } from "../PhaseTimers";
 import { publishRoom } from "../RoomPublish";
 import {
   clampRoleConfig,
