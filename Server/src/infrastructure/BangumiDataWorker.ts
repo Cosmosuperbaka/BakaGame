@@ -11,6 +11,7 @@ import { BangumiImageStore, type ImageStore } from "./BangumiImageStore";
 import { R2ImageStore, R2ImageUploader, type R2Config } from "./R2ImageStore";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import { EnrichmentStore } from "./EnrichmentStore";
+import { BangumiUpstream } from "./BangumiUpstream";
 import { openDataset } from "./OpenDataset";
 import { SubjectUpdater, type SubjectUpdaterInit } from "./SubjectUpdater";
 import type { AnimeAutoFilters } from "../shared/Index";
@@ -169,6 +170,8 @@ let updater: SubjectUpdater | undefined;
 let searchIndex: BangumiSearchIndex | undefined;
 /** 两条链路共用的回填缓存：同一个文件只开一条连接，建表与合并写入只有一份。 */
 let enrichment: EnrichmentStore | undefined;
+/** 唯一的上游出站口：限速时隙由更新器的当前速率决定，没有更新器时不限速。 */
+const upstream = new BangumiUpstream({ rate: () => updater?.rate });
 let datasetPath: string | undefined;
 let datasetWriter = false;
 
@@ -202,7 +205,7 @@ type CeeRequest = Extract<BangumiDataRequest, { method: `cee.${string}` }>;
  */
 const linkOptions = (request: InitRequest) => {
   const { meilisearch: _unused, ...dataset } = request.dataset;
-  return { ...dataset, search: searchIndex, enrichment };
+  return { ...dataset, search: searchIndex, enrichment, upstream };
 };
 
 /** 猜歌链路建库：失败只记在本侧（两链路可用性各自判定，见文件头）。 */
@@ -273,6 +276,7 @@ const createUpdater = (request: InitRequest): void => {
             db: openDataset(request.dataset.dbPath),
             // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
             search: searchIndex,
+            upstream,
             images,
             logger: bridgedLogger("updater"),
             ...request.updater,

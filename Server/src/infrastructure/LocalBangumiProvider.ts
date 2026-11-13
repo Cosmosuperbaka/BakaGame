@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
 import { EnrichmentStore, type BangumiEnrichment, type EnrichmentEntity } from "./EnrichmentStore";
 import { bangumiImageUrl } from "./BangumiImagePaths";
-import { AppError } from "../domain/Errors";
+import { AppError, isAppError } from "../domain/Errors";
 import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index";
 import type {
   AnimeAutoFilters,
@@ -14,7 +14,7 @@ import { BangumiSearchIndex, parseJsonStrings } from "./BangumiSearchIndex";
 import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
 import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
-import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
+import { BangumiUpstream } from "./BangumiUpstream";
 
 /**
  * Bangumi 关联类型码到曲目类型的映射。
@@ -107,7 +107,9 @@ export interface LocalBangumiProviderOptions {
   meilisearch?: BangumiSearchOptions;
   /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
   search?: BangumiSearchIndex;
-  fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
   /**
    * 玩家请求条目时的回调：交给更新器异步回源刷新（阶段 6）。
    *
@@ -129,7 +131,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly ownsEnrichment: boolean;
   private readonly imageBase: string;
   private readonly apiBase: string;
-  private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  private readonly upstream: BangumiUpstream;
   private readonly imageCache = new Map<string, string>();
   private readonly imageMissUntil = new Map<string, number>();
   private readonly search?: BangumiSearchIndex;
@@ -140,7 +142,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   constructor(options: LocalBangumiProviderOptions) {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
     this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
-    this.fetcher = options.fetcher ?? fetch;
+    this.upstream = options.upstream ?? new BangumiUpstream({ fetcher: options.fetcher });
     this.logger = options.logger;
     this.db = openDataset(options.dbPath, options.readonly);
     // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
@@ -212,9 +214,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (!this.apiBase) return undefined;
     try {
       const path = entity === "subject" ? "subjects" : "characters";
-      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, {
-        headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-        signal: AbortSignal.timeout(5000),
+      const response = await this.upstream.fetch(`${this.apiBase}/v0/${path}/${id}`, {
+        headers: { Accept: "application/json" },
+        timeoutMs: 5000,
+        priority: "interactive",
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as { images?: Record<string, unknown> };
@@ -231,8 +234,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       this.writeEnrichment(entity, id, { image: candidate });
       this.imageCache.set(key, image);
       return image;
-    } catch {
-      this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
+    } catch (error) {
+      // 被共享冷却挡回的请求与「这张图有问题」无关，冷却一过就该能再试，不进负缓存。
+      if (!(isAppError(error) && error.code === "BANGUMI_RATE_LIMITED"))
+        this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
       return undefined;
     }
   }

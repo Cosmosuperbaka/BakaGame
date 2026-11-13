@@ -8,6 +8,7 @@ import type {
   CEESubjectSummary,
 } from "../shared/CEE";
 import type { BangumiSearchIndex, BangumiSearchOptions } from "./BangumiSearchIndex";
+import type { BangumiUpstream } from "./BangumiUpstream";
 import type { EnrichmentStore } from "./EnrichmentStore";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
@@ -66,7 +67,9 @@ export interface CEEDataOptions {
   enrichment?: EnrichmentStore;
   apiBase?: string;
   imageBase?: string;
-  fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
   now?: () => number;
   meilisearch?: BangumiSearchOptions;
   /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */

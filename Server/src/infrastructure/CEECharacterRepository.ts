@@ -345,7 +345,13 @@ export class CEECharacterRepository implements CEEDataProvider {
   async discoverNewSubjects(base: string, since?: string): Promise<DiscoveryResult> {
     this.assertOpen();
     await this.ready;
-    return discoverNewSubjects({ db: this.db, base, search: this.search, since });
+    return discoverNewSubjects({
+      db: this.db,
+      base,
+      search: this.search,
+      since,
+      upstream: this.enrichment.upstream,
+    });
   }
 
   async getRawCharacter(id: number): Promise<CEERawCharacter> {

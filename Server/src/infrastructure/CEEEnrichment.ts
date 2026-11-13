@@ -3,10 +3,10 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
-import { AppError } from "../domain/Errors";
+import { AppError, isAppError } from "../domain/Errors";
 import { rewriteBangumiImageUrl } from "./BangumiImagePaths";
 import { EnrichmentStore, type BangumiEnrichment } from "./EnrichmentStore";
-import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
+import { BangumiUpstream } from "./BangumiUpstream";
 import type { CEEDirectoryResult, CEEImageSize } from "../shared/CEE";
 import type { CEEDataOptions } from "./CEEData";
 
@@ -80,10 +80,10 @@ export class CEEEnrichment {
   private readonly inFlight = new Map<string, Promise<string | undefined>>();
   private readonly misses = new LRUCache<string, number>({ max: 1024 });
   private readonly now: () => number;
-  private readonly fetcher: NonNullable<CEEDataOptions["fetcher"]>;
+  /** 与新条目发现共用，所以对外可见。 */
+  readonly upstream: BangumiUpstream;
   private readonly apiBase: string;
   private readonly imageBase: string;
-  private cooldownUntil = 0;
   private closed = false;
 
   constructor(options: CEEDataOptions) {
@@ -97,7 +97,8 @@ export class CEEEnrichment {
       CREATE TABLE IF NOT EXISTS cee_directories (
         id INTEGER PRIMARY KEY, payload TEXT NOT NULL, imported_at INTEGER NOT NULL);`);
     this.now = options.now ?? Date.now;
-    this.fetcher = options.fetcher ?? fetch;
+    this.upstream =
+      options.upstream ?? new BangumiUpstream({ fetcher: options.fetcher, now: options.now });
     this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
     this.imageBase = (options.imageBase ?? "").replace(/\/+$/, "");
   }
@@ -278,23 +279,21 @@ export class CEEEnrichment {
 
   private async request(path: string): Promise<unknown> {
     if (this.closed) throw new AppError("CEE_DATA_UNAVAILABLE", "角色资料服务已关闭");
-    if (this.queue.size >= 6 || this.cooldownUntil > this.now())
+    // 冷却由所有出站共享：别处收到限流时这里也不发请求。
+    if (this.queue.size >= 6 || this.upstream.cooldownRemainingMs() > 0)
       throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
     return this.queue.add(async () => {
-      if (this.cooldownUntil > this.now())
-        throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
       let response: Response;
       try {
-        response = await this.fetcher(`${this.apiBase}${path}`, {
-          headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-          signal: AbortSignal.timeout(5000),
+        response = await this.upstream.fetch(`${this.apiBase}${path}`, {
+          headers: { Accept: "application/json" },
+          timeoutMs: 5000,
+          priority: "interactive",
         });
-      } catch {
+      } catch (error) {
+        if (isAppError(error) && error.code === "BANGUMI_RATE_LIMITED")
+          throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
         throw new AppError("CEE_UPSTREAM_UNAVAILABLE", "暂时无法连接 Bangumi 资料服务");
-      }
-      if (response.status === 429) {
-        this.cooldownUntil = this.now() + 5000;
-        throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
       }
       if (response.status === 404) throw new AppError("CEE_DATA_NOT_FOUND", "Bangumi 资料不存在");
       if (!response.ok) throw new AppError("CEE_IMPORT_FAILED", "读取 Bangumi 资料失败");

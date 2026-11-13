@@ -13,7 +13,7 @@ import {
   type ApiRelation,
   type ApiSubject,
 } from "./BangumiApiTypes";
-import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
+import { BangumiUpstream } from "./BangumiUpstream";
 
 /**
  * 新条目发现：补上「两份 dump 之间新出的作品」。
@@ -40,6 +40,8 @@ export interface DiscoveryOptions {
   /** 相邻候选之间的间隔：上游是公益服务，每日任务不该连续猛打。 */
   pauseMs?: number;
   fetcher?: typeof fetch;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** 单次出站请求超时；缺省取常量。 */
@@ -61,9 +63,9 @@ export interface DiscoveryResult {
 /** 失败样本只留前若干条：上游整体故障时几百条同样的原因没有信息量。 */
 const MAX_FAILURE_SAMPLES = 20;
 
-/** 出站请求的公共上下文：同一次发现共用的取数函数、地址与截止时间。 */
+/** 出站请求的公共上下文：同一次发现共用的出站部件、地址与截止时间。 */
 interface FetchContext {
-  fetcher: typeof fetch;
+  upstream: BangumiUpstream;
   base: string;
   requestTimeoutMs: number;
   /** 总预算的信号；与每个请求自己的超时合并，任何一个触发都中止。 */
@@ -106,7 +108,9 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
   const pauseMs = options.pauseMs ?? DEFAULT_PAUSE_MS;
   const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
   const context: FetchContext = {
-    fetcher: options.fetcher ?? fetch,
+    upstream:
+      options.upstream ??
+      new BangumiUpstream({ fetcher: options.fetcher, now: options.now, sleep: options.sleep }),
     base: options.base,
     requestTimeoutMs: options.requestTimeoutMs ?? BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS,
     budget: AbortSignal.timeout(options.totalBudgetMs ?? BANGUMI_DISCOVERY_TOTAL_BUDGET_MS),
@@ -159,9 +163,12 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
   return result;
 }
 
-/** 单个请求的取消信号：自身超时与整体预算任一触发都中止。 */
-const requestSignal = (context: FetchContext): AbortSignal =>
-  AbortSignal.any([AbortSignal.timeout(context.requestTimeoutMs), context.budget]);
+/** 每个出站请求的时限与优先级：自身超时与整体预算任一触发都中止；发现是后台任务，冷却期内等待。 */
+const requestLimits = (context: FetchContext) => ({
+  timeoutMs: context.requestTimeoutMs,
+  signal: context.budget,
+  priority: "background" as const,
+});
 
 /** 按首播日期过滤 + 分页取全（total 有上限，够一个同步窗口用）。 */
 async function searchSince(context: FetchContext, since: string, limit: number): Promise<number[]> {
@@ -169,19 +176,15 @@ async function searchSince(context: FetchContext, since: string, limit: number):
   let offset = 0;
   while (ids.length < limit) {
     const page = new URLSearchParams({ limit: String(SEARCH_PAGE_SIZE), offset: String(offset) });
-    const response = await context.fetcher(`${context.base}/v0/search/subjects?${page}`, {
+    const response = await context.upstream.fetch(`${context.base}/v0/search/subjects?${page}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": BANGUMI_USER_AGENT,
-      },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         keyword: "",
         filter: { air_date: [`>=${since}`], type: ALL_TYPES },
         sort: "heat",
       }),
-      signal: requestSignal(context),
+      ...requestLimits(context),
     });
     // 搜索失败必须抛出：否则「上游挂了」和「这段时间没有新条目」在结果上一模一样。
     if (!response.ok) throw new Error(`新条目搜索失败：HTTP ${response.status}`);
@@ -397,9 +400,9 @@ function writeMusicRelations(db: Database, subjectId: number, bundle: SubjectBun
  * 作品被当成无角色裁掉，结果里还只记一条「跳过」。每个请求都带超时，挂起的连接卡不死整条任务。
  */
 async function getJson<T>(context: FetchContext, url: string): Promise<T | null> {
-  const response = await context.fetcher(url, {
-    headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-    signal: requestSignal(context),
+  const response = await context.upstream.fetch(url, {
+    headers: { Accept: "application/json" },
+    ...requestLimits(context),
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`上游请求失败：HTTP ${response.status}`);

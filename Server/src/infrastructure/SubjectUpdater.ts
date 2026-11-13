@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
+import { isAppError } from "../domain/Errors";
 import { bangumiImageCachePath } from "./BangumiImagePaths";
 import { hasAvifMagic } from "./BangumiImageService";
 import type { ImageStore } from "./BangumiImageStore";
 import type { BangumiSearchIndex } from "./BangumiSearchIndex";
-import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
+import { BangumiUpstream } from "./BangumiUpstream";
 
 /**
  * 作品在线更新器：让数据集自己保持新鲜，不再依赖「下次构建」。
@@ -86,6 +87,8 @@ export interface SubjectUpdaterOptions extends SubjectUpdaterInit {
   roundLimit?: number;
   roundDelayMs?: number;
   fetcher?: typeof fetch;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
   logger?: SubjectUpdaterLogger;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -126,17 +129,14 @@ export class SubjectUpdater {
   private readonly tiers: RefreshTier[];
   private readonly roundLimit: number;
   private readonly roundDelayMs: number;
-  private readonly fetcher: typeof fetch;
+  private readonly upstream: BangumiUpstream;
   private readonly logger?: SubjectUpdaterLogger;
   private readonly now: () => number;
-  private readonly sleep: (ms: number) => Promise<void>;
 
   private players = 0;
   private running = false;
   private paused = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  /** 下一次请求的最早时刻：限速靠它排队，比滑动窗口更适合「匀速慢跑」。 */
-  private nextSlotAt = 0;
   /** 玩家看过的条目：下一轮优先刷新。 */
   private readonly manual = new Set<number>();
   private lastRound: { at: number; refreshed: number; error: string | null } | undefined;
@@ -154,10 +154,16 @@ export class SubjectUpdater {
     this.tiers = options.tiers ?? DEFAULT_REFRESH_TIERS;
     this.roundLimit = options.roundLimit ?? DEFAULT_ROUND_LIMIT;
     this.roundDelayMs = options.roundDelayMs ?? DEFAULT_ROUND_DELAY_MS;
-    this.fetcher = options.fetcher ?? fetch;
+    this.upstream =
+      options.upstream ??
+      new BangumiUpstream({
+        fetcher: options.fetcher,
+        now: options.now,
+        sleep: options.sleep,
+        rate: () => this.rate,
+      });
     this.logger = options.logger;
     this.now = options.now ?? Date.now;
-    this.sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
     this.ensureSchema();
   }
 
@@ -271,7 +277,6 @@ export class SubjectUpdater {
       // 不做这道闸门的话，热门条目会被重复刷新，白耗上游配额。
       if (!this.isStale(subjectId)) continue;
       if (await this.refresh(subjectId)) refreshed += 1;
-      await this.waitForSlot();
     }
     await this.flushIndex();
     return refreshed;
@@ -358,13 +363,13 @@ export class SubjectUpdater {
   /** 刷新单个作品：拉详情 → 覆盖落库 → 入索引待同步队列。返回是否成功。 */
   async refresh(subjectId: number, tier = 0): Promise<boolean> {
     if (!Number.isInteger(subjectId) || subjectId <= 0) return false;
-    await this.waitForSlot();
     const now = this.now();
     let ok = false;
     try {
-      const response = await this.fetcher(`${this.base}/v0/subjects/${subjectId}`, {
-        headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      const response = await this.upstream.fetch(`${this.base}/v0/subjects/${subjectId}`, {
+        headers: { Accept: "application/json" },
+        timeoutMs: UPSTREAM_TIMEOUT_MS,
+        priority: "background",
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const subject = (await response.json()) as ApiSubject;
@@ -378,6 +383,11 @@ export class SubjectUpdater {
       ok = this.applySubject(subjectId, subject, now);
       if (ok) await this.ensureImage(String(subject.images?.large ?? ""));
     } catch (error) {
+      // 上游限流是全局状态，不是这个条目的错：不记失败、不推退避，条目留在到期集合里下轮再来。
+      if (isAppError(error) && error.code === "BANGUMI_RATE_LIMITED") {
+        this.logger?.info?.(`作品 ${subjectId} 因上游限流本次未刷新`);
+        return false;
+      }
       this.logger?.warn?.(
         `作品 ${subjectId} 刷新失败：${error instanceof Error ? error.message : String(error)}`
       );
@@ -458,11 +468,11 @@ export class SubjectUpdater {
     if (!raw || !this.images || !this.imageSource) return;
     const path = bangumiImageCachePath(raw);
     if (!path || this.images.has(path)) return;
-    await this.waitForSlot();
     try {
-      const response = await this.fetcher(`${this.imageSource}${path}`, {
-        headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      const response = await this.upstream.fetch(`${this.imageSource}${path}`, {
+        headers: { Accept: "image/avif" },
+        timeoutMs: UPSTREAM_TIMEOUT_MS,
+        priority: "background",
       });
       if (!response.ok) return;
       const bytes = new Uint8Array(await response.arrayBuffer());
@@ -565,16 +575,6 @@ export class SubjectUpdater {
           " failures = excluded.failures, next_at = excluded.next_at"
       )
       .run(subjectId, tier, failures, nextAt);
-  }
-
-  /** 等到一个属于自己的请求时隙：限速就靠这一个点，所有回源都得先过它。 */
-  private async waitForSlot(): Promise<void> {
-    const gap = 1_000 / this.rate;
-    const now = this.now();
-    const slot = Math.max(this.nextSlotAt, now);
-    this.nextSlotAt = slot + gap;
-    const wait = slot - now;
-    if (wait > 0) await this.sleep(wait);
   }
 
   /**

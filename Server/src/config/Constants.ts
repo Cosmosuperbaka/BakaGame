@@ -155,3 +155,9 @@ export const BANGUMI_TAG_DIFF_TIMEOUT_MS = 30_000;
 
 /** 角色标签增量：拉取全量标签产物的超时（文件远大于 diff）。 */
 export const BANGUMI_TAG_FULL_TIMEOUT_MS = 120_000;
+
+/** Bangumi 上游共享冷却：收到限流且上游没给等待时长时的默认冷却。 */
+export const BANGUMI_UPSTREAM_COOLDOWN_MS = 5_000;
+
+/** Bangumi 上游共享冷却：上游给出的等待时长的封顶，防止一个异常响应把整条出站长时间冻住。 */
+export const BANGUMI_UPSTREAM_MAX_COOLDOWN_MS = 60_000;
