@@ -4,7 +4,9 @@ import { createContext, runInContext } from "node:vm";
 import path from "node:path";
 import ts from "typescript";
 
+import { eachGame } from "../../src/application/GameRegistry";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "../../src/config/Constants";
+import { GAME_IDS } from "../../src/shared/Protocol";
 
 export const indexSourcePath = path.resolve(import.meta.dir, "../../src/Index.ts");
 export const finalStages = [
@@ -42,6 +44,8 @@ export async function createIndexShutdownHarness(
     failures?: Partial<Record<Stage, "throw" | "false">>;
     hold?: Stage[];
     otlpEnabled?: boolean;
+    /** 每次房务巡检对某款游戏的实际效果；缺省为成功。 */
+    housekeeping?: (game: "faker" | "song" | "cee") => Promise<void>;
   } = {}
 ) {
   const calls: string[] = [];
@@ -50,7 +54,7 @@ export async function createIndexShutdownHarness(
   const gates = new Map(
     (options.hold ?? []).map((stage) => [stage, { started: deferred(), release: deferred() }])
   );
-  const intervals: { ms: number; unrefed: boolean; cleared: number }[] = [];
+  const intervals: { ms: number; unrefed: boolean; cleared: number; fire: () => void }[] = [];
   /** 真实 Index 传给 `app.listen` 的参数，用于断言监听层的载荷上限确实接上了。 */
   const listenOptions: Record<string, unknown>[] = [];
   const timeouts: { ms: number; unrefed: boolean; cleared: number; fire: () => void }[] = [];
@@ -85,6 +89,7 @@ export async function createIndexShutdownHarness(
   const snapshot = () => ({ onlinePlayerCount: 0, roomCount: 0, connectionCount: 0 });
   const service = (game: "faker" | "song" | "cee") => ({
     notifyShutdown: () => execute(`notify.${game}`),
+    runHousekeeping: () => options.housekeeping?.(game) ?? Promise.resolve(),
     getHealthSnapshot: snapshot,
     // 只有谁是卧底自带可排队写入队列；猜歌与 CEE 的落库都汇进共享的对局记录队列，
     // 因此它们没有 drainPendingWrites —— 出现即为凭空造 API。
@@ -122,6 +127,9 @@ export async function createIndexShutdownHarness(
     "./config/Constants": { HTTP_MAX_REQUEST_BODY_BYTES },
     // 房间快照：`join` 只用来拼快照目录，恢复与保存都在停机链路两端，桩里只记账不碰文件系统。
     "node:path": { join: path.join },
+    // 两者都是无副作用的叶子：玩法标识表与逐款遍历，用真实实现，停机顺序才测得到真实的款序。
+    "./shared/Protocol": { GAME_IDS },
+    "./application/GameRegistry": { eachGame },
     "./shared/RoomSnapshot": { ROOM_SNAPSHOT_GAMES: ["faker", "song", "cee"] },
     "./infrastructure/RoomSnapshotStore": {
       RoomSnapshotStore: class {
@@ -229,11 +237,12 @@ export async function createIndexShutdownHarness(
     },
     process: signals,
     Bun: { sleep: (ms: number) => execute("buffer", ms) },
-    setInterval: (_callback: () => void, ms: number) => {
+    setInterval: (callback: () => void, ms: number) => {
       const timer = {
         ms,
         unrefed: false,
         cleared: 0,
+        fire: callback,
         unref() {
           this.unrefed = true;
         },

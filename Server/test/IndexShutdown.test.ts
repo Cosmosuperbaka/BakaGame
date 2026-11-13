@@ -247,3 +247,24 @@ test("真实 Index：未捕获异常与 signal 共享任务和清理，不产生
   expect(harness.exits).toHaveLength(1);
   assertTimers(harness);
 });
+
+test("真实 Index：房务巡检逐款执行，某款失败只记一条带玩法字段的日志，不拖累其余", async () => {
+  const visited: string[] = [];
+  const harness = await createIndexShutdownHarness({
+    housekeeping: async (game) => {
+      visited.push(game);
+      if (game === "song") throw new Error("巡检失败");
+    },
+  });
+  const housekeeping = harness.intervals.find((timer) => timer.ms === 10_000);
+  expect(housekeeping).toBeDefined();
+  housekeeping!.fire();
+  await Bun.sleep(0);
+  expect(visited).toEqual(["faker", "song", "cee"]);
+  const failures = harness.logs.filter((log) => log.message === "房间清理任务执行失败");
+  expect(failures).toHaveLength(1);
+  expect(failures[0]).toMatchObject({
+    level: "error",
+    details: { game: "song", message: "巡检失败" },
+  });
+});
