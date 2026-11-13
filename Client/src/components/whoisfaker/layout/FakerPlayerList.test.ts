@@ -1,10 +1,10 @@
 ﻿import { describe, expect, it } from "vitest";
 
 import type { PublicPlayerView } from "@bakagame/shared";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { buildKnownRoleMap, resolveStatus } from "./FakerPlayerPresentation";
 import {
   COMPACT_PLAYER_COLUMN_WIDTH,
-  PLAYER_COLUMN_WIDTH,
   SPEECH_COLUMN_MIN_WIDTH,
   speechGridTemplate,
 } from "./FakerPlayerListLayout";

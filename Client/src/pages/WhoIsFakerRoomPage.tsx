@@ -24,12 +24,12 @@ import { motion } from "framer-motion";
 import { getSavedUsername, normalizeRoomId, saveUsername } from "@/lib/Storage";
 import { useMinWidth } from "@/hooks/UseMinWidth";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
 import { iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
-  PLAYER_COLUMN_WIDTH,
   FakerPlayerList,
   type PlayerListHistory,
   type PlayerMark,

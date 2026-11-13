@@ -18,6 +18,7 @@ import { FakerRoleBadge } from "./FakerRoleBadge";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import {
+  PLAYER_COLUMN_WIDTH,
   PLAYER_GROUP_TITLE_HEIGHT,
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
@@ -28,11 +29,7 @@ import {
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap, resolveStatus } from "./FakerPlayerPresentation";
-import {
-  COMPACT_PLAYER_COLUMN_WIDTH,
-  PLAYER_COLUMN_WIDTH,
-  speechGridTemplate,
-} from "./FakerPlayerListLayout";
+import { COMPACT_PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./FakerPlayerListLayout";
 import type {
   DescriptionRecord,
   WhoIsFakerPhase,
@@ -60,16 +57,6 @@ const roleSelectedTones: Record<PlayerMark, string> = {
   blank: "bg-muted-foreground text-background",
   angel: "bg-warning text-warning-foreground",
 };
-
-/** 玩家行与发言历史首栏共用的行高，保证两处对齐 */
-export { PLAYER_ROW_HEIGHT, PlayerGroupTitle };
-
-/**
- * 玩家列宽度。分界线、行内首列与面板宽度都由此推导。
- * 必须以 rem 表达：全局字号为 120%，1rem 不等于 16px，
- * 写成像素常量会让分界线落进玩家列内部。
- */
-export { PLAYER_COLUMN_WIDTH } from "./FakerPlayerListLayout";
 
 export interface PlayerListProps {
   players: PublicPlayerView[];

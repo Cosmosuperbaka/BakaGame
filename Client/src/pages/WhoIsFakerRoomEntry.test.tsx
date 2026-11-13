@@ -36,7 +36,6 @@ vi.mock("@/components/common/Seo", () => ({ Seo: () => null }));
 vi.mock("@/components/common/ChatPanel", () => ({ ChatPanel: () => null }));
 vi.mock("@/components/whoisfaker/layout/FakerGameArea", () => ({ FakerGameArea: () => null }));
 vi.mock("@/components/whoisfaker/layout/FakerPlayerList", () => ({
-  PLAYER_COLUMN_WIDTH: 200,
   FakerPlayerList: () => null,
 }));
 vi.mock("@/components/whoisfaker/layout/FakerAssignedWord", () => ({
