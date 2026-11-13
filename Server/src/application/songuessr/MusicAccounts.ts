@@ -320,7 +320,7 @@ export const setPoolSharing = (
  * `cleanupOfflinePlayers` 连号一起清掉。也不看在途数：快照展示、开局复核与
  * VIP 标注只需要知道「这号是否可用」，取号时才卡并发。
  */
-export const isPoolEntryUsable = (entry: SonGuessrMusicPoolEntry, now: number): boolean => {
+const isPoolEntryUsable = (entry: SonGuessrMusicPoolEntry, now: number): boolean => {
   if (!entry.enabled) return false;
   if (isCoolingDown(entry, now)) return false;
   return true;
