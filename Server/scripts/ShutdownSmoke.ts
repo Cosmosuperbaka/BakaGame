@@ -45,11 +45,25 @@ const stderr = tail(child.stderr);
 const sockets: WebSocket[] = [];
 let timedOut = false;
 /**
- * 进程停机总预算（`src/Index.ts` 的 `SHUTDOWN_BUDGET_MS`）：本脚本按它判定「看门狗抢在
- * 完整清理之前把进程干掉」这件事。冒烟脚本不能 import 入口（会真的起服务），所以这里是一份
- * 手抄副本；调进程预算时同步改这一处，父进程再多给 13s 收尾余量。
+ * 停机预算取自入口源码里的同一组常量：冒烟脚本不能 import 入口（会真的起服务），
+ * 所以按名字从源码文本里读出缓冲、遥测出口与清理余量，总预算按入口同一公式相加。
+ * 读不到（常量改名或改写法）时直接失败，而不是悄悄退回一份过期的数字。
  */
-const shutdownBudgetMs = 12_000;
+async function readShutdownBudget(): Promise<{ bufferMs: number; budgetMs: number }> {
+  const source = await Bun.file(path.resolve(import.meta.dir, "../src/Index.ts")).text();
+  const constant = (name: string): number => {
+    const match = source.match(new RegExp(`const ${name} = ([\\d_]+);`));
+    assert.ok(match?.[1], `入口源码里找不到停机常量 ${name}，请同步冒烟脚本的读取方式`);
+    return Number(match[1].replaceAll("_", ""));
+  };
+  const bufferMs = constant("SHUTDOWN_BUFFER_MS");
+  return {
+    bufferMs,
+    budgetMs:
+      bufferMs + constant("SENTRY_EXIT_BUDGET_MS") * 2 + constant("SHUTDOWN_CLEANUP_HEADROOM_MS"),
+  };
+}
+const { bufferMs: shutdownBufferMs, budgetMs: shutdownBudgetMs } = await readShutdownBudget();
 const deadline = setTimeout(() => {
   timedOut = true;
   if (child.exitCode === null) child.kill("SIGKILL");
@@ -194,7 +208,10 @@ try {
   const output = `${await stdout}\n${await stderr}`;
   assert.equal(timedOut, false, "父进程不应强杀 smoke");
   assert.equal(exitCode, 0, output);
-  assert.ok(elapsedMs >= 2_900, `必须执行真实 3 秒缓冲：${elapsedMs}ms`);
+  assert.ok(
+    elapsedMs >= shutdownBufferMs - 100,
+    `必须执行真实 ${shutdownBufferMs / 1000} 秒缓冲：${elapsedMs}ms`
+  );
   assert.ok(elapsedMs < shutdownBudgetMs, `必须在进程总看门狗之前退出：${elapsedMs}ms`);
   assert.deepEqual(
     subscriptions.map((subscription) => subscription.notifications),
