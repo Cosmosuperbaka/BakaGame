@@ -146,7 +146,7 @@ export const createCEENativeCommands = (testRooms: TestRoomPolicy): CEENativeCom
     access: "host",
     phases: "any",
     run: (ctx, { room, seat }, message) => {
-      approveSpectate(ctx.state, room, seat, message.payload.playerId, message.payload.approved);
+      approveSpectate(ctx.state, room, message.payload.playerId, message.payload.approved);
       return { pending: false, membership: seat.membership };
     },
   },

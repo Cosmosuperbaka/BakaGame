@@ -55,7 +55,6 @@ export function requestSpectate(
 export function approveSpectate(
   ctx: SpectateContext,
   room: CEERoom,
-  actor: CEEPlayerRecord,
   id: string,
   approved: boolean
 ): void {
