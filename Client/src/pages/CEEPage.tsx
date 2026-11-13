@@ -131,8 +131,8 @@ export default function CEEPage() {
   return (
     <LobbyPage
       path="/cee"
-      title="二刺猿笑传之猜猜呗"
-      subtitle="Enhanced Edition"
+      title="CEE"
+      subtitle="二刺猿笑传之猜猜呗增强版"
       rooms={rooms.map(toRoomView)}
       loading={isInitialLoading || leaving}
       disabled={leaving || pending}

@@ -80,7 +80,7 @@ describe("LandingPage", () => {
     expect(screen.queryByRole("link", { name: "隐私说明" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "用户条款" })).not.toBeInTheDocument();
 
-    const status = screen.getByRole("button", { name: "服务状态" });
+    const status = screen.getByRole("link", { name: "服务状态" });
     expect(status.querySelector("svg")).toBeInTheDocument();
     expect(status.className).not.toContain("underline");
   });
@@ -146,7 +146,7 @@ describe("LandingPage", () => {
     renderLandingPage();
 
     const entry = screen.getByRole("button", { name: "下载客户端" });
-    const status = screen.getByRole("button", { name: "服务状态" });
+    const status = screen.getByRole("link", { name: "服务状态" });
     const row = status.parentElement as HTMLElement;
     expect(entry.parentElement).toBe(row);
     expect(Array.from(row.children).indexOf(entry)).toBeLessThan(
@@ -188,18 +188,33 @@ describe("LandingPage", () => {
     expect(ceeEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
     expect(within(ceeEntry).getAllByText("即将上线")).toHaveLength(1);
 
-    expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
-    expect(within(ceeEntry).getByRole("button", { name: /排位赛/ })).toBeEnabled();
+    expect(within(ceeEntry).getByRole("link", { name: /多人模式/ })).toBeEnabled();
+    expect(within(ceeEntry).getByRole("link", { name: /排位赛/ })).toBeEnabled();
     expect(within(ceeEntry).getByText("多人模式")).toBeInTheDocument();
     expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
 
     // Songuessr 两个子模式都已开放，不应再出现即将上线角标
     expect(within(songEntry).queryByText("即将上线")).not.toBeInTheDocument();
 
-    // 可用游戏：Who is Faker 为正常入口 button；Songuessr 单人模式与多人模式均为交互 button
-    expect(screen.getByRole("button", { name: /Who is Faker/ })).toBeInTheDocument();
-    expect(within(songEntry).getByRole("button", { name: /多人模式/ })).toBeInTheDocument();
-    expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
+    // 可用入口都是真链接：抓取器、中键与「在新标签页打开」都拿得到地址。
+    expect(screen.getByRole("link", { name: /Who is Faker/ })).toHaveAttribute(
+      "href",
+      "/whoisfaker"
+    );
+    expect(within(ceeEntry).getByRole("link", { name: /多人模式/ })).toHaveAttribute(
+      "href",
+      "/cee"
+    );
+    expect(within(ceeEntry).getByRole("link", { name: /排位赛/ })).toHaveAttribute(
+      "href",
+      "/cee/ranked"
+    );
+    expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toHaveAttribute(
+      "href",
+      "/songuessr/solo"
+    );
+    expect(within(songEntry).getByRole("link", { name: /多人模式/ })).toBeInTheDocument();
+    expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toBeInTheDocument();
   });
 
   it("排位入口被服务端关掉后置灰标注暂时关闭，同卡其它入口照常", async () => {
@@ -215,7 +230,7 @@ describe("LandingPage", () => {
     await waitFor(() => expect(within(ceeEntry).getByText("暂时关闭")).toBeInTheDocument());
 
     // 入口仍在页面上，只是不再是按钮：看得出这个玩法存在，但点不进去。
-    expect(within(ceeEntry).queryByRole("button", { name: /排位赛/ })).not.toBeInTheDocument();
+    expect(within(ceeEntry).queryByRole("link", { name: /排位赛/ })).not.toBeInTheDocument();
     const rankedLabel = within(ceeEntry).getByText("排位赛");
     expect(rankedLabel.closest('[aria-disabled="true"]')).not.toBeNull();
 
@@ -224,7 +239,7 @@ describe("LandingPage", () => {
     expect(window.location.pathname).toBe("/");
 
     // 同卡其它入口照常：多人模式可点，锦标赛仍是「即将上线」，两种不可用态不混用文案。
-    expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    expect(within(ceeEntry).getByRole("link", { name: /多人模式/ })).toBeEnabled();
     expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
     expect(within(ceeEntry).getByText("即将上线")).toBeInTheDocument();
   });
@@ -243,7 +258,7 @@ describe("LandingPage", () => {
     const fakerEntry = screen.getByTestId("game-entry-whoisfaker");
     await waitFor(() => expect(within(fakerEntry).getByText("暂时关闭")).toBeInTheDocument());
     // 单一入口的卡片不消失，「开始游戏」换成点不进去的占位格。
-    expect(within(fakerEntry).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(fakerEntry).queryByRole("link")).not.toBeInTheDocument();
     const startLabel = within(fakerEntry).getByText("开始游戏");
     expect(startLabel.closest('[aria-disabled="true"]')).not.toBeNull();
     await user.click(startLabel);
@@ -252,8 +267,8 @@ describe("LandingPage", () => {
     // 只关单人：同卡的多人入口照常可点。
     const songEntry = screen.getByTestId("game-entry-songuessr");
     expect(within(songEntry).getByText("暂时关闭")).toBeInTheDocument();
-    expect(within(songEntry).queryByRole("button", { name: /单人模式/ })).not.toBeInTheDocument();
-    expect(within(songEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    expect(within(songEntry).queryByRole("link", { name: /单人模式/ })).not.toBeInTheDocument();
+    expect(within(songEntry).getByRole("link", { name: /多人模式/ })).toBeEnabled();
     // 没关的游戏不受影响。
     const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
     expect(within(ceeEntry).queryByText("暂时关闭")).not.toBeInTheDocument();
@@ -281,7 +296,9 @@ describe("LandingPage", () => {
       </MemoryRouter>
     );
 
-    await user.click(screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ }));
+    const version = screen.getByRole("link", { name: /^V\d+\.\d+\.\d+/ });
+    expect(version).toHaveAttribute("href", "/abouts?tab=changelog");
+    await user.click(version);
 
     expect(await screen.findByText("credits/abouts?tab=changelog")).toBeInTheDocument();
     // 弹窗入口已经删除：版本详情只在完整页面上出现。
@@ -354,10 +371,61 @@ describe("LandingPage", () => {
     );
     await userEvent
       .setup({ advanceTimers: vi.advanceTimersByTime })
-      .click(screen.getByRole("button", { name: button }));
+      .click(screen.getByRole("link", { name: button }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     expect(screen.getByRole("heading", { name: destination })).toBeInTheDocument();
+  });
+
+  it("服务状态是指向状态页的真链接", () => {
+    renderLandingPage();
+    expect(screen.getByRole("link", { name: "服务状态" })).toHaveAttribute("href", "/status");
+  });
+
+  // 首页标题之下一行说清站里有什么，每张卡片一行游戏简介：文字与分享卡片、外壳取自同一份 PageMeta。
+  it("标题下有一行站点说明，每张游戏卡有一行简介", () => {
+    renderLandingPage();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "谁是卧底、听歌猜歌、猜动漫角色。开一间房，把房号发进群。"
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("game-entry-whoisfaker")).getByText("出题人现场写词的谁是卧底")
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("game-entry-songuessr")).getByText("听歌识曲，也听歌识番")
+    ).toBeInTheDocument();
+    const cee = screen.getByTestId("game-entry-animecharguessr");
+    expect(within(cee).getByText("CEE")).toBeInTheDocument();
+    expect(within(cee).getByText("二刺猿笑传之猜猜呗增强版")).toBeInTheDocument();
+  });
+
+  it("中键或带修饰键点入口时交还浏览器，不在当前页导航", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <TooltipProvider>
+                <LandingPage />
+              </TooltipProvider>
+            }
+          />
+          <Route path="/cee" element={<h1>猜角色大厅</h1>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const link = within(screen.getByTestId("game-entry-animecharguessr")).getByRole("link", {
+      name: /多人模式/,
+    });
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
+    link.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("heading", { name: "猜角色大厅" })).not.toBeInTheDocument();
   });
 });

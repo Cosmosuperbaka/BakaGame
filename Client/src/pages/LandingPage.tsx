@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer } from "@/lib/motion/Choreography";
 import { iconTappable, pressable } from "@/lib/motion/Feedback";
-import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
+import { usePageLinkClick, useSharedElementName } from "@/hooks/UsePageTransition";
 import { Activity, ArrowUpRight } from "lucide-react";
 import { BrandIcon } from "@/components/common/BrandIcon";
 import type { BrandIconName } from "@/data/BrandIconPaths";
@@ -18,7 +18,7 @@ import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
 // 展示版本号构建期从 changelog.json 解析（与致谢页同一真相源），整份日志不随首屏下载。
 import appVersion from "virtual:app-version";
 import { currentCommit } from "virtual:build-info";
-import { REPOSITORY_URL } from "@/data/PageMeta";
+import { REPOSITORY_URL, findPageMeta } from "@/data/PageMeta";
 import { useSiteFeatures, type SiteFeatures } from "@/lib/SiteConfig";
 import { cn } from "@/lib/Utils";
 
@@ -42,8 +42,8 @@ interface GameEntry {
   icon: string;
   /** 条目主标题 */
   title: string;
-  /** 条目副标题；无副标题时省略 */
-  subtitle?: string;
+  /** 卡片标题下的一行简介：取自该游戏 PageMeta 的 oneLiner，与分享卡片、静态外壳说同一件事 */
+  intro?: string;
   available: boolean;
   /** 单一入口游戏挂的服务端开关，语义同子模式的 `feature`。 */
   feature?: keyof SiteFeatures;
@@ -57,6 +57,7 @@ const GAMES: GameEntry[] = [
     lobbyPath: "/whoisfaker",
     icon: "/assets/Faker.png",
     title: "Who is Faker",
+    intro: findPageMeta("/whoisfaker")?.oneLiner,
     available: true,
     feature: "fakerEntry",
   },
@@ -65,6 +66,7 @@ const GAMES: GameEntry[] = [
     lobbyPath: "/songuessr",
     icon: "/assets/SongGuessr.gif",
     title: "Songuessr",
+    intro: findPageMeta("/songuessr")?.oneLiner,
     available: true,
     subModes: [
       {
@@ -88,8 +90,9 @@ const GAMES: GameEntry[] = [
     path: "/cee",
     lobbyPath: "/cee",
     icon: "/assets/CEE.jpg",
-    title: "二刺猿笑传之猜猜呗",
-    subtitle: "Enhanced Edition",
+    // 正式名是 CEE，原版名放进简介：页面标题、大厅与搜索结果里是同一个名字。
+    title: "CEE",
+    intro: findPageMeta("/cee")?.oneLiner,
     available: true,
     subModes: [
       {
@@ -180,10 +183,8 @@ function GameIdentity({ game }: { game: GameEntry }) {
         >
           {game.title}
         </div>
-        {game.subtitle ? (
-          <div className="mt-0.5 truncate font-serif text-xs text-muted-foreground">
-            {game.subtitle}
-          </div>
+        {game.intro ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{game.intro}</p>
         ) : null}
       </div>
     </div>
@@ -191,16 +192,17 @@ function GameIdentity({ game }: { game: GameEntry }) {
 }
 
 function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }) {
-  const navigate = usePageNavigate();
+  const linkClick = usePageLinkClick();
   // 只用来挡住重复点击：分块还在加载时旧页仍可点，第二次点击会往历史里再压一条同样的记录。
   const [enteringPath, setEnteringPath] = useState<string | null>(null);
 
-  // 立即导航：旧页连同按下的按钮一起定格成过渡快照向前退出，离开当前页读作这次点击的结果。
-  const handleEnter = (targetPath?: string) => {
-    if (!targetPath || enteringPath) return;
-    setEnteringPath(targetPath);
-    void navigate(targetPath);
-  };
+  // 入口是真链接（抓取器、中键与新标签页拿得到地址）；普通左键立即导航：
+  // 旧页连同按下的入口一起定格成过渡快照向前退出，离开当前页读作这次点击的结果。
+  const handleEnter = (targetPath: string) =>
+    linkClick(targetPath, () => {
+      if (enteringPath) return false;
+      setEnteringPath(targetPath);
+    });
 
   // 单一入口游戏被后台临时关掉：卡片照常呈现，入口按钮换成「暂时关闭」的占位格。
   const isGameClosed = game.available && Boolean(game.feature && !features[game.feature]);
@@ -241,14 +243,20 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
               </div>
             ) : (
               <Button
+                asChild
                 variant="outline"
                 size="sm"
-                aria-label={`${game.title} 开始游戏`}
-                data-agent-control={`site.game.${game.id}`}
-                onClick={() => handleEnter(game.path)}
                 className="h-8 w-full text-xs sm:text-sm font-medium"
               >
-                开始游戏
+                <motion.a
+                  href={game.path}
+                  aria-label={`${game.title} 开始游戏`}
+                  data-agent-control={`site.game.${game.id}`}
+                  onClick={game.path ? handleEnter(game.path) : undefined}
+                  {...pressable}
+                >
+                  开始游戏
+                </motion.a>
               </Button>
             )}
           </div>
@@ -285,7 +293,7 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
             // 三个子模式在窄屏排成两行，首项独占一行：三等分时每格不到 110px，放不下模式名加「即将上线」。
             const spanClass = subModeCount === 3 && index === 0 ? "max-sm:col-span-2" : "";
 
-            if (!isModeAvailable) {
+            if (!isModeAvailable || !mode.path) {
               return (
                 <div key={mode.id} aria-disabled="true" className={cn(closedSlotClass, spanClass)}>
                   <span className="truncate">{mode.title}</span>
@@ -297,14 +305,20 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
             return (
               <Button
                 key={mode.id}
+                asChild
                 variant="outline"
                 size="sm"
-                aria-label={`${game.title} ${mode.title}`}
-                data-agent-control={`site.mode.${mode.id}`}
-                onClick={() => handleEnter(mode.path)}
                 className={`h-8 w-full px-2.5 text-xs sm:text-sm font-medium ${spanClass}`}
               >
-                <span className="truncate">{mode.title}</span>
+                <motion.a
+                  href={mode.path}
+                  aria-label={`${game.title} ${mode.title}`}
+                  data-agent-control={`site.mode.${mode.id}`}
+                  onClick={handleEnter(mode.path)}
+                  {...pressable}
+                >
+                  <span className="truncate">{mode.title}</span>
+                </motion.a>
               </Button>
             );
           })}
@@ -339,17 +353,17 @@ function FooterLink({ link }: { link: ExternalLink }) {
 
 /** 服务状态入口：与版本号、外链图标同一行，图标 + 文本，悬停不出现下划线。 */
 function FooterStatusLink() {
-  const navigate = usePageNavigate();
+  const linkClick = usePageLinkClick();
   return (
-    <motion.button
-      type="button"
+    <motion.a
+      href={STATUS_PAGE_PATH}
       {...pressable}
-      onClick={() => void navigate(STATUS_PAGE_PATH)}
+      onClick={linkClick(STATUS_PAGE_PATH)}
       className="flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 font-serif text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <Activity aria-hidden="true" className="h-3.5 w-3.5" />
       服务状态
-    </motion.button>
+    </motion.a>
   );
 }
 
@@ -377,7 +391,7 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
 const VERSION_PAGE_PATH = "/abouts?tab=changelog";
 
 export default function LandingPage() {
-  const navigate = usePageNavigate();
+  const linkClick = usePageLinkClick();
   // 入口可用性读服务端运行期旋钮；没读到之前按全开。关掉的入口仍会渲染，只是置灰不可点。
   const features = useSiteFeatures();
 
@@ -413,6 +427,18 @@ export default function LandingPage() {
           />
           Game
         </motion.h1>
+        {/* 一行说清站里有什么：执行脚本的抓取器与玩家看到的首屏，和外壳对爬虫说的是同一件事。
+            矮屏把空间留给游戏卡片。 */}
+        <motion.p
+          variants={listItem}
+          initial="initial"
+          animate="animate"
+          className="mt-2 text-xs text-muted-foreground sm:mt-4 sm:text-base [@media(max-height:680px)]:hidden"
+        >
+          {/* 两句各自成块：放不下一行时在句间换行，不把「开一间房」拆成两半。 */}
+          <span className="inline-block">谁是卧底、听歌猜歌、猜动漫角色。</span>
+          <span className="inline-block">开一间房，把房号发进群。</span>
+        </motion.p>
       </header>
 
       <main className="mx-auto flex min-h-0 w-full max-w-xl overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-6 [@media(max-height:680px)]:py-1">
@@ -463,14 +489,14 @@ export default function LandingPage() {
               <FooterLink key={link.href} link={link} />
             ))}
           </motion.div>
-          <motion.button
-            type="button"
+          <motion.a
+            href={VERSION_PAGE_PATH}
             {...pressable}
-            onClick={() => void navigate(VERSION_PAGE_PATH)}
-            className="min-h-8 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            onClick={linkClick(VERSION_PAGE_PATH)}
+            className="flex min-h-8 items-center rounded-md px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             {versionLabel}
-          </motion.button>
+          </motion.a>
           <ClientDownloadEntry compact />
           <FooterStatusLink />
         </div>

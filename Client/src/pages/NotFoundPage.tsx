@@ -34,7 +34,7 @@ export default function NotFoundPage() {
         <p className="font-mono text-xs text-muted-foreground">404</p>
         <h1 className="mt-2 text-2xl font-bold">页面不存在</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          这个地址没有对应的页面，可能是链接打错了，或者页面换了地址。
+          这个地址没有对应的页面，可能是链接打错了。
         </p>
         <Button asChild variant="outline" size="sm" className="mt-6">
           <motion.a href="/" onClick={linkClick("/")} {...pressable}>
