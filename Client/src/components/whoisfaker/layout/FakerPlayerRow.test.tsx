@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PublicPlayerView } from "@bakagame/shared";
 
-import { PlayerRow } from "./FakerPlayerList";
+import { PlayerRow } from "./FakerPlayerRow";
 
 const player: PublicPlayerView = {
   id: "player-1",

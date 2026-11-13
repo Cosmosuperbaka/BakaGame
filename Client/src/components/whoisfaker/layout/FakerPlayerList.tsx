@@ -1,34 +1,29 @@
-import { useCallback, type Ref } from "react";
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { Hint } from "@/components/ui/Tooltip";
-import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
-import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
-import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { listContainer, listItem, tappable } from "@/lib/Motion";
+import { listContainer, listItem } from "@/lib/Motion";
 import { DESCRIPTION_HEAD_TONES, descriptionCellShadeForPlayer } from "@/lib/DescriptionColumns";
 import type { PlayerListHistory } from "./FakerSpeechHistory";
-import { FakerPendingSpeech, SubmittedSpeech } from "./FakerPendingSpeech";
-import { FakerRoleBadge } from "./FakerRoleBadge";
-import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
+import { CompactNameCell, SpeechCell } from "./FakerSpeechCell";
+import {
+  PlayerRow,
+  type PlayerMark,
+  type PlayerMarks,
+  type PlayerRowProps,
+} from "./FakerPlayerRow";
 import { cn } from "@/lib/Utils";
 import {
   PLAYER_COLUMN_WIDTH,
   PLAYER_GROUP_TITLE_HEIGHT,
-  PLAYER_ME_MARK,
-  PLAYER_ROW_BASE,
-  PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
   PlayerListLayout,
-  PlayerStatusIcon,
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { buildKnownRoleMap, resolveStatus } from "./FakerPlayerPresentation";
+import { buildKnownRoleMap } from "./FakerPlayerPresentation";
 import { COMPACT_PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./FakerPlayerListLayout";
 import type {
-  DescriptionRecord,
   WhoIsFakerCommand,
   WhoIsFakerPayload,
   WhoIsFakerPhase,
@@ -37,25 +32,6 @@ import type {
   PublicPlayerView,
   RoleConfig,
 } from "@bakagame/shared";
-
-export type PlayerMark = "unknown" | WhoIsFakerRole;
-export type PlayerMarks = Record<string, PlayerMark>;
-
-/** 身份选择器上的双字：真实身份沿用 `ROLE_LABELS`，只多一档「未知」 */
-const roleLabels: Record<PlayerMark, string> = { unknown: "未知", ...ROLE_LABELS };
-
-/**
- * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
- * 半透明色底会被它吃掉，所以这里单独给一套实底：
- * 底色取状态令牌本身，前景取配套的 `-foreground`，两档同源于一套取值。
- */
-const roleSelectedTones: Record<PlayerMark, string> = {
-  unknown: "bg-muted-foreground/85 text-background",
-  civilian: "bg-info text-info-foreground",
-  undercover: "bg-destructive text-destructive-foreground",
-  blank: "bg-muted-foreground text-background",
-  angel: "bg-warning text-warning-foreground",
-};
 
 export interface PlayerListProps {
   players: PublicPlayerView[];
@@ -353,223 +329,5 @@ export function FakerPlayerList(props: PlayerListProps) {
         <div className="px-2">{body}</div>
       </PlayerListLayout>
     </ScrollArea>
-  );
-}
-
-/**
- * 紧凑发言历史的玩家格：头像与名字，与完整玩家行同高，横滚时贴住左缘。
- * 出局只保留删除线与读屏文字，窄列里放不下次行的图标。
- */
-function CompactNameCell({ player, me }: { player: PublicPlayerView; me: boolean }) {
-  const eliminated = player.roundStatus === "dead";
-  return (
-    <div className="sticky left-0 z-panel border-r bg-panel px-1.5">
-      <div
-        className={cn(
-          PLAYER_ROW_BASE,
-          PLAYER_ROW_HEIGHT,
-          "pl-2 pr-1",
-          me && "bg-primary/10",
-          !player.online && !player.isBot && "opacity-60"
-        )}
-      >
-        {me ? <span className={PLAYER_ME_MARK} /> : null}
-        <PlayerAvatar name={player.name} me={me} />
-        <Hint label={player.name}>
-          <span
-            className={cn(
-              "min-w-0 truncate font-medium",
-              eliminated && "text-muted-foreground line-through decoration-muted-foreground/60"
-            )}
-          >
-            {player.name}
-          </span>
-        </Hint>
-        {eliminated ? <span className="sr-only">已出局</span> : null}
-      </div>
-    </div>
-  );
-}
-
-/**
- * 玩家行右侧的发言单元格。
- * 只有本列确实该发言的玩家才在未提交时显示等待占位；
- * 出题人、旁观者与本列无需发言的玩家留空。
- */
-function SpeechCell({
-  description,
-  expected,
-  order,
-  submitted,
-  shade,
-}: {
-  description?: DescriptionRecord;
-  expected: boolean;
-  order?: number;
-  /** 已提交但顺序未到，内容仍折起 */
-  submitted?: boolean;
-  /** 棋盘格底色，由所在行列的奇偶决定 */
-  shade?: string;
-}) {
-  const orderBadge =
-    order !== undefined ? (
-      <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
-    ) : null;
-  return (
-    <div
-      className={cn(
-        "flex items-center px-4 py-1.5 text-sm leading-relaxed",
-        // 发言内容一律用正文色，列的种类由列标题表达，不靠正文变色区分。
-        "text-foreground",
-        shade
-      )}
-    >
-      {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
-      {description ? (
-        <span className="flex items-center gap-1.5 whitespace-nowrap">
-          {orderBadge}
-          <span>{description.text}</span>
-        </span>
-      ) : submitted ? (
-        <div className="flex items-center gap-1.5">
-          {orderBadge}
-          <SubmittedSpeech />
-        </div>
-      ) : expected ? (
-        <div className="flex items-center gap-1.5">
-          {orderBadge}
-          <FakerPendingSpeech />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-export interface PlayerRowProps {
-  player: PublicPlayerView;
-  myPlayerId?: string;
-  isHostViewer: boolean;
-  waitingPhase: boolean;
-  hideSpectatorStatus?: boolean;
-  actualRole?: WhoIsFakerRole;
-  mark: PlayerMark;
-  canMark: boolean;
-  availableMarks: PlayerMark[];
-  onMarkChange: (playerId: string, mark: PlayerMark) => void;
-  onKick: (playerId: string) => void;
-  onTransferHost: (playerId: string) => void;
-  /** 嵌入发言历史首栏时去掉行自身的进出场动画，交由表格统一处理 */
-  embedded?: boolean;
-  /** 转交给通用行的动画容器，供 `popLayout` 抽出退场行 */
-  ref?: Ref<HTMLDivElement>;
-}
-
-export function PlayerRow(props: PlayerRowProps) {
-  const {
-    player,
-    myPlayerId,
-    isHostViewer,
-    waitingPhase,
-    hideSpectatorStatus,
-    actualRole,
-    mark,
-    canMark,
-    availableMarks,
-    onMarkChange,
-    onKick,
-    onTransferHost,
-    embedded,
-    ref,
-  } = props;
-
-  const isMe = player.id === myPlayerId;
-  const canManage = isHostViewer && !isMe;
-  const eliminated = player.roundStatus === "dead";
-  const status = resolveStatus(player, waitingPhase, hideSpectatorStatus);
-
-  return (
-    <PlayerRowBase
-      name={player.name}
-      score={player.score}
-      me={isMe}
-      host={player.isHost}
-      online={player.online}
-      bot={player.isBot}
-      account={player.account}
-      eliminated={eliminated}
-      badges={
-        <>
-          {player.isAgent ? <AgentBadge /> : null}
-          {player.mcpControlled ? <McpControlledBadge /> : null}
-          {actualRole ? (
-            <FakerRoleBadge role={actualRole} />
-          ) : mark !== "unknown" ? (
-            <FakerRoleBadge role={mark} predicted />
-          ) : null}
-          {status ? <PlayerStatusIcon tone={status.tone} label={status.label} /> : null}
-        </>
-      }
-      embedded={embedded}
-      layoutId={embedded ? undefined : player.id}
-      ref={ref}
-      {...(canMark
-        ? {
-            actionsHeader: availableMarks.map((option, idx) => (
-              <MarkButton
-                key={option}
-                option={option}
-                selected={mark === option}
-                first={idx === 0}
-                last={idx === availableMarks.length - 1}
-                onSelect={() => onMarkChange(player.id, option)}
-              />
-            )),
-          }
-        : {})}
-      {...(canManage
-        ? {
-            actions: hostActions({
-              onTransferHost: () => onTransferHost(player.id),
-              onKick: () => onKick(player.id),
-            }),
-          }
-        : {})}
-    />
-  );
-}
-
-/* ── 局部小组件 ─────────────────────────────────────────── */
-
-function MarkButton({
-  option,
-  selected,
-  first,
-  last,
-  onSelect,
-}: {
-  option: PlayerMark;
-  selected: boolean;
-  first?: boolean;
-  last?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <motion.button
-      {...tappable}
-      aria-label={roleLabels[option]}
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn(
-        "flex flex-1 items-center justify-center whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors",
-        "border-r last:border-r-0",
-        selected
-          ? roleSelectedTones[option]
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-        first && "rounded-tl-[calc(var(--radius)-1px)]",
-        last && "rounded-tr-[calc(var(--radius)-1px)]"
-      )}
-    >
-      {roleLabels[option]}
-    </motion.button>
   );
 }
