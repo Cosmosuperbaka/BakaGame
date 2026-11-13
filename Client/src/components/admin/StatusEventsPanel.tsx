@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Textarea } from "@/components/ui/Textarea";
 import { ToggleChip } from "@/components/ui/ToggleChip";
-import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingsFields, SettingsReadOnly } from "@/components/common/room/settings/Layout";
 import { SettingSelect, SettingSegmented } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
@@ -81,6 +81,8 @@ const fromInputValue = (value: string): number | null => {
 
 interface EventDraft {
   kind: PublicStatusIncidentKind;
+  /** 进度档位；只有编辑时可改，新建由服务端按类型定初始档。 */
+  status: string;
   title: string;
   body: string;
   components: PublicStatusComponentId[];
@@ -90,6 +92,7 @@ interface EventDraft {
 
 const draftOf = (event?: PublicStatusEvent): EventDraft => ({
   kind: event?.kind ?? "incident",
+  status: event?.status ?? "investigating",
   title: event?.title ?? "",
   body: event?.body ?? "",
   components: event?.components ?? [],
@@ -155,7 +158,6 @@ function EventDialog({
 }) {
   const editing = event !== null;
   const [draft, setDraft] = useState<EventDraft>(() => draftOf(event ?? undefined));
-  const [status, setStatus] = useState<string>(event?.status ?? "investigating");
   // 内容框只在动过之后才标红：新建表单一打开就是一圈红框，读作「已经填错了」。
   const [bodyTouched, setBodyTouched] = useState(false);
   const action = useAdminAction();
@@ -177,7 +179,7 @@ function EventDialog({
             id: event.id,
             title: draft.title.trim(),
             body: draft.body.trim(),
-            status: status as PublicStatusEvent["status"],
+            status: draft.status as PublicStatusEvent["status"],
             components: draft.components,
             startedAt: startedMs!,
             plannedEndAt: draft.kind === "maintenance" ? endedMs : null,
@@ -212,27 +214,30 @@ function EventDialog({
           </DialogDescription>
         </DialogHeader>
         <SettingsFields>
-          <SettingSegmented
-            label="类型"
-            value={draft.kind}
-            onValueChange={(kind) =>
-              setDraft((current) => ({
-                ...current,
-                kind,
-                status: kind === "incident" ? "investigating" : "scheduled",
-              }))
-            }
-            options={[
-              { value: "incident", label: "故障事件" },
-              { value: "maintenance", label: "维护窗口" },
-            ]}
-          />
+          {/* 服务端更新沿用既有类型：编辑时类型只读，只在新建时给切换。 */}
+          <SettingsReadOnly readOnly={editing}>
+            <SettingSegmented
+              label="类型"
+              value={draft.kind}
+              onValueChange={(kind) =>
+                setDraft((current) => ({
+                  ...current,
+                  kind,
+                  status: kind === "incident" ? "investigating" : "scheduled",
+                }))
+              }
+              options={[
+                { value: "incident", label: "故障事件" },
+                { value: "maintenance", label: "维护窗口" },
+              ]}
+            />
+          </SettingsReadOnly>
           {editing ? (
             <SettingSelect
               label="进度"
-              value={status}
+              value={draft.status}
               options={STATUS_OPTIONS[draft.kind]}
-              onChange={setStatus}
+              onChange={(status) => setDraft((current) => ({ ...current, status }))}
             />
           ) : null}
           <SettingTextField
