@@ -57,4 +57,33 @@ describe("SonGuessr browser music session", () => {
     clearStoredSongMusicSession("all");
     expect(getStoredSongMusicSession("qq")).toBeNull();
   });
+
+  it("存储被禁用（取存储就抛 SecurityError）时读为 null，保存与清除不抛出也不发变更通知", () => {
+    const denied = () => {
+      throw new DOMException("denied", "SecurityError");
+    };
+    const spies = [
+      vi.spyOn(window, "localStorage", "get").mockImplementation(denied),
+      vi.spyOn(window, "sessionStorage", "get").mockImplementation(denied),
+    ];
+    const changed = vi.fn();
+    const stop = onSongMusicSessionChanged(changed);
+
+    expect(getStoredSongMusicSession("netease")).toBeNull();
+    expect(() => saveSongMusicSession(session, true, "qq")).not.toThrow();
+    expect(() => clearStoredSongMusicSession("all")).not.toThrow();
+    // 先还原再断言：测试环境的收尾钩子要清空存储，不能撞上还在抛错的存取器。
+    for (const spy of spies) spy.mockRestore();
+    // 保存没有真正落盘就不通知；清除总是通知，订阅方据此重读。
+    expect(changed).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("账号里的平台字段不是已知平台的记录视为损坏", () => {
+    window.localStorage.setItem(
+      "songuessr_netease_session_v1",
+      JSON.stringify({ cookie: "MUSIC_U=x", account: { nickname: "甲", platform: "weird" } })
+    );
+    expect(getStoredSongMusicSession("netease")).toBeNull();
+  });
 });

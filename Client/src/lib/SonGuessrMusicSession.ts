@@ -1,4 +1,5 @@
 import type { SonGuessrMusicAccount } from "@bakagame/shared";
+import { localStore, sessionStore } from "@/lib/SafeStorage";
 import { createSignal } from "@/lib/Signal";
 
 export type SongMusicPlatform = "netease" | "qq";
@@ -33,7 +34,10 @@ const parseSession = (raw: string | null, persistent: boolean): StoredSongMusicS
       typeof value.cookie !== "string" ||
       !value.cookie.trim() ||
       !value.account ||
-      typeof value.account.nickname !== "string"
+      typeof value.account.nickname !== "string" ||
+      (value.account.platform !== undefined &&
+        value.account.platform !== "netease" &&
+        value.account.platform !== "qq")
     ) {
       return null;
     }
@@ -50,11 +54,10 @@ const parseSession = (raw: string | null, persistent: boolean): StoredSongMusicS
 export const getStoredSongMusicSession = (
   platform: SongMusicPlatform = "netease"
 ): StoredSongMusicSession | null => {
-  if (typeof window === "undefined") return null;
-  const keys = STORAGE_KEYS[platform] ?? STORAGE_KEYS.netease;
+  const keys = STORAGE_KEYS[platform];
   return (
-    parseSession(window.sessionStorage.getItem(keys.session), false) ??
-    parseSession(window.localStorage.getItem(keys.local), true)
+    parseSession(sessionStore.get(keys.session), false) ??
+    parseSession(localStore.get(keys.local), true)
   );
 };
 
@@ -63,33 +66,26 @@ export const saveSongMusicSession = (
   persistent: boolean,
   platform?: SongMusicPlatform
 ) => {
-  if (typeof window === "undefined") return;
-  const targetPlatform = platform ?? session.account.platform ?? "netease";
-  const keys = STORAGE_KEYS[targetPlatform] ?? STORAGE_KEYS.netease;
-  const targetStorage = persistent ? window.localStorage : window.sessionStorage;
-  const otherStorage = persistent ? window.sessionStorage : window.localStorage;
+  const keys = STORAGE_KEYS[platform ?? session.account.platform ?? "netease"];
+  const target = persistent
+    ? { store: localStore, key: keys.local }
+    : { store: sessionStore, key: keys.session };
+  const other = persistent
+    ? { store: sessionStore, key: keys.session }
+    : { store: localStore, key: keys.local };
   const serialized = JSON.stringify({ cookie: session.cookie, account: session.account });
-  const existing = targetStorage.getItem(persistent ? keys.local : keys.session);
-  if (existing === serialized && !otherStorage.getItem(persistent ? keys.session : keys.local)) {
-    return;
-  }
-  window.localStorage.removeItem(keys.local);
-  window.sessionStorage.removeItem(keys.session);
-  targetStorage.setItem(persistent ? keys.local : keys.session, serialized);
-  sessionChanged.emit();
+  if (target.store.get(target.key) === serialized && !other.store.get(other.key)) return;
+  localStore.remove(keys.local);
+  sessionStore.remove(keys.session);
+  // 存储被禁用时写不进去：本次不留存，也就没有变更可通知。
+  if (target.store.set(target.key, serialized)) sessionChanged.emit();
 };
 
 export const clearStoredSongMusicSession = (platform: SongMusicPlatform | "all" = "netease") => {
-  if (typeof window === "undefined") return;
-  if (platform === "all") {
-    for (const keys of Object.values(STORAGE_KEYS)) {
-      window.localStorage.removeItem(keys.local);
-      window.sessionStorage.removeItem(keys.session);
-    }
-  } else {
-    const keys = STORAGE_KEYS[platform] ?? STORAGE_KEYS.netease;
-    window.localStorage.removeItem(keys.local);
-    window.sessionStorage.removeItem(keys.session);
+  const cleared = platform === "all" ? Object.values(STORAGE_KEYS) : [STORAGE_KEYS[platform]];
+  for (const keys of cleared) {
+    localStore.remove(keys.local);
+    sessionStore.remove(keys.session);
   }
   sessionChanged.emit();
 };
