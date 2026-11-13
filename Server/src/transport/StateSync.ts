@@ -226,7 +226,8 @@ const stateJsonOf = (prepared: PreparedState): string =>
   (prepared.stateJson ??= JSON.stringify(prepared.state));
 
 /** 事件信封里除 `payload` 之外的部分：同一个事件对象发给多条连接时只序列化一次。 */
-const ENVELOPE_MARK = "state";
+// 占位值带控制字符（写成转义，源码里不留不可见字符）：事件名与信封里别的字段都不可能与它重合。
+const ENVELOPE_MARK = "\u0001state\u0001";
 const envelopeCache = new WeakMap<object, { head: string; tail: string }>();
 
 const envelopeOf = (packet: EventPacket): { head: string; tail: string } => {
