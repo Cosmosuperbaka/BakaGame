@@ -34,8 +34,8 @@ const fromRow = (row: typeof clientChannelDevice.$inferSelect): StoredClientDevi
 export class ClientChannelRepository implements ClientChannelStore {
   constructor(private readonly database: Database) {}
   async save(device: StoredClientDevice): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .insert(clientChannelDevice)
       .values(toRow(device))
       .onDuplicateKeyUpdate({
@@ -48,8 +48,8 @@ export class ClientChannelRepository implements ClientChannelStore {
       });
   }
   async find(clientId: string): Promise<StoredClientDevice | undefined> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select()
       .from(clientChannelDevice)
       .where(eq(clientChannelDevice.clientId, clientId))
@@ -57,15 +57,15 @@ export class ClientChannelRepository implements ClientChannelStore {
     return rows[0] ? fromRow(rows[0]) : undefined;
   }
   async touch(clientId: string, at: number): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .update(clientChannelDevice)
       .set({ lastSeenAt: new Date(at) })
       .where(eq(clientChannelDevice.clientId, clientId));
   }
   async purgeIdle(before: number): Promise<number> {
-    await this.database.ready;
-    const [result] = await this.database.db
+    const db = await this.database.client();
+    const [result] = await db
       .delete(clientChannelDevice)
       .where(lt(clientChannelDevice.lastSeenAt, new Date(before)));
     return result.affectedRows;

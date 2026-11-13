@@ -156,8 +156,8 @@ export class StatusSampleStore {
     this.dirty.clear();
     if (values.length === 0) return;
     try {
-      await this.database.ready;
-      await this.database.db
+      const db = await this.database.client();
+      await db
         .insert(statusSample)
         .values(values)
         .onDuplicateKeyUpdate({

@@ -91,10 +91,15 @@ export const createDrizzleStub = (options: { ready?: Promise<void> } = {}): Driz
   // 桩只实现 mysql2 连接的 query()，其余成员按 drizzle 实际取用的子集存在。
   const db = drizzle({ client, schema, mode: "default" } as never) as unknown as DatabaseClient;
 
+  const ready = options.ready ?? Promise.resolve();
   const stub: DrizzleStub = {
     database: {
       db,
-      ready: options.ready ?? Promise.resolve(),
+      ready,
+      client: async () => {
+        await ready;
+        return db;
+      },
       onReady: (callback) => queueMicrotask(callback),
       ping: async () => true,
       close: async () => {

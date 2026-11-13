@@ -3,15 +3,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { DatabaseWordBankRepository } from "../src/infrastructure/WordBankRepository";
 import type { Database } from "../src/infrastructure/db/Database";
 
-const failingDatabase = (error: Error) =>
-  ({
-    ready: Promise.resolve(),
-    db: {
-      insert: () => ({
-        values: () => ({ onDuplicateKeyUpdate: () => Promise.reject(error) }),
-      }),
-    },
-  }) as unknown as Database;
+const failingDatabase = (error: Error) => {
+  const db = {
+    insert: () => ({
+      values: () => ({ onDuplicateKeyUpdate: () => Promise.reject(error) }),
+    }),
+  };
+  return { ready: Promise.resolve(), db, client: async () => db } as unknown as Database;
+};
 
 describe("词库仓储", () => {
   const unhandled: unknown[] = [];

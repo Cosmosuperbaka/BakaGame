@@ -18,6 +18,11 @@ export interface Database {
    */
   readonly ready: Promise<void>;
   /**
+   * 等就绪后给出查询客户端。仓储一律经它取客户端：把「先等就绪」做进取客户端这一步，
+   * 类型上就不可能忘记等待而对未就绪的库发出半截语句。
+   */
+  client(): Promise<DatabaseClient>;
+  /**
    * 首次就绪时触发一次回调（已就绪则立即异步触发）。供「就绪后补齐」类的启动任务使用：
    * 启动时连不上，这类任务要等到数据库真的可用才执行，而不是失败一次就放弃。
    * 注册回调期间，未就绪时会在后台按冷却间隔持续重试。
@@ -132,6 +137,10 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
     get ready() {
       if (!everReady && failedAt !== undefined && Date.now() - failedAt >= cooldownMs) attempt();
       return current;
+    },
+    async client() {
+      await this.ready;
+      return db;
     },
     onReady: (callback) => {
       if (everReady) {

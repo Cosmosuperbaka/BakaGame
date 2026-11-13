@@ -18,8 +18,8 @@ export class DatabaseWordBankRepository implements WordBankRepository {
 
   savePair(pair: [string, string]): Promise<void> {
     const [wordA, wordB] = normalizeWordPair(pair);
-    const operation = this.database.ready.then(async () => {
-      await this.database.db
+    const operation = this.database.client().then(async (db) => {
+      await db
         .insert(wordPair)
         .values({ wordA, wordB })
         .onDuplicateKeyUpdate({

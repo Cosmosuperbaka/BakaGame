@@ -23,24 +23,24 @@ export class DatabaseUserSettingRepository implements UserSettingRepository {
   constructor(private readonly database: Database) {}
 
   async list(userId: string): Promise<StoredSetting[]> {
-    await this.database.ready;
-    return this.database.db
+    const db = await this.database.client();
+    return db
       .select({ key: userSetting.key, value: userSetting.value, updatedAt: userSetting.updatedAt })
       .from(userSetting)
       .where(eq(userSetting.userId, userId));
   }
 
   async put(userId: string, key: string, value: unknown, now: Date): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .insert(userSetting)
       .values({ userId, key, value, updatedAt: now })
       .onDuplicateKeyUpdate({ set: { value, updatedAt: now } });
   }
 
   async remove(userId: string, key: string): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .delete(userSetting)
       .where(and(eq(userSetting.userId, userId), eq(userSetting.key, key)));
   }
@@ -109,18 +109,18 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
   constructor(private readonly database: Database) {}
 
   async create(record: FeedbackRecord): Promise<void> {
-    await this.database.ready;
-    await this.database.db.insert(feedback).values(record);
+    const db = await this.database.client();
+    await db.insert(feedback).values(record);
   }
 
   async update(id: string, patch: Parameters<FeedbackRepository["update"]>[1]): Promise<void> {
-    await this.database.ready;
-    await this.database.db.update(feedback).set(patch).where(eq(feedback.id, id));
+    const db = await this.database.client();
+    await db.update(feedback).set(patch).where(eq(feedback.id, id));
   }
 
   async get(id: string): Promise<FeedbackRecord | null> {
-    await this.database.ready;
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select()
       .from(feedback)
       .where(eq(feedback.id, id))
@@ -129,21 +129,21 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
   }
 
   async list(filter: FeedbackFilter): Promise<{ items: FeedbackRecord[]; total: number }> {
-    await this.database.ready;
+    const db = await this.database.client();
     const conditions: SQL[] = [];
     if (filter.status) conditions.push(eq(feedback.status, filter.status));
     if (filter.kind) conditions.push(eq(feedback.kind, filter.kind));
     if (filter.userId) conditions.push(eq(feedback.userId, filter.userId));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, [count]] = await Promise.all([
-      this.database.db
+      db
         .select()
         .from(feedback)
         .where(where)
         .orderBy(desc(feedback.createdAt))
         .limit(filter.limit)
         .offset(filter.offset),
-      this.database.db
+      db
         .select({ total: sql<number>`count(*)` })
         .from(feedback)
         .where(where),
@@ -152,8 +152,8 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
   }
 
   async countUnread(userId: string): Promise<number> {
-    await this.database.ready;
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select({ total: sql<number>`count(*)` })
       .from(feedback)
       .where(
@@ -167,8 +167,8 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
   }
 
   async countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({ status: feedback.status, total: sql<number>`count(*)` })
       .from(feedback)
       .groupBy(feedback.status);
@@ -176,14 +176,14 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
   }
 
   async addReply(reply: Omit<FeedbackReplyRecord, "id">): Promise<FeedbackReplyRecord> {
-    await this.database.ready;
-    const [result] = await this.database.db.insert(feedbackReply).values(reply).$returningId();
+    const db = await this.database.client();
+    const [result] = await db.insert(feedbackReply).values(reply).$returningId();
     return { ...reply, id: result!.id };
   }
 
   async replies(feedbackId: string): Promise<FeedbackReplyRecord[]> {
-    await this.database.ready;
-    return this.database.db
+    const db = await this.database.client();
+    return db
       .select()
       .from(feedbackReply)
       .where(eq(feedbackReply.feedbackId, feedbackId))

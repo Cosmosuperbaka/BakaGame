@@ -17,8 +17,8 @@ export class DatabaseAppSettingRepository implements AppSettingRepository {
   constructor(private readonly database: Database) {}
 
   async loadAll(): Promise<Record<string, StoredAppSetting>> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({
         key: appSetting.key,
         value: appSetting.value,
@@ -33,9 +33,9 @@ export class DatabaseAppSettingRepository implements AppSettingRepository {
   }
 
   async set(key: string, value: string, updatedBy: string | null): Promise<void> {
-    await this.database.ready;
+    const db = await this.database.client();
     // 显式给 updated_at：MySQL 的 ON DUPLICATE KEY UPDATE 不走 Drizzle 的 $onUpdateFn。
-    await this.database.db
+    await db
       .insert(appSetting)
       .values({ key, value, updatedBy })
       .onDuplicateKeyUpdate({ set: { value, updatedBy, updatedAt: new Date() } });

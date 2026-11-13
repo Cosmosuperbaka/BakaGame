@@ -31,8 +31,8 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
     });
   }
   private async insert(review: CEEAntiCheatReview): Promise<void> {
-    await this.database.ready;
-    await this.database.db.insert(ceeAntiCheatReview).values({
+    const db = await this.database.client();
+    await db.insert(ceeAntiCheatReview).values({
       id: crypto.randomUUID(),
       roomId: review.roomId,
       roomCreatedAt: new Date(review.roomCreatedAt),
@@ -51,7 +51,7 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
   async list(
     options: CEEAntiCheatReviewQuery = {}
   ): Promise<{ items: CEEAntiCheatReviewItem[]; total: number }> {
-    await this.database.ready;
+    const db = await this.database.client();
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const offset = Math.max(options.offset ?? 0, 0);
     const conditions = [];
@@ -60,14 +60,14 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
       conditions.push(gte(ceeAntiCheatReview.createdAt, new Date(options.since)));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, totals] = await Promise.all([
-      this.database.db
+      db
         .select()
         .from(ceeAntiCheatReview)
         .where(where)
         .orderBy(desc(ceeAntiCheatReview.createdAt))
         .limit(limit)
         .offset(offset),
-      this.database.db
+      db
         .select({ total: sql<number>`count(*)` })
         .from(ceeAntiCheatReview)
         .where(where),
@@ -83,8 +83,8 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
    * 昵称撞上某个账号的游客不该被并进那个账号。
    */
   async aggregateFor(itemId: string, since: number): Promise<CEEAntiCheatReviewItem[]> {
-    await this.database.ready;
-    const [base] = await this.database.db
+    const db = await this.database.client();
+    const [base] = await db
       .select({ userId: ceeAntiCheatReview.userId, playerName: ceeAntiCheatReview.playerName })
       .from(ceeAntiCheatReview)
       .where(eq(ceeAntiCheatReview.id, itemId))
@@ -94,7 +94,7 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
       base.userId === null
         ? and(isNull(ceeAntiCheatReview.userId), eq(ceeAntiCheatReview.playerName, base.playerName))
         : eq(ceeAntiCheatReview.userId, base.userId);
-    const rows = await this.database.db
+    const rows = await db
       .select()
       .from(ceeAntiCheatReview)
       .where(and(identity, gte(ceeAntiCheatReview.createdAt, new Date(since))))
@@ -120,8 +120,8 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
     };
   }
   async exists(id: string): Promise<boolean> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({ id: ceeAntiCheatReview.id })
       .from(ceeAntiCheatReview)
       .where(eq(ceeAntiCheatReview.id, id))
@@ -129,8 +129,8 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
     return rows.length > 0;
   }
   async setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .update(ceeAntiCheatReview)
       .set({ status })
       .where(eq(ceeAntiCheatReview.id, id));

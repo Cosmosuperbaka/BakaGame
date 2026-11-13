@@ -36,13 +36,13 @@ export class DatabaseAuditLogRepository implements AuditLogRepository {
   constructor(private readonly database: Database) {}
 
   async append(entry: AuditEntry): Promise<void> {
-    await this.database.ready;
+    const db = await this.database.client();
     // 不记录 IP：经反向代理时 X-Forwarded-For 可被客户端伪造，记下来反而误导追查。
-    await this.database.db.insert(auditLog).values({ ...entry, ipAddress: null });
+    await db.insert(auditLog).values({ ...entry, ipAddress: null });
   }
 
   async list(filter: AuditFilter): Promise<{ items: StoredAuditEntry[]; total: number }> {
-    await this.database.ready;
+    const db = await this.database.client();
     const conditions: SQL[] = [];
     if (filter.actorId) conditions.push(eq(auditLog.actorId, filter.actorId));
     if (filter.action) conditions.push(eq(auditLog.action, filter.action));
@@ -51,7 +51,7 @@ export class DatabaseAuditLogRepository implements AuditLogRepository {
     if (filter.since) conditions.push(gte(auditLog.createdAt, filter.since));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, [count]] = await Promise.all([
-      this.database.db
+      db
         .select({
           id: auditLog.id,
           actorId: auditLog.actorId,
@@ -66,7 +66,7 @@ export class DatabaseAuditLogRepository implements AuditLogRepository {
         .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
         .limit(filter.limit)
         .offset(filter.offset),
-      this.database.db
+      db
         .select({ total: sql<number>`count(*)` })
         .from(auditLog)
         .where(where),

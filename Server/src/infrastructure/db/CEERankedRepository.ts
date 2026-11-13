@@ -134,8 +134,8 @@ export class CEERankedRepository implements CEERankedStore {
   constructor(private readonly database: Database) {}
 
   async getRating(userId: string): Promise<CEERankedRatingRecord | null> {
-    await this.database.ready;
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select()
       .from(ceeRankedRating)
       .where(eq(ceeRankedRating.userId, userId))
@@ -144,9 +144,9 @@ export class CEERankedRepository implements CEERankedStore {
   }
 
   async saveSettlement(record: CEERankedSettlementRecord): Promise<void> {
-    await this.database.ready;
+    const db = await this.database.client();
     const seriesId = record.series.id;
-    await this.database.db.transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       await tx.insert(ceeRankedSeries).values({
         ...record.series,
         startedAt: new Date(record.series.startedAt),
@@ -215,11 +215,11 @@ export class CEERankedRepository implements CEERankedStore {
     limit: number,
     before?: number
   ): Promise<CEERankedHistoryRecord[]> {
-    await this.database.ready;
+    const db = await this.database.client();
     const capped = Math.min(Math.max(limit, 1), 50);
     const conditions: SQL[] = [eq(ceeRankedSeriesPlayer.userId, userId)];
     if (before !== undefined) conditions.push(lt(ceeRankedSeries.endedAt, new Date(before)));
-    const rows = await this.database.db
+    const rows = await db
       .select({
         seriesId: ceeRankedSeries.id,
         endedAt: ceeRankedSeries.endedAt,
@@ -265,9 +265,9 @@ export class CEERankedRepository implements CEERankedStore {
   }
 
   async listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]> {
-    await this.database.ready;
+    const db = await this.database.client();
     const capped = Math.min(Math.max(limit, 1), 100);
-    return this.database.db
+    return db
       .select({
         userId: ceeRankedRating.userId,
         name: user.name,
@@ -287,12 +287,12 @@ export class CEERankedRepository implements CEERankedStore {
     minSeries: number,
     rating?: number
   ): Promise<{ above: number; total: number }> {
-    await this.database.ready;
+    const db = await this.database.client();
     const above =
       rating === undefined
         ? sql<number>`0`
         : sql<number>`coalesce(sum(case when ${ceeRankedRating.rating} > ${rating} then 1 else 0 end), 0)`;
-    const [row] = await this.database.db
+    const [row] = await db
       .select({ total: sql<number>`count(*)`, above })
       .from(ceeRankedRating)
       .innerJoin(user, eq(user.id, ceeRankedRating.userId))
@@ -306,11 +306,11 @@ export class CEERankedRepository implements CEERankedStore {
     limit: number,
     before?: number
   ): Promise<CEERankedSeriesRecord[]> {
-    await this.database.ready;
+    const db = await this.database.client();
     const capped = Math.min(Math.max(limit, 1), 100);
     const conditions: SQL[] = [eq(ceeRankedSeriesPlayer.userId, userId)];
     if (before !== undefined) conditions.push(lt(ceeRankedSeries.endedAt, new Date(before)));
-    const rows = await this.database.db
+    const rows = await db
       .select(getTableColumns(ceeRankedSeries))
       .from(ceeRankedSeries)
       .innerJoin(ceeRankedSeriesPlayer, eq(ceeRankedSeriesPlayer.seriesId, ceeRankedSeries.id))
@@ -321,25 +321,25 @@ export class CEERankedRepository implements CEERankedStore {
   }
 
   async getSeriesAudit(seriesId: string): Promise<CEERankedSeriesAudit | null> {
-    await this.database.ready;
-    const [series] = await this.database.db
+    const db = await this.database.client();
+    const [series] = await db
       .select()
       .from(ceeRankedSeries)
       .where(eq(ceeRankedSeries.id, seriesId))
       .limit(1);
     if (!series) return null;
     const [playerRows, gameRows, guessRows] = await Promise.all([
-      this.database.db
+      db
         .select()
         .from(ceeRankedSeriesPlayer)
         .where(eq(ceeRankedSeriesPlayer.seriesId, seriesId))
         .orderBy(ceeRankedSeriesPlayer.seat),
-      this.database.db
+      db
         .select()
         .from(ceeRankedGame)
         .where(eq(ceeRankedGame.seriesId, seriesId))
         .orderBy(ceeRankedGame.number),
-      this.database.db
+      db
         .select()
         .from(ceeRankedGuess)
         .where(eq(ceeRankedGuess.seriesId, seriesId))
@@ -359,9 +359,9 @@ export class CEERankedRepository implements CEERankedStore {
   }
 
   async listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]> {
-    await this.database.ready;
+    const db = await this.database.client();
     const capped = Math.min(Math.max(limit, 1), 1_000);
-    const rows = await this.database.db
+    const rows = await db
       .select({
         botPersona: opponent.botPersona,
         botStrengthRating: opponent.botStrengthRating,

@@ -30,6 +30,25 @@ describe("Database（启动连通性检查的失败语义）", () => {
     await database.close();
   });
 
+  it("client() 等就绪后给出客户端：未就绪时拒绝，恢复后可用", async () => {
+    let healthy = false;
+    const database = createDatabase(UNREACHABLE_URL, {
+      attempts: 1,
+      retryCooldownMs: 30,
+      check: async () => {
+        if (!healthy) throw new Error("数据库暂时不可达");
+      },
+    });
+    try {
+      await expect(database.client()).rejects.toThrow("暂时不可达");
+      healthy = true;
+      await Bun.sleep(50);
+      expect(await database.client()).toBe(database.db);
+    } finally {
+      await database.close();
+    }
+  });
+
   it("一次性失败后不永久钉死：冷却期内沿用失败结果，冷却后的下一次访问重新检查", async () => {
     let calls = 0;
     let healthy = false;

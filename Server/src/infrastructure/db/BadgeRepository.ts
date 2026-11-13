@@ -46,9 +46,9 @@ export class DatabaseBadgeRepository implements BadgeRepository {
   }
 
   private async syncCatalog(): Promise<void> {
-    await this.database.ready;
+    const db = await this.database.client();
     for (const entry of BADGE_CATALOG) {
-      await this.database.db
+      await db
         .insert(badge)
         .values(entry)
         .onDuplicateKeyUpdate({
@@ -57,7 +57,7 @@ export class DatabaseBadgeRepository implements BadgeRepository {
     }
     // 只清显式下线的类型（授予关系随外键级联）；未知类型原样保留，读取侧会跳过它们。
     if (this.retiredIds.length > 0)
-      await this.database.db.delete(badge).where(inArray(badge.id, [...this.retiredIds]));
+      await db.delete(badge).where(inArray(badge.id, [...this.retiredIds]));
   }
 
   async badgesOf(userId: string): Promise<AccountBadge[]> {
@@ -67,8 +67,8 @@ export class DatabaseBadgeRepository implements BadgeRepository {
   async badgesOfMany(userIds: readonly string[]): Promise<Map<string, AccountBadge[]>> {
     const unique = [...new Set(userIds)];
     if (!unique.length) return new Map();
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({
         userId: userBadge.userId,
         badgeId: userBadge.badgeId,
@@ -98,7 +98,8 @@ export class DatabaseBadgeRepository implements BadgeRepository {
     now: Date
   ): Promise<void> {
     await this.ensureCatalog();
-    await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
       await tx
         .insert(userBadge)
         .values({ userId, badgeId, grantedBy, grantedAt: now })
@@ -112,8 +113,8 @@ export class DatabaseBadgeRepository implements BadgeRepository {
   }
 
   async revoke(userId: string, badgeId: BadgeKind): Promise<void> {
-    await this.database.ready;
-    await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
       await tx
         .delete(userBadge)
         .where(and(eq(userBadge.userId, userId), eq(userBadge.badgeId, badgeId)));
@@ -126,7 +127,8 @@ export class DatabaseBadgeRepository implements BadgeRepository {
 
   async resetExclusive(badgeId: BadgeKind, keepUserId: string | null): Promise<void> {
     await this.ensureCatalog();
-    await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
       await tx
         .delete(userBadge)
         .where(

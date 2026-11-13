@@ -53,8 +53,8 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   constructor(private readonly database: Database) {}
 
   async addVisits(visitors: VisitorDelta[], pages: PageDelta[]): Promise<void> {
-    await this.database.ready;
-    await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
       for (const rows of inBatches(visitors, INSERT_CHUNK)) {
         await tx
           .insert(siteVisitDaily)
@@ -78,9 +78,9 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   }
 
   async purgeVisitors(beforeDay: string, batch: number): Promise<number> {
-    await this.database.ready;
+    const db = await this.database.client();
     // MySQL 与 TiDB 都支持带 LIMIT 的 DELETE，一条语句完成「限量删除」，不必先查主键再分天删。
-    const [result] = await this.database.db
+    const [result] = await db
       .delete(siteVisitDaily)
       .where(lt(siteVisitDaily.day, beforeDay))
       .limit(batch);
@@ -88,8 +88,8 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   }
 
   async daily(sinceDay: string): Promise<SiteDailyCount[]> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({
         day: siteVisitDaily.day,
         visitors: sql<number>`count(*)`,
@@ -109,9 +109,9 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   }
 
   async pages(sinceDay: string, limit: number): Promise<SitePageCount[]> {
-    await this.database.ready;
+    const db = await this.database.client();
     const views = sql<number>`sum(${sitePageDaily.views})`;
-    const rows = await this.database.db
+    const rows = await db
       .select({ path: sitePageDaily.path, views })
       .from(sitePageDaily)
       .where(gte(sitePageDaily.day, sinceDay))
@@ -122,8 +122,8 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   }
 
   async newUsers(since: Date): Promise<Array<{ day: string; count: number }>> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({ day: userBeijingDay, count: sql<number>`count(*)` })
       .from(user)
       .where(gte(user.createdAt, since))

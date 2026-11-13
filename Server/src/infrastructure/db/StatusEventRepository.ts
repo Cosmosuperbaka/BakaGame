@@ -99,7 +99,7 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
   constructor(private readonly database: Database) {}
 
   async list(environment: string, filter: StatusEventFilter) {
-    await this.database.ready;
+    const db = await this.database.client();
     const conditions: SQL[] = [eq(statusEvent.environment, environment)];
     if (filter.kind) conditions.push(eq(statusEvent.kind, filter.kind));
     if (filter.since !== undefined)
@@ -111,14 +111,14 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
     }
     const where = and(...conditions);
     const [rows, [count]] = await Promise.all([
-      this.database.db
+      db
         .select()
         .from(statusEvent)
         .where(where)
         .orderBy(desc(statusEvent.startedAt), desc(statusEvent.id))
         .limit(filter.limit)
         .offset(filter.offset),
-      this.database.db
+      db
         .select({ total: sql<number>`count(*)` })
         .from(statusEvent)
         .where(where),
@@ -127,8 +127,8 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
   }
 
   async get(environment: string, id: number): Promise<PublicStatusEvent | null> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select()
       .from(statusEvent)
       .where(and(eq(statusEvent.environment, environment), eq(statusEvent.id, id)))
@@ -137,8 +137,8 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
   }
 
   async create(environment: string, input: StatusEventInput): Promise<PublicStatusEvent> {
-    await this.database.ready;
-    const inserted = await this.database.db
+    const db = await this.database.client();
+    const inserted = await db
       .insert(statusEvent)
       .values({
         environment,
@@ -162,7 +162,7 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
     id: number,
     patch: StatusEventPatch
   ): Promise<PublicStatusEvent> {
-    await this.database.ready;
+    const db = await this.database.client();
     const values: Partial<typeof statusEvent.$inferInsert> = {};
     if (patch.title !== undefined) values.title = patch.title;
     if (patch.body !== undefined) values.body = patch.body;
@@ -174,7 +174,7 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
     if (patch.resolvedAt !== undefined)
       values.resolvedAt = patch.resolvedAt === null ? null : new Date(patch.resolvedAt);
     if (Object.keys(values).length > 0) {
-      await this.database.db
+      await db
         .update(statusEvent)
         .set(values)
         .where(and(eq(statusEvent.environment, environment), eq(statusEvent.id, id)));
@@ -185,8 +185,8 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
   }
 
   async remove(environment: string, id: number): Promise<void> {
-    await this.database.ready;
-    await this.database.db
+    const db = await this.database.client();
+    await db
       .delete(statusEvent)
       .where(and(eq(statusEvent.environment, environment), eq(statusEvent.id, id)));
   }

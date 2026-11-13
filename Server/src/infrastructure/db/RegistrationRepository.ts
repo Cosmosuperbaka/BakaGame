@@ -131,10 +131,10 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
   }
 
   private async sync(): Promise<void> {
-    await this.database.ready;
+    const db = await this.database.client();
     // 先自愈再回填：回填的新序号接在修好的最大值之后，不会又接在跳号后面。
     await this.heal();
-    const missing = await this.database.db
+    const missing = await db
       .select({ id: user.id })
       .from(user)
       .leftJoin(userRegistration, eq(user.id, userRegistration.userId))
@@ -177,7 +177,8 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
    * 的自愈会收掉，展示侧另有名额兜底。
    */
   private async repairSerials(): Promise<void> {
-    const outcome = await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    const outcome = await db.transaction(async (tx) => {
       const rows = await tx
         .select({ seq: userRegistration.seq, userId: userRegistration.userId })
         .from(userRegistration)
@@ -226,7 +227,8 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
   /** 次序自检：序号顺序与账号创建时间相反的相邻对只告警数量，不自动改；失败只记日志。 */
   private async auditOrder(): Promise<void> {
     try {
-      const inversions = countInversions(await readCreationOrder(this.database.db));
+      const db = await this.database.client();
+      const inversions = countInversions(await readCreationOrder(db));
       if (inversions > 0) this.logger?.warn("注册序号次序与账号创建时间不一致", { inversions });
     } catch (error) {
       this.logger?.error("注册序号次序自检失败", errorKindOf(error));
@@ -245,10 +247,10 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
   }
 
   async rankOf(userId: string): Promise<number | null> {
-    await this.database.ready;
+    const db = await this.database.client();
     const seq = await this.seqOf(userId);
     if (seq === null) return null;
-    const [row] = await this.database.db
+    const [row] = await db
       .select({ value: sql<number>`count(*)` })
       .from(userRegistration)
       .where(lte(userRegistration.seq, seq));
@@ -257,10 +259,11 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
 
   /** 一批账号接在现有最大值之后连续编号；被并发建号抢先就重读最大值重来。 */
   private async appendBatch(userIds: readonly string[]): Promise<void> {
+    const db = await this.database.client();
     for (let attempt = 1; ; attempt += 1) {
       const start = (await this.maxSeq()) + 1;
       try {
-        await this.database.db
+        await db
           .insert(userRegistration)
           .values(userIds.map((userId, offset) => ({ seq: start + offset, userId })));
         return;
@@ -275,14 +278,16 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
 
   /** 当前最大序号；空表按 0 起算，第一条即 1。 */
   private async maxSeq(): Promise<number> {
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select({ value: sql<number | null>`max(${userRegistration.seq})` })
       .from(userRegistration);
     return row?.value == null ? 0 : Number(row.value);
   }
 
   private async seqOf(userId: string): Promise<number | null> {
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select({ seq: userRegistration.seq })
       .from(userRegistration)
       .where(eq(userRegistration.userId, userId))
@@ -292,8 +297,8 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
 
   /** 先行者名单：按序号升序取前 N 名，序号的数值大小不参与判定。 */
   async earlyAdopters(limit: number): Promise<Array<{ userId: string; serial: number }>> {
-    await this.database.ready;
-    return this.database.db
+    const db = await this.database.client();
+    return db
       .select({ userId: userRegistration.userId, serial: userRegistration.seq })
       .from(userRegistration)
       .orderBy(asc(userRegistration.seq))

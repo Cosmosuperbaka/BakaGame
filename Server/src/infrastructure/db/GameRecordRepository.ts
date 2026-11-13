@@ -72,8 +72,8 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   constructor(private readonly database: Database) {}
 
   async save(record: StoredGameRecord, round?: StoredGameRecordRound): Promise<void> {
-    await this.database.ready;
-    await this.database.db.transaction(async (tx) => {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
       await tx
         .insert(gameRecord)
         .values({
@@ -128,7 +128,7 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   }
 
   async list(filter: GameRecordFilter): Promise<{ items: GameRecordListItem[]; total: number }> {
-    await this.database.ready;
+    const db = await this.database.client();
     const conditions: SQL[] = [];
     if (filter.game) conditions.push(eq(gameRecord.game, filter.game));
     if (filter.roomId) conditions.push(eq(gameRecord.roomId, filter.roomId));
@@ -137,7 +137,7 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
       conditions.push(
         inArray(
           gameRecord.id,
-          this.database.db
+          db
             .select({ id: gameRecordPlayer.recordId })
             .from(gameRecordPlayer)
             .where(eq(gameRecordPlayer.userId, filter.userId))
@@ -154,14 +154,14 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
       endedAt: gameRecord.endedAt,
     };
     const [rows, [count]] = await Promise.all([
-      this.database.db
+      db
         .select(columns)
         .from(gameRecord)
         .where(where)
         .orderBy(desc(gameRecord.endedAt))
         .limit(filter.limit)
         .offset(filter.offset),
-      this.database.db
+      db
         .select({ total: sql<number>`count(*)` })
         .from(gameRecord)
         .where(where),
@@ -178,14 +178,14 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   }
 
   async get(id: string): Promise<StoredGameRecordDetail | null> {
-    await this.database.ready;
-    const [row] = await this.database.db
+    const db = await this.database.client();
+    const [row] = await db
       .select()
       .from(gameRecord)
       .where(eq(gameRecord.id, id))
       .limit(1);
     if (!row) return null;
-    const rounds = await this.database.db
+    const rounds = await db
       .select()
       .from(gameRecordRound)
       .where(eq(gameRecordRound.recordId, id))
@@ -210,8 +210,8 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   }
 
   async dailyCounts(since: Date): Promise<GameDailyCount[]> {
-    await this.database.ready;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select({
         day: beijingDay,
         game: gameRecord.game,
@@ -236,7 +236,8 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   private async playersOf(ids: string[]): Promise<Map<string, GameRecordPlayer[]>> {
     const result = new Map<string, GameRecordPlayer[]>();
     if (!ids.length) return result;
-    const rows = await this.database.db
+    const db = await this.database.client();
+    const rows = await db
       .select()
       .from(gameRecordPlayer)
       .where(inArray(gameRecordPlayer.recordId, ids));
