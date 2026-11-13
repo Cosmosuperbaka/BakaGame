@@ -123,6 +123,27 @@ function SharedAppearances({ subjects }: { subjects: CEEFeedback["sharedAppearan
 // 容器窄于 30rem 时收起头像、收窄角色列：再窄就放不下带头像的整行，横滚前先让出这块宽度。
 const pinned = "sticky left-0 shadow-[inset_-1px_0_0_var(--color-border)]";
 
+/** 角色名下的结果标记。新到的猜中行：格子翻完后「猜中」才盖上去，作为这一轮开奖的落锤。 */
+function GuessOutcome({ guess, fresh }: { guess: CEEGuess; fresh: boolean }) {
+  if (guess.correct)
+    return (
+      <motion.span
+        {...(fresh ? clueHammer : {})}
+        className="inline-flex items-center gap-0.5 text-success"
+      >
+        <Check className="size-3" aria-hidden="true" />
+        猜中
+      </motion.span>
+    );
+  if (!guess.partial) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-warning">
+      <Lightbulb className="size-3" aria-hidden="true" />
+      作品命中
+    </span>
+  );
+}
+
 /**
  * 一次猜测。`fresh` 是表格挂载之后才到的猜测：旧行照常 `layout="position"` 下推，
  * 这一行不整行推入，而是角色名滑入、数值块逐格翻开、标签列最后显影（`clueFlip`）。
@@ -184,21 +205,7 @@ function GuessRow({
               {showRound ? (
                 <span className="whitespace-nowrap">· 第 {guess.syncRound} 轮</span>
               ) : null}
-              {guess.correct ? (
-                // 新到的猜中行：格子翻完后「猜中」才盖上去，作为这一轮开奖的落锤。
-                <motion.span
-                  {...(fresh ? clueHammer : {})}
-                  className="inline-flex items-center gap-0.5 text-success"
-                >
-                  <Check className="size-3" aria-hidden="true" />
-                  猜中
-                </motion.span>
-              ) : guess.partial ? (
-                <span className="inline-flex items-center gap-0.5 text-warning">
-                  <Lightbulb className="size-3" aria-hidden="true" />
-                  作品命中
-                </span>
-              ) : null}
+              <GuessOutcome guess={guess} fresh={fresh} />
             </span>
           </span>
         </motion.span>
