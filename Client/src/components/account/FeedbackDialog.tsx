@@ -135,7 +135,7 @@ function FeedbackDialogBody({
                 <>
                   <span
                     aria-hidden="true"
-                    className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
+                    className="ml-1.5 rounded-full bg-destructive-solid px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
                   >
                     {unread}
                   </span>

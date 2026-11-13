@@ -237,10 +237,21 @@ describe("index.css 状态色与次要文字令牌", () => {
               requiredRatio(name) - 0.0001
             );
           }
-          const solid = contrast(luminanceOf(status), luminanceOf(colorOf(`${token}-foreground`)));
+          // 危险色的实底单取 `destructive-solid`，前景只配它；其余状态色实底即文字档本身。
+          const fill = token === "destructive" ? colorOf("destructive-solid") : status;
+          const solid = contrast(luminanceOf(fill), luminanceOf(colorOf(`${token}-foreground`)));
           expect(solid, `实底 ${solid.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
         });
       }
+
+      it("凹陷档 muted 比页面底、面板、卡片都暗，叠在面板上仍看得出轮廓", () => {
+        const muted = luminanceOf(colorOf("muted"));
+        for (const name of ["background", "panel", "card"]) {
+          expect(muted, name).toBeLessThan(luminanceOf(colorOf(name)));
+        }
+        const onPanel = contrast(luminanceOf(colorOf("panel")), muted);
+        expect(onPanel, `面板 ${onPanel.toFixed(2)}:1`).toBeGreaterThanOrEqual(1.06);
+      });
 
       it("危险实底 destructive-solid 压前景 ≥ 4.5:1，且不比主色实底更亮", () => {
         const solid = colorOf("destructive-solid");

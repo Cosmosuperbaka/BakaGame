@@ -17,16 +17,16 @@ export type PlayerMarks = Record<string, PlayerMark>;
 const roleLabels: Record<PlayerMark, string> = { unknown: "未知", ...ROLE_LABELS };
 
 /**
- * 身份选择器里被选中的那一档。浮层底色是 `bg-background/95`，
- * 半透明色底会被它吃掉，所以这里单独给一套实底：
- * 底色取状态令牌本身，前景取配套的 `-foreground`，两档同源于一套取值。
+ * 身份选择器里被选中的那一档。亮色用状态色实底配配套前景，与浮层分得开。
+ * 暗色下状态色为了作文字读清被抬得很亮，整块实底成了全图最亮的块（灰档还翻成近白），
+ * 所以暗色改取同一色相的淡底配正文色：仍是一排里唯一有底色、文字最亮的那一格。
  */
 const roleSelectedTones: Record<PlayerMark, string> = {
-  unknown: "bg-muted-foreground/85 text-background",
-  civilian: "bg-info text-info-foreground",
-  undercover: "bg-destructive text-destructive-foreground",
-  blank: "bg-muted-foreground text-background",
-  angel: "bg-warning text-warning-foreground",
+  unknown: "bg-muted-foreground/85 text-background dark:bg-foreground/15 dark:text-foreground",
+  civilian: "bg-info text-info-foreground dark:bg-info/30 dark:text-foreground",
+  undercover: "bg-destructive-solid text-destructive-foreground",
+  blank: "bg-muted-foreground text-background dark:bg-foreground/25 dark:text-foreground",
+  angel: "bg-warning text-warning-foreground dark:bg-warning/30 dark:text-foreground",
 };
 
 export interface PlayerRowProps {
