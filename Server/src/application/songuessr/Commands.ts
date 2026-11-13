@@ -18,6 +18,7 @@ import {
   searchMusic,
 } from "./MusicCommands";
 import { sendChat } from "./Chat";
+import { addBots, removeBots, type TestBotRoundHooks } from "./dev/TestBots";
 import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import { isRoomStarting, isTestRoom } from "./RoomAccess";
@@ -39,8 +40,6 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "addBots"
-  | "removeBots"
   | "startGame"
   | "chooseSubmitter"
   | "getSongClipPreview"
@@ -59,6 +58,8 @@ type RoomHandlers = Pick<
 export interface SonGuessrCommandDeps {
   readonly ctx: SonGuessrContext;
   readonly handlers: RoomHandlers;
+  /** 测试机器人移除后的回合结算，回合引擎拆出前由门面注入。 */
+  readonly testBotRound: TestBotRoundHooks;
 }
 
 export type SonGuessrCommandTable = CommandTable<
@@ -364,12 +365,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     access: "host",
     phases: "any",
     guards: [testRoomOnly(ctx)],
-    run: (deps, at, m) => deps.handlers.addBots(at, m.payload.count),
+    run: (deps, at, m) => addBots(deps.ctx, at, m.payload.count),
   },
   "song.test.removeBot": {
     access: "host",
     phases: "any",
     guards: [testRoomOnly(ctx)],
-    run: (deps, at, m) => deps.handlers.removeBots(at, m.payload.count),
+    run: (deps, at, m) => removeBots(deps.ctx, deps.testBotRound, at, m.payload.count),
   },
 });

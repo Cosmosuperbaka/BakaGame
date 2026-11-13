@@ -1,4 +1,6 @@
 import { AppError } from "../../domain/Errors";
+import { normalizeName } from "../../domain/Rules";
+import { assertTextAllowed } from "../../infrastructure/SensitiveText";
 import type { ConnectionRecord } from "../../shared/Index";
 import type { CommandAt } from "../room/CommandTable";
 import { systemMessage, appendChat } from "../room/ChatLog";
@@ -55,3 +57,37 @@ export const appendSystemMessage = (
 ) => {
   appendChat(room, systemMessage({ id: ctx.ids.next("song_chat"), text, createdAt: ctx.now() }));
 };
+
+export function createPlayer(
+  ctx: SonGuessrContext,
+  nameValue: string,
+  host: boolean,
+  isBot = false,
+  seatId?: string
+): SonGuessrPlayerRecord {
+  const name = requireName(nameValue);
+  const now = ctx.now();
+  return {
+    id: seatId ?? ctx.ids.next("song_player"),
+    sessionToken: `${ctx.ids.next("song_session")}_${crypto.randomUUID()}`,
+    name,
+    membership: "active",
+    online: true,
+    isReady: host,
+    score: 0,
+    team: null,
+    correctGuesses: 0,
+    totalGuesses: 0,
+    roundMarks: [],
+    isBot,
+    joinedAt: now,
+    lastSeenAt: now,
+  };
+}
+
+export function requireName(value: string) {
+  const normalized = normalizeName(value).slice(0, 20);
+  if (!normalized) throw new AppError("INVALID_NAME", "用户名不能为空");
+  assertTextAllowed(normalized);
+  return normalized;
+}

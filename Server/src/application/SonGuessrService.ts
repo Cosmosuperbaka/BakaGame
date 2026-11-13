@@ -26,18 +26,13 @@ import {
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
-import {
-  BOT_NAME_SUFFIXES,
-  ROOM_EXPIRING_WARNING_MS,
-  TEST_BOT_BATCH_LIMIT,
-  TEST_MODE_MAX_PLAYERS,
-} from "../config/Constants";
+import { ROOM_EXPIRING_WARNING_MS } from "../config/Constants";
 import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView } from "../domain/AdminRoom";
 import type { GameService } from "./GameService";
 import { AppError } from "../domain/Errors";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
-import { ensureRoomId, normalizeName, normalizeWord } from "../domain/Rules";
+import { ensureRoomId, normalizeWord } from "../domain/Rules";
 import {
   SERVER_SHUTDOWN_MESSAGE,
   SONGUESSR_MAX_TEAM,
@@ -76,8 +71,10 @@ import {
   activePlayers,
   appendSystemMessage,
   canTestSubmitterGuess,
+  createPlayer,
   getRoom,
   isTestRoom,
+  requireName,
   requireRoomPlayer,
 } from "./songuessr/RoomAccess";
 import {
@@ -128,7 +125,6 @@ import {
   SonGuessrRoundPlayerState,
   SonGuessrRoundRecord,
   SongUpdateSettingsPayload,
-  clampInt,
   cloneSettings,
   direction,
   musicAuthOperationKey,
@@ -181,7 +177,14 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     });
     this.dispatcher = {
       table: createSonGuessrCommands(ctx),
-      deps: { ctx, handlers: this },
+      deps: {
+        ctx,
+        handlers: this,
+        testBotRound: {
+          isRoundComplete: (room) => this.isRoundComplete(room),
+          finishRound: (room) => this.finishRound(room),
+        },
+      },
       resolveSeat: (connection) => {
         const { room, player } = requireRoomPlayer(ctx, connection);
         return { room, seat: player };
@@ -451,7 +454,8 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       const password =
         payload.visibility === "private" ? this.passwordGate.require(payload.password) : undefined;
 
-      const player = this.createPlayer(
+      const player = createPlayer(
+        this.ctx,
         payload.userName,
         true,
         false,
@@ -521,7 +525,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     await this.passwordGate.verify(room, room.visibility, payload.password, connection.id);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.ctx.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
-    const name = this.requireName(payload.userName);
+    const name = requireName(payload.userName);
     if (
       Object.values(room.players).some(
         (player) => player.name === name && player.membership !== "kicked"
@@ -537,7 +541,13 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
     // 目标校验全部通过后才解绑旧席位：密码错误、房号不存在等拒绝不得销毁原绑定。
     this.ensureConnectionFree(connection);
-    const player = this.createPlayer(name, false, false, tabSeatId(connection, "song", room.id));
+    const player = createPlayer(
+      this.ctx,
+      name,
+      false,
+      false,
+      tabSeatId(connection, "song", room.id)
+    );
     if (connection.isAgent === true) player.isAgent = true;
     player.membership = membership;
     room.players[player.id] = player;
@@ -888,47 +898,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     return { hostPlayerId: room.hostPlayerId };
-  }
-
-  addBots(at: SongCommandAt, countValue?: number) {
-    const { room } = at;
-    const currentCount = Object.values(room.players).length;
-    if (currentCount >= TEST_MODE_MAX_PLAYERS) {
-      throw new AppError("ROOM_FULL", `测试房间最多 ${TEST_MODE_MAX_PLAYERS} 名玩家`);
-    }
-    // 单条指令的批量上限只约束「一次能加多少」，必须再卡一次总人数：
-    // 否则反复调用就能把房间撑到任意规模，内存与全房广播量都无上界。
-    const count = clampInt(
-      countValue ?? 1,
-      1,
-      Math.min(TEST_BOT_BATCH_LIMIT, TEST_MODE_MAX_PLAYERS - currentCount)
-    );
-    const added: string[] = [];
-    for (let index = 0; index < count; index += 1) {
-      const botIndex = Object.values(room.players).filter((candidate) => candidate.isBot).length;
-      const suffix = BOT_NAME_SUFFIXES[botIndex] ?? String(botIndex + 1);
-      const bot = this.createPlayer(`测试人机 ${suffix}`, false, true);
-      bot.isReady = true;
-      room.players[bot.id] = bot;
-      added.push(bot.id);
-    }
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return { addedPlayerIds: added };
-  }
-
-  removeBots(at: SongCommandAt, countValue?: number) {
-    const { room } = at;
-    const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
-    const bots = Object.values(room.players)
-      .filter((candidate) => candidate.isBot)
-      .sort((left, right) => right.joinedAt - left.joinedAt)
-      .slice(0, count);
-    for (const bot of bots) delete room.players[bot.id];
-    if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return { removedPlayerIds: bots.map((bot) => bot.id) };
   }
 
   async startGame(at: SongCommandAt) {
@@ -2118,32 +2087,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.settleHostChange(room, previousHostId);
   }
 
-  private createPlayer(
-    nameValue: string,
-    host: boolean,
-    isBot = false,
-    seatId?: string
-  ): SonGuessrPlayerRecord {
-    const name = this.requireName(nameValue);
-    const now = this.ctx.now();
-    return {
-      id: seatId ?? this.ctx.ids.next("song_player"),
-      sessionToken: `${this.ctx.ids.next("song_session")}_${crypto.randomUUID()}`,
-      name,
-      membership: "active",
-      online: true,
-      isReady: host,
-      score: 0,
-      team: null,
-      correctGuesses: 0,
-      totalGuesses: 0,
-      roundMarks: [],
-      isBot,
-      joinedAt: now,
-      lastSeenAt: now,
-    };
-  }
-
   private requireActiveRound(room: SonGuessrRoomRecord) {
     if (room.phase !== "playing" || !room.currentRound) {
       throw new AppError("NO_ACTIVE_ROUND", "当前没有进行中的回合");
@@ -2176,13 +2119,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
     for (const room of roomsOfTab(this.roomKernel, tabKey)) this.ctx.publishRoom(room);
-  }
-
-  private requireName(value: string) {
-    const normalized = normalizeName(value).slice(0, 20);
-    if (!normalized) throw new AppError("INVALID_NAME", "用户名不能为空");
-    assertTextAllowed(normalized);
-    return normalized;
   }
 
   /**
