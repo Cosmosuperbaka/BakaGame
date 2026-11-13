@@ -58,6 +58,7 @@ import {
   type CEEOriginalContext,
   type CEEOriginalOptions,
 } from "./CEEOriginalContext";
+import { fetchRooms, listUpstreamRooms } from "./CEEOriginalLobby";
 
 export class CEEOriginalService {
   private readonly connections = new Map<string, ConnectionRecord>();
@@ -130,19 +131,7 @@ export class CEEOriginalService {
 
   /** 上游完整房间列表（含非公开房），供统一房号目录分配别名；大厅只展示其中的公开房。 */
   async listUpstreamRooms(): Promise<CEEUpstreamRoom[]> {
-    if (!this.configured) return [];
-    return (await this.fetchRooms())
-      .map((room): CEEUpstreamRoom => ({
-        id: originalString(room.id),
-        isPublic: room.isPublic === true,
-        name:
-          originalString(room.displayRoomName) ||
-          originalString(room.roomName) ||
-          `${originalString(room.hostName)}的房间`,
-        phase: room.isGameStarted === true ? "guessing" : "waiting",
-        playerCount: originalNumber(room.playerCount),
-      }))
-      .filter((room) => room.id);
+    return listUpstreamRooms(this.ctx);
   }
 
   /** 仍有本地会话（含建房确认途中）的上游房号：这些房间的别名不能释放。 */
@@ -372,7 +361,7 @@ export class CEEOriginalService {
     const roomId = target.upstreamRoomId;
     if (connection.roomId || this.byConnection.has(connection.id))
       throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间");
-    if (!create && !(await this.fetchRooms()).some((room) => room.id === roomId))
+    if (!create && !(await fetchRooms(this.ctx)).some((room) => room.id === roomId))
       throw new AppError("ROOM_NOT_FOUND", "原版房间不存在");
     if (!this.connections.has(connection.id))
       throw new AppError("CONNECTION_NOT_FOUND", "加入期间连接已断开");
@@ -790,22 +779,6 @@ export class CEEOriginalService {
     for (const peer of this.sessions.values())
       if (peer.confirmed && peer.roomId === session.roomId) publish(this.ctx, peer);
     return { message };
-  }
-
-  private async fetchRooms(): Promise<Record<string, unknown>[]> {
-    try {
-      const response = await this.fetcher(new URL("/api/list-rooms", this.options.serverUrl), {
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload: unknown = await response.json();
-      if (!Array.isArray(payload)) throw new Error("shape");
-      return payload.map(originalObject);
-    } catch (error) {
-      // 对外仍是统一的不可用文案；超时、HTTP 状态与形状错误只进日志，便于分清是哪一种。
-      this.options.logger?.warn("原版房间列表请求失败", { reason: reasonOf(error) });
-      throw new AppError("CEE_ORIGINAL_UNAVAILABLE", "暂时无法连接原版服务器");
-    }
   }
 
   private requireSession(id: string): CEEOriginalSession {
