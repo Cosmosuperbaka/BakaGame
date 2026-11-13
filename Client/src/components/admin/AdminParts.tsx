@@ -1,4 +1,4 @@
-import { Fragment, useState, type ComponentProps, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
@@ -449,6 +449,9 @@ export function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 确认框由按钮的点击状态打开，没有 Radix 的 Trigger 可回：打开时记下焦点所在的按钮，关闭时还给它，
+  // 键盘用户（尤其是嵌在详情弹窗里时）关掉确认框后不会掉到页面顶层。
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const confirm = async () => {
     setBusy(true);
     setError(null);
@@ -474,7 +477,18 @@ export function ConfirmDialog({
         }
       }}
     >
-      <DialogContent>
+      <DialogContent
+        onOpenAutoFocus={() => {
+          const active = document.activeElement;
+          restoreFocusRef.current = active instanceof HTMLElement ? active : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = restoreFocusRef.current;
+          if (!target?.isConnected) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
