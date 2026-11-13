@@ -25,7 +25,8 @@ const HIDE_FROM = { md: "md:hidden", xl: "xl:hidden" } as const;
 
 /**
  * 顶栏中间的身份徽章（主持人、出题人、旁观等），只写身份名，不加「视角」后缀。
- * `truncate` 让徽章在中栏放不下时收窄并截断文字（如词语提示），默认保持原宽。
+ * 手机宽度下中栏只剩一百来像素，身份徽章只留图标、身份名交给读屏，三款玩法同一种窄屏形态；
+ * `truncate` 的徽章（如词语提示）内容本身就是信息，窄屏收起图标、照常显示文字并在放不下时截断，悬停补全文。
  */
 export function HeaderChip({
   icon: Icon,
@@ -48,22 +49,38 @@ export function HeaderChip({
       <span
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs font-semibold",
-          truncate ? "min-w-0" : "shrink-0",
+          truncate ? "min-w-0" : "shrink-0 max-sm:px-1.5",
           muted ? "text-muted-foreground" : "text-foreground",
           className
         )}
       >
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        {truncate ? <span className="min-w-0 truncate">{label}</span> : label}
+        {/* 窄屏上截断型徽章把图标的位置让给文字：与停靠在顶栏的词语同一种纯文字小块。 */}
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", truncate && "max-sm:hidden")} />
+        {truncate ? (
+          <span className="min-w-0 truncate">{label}</span>
+        ) : (
+          <span className="max-sm:sr-only">{label}</span>
+        )}
       </span>
     </Hint>
   );
 }
 
-/** 顶栏中间的局数/天数文字。 */
-export function HeaderCounter({ children }: { children: ReactNode }) {
+/** 顶栏中间的局数/天数文字。`className` 只供调用处在窄屏让位时收起它。 */
+export function HeaderCounter({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-muted-foreground sm:text-sm">
+    <span
+      className={cn(
+        "shrink-0 whitespace-nowrap text-xs font-semibold text-muted-foreground sm:text-sm",
+        className
+      )}
+    >
       {children}
     </span>
   );

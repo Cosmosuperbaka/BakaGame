@@ -44,23 +44,44 @@ export function FakerAssignedWord({
   const wordRef = useRef<HTMLDivElement>(null);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
+  /** 单行排开时的自然宽度：停靠位按它申请宽度，中栏放得下时就不折行。 */
+  const singleLineWidthRef = useRef(0);
+  /**
+   * 中栏放不下单行时的折行宽度（未缩放的像素）。停靠元素是固定定位，不受中栏裁切，
+   * 宽过中栏就会盖住右侧的反馈、设置等图标；折成至多两行后仍是同一个元素，
+   * 揭示与停靠两端用同一宽度，过渡途中不重排。
+   */
+  const [wrapWidth, setWrapWidth] = useState<number | null>(null);
 
-  // 以未变形的自然尺寸为基准，反推停靠占位大小。
+  // 以未变形的自然尺寸为基准，反推停靠占位大小：宽度按单行申请，高度按当前（可能折行的）实际高度。
   useLayoutEffect(() => {
     const node = wordRef.current;
     if (!node) return;
+    const { maxWidth, whiteSpace } = node.style;
+    node.style.maxWidth = "none";
+    node.style.whiteSpace = "nowrap";
+    const singleLine = node.offsetWidth;
+    node.style.maxWidth = maxWidth;
+    node.style.whiteSpace = whiteSpace;
     const width = node.offsetWidth;
     const height = node.offsetHeight;
     if (width === 0 || height === 0) return;
+    singleLineWidthRef.current = singleLine;
     setNatural({ width, height });
     onDockSizeChange({
-      width: Math.ceil(width * wordDock.scale),
+      width: Math.ceil(singleLine * wordDock.scale),
       height: Math.ceil(height * wordDock.scale),
     });
-  }, [word, onDockSizeChange]);
+  }, [word, wrapWidth, onDockSizeChange]);
 
   const measure = useCallback(() => {
     if (!natural) return;
+    // 停靠位在中栏里可以被挤窄：比单行窄时按它的实际宽度折行。
+    const anchorWidth = anchorRef.current?.getBoundingClientRect().width ?? 0;
+    const wanted = Math.ceil(singleLineWidthRef.current * wordDock.scale);
+    setWrapWidth(
+      anchorWidth > 0 && anchorWidth + 1 < wanted ? Math.floor(anchorWidth / wordDock.scale) : null
+    );
     if (revealed) {
       const stage = stageRef.current?.getBoundingClientRect();
       if (!stage) return;
@@ -98,10 +119,11 @@ export function FakerAssignedWord({
       // 揭示态盖在揭词背板之上取 z-modal；停靠后只是顶栏里的一枚标签，降到 z-sticky，让抽屉与弹窗盖得住它。
       // 停靠后与顶栏的 HeaderChip 同一语言：实底 bg-muted 配正文色，主色不作正文（DesignGuide §3）。
       className={cn(
-        "pointer-events-none fixed left-0 top-0 whitespace-nowrap rounded-md bg-muted px-6 py-3 text-4xl font-bold leading-tight text-foreground",
+        "pointer-events-none fixed left-0 top-0 rounded-md bg-muted px-6 py-3 text-4xl font-bold leading-tight text-foreground",
+        wrapWidth === null ? "whitespace-nowrap" : "whitespace-normal [overflow-wrap:anywhere]",
         revealed ? "z-modal" : "z-sticky"
       )}
-      style={{ originX: 0, originY: 0 }}
+      style={{ originX: 0, originY: 0, maxWidth: wrapWidth ?? undefined }}
       animate={
         placement
           ? { x: placement.x, y: placement.y, scale: placement.scale, opacity: 1 }
@@ -118,7 +140,9 @@ export function FakerAssignedWord({
           : { duration: duration.none }
       }
     >
-      {word}
+      {/* 折行时最多两行：停靠后两行仍在顶栏高度之内，超长的提示以省略号收尾。
+        截断放在内层：外层的内边距不参与裁切，第三行不会从底边露出半截。 */}
+      <span className={wrapWidth === null ? undefined : "line-clamp-2"}>{word}</span>
     </motion.div>
   );
 }
