@@ -2,39 +2,29 @@ import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
 import { lyricOverview } from "@/lib/Motion";
-import { isMediaClockRunning, MEDIA_CLOCK_EVENTS, toAMLLLines } from "./SongLyricLines";
+import { AmllSceneBase } from "./AmllSceneBase";
+import { isMediaClockRunning, toAMLLLines } from "./SongLyricLines";
 
 type Playback = "idle" | "playing" | "paused" | "completed";
 type AudioStatus = "loading" | "ready" | "error";
 
 /** 原生生命周期：https://amll.dev/guides/component/sequence */
-export class SongLyricScene {
-  private readonly player = new LyricPlayer();
-  private readonly element = this.player.getElement();
-  private readonly observer: ResizeObserver;
+export class SongLyricScene extends AmllSceneBase {
   private readonly reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  private lines: SongLyricLine[] = [];
-  private audio: HTMLAudioElement | null = null;
   private clipStartTime: number | undefined;
   private playback: Playback = "idle";
   private audioStatus: AudioStatus = "ready";
   private overview = false;
-  private ready = false;
-  private fontsReady = false;
-  private disposed = false;
-  private frame = 0;
   private pausedTimer: number | null = null;
-  private lastFrame: number | null = null;
   private animations: Animation[] = [];
   private switchTimer: number | null = null;
-  private readonly host: HTMLElement;
   /** 受视口约束的可见窗口：播放时裁掉超长片段，总览时在这里滚动。 */
   private readonly viewport: HTMLElement | null;
   private alignPosition: number = lyricOverview.scale / 2;
   private overflowing = false;
 
   constructor(host: HTMLElement) {
-    this.host = host;
+    super(new LyricPlayer(), host);
     this.viewport = host.parentElement;
     this.element.classList.add("baka-lyric-player");
     this.element.style.height = "0px";
@@ -43,32 +33,22 @@ export class SongLyricScene {
     this.player.setOverscanPx(0x7fffffff);
     this.player.setEnableScale(false);
     this.player.pause();
-    this.observer = new ResizeObserver(this.measure);
-    this.observer.observe(host);
-    this.observer.observe(this.element);
+    this.watchLayout();
     if (this.viewport) this.observer.observe(this.viewport);
     this.viewport?.addEventListener("scroll", this.syncEdges, { passive: true });
-    document.fonts?.addEventListener("loadingdone", this.measure);
     this.reducedMotion.addEventListener("change", this.onMotionChange);
   }
 
   setSource(lines: SongLyricLine[], audio: HTMLAudioElement | null, clipStartTime?: number) {
     this.clipStartTime = clipStartTime;
-    if (audio !== this.audio) {
-      this.listenAudio(false);
-      this.audio = audio;
-      this.listenAudio(true);
-    }
+    this.setAudio(audio);
     if (equal(this.lines, lines)) return;
     this.cancelTick();
     this.cancelAnimations();
     this.ready = false;
     this.fontsReady = false;
     delete this.host.dataset.ready;
-    this.observer.disconnect();
-    this.observer.observe(this.host);
-    this.observer.observe(this.element);
-    if (this.viewport) this.observer.observe(this.viewport);
+    this.rebindObserver([this.viewport]);
     this.lines = structuredClone(lines);
     this.player.setLyricLines(toAMLLLines(lines), this.initialTime());
     for (const group of this.player.currentLyricGroups) {
@@ -77,19 +57,13 @@ export class SongLyricScene {
     }
     this.measure();
     this.scheduleFrame();
-    // 先挂载并触发布局，才会请求本段文字对应的字体分片。
-    const source = this.lines;
-    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
-      if (this.disposed || this.lines !== source) return;
-      this.fontsReady = true;
-      this.measure();
-    });
+    this.whenFontsReady();
   }
 
   setPlayback(playback: Playback, status: AudioStatus) {
     this.playback = playback;
     this.audioStatus = status;
-    this.syncAudio();
+    this.syncMedia();
     const overview = playback === "completed";
     if (overview !== this.overview) this.setOverview(overview);
     else if (!this.ready) this.align(true);
@@ -109,7 +83,7 @@ export class SongLyricScene {
       : firstTime;
   }
 
-  private syncAudio = () => {
+  protected syncMedia(): void {
     const playing =
       this.playback === "playing" &&
       this.audioStatus === "ready" &&
@@ -126,13 +100,6 @@ export class SongLyricScene {
     // pause/ended 只停表，绝不能先倒回首句、下一次提交才进入总览。
     // 媒体重新走起来时按 seek 提交：重新启用热行，把停摆期间的遮罩对齐到真实媒体时间。
     if (playing && !this.overview) this.player.setCurrentTime(this.initialTime(), changed);
-  };
-
-  private listenAudio(add: boolean) {
-    for (const event of MEDIA_CLOCK_EVENTS) {
-      if (add) this.audio?.addEventListener(event, this.syncAudio);
-      else this.audio?.removeEventListener(event, this.syncAudio);
-    }
   }
 
   private align(force: boolean) {
@@ -253,31 +220,24 @@ export class SongLyricScene {
     }
   };
 
-  private measure = () => {
+  protected measure(): void {
     if (this.disposed || !this.lines.length || this.host.clientWidth === 0) return;
-    const groups = this.player.currentLyricGroups;
-    // 与内核 ResizeObserver 使用同一 clientHeight（包含翻译、注音、和声及折行）。
     // CSS 保证背景行始终占位且关闭 content-visibility 占位尺寸。
-    const height = groups.reduce((total, group) => total + group.element.clientHeight, 0);
+    const { groups, height } = this.groupsHeight();
     if (height === 0) return;
     const shown = Math.ceil(height * lyricOverview.scale);
     this.element.style.height = `${height}px`;
     this.host.style.height = `${shown}px`;
     this.fitViewport(height, shown);
-    // 必须等内核读到相同的盒模型，再将首帧交给用户；不按固定帧数猜测就绪。
-    const measured =
-      this.player.size[1] === height &&
-      groups.every(
-        (group) => this.player.lyricGroupSize.get(group)?.[1] === group.element.clientHeight
-      );
-    if (!this.ready && this.fontsReady && measured) {
+    // 必须等内核读到相同的盒模型，再将首帧交给用户。
+    if (!this.ready && this.fontsReady && this.isLayoutSettled(groups, height)) {
       this.align(true);
       this.ready = true;
       this.host.dataset.ready = "true";
     }
-  };
+  }
 
-  private scheduleFrame() {
+  protected scheduleFrame(): void {
     if (this.disposed || !this.lines.length || this.frame || this.pausedTimer !== null) return;
     if (this.player.getIsPlaying()) {
       this.frame = requestAnimationFrame(this.tick);
@@ -291,32 +251,20 @@ export class SongLyricScene {
     }
   }
 
-  private cancelTick() {
-    cancelAnimationFrame(this.frame);
-    this.frame = 0;
+  protected override cancelTick(): void {
+    super.cancelTick();
     if (this.pausedTimer !== null) window.clearTimeout(this.pausedTimer);
     this.pausedTimer = null;
-    this.lastFrame = null;
   }
 
-  private tick = (time: number) => {
-    this.frame = 0;
-    if (this.disposed) return;
-    this.syncAudio();
-    this.player.update(this.lastFrame === null ? 0 : time - this.lastFrame);
-    this.lastFrame = time;
-    this.scheduleFrame();
-  };
+  protected beforeFrame(): void {
+    this.syncMedia();
+  }
 
-  dispose() {
-    this.disposed = true;
-    this.cancelTick();
+  override dispose(): void {
     this.cancelAnimations();
-    this.listenAudio(false);
-    this.observer.disconnect();
     this.viewport?.removeEventListener("scroll", this.syncEdges);
-    document.fonts?.removeEventListener("loadingdone", this.measure);
     this.reducedMotion.removeEventListener("change", this.onMotionChange);
-    this.player.dispose();
+    super.dispose();
   }
 }

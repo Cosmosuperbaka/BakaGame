@@ -3,7 +3,8 @@ import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
 import { isLyricLineInClip } from "@bakagame/shared/values";
 import { formatClipTime } from "./SongClipEditing";
-import { isMediaClockRunning, MEDIA_CLOCK_EVENTS, toAMLLLines } from "./lyrics/SongLyricLines";
+import { AmllSceneBase } from "./lyrics/AmllSceneBase";
+import { isMediaClockRunning, toAMLLLines } from "./lyrics/SongLyricLines";
 
 interface SelectorRow {
   element: HTMLElement;
@@ -40,22 +41,11 @@ const rangeMark = (index: number, first?: number, last?: number) => {
   return index === last ? "止" : "";
 };
 
-export class SongClipLyricScene {
-  private readonly player = new SelectorLyricPlayer();
-  private readonly element = this.player.getElement();
-  private readonly observer: ResizeObserver;
+export class SongClipLyricScene extends AmllSceneBase {
   private readonly rows = new Map<number, SelectorRow>();
-  private lines: SongLyricLine[] = [];
-  private audio: HTMLAudioElement | null = null;
   private playing = false;
   private range: readonly [number, number] = [0, 0];
   private anchorIndex: number | null = null;
-  private fontsReady = false;
-  private ready = false;
-  private disposed = false;
-  private frame = 0;
-  private lastFrame: number | null = null;
-  private readonly host: HTMLElement;
   private readonly scroller: HTMLElement | null;
   /** 列表唯一的 Tab 停靠行；玩家没聚焦过时跟着选段走。 */
   private rovingIndex: number | null = null;
@@ -67,7 +57,7 @@ export class SongClipLyricScene {
   onPlacement?: (placement: SelectionPlacement) => void;
 
   constructor(host: HTMLElement) {
-    this.host = host;
+    super(new SelectorLyricPlayer(), host);
     this.scroller = host.parentElement;
     this.scroller?.addEventListener("scroll", this.syncPlacement, { passive: true });
     for (const event of USER_SCROLL_EVENTS) {
@@ -80,18 +70,11 @@ export class SongClipLyricScene {
     this.player.setEnableScale(false);
     this.player.setEnableBlur(false);
     this.player.pause();
-    this.observer = new ResizeObserver(this.measure);
-    this.observer.observe(host);
-    this.observer.observe(this.element);
-    document.fonts?.addEventListener("loadingdone", this.measure);
+    this.watchLayout();
   }
 
   setSource(lines: SongLyricLine[], audio: HTMLAudioElement | null) {
-    if (audio !== this.audio) {
-      this.listenAudio(false);
-      this.audio = audio;
-      this.listenAudio(true);
-    }
+    this.setAudio(audio);
     if (equal(this.lines, lines)) return;
     this.cancelTick();
     this.rows.clear();
@@ -100,9 +83,7 @@ export class SongClipLyricScene {
     this.ready = false;
     this.fontsReady = false;
     delete this.host.dataset.ready;
-    this.observer.disconnect();
-    this.observer.observe(this.host);
-    this.observer.observe(this.element);
+    this.rebindObserver();
     this.lines = structuredClone(lines);
     this.player.setLyricLines(toAMLLLines(this.lines), this.mediaTime());
     for (const group of this.player.currentLyricGroups) {
@@ -115,18 +96,13 @@ export class SongClipLyricScene {
     void this.player.calcLayout(true, true);
     this.player.update(0);
     this.measure();
-    const source = this.lines;
-    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
-      if (this.disposed || this.lines !== source) return;
-      this.fontsReady = true;
-      this.measure();
-    });
-    this.syncPlayback();
+    this.whenFontsReady();
+    this.syncMedia();
   }
 
   setPlayback(playing: boolean) {
     this.playing = playing;
-    this.syncPlayback();
+    this.syncMedia();
   }
 
   setSelection(range: readonly [number, number], anchorIndex: number | null) {
@@ -257,7 +233,7 @@ export class SongClipLyricScene {
     this.syncPlacement();
   }
 
-  private syncPlayback = () => {
+  protected syncMedia(): void {
     const playing = Boolean(
       this.playing && this.audio && isMediaClockRunning(this.audio) && this.lines.length
     );
@@ -270,7 +246,7 @@ export class SongClipLyricScene {
     this.player.update(0);
     if (playing) this.scheduleFrame();
     else this.cancelTick();
-  };
+  }
 
   private syncTime(seek: boolean) {
     const time = this.mediaTime();
@@ -281,28 +257,15 @@ export class SongClipLyricScene {
     }
   }
 
-  private listenAudio(add: boolean) {
-    for (const event of MEDIA_CLOCK_EVENTS) {
-      if (add) this.audio?.addEventListener(event, this.syncPlayback);
-      else this.audio?.removeEventListener(event, this.syncPlayback);
-    }
-  }
-
-  private measure = () => {
+  protected measure(): void {
     if (this.disposed || !this.lines.length || this.host.clientWidth === 0) return;
-    const groups = this.player.currentLyricGroups;
-    const height = groups.reduce((total, group) => total + group.element.clientHeight, 0);
+    const { groups, height } = this.groupsHeight();
     if (height === 0) return;
     this.element.style.height = `${height}px`;
     // 字体与折行落定、窗口变窄都会改行高；选段不能因此被挤出视野。
     if (this.ready && this.anchored && height !== this.measuredHeight) this.revealSelection(false);
     this.measuredHeight = height;
-    const measured =
-      this.player.size[1] === height &&
-      groups.every(
-        (group) => this.player.lyricGroupSize.get(group)?.[1] === group.element.clientHeight
-      );
-    if (this.ready || !this.fontsReady || !measured) return;
+    if (this.ready || !this.fontsReady || !this.isLayoutSettled(groups, height)) return;
     void this.player.calcLayout(true, true);
     this.syncTime(true);
     this.player.update(0);
@@ -310,39 +273,23 @@ export class SongClipLyricScene {
     this.host.dataset.ready = "true";
     this.revealSelection(false);
     this.syncPlacement();
-  };
+  }
 
-  private scheduleFrame() {
+  protected scheduleFrame(): void {
     if (this.disposed || this.frame || !this.lines.length) return;
     this.frame = requestAnimationFrame(this.tick);
   }
 
-  private cancelTick() {
-    cancelAnimationFrame(this.frame);
-    this.frame = 0;
-    this.lastFrame = null;
+  protected beforeFrame(): void {
+    this.syncTime(false);
   }
 
-  private tick = (time: number) => {
-    this.frame = 0;
-    if (this.disposed) return;
-    this.syncTime(false);
-    this.player.update(this.lastFrame === null ? 0 : time - this.lastFrame);
-    this.lastFrame = time;
-    this.scheduleFrame();
-  };
-
-  dispose() {
-    this.disposed = true;
-    this.cancelTick();
-    this.listenAudio(false);
-    this.observer.disconnect();
+  override dispose(): void {
     this.scroller?.removeEventListener("scroll", this.syncPlacement);
     for (const event of USER_SCROLL_EVENTS) {
       this.scroller?.removeEventListener(event, this.releaseAnchor);
     }
-    document.fonts?.removeEventListener("loadingdone", this.measure);
     this.rows.clear();
-    this.player.dispose();
+    super.dispose();
   }
 }
