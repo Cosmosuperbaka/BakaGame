@@ -202,6 +202,7 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
     linkClick(targetPath, () => {
       if (enteringPath) return false;
       setEnteringPath(targetPath);
+      return undefined;
     });
 
   // 单一入口游戏被后台临时关掉：卡片照常呈现，入口按钮换成「暂时关闭」的占位格。

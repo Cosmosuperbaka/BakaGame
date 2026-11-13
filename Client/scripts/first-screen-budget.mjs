@@ -36,7 +36,8 @@ export const BUDGETS = {
   entryCssRawBytes: 140_000,
   /** 整个 dist 的总字节、图片总字节、内容逐字节相同的重复文件所占字节（表情图公共路径与哈希路径各存一份）。 */
   distTotalBytes: 39_500_000,
-  emittedImageBytes: 6_100_000,
+  // 含四张 1200×630 的分享卡片与根目录图标一套（页面本身不加载，只给抓取器与书签用）。
+  emittedImageBytes: 6_670_000,
   duplicateAssetBytes: 2_650_000,
   /** 按显示尺寸出档的资源（见 prepare-public-webp 的 DISPLAY_MAX_HEIGHT_PX）。 */
   logoBytes: 220_000,
