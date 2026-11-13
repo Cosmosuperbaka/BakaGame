@@ -33,6 +33,7 @@ import {
   PAGE_META,
   SITE_NAME,
   SITE_TAGLINE,
+  buildBreadcrumbStructuredData,
   buildFaqStructuredData,
   buildHeadTags,
   type HeadTag,
@@ -42,6 +43,7 @@ import {
 const STATIC_SEO_ATTRIBUTE = "data-static-seo";
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
 const FAQ_STRUCTURED_DATA_ID = "bakagame-faq-structured-data";
+const BREADCRUMB_STRUCTURED_DATA_ID = "bakagame-breadcrumb-structured-data";
 // 清空外壳的内联脚本（构建后必须存在，缺失即断言失败）
 const SHELL_CLEAR_CODE = 'document.getElementById("root").replaceChildren()';
 
@@ -59,6 +61,13 @@ function serializeHeadTag(tag: HeadTag): string {
     .map(([name, value]) => `${name}="${escapeHtml(value)}"`)
     .join(" ");
   return `<${tag.kind} ${attrs} ${STATIC_SEO_ATTRIBUTE}="1" />`;
+}
+
+/** 一段 JSON-LD：固定 id 让运行时 Seo 按同一 id 覆盖、不产生重复；数据为空时不写。 */
+function jsonLdScript(id: string, data: Record<string, unknown> | null): string[] {
+  return data
+    ? [`<script id="${id}" type="application/ld+json">${JSON.stringify(data)}</script>`]
+    : [];
 }
 
 // FAQ 是每页的必备内容：缺问答、空条目或重复问题，直接让构建失败——
@@ -100,15 +109,11 @@ function buildShellPage(
   meta: PageMeta
 ): { path: string; title: string; html: string; outputs: string[] } {
   const title = escapeHtml(meta.title);
-  const faqStructuredData = buildFaqStructuredData(meta.faq);
   const head = [
     ...buildHeadTags({ ...meta, indexable: true }).map(serializeHeadTag),
-    `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
-    ...(faqStructuredData
-      ? [
-          `<script id="${FAQ_STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(faqStructuredData)}</script>`,
-        ]
-      : []),
+    ...jsonLdScript(STRUCTURED_DATA_ID, meta.structuredData),
+    ...jsonLdScript(FAQ_STRUCTURED_DATA_ID, buildFaqStructuredData(meta.faq)),
+    ...jsonLdScript(BREADCRUMB_STRUCTURED_DATA_ID, buildBreadcrumbStructuredData(meta)),
   ].join("\n    ");
 
   const body = [

@@ -7,7 +7,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { staticShellPlugin } from "../../scripts/vite-plugins/StaticShell";
 import { Seo } from "@/components/common/Seo";
-import { PAGE_META } from "@/data/PageMeta";
+import { PAGE_META, SITE_ORIGIN } from "@/data/PageMeta";
 
 // 用真实的入口 HTML 跑一遍静态外壳插件，产物写进临时目录：断言的是部署出去的文件本身。
 let root: string;
@@ -78,5 +78,46 @@ describe("登记页的静态外壳", () => {
 
       expect(runtimeTags, meta.path).toEqual(shellTags);
     }
+  });
+});
+
+const jsonLd = (file: string, id: string) => {
+  const script = parse(readDist(file)).getElementById(id);
+  return script ? JSON.parse(script.textContent ?? "") : null;
+};
+
+describe("结构化数据", () => {
+  it("游戏页与关于页带两级面包屑，首页没有", () => {
+    expect(jsonLd("index.html", "bakagame-breadcrumb-structured-data")).toBeNull();
+    for (const meta of PAGE_META.filter((item) => item.path !== "/")) {
+      const breadcrumb = jsonLd(
+        `${meta.path.slice(1)}.html`,
+        "bakagame-breadcrumb-structured-data"
+      );
+      expect(breadcrumb, meta.path).toMatchObject({
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { position: 1, name: "BakaGame", item: `${SITE_ORIGIN}/` },
+          { position: 2, name: meta.shortTitle, item: `${SITE_ORIGIN}${meta.path}` },
+        ],
+      });
+    }
+  });
+
+  // 组织实体带 @id，站内其它实体按 id 引用同一个组织；logo 用方形图标，不用横幅动图的首帧。
+  it("首页的站点实体引用带 id 的组织实体，logo 是方形图标", () => {
+    const site = jsonLd("index.html", "bakagame-structured-data");
+    expect(site["@id"]).toBe(`${SITE_ORIGIN}/#website`);
+    expect(site.publisher).toMatchObject({
+      "@type": "Organization",
+      "@id": `${SITE_ORIGIN}/#organization`,
+      logo: {
+        "@type": "ImageObject",
+        url: `${SITE_ORIGIN}/favicon-512.png`,
+        width: 512,
+        height: 512,
+      },
+    });
+    expect(site.publisher).not.toHaveProperty("slogan");
   });
 });

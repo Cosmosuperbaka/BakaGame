@@ -173,8 +173,9 @@ describe("Seo", () => {
     });
 
     await waitFor(() => {
+      // 子页面多一份面包屑：主实体、FAQPage、面包屑各一份，互不叠加。
       const scripts = document.head.querySelectorAll('script[type="application/ld+json"]');
-      expect(scripts.length).toBe(2);
+      expect(scripts.length).toBe(3);
       expect(
         JSON.parse(document.getElementById("bakagame-structured-data")!.textContent ?? "").name
       ).toBe("第二个");
@@ -216,5 +217,17 @@ describe("Seo", () => {
     for (const meta of PAGE_META) {
       expect(meta.description.startsWith(SITE_TAGLINE), meta.path).toBe(true);
     }
+  });
+  it("登记的子页面写入面包屑，切到未登记页面时移除", async () => {
+    const first = renderSeo({ path: "/cee" });
+    await waitFor(() => {
+      const script = document.getElementById("bakagame-breadcrumb-structured-data");
+      expect(JSON.parse(script?.textContent ?? "{}")["@type"]).toBe("BreadcrumbList");
+    });
+    first.result.unmount();
+    renderSeo({ description: "房间", path: "/cee/room/1234", indexable: false });
+    await waitFor(() =>
+      expect(document.getElementById("bakagame-breadcrumb-structured-data")).toBeNull()
+    );
   });
 });

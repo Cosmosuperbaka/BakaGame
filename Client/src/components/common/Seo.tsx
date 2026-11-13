@@ -3,6 +3,7 @@ import { Helmet } from "react-helmet-async";
 import {
   SITE_NAME,
   SITE_ORIGIN,
+  buildBreadcrumbStructuredData,
   buildFaqStructuredData,
   buildHeadTags,
   findPageMeta,
@@ -12,6 +13,8 @@ import {
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
 /** FAQPage 结构化数据的固定 id；与构建期静态外壳写入的脚本共用同一套「按 id 覆盖」机制。 */
 const FAQ_STRUCTURED_DATA_ID = "bakagame-faq-structured-data";
+/** 面包屑的固定 id；首页与未登记页没有面包屑，切过去时移除。 */
+const BREADCRUMB_STRUCTURED_DATA_ID = "bakagame-breadcrumb-structured-data";
 
 /**
  * 按固定 id 管理 <head> 里的一份 JSON-LD：已存在则原地覆盖内容，内容为空则移除。
@@ -99,6 +102,11 @@ export function Seo({
 
   useStructuredDataScript(STRUCTURED_DATA_ID, structuredDataJson);
   useStructuredDataScript(FAQ_STRUCTURED_DATA_ID, faqStructuredDataJson);
+  const breadcrumb = buildBreadcrumbStructuredData(meta);
+  useStructuredDataScript(
+    BREADCRUMB_STRUCTURED_DATA_ID,
+    breadcrumb ? JSON.stringify(breadcrumb) : null
+  );
 
   return (
     <Helmet prioritizeSeoTags>

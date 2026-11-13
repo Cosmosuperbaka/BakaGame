@@ -57,6 +57,8 @@ export interface PageMeta {
   path: string;
   /** 标签页标题与 og:title：写页面是什么，不堆搜索词 */
   title: string;
+  /** 短名：面包屑与站内链接文字用，不带站名后缀 */
+  shortTitle: string;
   /**
    * 站点地图的 lastmod（YYYY-MM-DD）。只在页面文案或结构有显著变更时更新：
    * 每次构建都刷新会让搜索引擎判定该字段不可信，进而整体忽略它（不写比写错好）。
@@ -99,6 +101,9 @@ const CEE_SUMMARY =
 const ABOUTS_SUMMARY =
   "BakaGame 的开源致谢、玩家更新日志、提交历史、隐私说明与用户条款。开源致谢列出技术栈、参与开发的大模型和全部前端依赖的许可证。";
 
+/** 站点组织实体的节点 id：首页写完整实体，其它页按 id 引用。 */
+const ORGANIZATION_ID = `${SITE_ORIGIN}/#organization`;
+
 /** 三款游戏共用的结构化数据字段：都是房间制的网页游戏，不收费，界面为中文。 */
 const GAME_ENTITY = {
   "@context": "https://schema.org",
@@ -116,6 +121,7 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/",
     title: `${SITE_NAME} - ${SITE_SLOGAN}`,
+    shortTitle: SITE_NAME,
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、听歌猜歌、猜动漫角色。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
@@ -194,6 +200,7 @@ export const PAGE_META: PageMeta[] = [
     structuredData: {
       "@context": "https://schema.org",
       "@type": "WebSite",
+      "@id": `${SITE_ORIGIN}/#website`,
       name: SITE_NAME,
       url: `${SITE_ORIGIN}/`,
       inLanguage: "zh-CN",
@@ -207,12 +214,18 @@ export const PAGE_META: PageMeta[] = [
       ],
       // 组织实体 + sameAs 指向源码仓库：帮 AI 搜索把「BakaGame」这个名字与站点、
       // 代码仓库收敛成同一个实体——实体锚点越明确，站外提及时越容易被正确指认。
+      // 带 @id 的组织是全站唯一的组织节点；logo 用构建期生成的方形图标，搜索引擎要求方形。
       publisher: {
         "@type": "Organization",
+        "@id": ORGANIZATION_ID,
         name: SITE_NAME,
         url: `${SITE_ORIGIN}/`,
-        logo: `${SITE_ORIGIN}/og/logo.jpg`,
-        slogan: SITE_TAGLINE,
+        logo: {
+          "@type": "ImageObject",
+          url: `${SITE_ORIGIN}/favicon-512.png`,
+          width: 512,
+          height: 512,
+        },
         sameAs: [REPOSITORY_URL],
       },
     },
@@ -220,6 +233,7 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/whoisfaker",
     title: `谁是卧底 Who is Faker - ${SITE_NAME}`,
+    shortTitle: "谁是卧底 Who is Faker",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Who is Faker 是出题人现场写词的谁是卧底，5 人起。投票后入夜：平民动刀，倒下的是自己。满 8 人可加白板和天使。`,
     image: `${SITE_ORIGIN}/og/Faker.jpg`,
@@ -320,6 +334,7 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/songuessr",
     title: `听歌猜歌 Songuessr：听歌识曲与听歌识番 - ${SITE_NAME}`,
+    shortTitle: "听歌猜歌 Songuessr",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Songuessr 听歌猜歌：听一段音乐猜歌名，或猜 OP、ED 出自哪部番。能和朋友比，也能一个人练，还能用自己的歌单出题。`,
     image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
@@ -422,6 +437,7 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/cee",
     title: `猜动漫角色 CEE（猜猜呗增强版） - ${SITE_NAME}`,
+    shortTitle: "猜动漫角色 CEE",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房猜同一个动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
     image: `${SITE_ORIGIN}/og/CEE.jpg`,
@@ -529,6 +545,7 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/abouts",
     title: `关于 ${SITE_NAME}：更新日志、开源致谢与隐私条款`,
+    shortTitle: `关于 ${SITE_NAME}`,
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 的更新日志、提交历史、开源致谢、隐私说明与用户条款都在这一页，每个前端依赖的许可证原文都能按包查看。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
@@ -641,6 +658,29 @@ export function buildHeadTags(input: HeadTagInput): HeadTag[] {
  */
 export function findPageMeta(path: string): PageMeta | undefined {
   return PAGE_META.find((item) => item.path === path);
+}
+
+/**
+ * 两级面包屑（站点首页 → 本页）。首页自己就是根，返回 null，调用方据此不注入（或移除）。
+ * 构建期外壳与运行时 `Seo` 共用本函数。
+ */
+export function buildBreadcrumbStructuredData(
+  meta: Pick<PageMeta, "path" | "shortTitle"> | undefined
+): Record<string, unknown> | null {
+  if (!meta || meta.path === "/") return null;
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: SITE_NAME, item: `${SITE_ORIGIN}/` },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: meta.shortTitle,
+        item: `${SITE_ORIGIN}${meta.path}`,
+      },
+    ],
+  };
 }
 
 /**
