@@ -41,6 +41,7 @@ import { acceptChatText, appendChat, systemMessage } from "./room/ChatLog";
 import { exportRoomJson, restoreRooms } from "./room/RoomSnapshotCodec";
 import { expandRoom, flattenRoom } from "./CEERoomSnapshots";
 import { CEERoomRecording } from "./CEERoomRecording";
+import { expireSpectateRequests } from "./CEERoomSpectate";
 import {
   assertAgentAdmission,
   assertSeatResumable,
@@ -61,11 +62,6 @@ const normalizePassword = (value: string): string => value.trim();
 const EMPTY_CHAT_ERROR = { code: "EMPTY_MESSAGE", message: "消息不能为空" };
 /** 系统消息的发送者占位：增强房是两个空串，客户端按空串识别。TODO(行为统一) */
 const CEE_SYSTEM_SENDER = { playerId: "", playerName: "" };
-/** 反作弊房里旁观请求的等待上限：超时自动拒绝，房主挂机不会让请求永久悬空。 */
-export const CEE_SPECTATE_APPROVAL_TIMEOUT_MS = 120_000;
-/** 一间房最多挂多少个待批准请求：防止刷请求骚扰房主。 */
-export const CEE_SPECTATE_QUEUE_MAX = 8;
-
 /** 内核认识增强房房间与座位的方式：容器是 Map，准入字段在房间层与设置里，事件名带 cee 前缀。 */
 const CEE_ROOM_SHAPE: RoomShape<CEERoom, CEEPlayerRecord> = {
   game: "cee",
@@ -369,50 +365,6 @@ export class CEERooms {
       bakaAntiCheat: isCEEAntiCheatRoom(room.settings),
     };
   }
-  /**
-   * 旁观切换。反作弊房里改为登记请求等房主批准，返回 `true` 表示进入待批准态；
-   * 其它房间沿用旧口径直接生效。
-   */
-  requestSpectate(room: CEERoom, player: CEEPlayerRecord, spectator: boolean): boolean {
-    if (!spectator) {
-      room.spectatorRequests.delete(player.id);
-      player.membership = "active";
-      player.ready = false;
-      return false;
-    }
-    if (!room.allowSpectators) throw new AppError("SPECTATING_DISABLED", "该房间不允许观战");
-    if (!isCEEAntiCheatRoom(room.settings)) {
-      player.membership = "spectator";
-      player.ready = false;
-      return false;
-    }
-    // 旁观本身要登录：游客身份没有可追溯性，而旁观能看到出题人视角与答案。
-    if (!player.account) throw new AppError("LOGIN_REQUIRED", "该房间要求全部成员已登录");
-    if (player.membership === "spectator") return false;
-    if (
-      !room.spectatorRequests.has(player.id) &&
-      room.spectatorRequests.size >= CEE_SPECTATE_QUEUE_MAX
-    )
-      throw new AppError("SPECTATE_QUEUE_FULL", "待房主批准的旁观请求已满");
-    room.spectatorRequests.set(player.id, this.now());
-    player.membership = "pendingSpectator";
-    player.ready = false;
-    return true;
-  }
-  /** 房主处理旁观请求。拒绝立即退回参与态，不等 120 秒超时；结果单独回给请求方以便提示。 */
-  approveSpectate(room: CEERoom, actor: CEEPlayerRecord, id: string, approved: boolean): void {
-    if (!isCEEAntiCheatRoom(room.settings))
-      throw new AppError("SPECTATE_NOT_PENDING", "该房间不需要批准旁观");
-    if (!room.spectatorRequests.has(id))
-      throw new AppError("SPECTATE_NOT_PENDING", "该旁观请求已经处理");
-    const player = this.member(room, id);
-    room.spectatorRequests.delete(id);
-    player.membership = approved ? "spectator" : "active";
-    const connection = player.connectionId
-      ? this.connections.findConnection(player.connectionId)
-      : undefined;
-    connection?.send(createEvent("cee.player.spectateResult", { approved }));
-  }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
   leaveRoom(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
     this.connections.detach(connection);
@@ -623,7 +575,7 @@ export class CEERooms {
       changed = true;
     }
     // 旁观请求的兜底收口：超时自动拒绝，玩家已离开的条目也要从队列里摘掉。
-    if (this.expireSpectateRequests(room, now)) changed = true;
+    if (expireSpectateRequests(room, now)) changed = true;
     if (changed) this.publishRoom(room);
     else this.publishRoomCalibration(room);
   }
@@ -632,18 +584,6 @@ export class CEERooms {
     const expired = expiredOfflineSeats(room, room.players.values(), now);
     for (const player of expired) this.remove(room, player);
     return expired.length > 0;
-  }
-  private expireSpectateRequests(room: CEERoom, now: number): boolean {
-    if (room.spectatorRequests.size === 0) return false;
-    let changed = false;
-    for (const [playerId, requestedAt] of room.spectatorRequests)
-      if (now - requestedAt >= CEE_SPECTATE_APPROVAL_TIMEOUT_MS || !room.players.has(playerId)) {
-        room.spectatorRequests.delete(playerId);
-        const player = room.players.get(playerId);
-        if (player?.membership === "pendingSpectator") player.membership = "active";
-        changed = true;
-      }
-    return changed;
   }
   notifyShutdown() {
     this.connections.broadcastToAll(

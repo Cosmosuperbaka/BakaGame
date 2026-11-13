@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CEE_SPECTATE_APPROVAL_TIMEOUT_MS,
   CEE_SPECTATE_QUEUE_MAX,
-} from "../src/application/CEERooms";
+} from "../src/application/CEERoomSpectate";
 import { createDefaultCEESettings, parseCEESettings } from "../src/shared/CEE";
 import { ceeTestHarness, type CEETestClient, type CEETestIdentity } from "./CEENativeFixtures";
 import type { ClientChannelProof, PlayerAccount } from "../src/shared/Index";

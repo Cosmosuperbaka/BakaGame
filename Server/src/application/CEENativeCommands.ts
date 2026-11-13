@@ -6,6 +6,7 @@ import type { TestRoomPolicy } from "../domain/TestRooms";
 import type { CEEPhase } from "../shared/CEE";
 import type { CEERoomClientMessage } from "../shared/Index";
 import { runCEEDataCommand } from "./CEEDataCommands";
+import { approveSpectate, requestSpectate } from "./CEERoomSpectate";
 import {
   cancelCEEPreparation,
   chooseCEESetter,
@@ -137,7 +138,7 @@ export const createCEENativeCommands = (testRooms: TestRoomPolicy): CEENativeCom
     access: "seat",
     phases: WAITING_ONLY,
     run: (ctx, { room, seat }, message) => {
-      const pending = ctx.state.requestSpectate(room, seat, message.payload.spectator);
+      const pending = requestSpectate(ctx.state, room, seat, message.payload.spectator);
       return { pending, membership: seat.membership };
     },
   },
@@ -145,7 +146,7 @@ export const createCEENativeCommands = (testRooms: TestRoomPolicy): CEENativeCom
     access: "host",
     phases: "any",
     run: (ctx, { room, seat }, message) => {
-      ctx.state.approveSpectate(room, seat, message.payload.playerId, message.payload.approved);
+      approveSpectate(ctx.state, room, seat, message.payload.playerId, message.payload.approved);
       return { pending: false, membership: seat.membership };
     },
   },
