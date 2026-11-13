@@ -267,6 +267,80 @@ describe("原版房间适配", () => {
     expect((await sync(service)).privateState.hints).toEqual(["允许提示"]);
   });
 
+  describe("原版房目录导入的房主与阶段守卫", () => {
+    const importCommand = {
+      id: "import",
+      type: "cee.directory.import",
+      payload: { indexId: 7 },
+    } as const;
+    const setupWithImportCounter = () => {
+      let imports = 0;
+      const context = setup({
+        data: {
+          ...data,
+          async importDirectory(indexId) {
+            imports += 1;
+            return data.importDirectory(indexId);
+          },
+        },
+      });
+      return { ...context, imports: () => imports };
+    };
+    const joinSecond = async (context: ReturnType<typeof setupWithImportCounter>) => {
+      context.service.registerConnection(context.connection("second"));
+      await request(context.service, "second", {
+        id: "join",
+        type: "cee.room.join",
+        roomId: "1234",
+        payload: { userName: "乙" },
+      });
+    };
+    const startUpstreamRound = (upstream: FixtureRoom) =>
+      upstream.broadcast("gameStart", {
+        character: encodeOriginalCharacter(character(), "fixture-key"),
+        settings: createDefaultCEESettings(),
+        players: upstream.players,
+      });
+
+    test("房主在等待阶段可以导入", async () => {
+      const context = setupWithImportCounter();
+      await create(context.service);
+      expect(await request(context.service, "first", importCommand)).toMatchObject({ id: 7 });
+      expect(context.imports()).toBe(1);
+    });
+
+    test("非房主被拒，且不触发导入", async () => {
+      const context = setupWithImportCounter();
+      await create(context.service);
+      await joinSecond(context);
+      await expect(request(context.service, "second", importCommand)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(context.imports()).toBe(0);
+    });
+
+    test("房主在对局中被拒，且不触发导入", async () => {
+      const context = setupWithImportCounter();
+      await create(context.service);
+      startUpstreamRound(context.upstream);
+      await expect(request(context.service, "first", importCommand)).rejects.toMatchObject({
+        code: "INVALID_PHASE",
+      });
+      expect(context.imports()).toBe(0);
+    });
+
+    test("同时违反两条时先报房主错误，与增强房同序", async () => {
+      const context = setupWithImportCounter();
+      await create(context.service);
+      await joinSecond(context);
+      startUpstreamRound(context.upstream);
+      await expect(request(context.service, "second", importCommand)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(context.imports()).toBe(0);
+    });
+  });
+
   test("每位玩家独立上游会话，仅确认加入的增强玩家共享聊天，离开即撤权", async () => {
     const { service, upstream, first, connection } = setup();
     const created = await create(service);

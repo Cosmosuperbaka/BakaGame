@@ -320,6 +320,9 @@ export class CEEOriginalService {
       case "cee.subject.lookup":
         return runCEEDataCommand(data, message.type, message.payload);
       case "cee.directory.import":
+        // 导入会改本地的目录库，并占用耗时的后台任务：与增强房同一口径，只有房主能在等待阶段发起。
+        this.requireHost(session);
+        this.requireWaiting(session);
         return runCEEDataCommand(data, message.type, message.payload);
       case "cee.character.image":
         return runCEEDataCommand(data, message.type, message.payload);
@@ -841,6 +844,9 @@ export class CEEOriginalService {
   }
   private requireHost(session: CEEOriginalSession): void {
     if (!this.me(session).isHost) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
+  }
+  private requireWaiting(session: CEEOriginalSession): void {
+    if (session.phase !== "waiting") throw new AppError("INVALID_PHASE", "请在等待阶段修改");
   }
   private requireSubjectSearch(session: CEEOriginalSession): void {
     if (
