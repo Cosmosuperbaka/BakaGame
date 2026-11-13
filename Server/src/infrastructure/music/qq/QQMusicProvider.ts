@@ -273,16 +273,28 @@ export class QQMusicProvider implements MusicProvider {
   async getSongMetadata(songId: string, rawCookie?: MusicCookieInput): Promise<SongDetails> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
+    // 歌词来源因瞬态失败缺席时照常返回，但不入缓存，下次重新回源补全。
+    let degraded = false;
     const details = await this.musicCache.cached(
       `metadata:${mid}`,
       SONG_METADATA_CACHE_TTL_MS,
-      () => this.fetchSongMetadata(mid, cookie)
+      () => {
+        degraded = false;
+        return this.fetchSongMetadata(mid, cookie, () => {
+          degraded = true;
+        });
+      },
+      { ttlForResult: () => (degraded ? 0 : SONG_METADATA_CACHE_TTL_MS) }
     );
     if (!details) throw new AppError("INVALID_SONG", `未能加载歌曲元数据: ${mid}`);
     return details;
   }
 
-  private async fetchSongMetadata(mid: string, cookie?: string): Promise<SongDetails> {
+  private async fetchSongMetadata(
+    mid: string,
+    cookie?: string,
+    onDegraded?: () => void
+  ): Promise<SongDetails> {
     // 详情请求单独占一个队列位；映射与歌词链路在队列外进行——歌词请求还要自己排队，
     // 嵌在同一个任务里会在匿名队列（并发 1）上自我死锁。
     const detailRes = await this.upstream.callUpstream(cookie, () =>
@@ -322,7 +334,7 @@ export class QQMusicProvider implements MusicProvider {
       encyclopedia: { tags: [] },
     };
 
-    baseDetails.lyrics = await this.lyricChain.loadLyrics(mid, baseDetails, cookie);
+    baseDetails.lyrics = await this.lyricChain.loadLyrics(mid, baseDetails, cookie, onDegraded);
     return baseDetails;
   }
 
