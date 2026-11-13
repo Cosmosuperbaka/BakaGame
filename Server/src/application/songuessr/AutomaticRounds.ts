@@ -19,7 +19,7 @@ import {
   type SongDetails,
   type SongSearchResult,
 } from "../../shared/Index";
-import { resolveAnimeSong } from "./AnimeResolution";
+import { resolveAnimeSong } from "./AnimeAutoPick";
 import {
   hasAvailablePoolAccount,
   musicSearchOptions,

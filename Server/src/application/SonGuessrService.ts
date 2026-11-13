@@ -7,7 +7,8 @@ import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricCli
 import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
 import { publicAnime, publicSong } from "./songuessr/RoomViews";
-import { resolveAnimeSong, resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
+import { resolveAnimeSong } from "./songuessr/AnimeAutoPick";
+import { resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
 import { clearMusicSession, refreshMusicSessionAccount } from "./songuessr/MusicAuth";
 import { loadSongWithSources, refreshRoundAudio } from "./songuessr/MusicSongLoading";
 import { scheduleMusicSessionRefresh } from "./songuessr/MusicSessionRefresh";
