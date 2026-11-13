@@ -17,6 +17,48 @@ import { createDescriptionOrder, getAliveAssignedPlayerIds } from "./RoundRules"
 import { requireRound } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
+/** 投票判定的结果：本轮出局的人，或进入平票 PK 的候选人（二者至多有一个非空）。 */
+export type VoteDecision = {
+  eliminatedIds: string[];
+  tieBreakCandidateIds: string[] | undefined;
+};
+
+/**
+ * 由票型与在场人数判定本轮出局还是进平票 PK，不碰房间状态。
+ * `aliveCount` 是在场玩家数：首轮平票时只有存在非候选玩家可在第二轮投票，才进平票 PK。
+ */
+export const decideVoteResult = (
+  tieBreak: boolean,
+  outcome: ReturnType<typeof computeVoteOutcome>,
+  aliveCount: number
+): VoteDecision => {
+  const leaders = outcome.leaders;
+  let eliminatedIds: string[] = [];
+  let tieBreakCandidateIds: string[] | undefined;
+
+  if (!tieBreak) {
+    if (leaders.length > 0 && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
+      // 平票或弃票数达到最高票：若非全员平票（有非候选玩家可在第二轮投票），则进入平票PK；
+      // 全员平票则无人出局，直接入夜。
+      if (leaders.length < aliveCount) {
+        tieBreakCandidateIds = [...leaders];
+      }
+    } else if (leaders.length === 1) {
+      eliminatedIds = [leaders[0]];
+    }
+    // 全员弃票或无得票者：无人出局
+  } else if (
+    leaders.length === 1 &&
+    outcome.maxVotes > 0 &&
+    outcome.abstainCount < outcome.maxVotes
+  ) {
+    // 第二轮平票PK投票：仅当产生单一最高票时淘汰该玩家，再次平票或全员弃票则无人出局
+    eliminatedIds = [leaders[0]];
+  }
+
+  return { eliminatedIds, tieBreakCandidateIds };
+};
+
 export const resolveVoting = async (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
@@ -47,28 +89,11 @@ export const resolveVoting = async (
     },
   });
 
-  let eliminatedIds: string[] = [];
-  let tieBreakCandidateIds: string[] | undefined;
-
-  if (!tieBreak) {
-    if (leaders.length > 0 && (leaders.length > 1 || outcome.abstainCount >= outcome.maxVotes)) {
-      // 平票或弃票数达到最高票：若非全员平票（有非候选玩家可在第二轮投票），则进入平票PK；
-      // 全员平票则无人出局，直接入夜。
-      if (leaders.length < aliveIds.length) {
-        tieBreakCandidateIds = [...leaders];
-      }
-    } else if (leaders.length === 1) {
-      eliminatedIds = [leaders[0]];
-    }
-    // 全员弃票或无得票者：无人出局
-  } else if (
-    leaders.length === 1 &&
-    outcome.maxVotes > 0 &&
-    outcome.abstainCount < outcome.maxVotes
-  ) {
-    // 第二轮平票PK投票：仅当产生单一最高票时淘汰该玩家，再次平票或全员弃票则无人出局
-    eliminatedIds = [leaders[0]];
-  }
+  const { eliminatedIds, tieBreakCandidateIds } = decideVoteResult(
+    tieBreak,
+    outcome,
+    aliveIds.length
+  );
 
   if (eliminatedIds.length > 0) {
     recordEliminations(
