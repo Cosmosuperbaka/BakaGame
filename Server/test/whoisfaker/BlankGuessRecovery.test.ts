@@ -65,7 +65,7 @@ const removeThenFailGuess = async (scenario: Interrupted) => {
 };
 
 describe("猜词期间移除平票候选后猜错", () => {
-  test("平票发言档：候选只剩一人（现状）", async () => {
+  test("平票发言档：候选只剩一人时不再回到平票加赛，直接入夜晚", async () => {
     const result = await removeThenFailGuess({
       target: "机3",
       candidates: ["机1", "机3"],
@@ -73,30 +73,29 @@ describe("猜词期间移除平票候选后猜错", () => {
     });
     expect(result.phaseAfterRemoval).toBe("blankGuess");
     expect(result.phaseAfterFailedGuess).toBe("feedback");
-    // 现状：回到只剩一名候选的平票加赛并重新挂上暂存倒计时（空转一轮）。
+    // 平票只剩一名候选已无意义：直接入夜晚，原平票加赛暂存的倒计时作废。
     expect(result).toMatchObject({
-      phase: "tieBreak",
-      speechMode: "tieBreak",
-      tieBreak: { candidates: ["机1"], stage: "description" },
+      phase: "night",
+      speechMode: undefined,
+      tieBreak: undefined,
       guessContext: undefined,
-      timer: [30_000],
+      timer: [],
     });
   });
 
-  test("平票投票档：候选只剩一人（现状）", async () => {
+  test("平票投票档：候选只剩一人时不再回到平票加赛，直接入夜晚", async () => {
     const result = await removeThenFailGuess({
       target: "机3",
       candidates: ["机1", "机3"],
       stage: "vote",
     });
     expect(result.phaseAfterRemoval).toBe("blankGuess");
-    // 现状：回到只剩一名候选的平票投票并重新挂上暂存倒计时（空转一轮）。
     expect(result).toMatchObject({
-      phase: "tieBreak",
+      phase: "night",
       speechMode: undefined,
-      tieBreak: { candidates: ["机1"], stage: "vote" },
+      tieBreak: undefined,
       guessContext: undefined,
-      timer: [30_000],
+      timer: [],
     });
   });
 

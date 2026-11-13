@@ -302,6 +302,20 @@ const settleBlankGuessTimeout = async (
   }
 };
 
+/**
+ * 平票候选按仍存活的人重算并写回；不足两人时清掉平票状态并返回 true。
+ * 平票状态丢失（没有候选名单）同样算不足。
+ */
+const collapseTieBreakCandidates = (round: GameRound): boolean => {
+  const alive = (round.tieBreak?.candidateIds ?? []).filter((id) => round.assignments[id]?.alive);
+  if (!round.tieBreak || alive.length <= 1) {
+    round.tieBreak = undefined;
+    return true;
+  }
+  round.tieBreak.candidateIds = alive;
+  return false;
+};
+
 const resolveFailedBlankGuess = async (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
@@ -315,7 +329,11 @@ const resolveFailedBlankGuess = async (
     return;
   }
   if (context.resumePhase) {
-    round.phase = context.resumePhase;
+    // 猜词期间平票候选可能被移除：按仍在场的人重算，不足两人的平票没有意义，直接入夜晚，
+    // 原平票加赛暂存的倒计时随之作废。
+    const tieBreakCollapsed =
+      context.resumePhase === "tieBreak" && collapseTieBreakCandidates(round);
+    round.phase = tieBreakCollapsed ? "night" : context.resumePhase;
     round.blankGuessContext = undefined;
     // 补充与 PK 上下文在打断期间保留，恢复时从这些真相源派生发言模式。
     round.speechMode =
@@ -328,6 +346,7 @@ const resolveFailedBlankGuess = async (
           : undefined;
     ctx.appendSystemMessage(room, message);
     if (
+      !tieBreakCollapsed &&
       context.interruptedRemainingTimerMs !== undefined &&
       context.interruptedRemainingTimerMs > 0
     ) {
