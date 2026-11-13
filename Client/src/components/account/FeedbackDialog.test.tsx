@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { useAccountStore } from "@/stores/UseAccountStore";
-import { FeedbackDialog, type FeedbackDraft } from "./FeedbackDialog";
+import type { FeedbackDraft } from "./FeedbackForm";
+import { FeedbackDialog } from "./FeedbackDialog";
 
 const create = vi.hoisted(() => vi.fn());
 const listMine = vi.hoisted(() => vi.fn());
