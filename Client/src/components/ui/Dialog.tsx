@@ -81,38 +81,43 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
 
     return (
       <DialogPortal forceMount>
-        <DialogOverlay />
-        <DialogPrimitive.Content asChild {...props}>
-          <motion.div
-            ref={setRefs}
-            variants={emergeFromOrigin}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            style={originStyle}
-            className={cn(
-              // 窄屏两侧各留 1rem：先从宽度里扣掉边距再居中；mx-4 配 w-full 会把右缘推出视口。
-              "fixed left-1/2 top-1/2 z-modal flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col",
-              "overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg",
-              className
-            )}
-          >
-            {/* 超出 90vh 时只有正文滚动：外框的描边、圆角与投影不被遮罩裁掉，关闭钮停在右上角；
-            还有内容的那一头边缘淡出，读得出页脚的按钮在下面（DesignGuide §7）。 */}
-            <div
-              ref={bodyRef}
+        {/* 每个弹窗的遮罩与窗口自成一层：后开的确认框连同它的遮罩整层压在先开的弹窗之上，
+          把底下的弹窗一并压暗，而不是只压暗页面、让两个窗口平铺在同一层上互相露边。
+          零尺寸的定位层不拦截指针，固定定位的子元素仍按视口落位。 */}
+        <div className="relative z-modal">
+          <DialogOverlay />
+          <DialogPrimitive.Content asChild {...props}>
+            <motion.div
+              ref={setRefs}
+              variants={emergeFromOrigin}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={originStyle}
               className={cn(
-                "scrollbar-hidden scroll-fade-y grid min-h-0 gap-4 p-6 [--scroll-fade-size:2rem]",
-                bodyClassName
+                // 窄屏两侧各留 1rem：先从宽度里扣掉边距再居中；mx-4 配 w-full 会把右缘推出视口。
+                "fixed left-1/2 top-1/2 z-modal flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col",
+                "overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg",
+                className
               )}
             >
-              {children}
-            </div>
-            <DialogPrimitive.Close asChild>
-              <CloseButton className="absolute right-3 top-3" />
-            </DialogPrimitive.Close>
-          </motion.div>
-        </DialogPrimitive.Content>
+              {/* 超出 90vh 时只有正文滚动：外框的描边、圆角与投影不被遮罩裁掉，关闭钮停在右上角；
+            还有内容的那一头边缘淡出，读得出页脚的按钮在下面（DesignGuide §7）。 */}
+              <div
+                ref={bodyRef}
+                className={cn(
+                  "scrollbar-hidden scroll-fade-y grid min-h-0 gap-4 p-6 [--scroll-fade-size:2rem]",
+                  bodyClassName
+                )}
+              >
+                {children}
+              </div>
+              <DialogPrimitive.Close asChild>
+                <CloseButton className="absolute right-3 top-3" />
+              </DialogPrimitive.Close>
+            </motion.div>
+          </DialogPrimitive.Content>
+        </div>
       </DialogPortal>
     );
   }
