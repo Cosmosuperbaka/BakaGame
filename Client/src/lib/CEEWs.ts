@@ -9,6 +9,7 @@ import {
   createWebSocketClient,
   isProtocolError,
   type ProtocolError,
+  type RawSend,
   type SendOptions,
 } from "@/lib/WebsocketClient";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
@@ -21,6 +22,7 @@ import { attachTabSession } from "@/lib/TabSession";
 const client = createWebSocketClient("/api/ws", {
   handshakeQuery: bakaChannelQuery,
   prelude: attachTabSession,
+  sendInterceptor: (next) => sendWithChannelProof(next),
 });
 
 /** 等壳签票的上限：等不到就不建带票连接，给可重试错误，不白跑一次注定被拒的握手。 */
@@ -65,10 +67,9 @@ async function reconnectWithTicket(): Promise<boolean> {
   return lastHandshakeHadTicket();
 }
 
-const rawSend = client.send.bind(client);
-
 /** 服务端明确拒绝票据后换一张重试一次；仍被拒就换成玩家能据此重试的文案。 */
 async function resendAfterRefusal(
+  rawSend: RawSend,
   type: string,
   payload: Record<string, unknown>,
   options: SendOptions | undefined
@@ -82,32 +83,31 @@ async function resendAfterRefusal(
   }
 }
 
-client.send = (async (
-  type: string,
-  payload: Record<string, unknown> = {},
-  options?: SendOptions
-): Promise<Record<string, unknown>> => {
-  const shell = isBakaClient();
-  const antiCheatCreate = type === "cee.room.create" && payload.bakaAntiCheat === true;
-  // 进入 CEE 页面时壳还在异步签票：这条连接建出来就没有通道证明，且不会自己补。
-  // 反作弊建房与排位准入都先换一次带票连接，否则开关可见、请求必被服务端拒。
-  if (
-    shell &&
-    (antiCheatCreate || RANKED_ADMISSION_COMMANDS.has(type)) &&
-    !lastHandshakeHadTicket()
-  ) {
-    if (!(await reconnectWithTicket())) return rejectedProtocol(channelNotReady());
-  }
-  try {
-    return await rawSend(type, payload, options);
-  } catch (error) {
-    // 票被拒（过期、已被上一次连接消费、来源地址不符）：换一张票重连后重试一次。
-    // 只重试准入类命令：它们的失败发生在建人/建房之前，重发不会产生第二份状态。
-    const retryable = shell && isChannelRefused(error) && ADMISSION_COMMANDS.has(type);
-    if (!retryable) throw error;
-    return resendAfterRefusal(type, payload, options);
-  }
-}) as unknown as typeof client.send;
+/** 准入类命令的通道证明：发送前按需先换带票连接，被拒后换票重试一次。 */
+function sendWithChannelProof(rawSend: RawSend): RawSend {
+  return async (type, payload, options) => {
+    const shell = isBakaClient();
+    const antiCheatCreate = type === "cee.room.create" && payload.bakaAntiCheat === true;
+    // 进入 CEE 页面时壳还在异步签票：这条连接建出来就没有通道证明，且不会自己补。
+    // 反作弊建房与排位准入都先换一次带票连接，否则开关可见、请求必被服务端拒。
+    if (
+      shell &&
+      (antiCheatCreate || RANKED_ADMISSION_COMMANDS.has(type)) &&
+      !lastHandshakeHadTicket()
+    ) {
+      if (!(await reconnectWithTicket())) return rejectedProtocol(channelNotReady());
+    }
+    try {
+      return await rawSend(type, payload, options);
+    } catch (error) {
+      // 票被拒（过期、已被上一次连接消费、来源地址不符）：换一张票重连后重试一次。
+      // 只重试准入类命令：它们的失败发生在建人/建房之前，重发不会产生第二份状态。
+      const retryable = shell && isChannelRefused(error) && ADMISSION_COMMANDS.has(type);
+      if (!retryable) throw error;
+      return resendAfterRefusal(rawSend, type, payload, options);
+    }
+  };
+}
 
 export const ceeWsClient = client;
 

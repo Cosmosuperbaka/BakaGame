@@ -13,8 +13,14 @@ vi.mock("@/lib/WebsocketClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/WebsocketClient")>();
   return {
     ...actual,
-    createWebSocketClient: () => ({
-      send: state.send,
+    // 与真实客户端一致：`send` 经由选项里的发送拦截器包装底层发送。
+    createWebSocketClient: (
+      _path: string,
+      options: import("@/lib/WebsocketClient").WebSocketClientOptions
+    ) => ({
+      send: options.sendInterceptor?.((type, payload, sendOptions) =>
+        state.send(type, payload, sendOptions)
+      ),
       refreshIdentity: state.refreshIdentity,
       waitForConnection: state.waitForConnection,
     }),

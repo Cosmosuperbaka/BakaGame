@@ -98,7 +98,19 @@ export type ConnectionPrelude = (exchange: PreludeExchange) => Promise<void>;
 /** 前置帧的请求超时：要覆盖服务端探测现持有者的等待。 */
 const PRELUDE_REQUEST_TIMEOUT_MS = 5_000;
 
+/** 一次命令发送：`send` 的非泛型形态，供拦截器包装。 */
+export type RawSend = (
+  type: string,
+  payload: Record<string, unknown>,
+  options?: SendOptions
+) => Promise<Record<string, unknown>>;
+
 export interface WebSocketClientOptions {
+  /**
+   * 包装发送：拿到底层发送函数，返回带玩法专属语义的发送函数（例如被拒后换票重试）。
+   * `send` 的类型与运行时行为因此保持一致，不再靠覆盖实例方法加类型强转。
+   */
+  sendInterceptor?: (next: RawSend) => RawSend;
   /**
    * 每次建连时现算的握手查询串。一次性凭据（如反作弊房的 ticket）绝不能固定在构造时
    * 读一次，否则重连必然带上废票。日志与指标仍只记 `path`，避免把凭据写进遥测。
@@ -128,6 +140,7 @@ export class WebSocketClient {
   private readonly path: string;
   private readonly handshakeQuery?: () => string;
   private readonly prelude?: ConnectionPrelude;
+  private readonly dispatchSend: RawSend;
   /** 前置帧还没走完：业务命令绝不能抢在身份绑定之前发出。 */
   private preluding = false;
 
@@ -135,6 +148,9 @@ export class WebSocketClient {
     this.path = path;
     this.handshakeQuery = options.handshakeQuery;
     this.prelude = options.prelude;
+    const rawSend: RawSend = (type, payload, sendOptions) =>
+      this.sendRaw(type, payload, sendOptions);
+    this.dispatchSend = options.sendInterceptor ? options.sendInterceptor(rawSend) : rawSend;
     clients.add(this);
     installNetworkListeners();
   }
@@ -360,9 +376,17 @@ export class WebSocketClient {
    * facade 负责（`WhoIsFakerWs` / `SonGuessrWs` / `CEEWs`），三个玩法共用同一层。
    * 无超时的长任务在等待期间由调用方自行轮询房间状态，见 `SendOptions.timeout`。
    */
-  async send<T extends Record<string, unknown> = Record<string, unknown>>(
+  send<T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload: Record<string, unknown> = {},
+    options?: SendOptions
+  ): Promise<T> {
+    return this.dispatchSend(type, payload, options) as Promise<T>;
+  }
+
+  private async sendRaw<T extends Record<string, unknown> = Record<string, unknown>>(
+    type: string,
+    payload: Record<string, unknown>,
     options?: SendOptions
   ): Promise<T> {
     const timeoutMs = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;

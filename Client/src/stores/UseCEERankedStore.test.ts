@@ -72,7 +72,22 @@ const socket = vi.hoisted(() => {
 
 vi.mock("@/lib/WebsocketClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/WebsocketClient")>();
-  return { ...actual, createWebSocketClient: () => socket.client };
+  return {
+    ...actual,
+    // 与真实客户端一致：带发送拦截器的客户端（CEE）其 `send` 经拦截器包装底层发送。
+    createWebSocketClient: (
+      _path: string,
+      options?: import("@/lib/WebsocketClient").WebSocketClientOptions
+    ) =>
+      options?.sendInterceptor
+        ? {
+            ...socket.client,
+            send: options.sendInterceptor((type, payload, sendOptions) =>
+              socket.send(type, payload, sendOptions)
+            ),
+          }
+        : socket.client,
+  };
 });
 
 vi.mock("@/lib/BakaChannel", async (importOriginal) => {

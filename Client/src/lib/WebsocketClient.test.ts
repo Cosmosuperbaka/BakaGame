@@ -465,4 +465,26 @@ describe("传输边界与命令诊断", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("发送拦截器包装底层发送：send 走拦截器，拦截器能改写命令并再次调用底层", async () => {
+    const Socket = createMockSocketClass();
+    vi.stubGlobal("WebSocket", Socket);
+    try {
+      const seen: string[] = [];
+      const client = new WebSocketClient("/api/ws", {
+        sendInterceptor: (next) => (type, payload, options) => {
+          seen.push(type);
+          return next(`wrapped.${type}`, payload, options);
+        },
+      });
+      client.connect();
+      const socket = Socket.instances[0];
+      void client.send("room.get").catch(() => undefined);
+      expect(seen).toEqual(["room.get"]);
+      expect((JSON.parse(socket.sent[0]) as { type: string }).type).toBe("wrapped.room.get");
+      client.disconnect();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
