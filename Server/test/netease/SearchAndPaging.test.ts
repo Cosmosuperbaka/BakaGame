@@ -1,12 +1,9 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
 import { parseLrc } from "../../src/infrastructure/music/netease/NeteaseLyricParse";
-import {
-  isCreditLyricLine,
-  isInstrumentalLyricLine,
-  isUnusableLyricLine,
-  sanitizeLyrics,
-} from "../../src/infrastructure/music/lyrics/LyricLines";
+import { isCreditLyricLine } from "../../src/infrastructure/music/lyrics/LyricCreditClassifier";
+import { isInstrumentalLyricLine } from "../../src/infrastructure/music/lyrics/LyricNoiseClassifier";
+import { isUnusableLyricLine, sanitizeLyrics } from "../../src/infrastructure/music/lyrics/LyricSanitizer";
 
 describe("网易云检索与歌单", () => {
   const originalFetch = globalThis.fetch;

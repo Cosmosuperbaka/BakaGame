@@ -1,21 +1,10 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
 import { parseLrc, parseYrc, mergeTranslations } from "../../src/infrastructure/music/netease/NeteaseLyricParse";
-import {
-  isBopomofoOnlyLyricLine,
-  isBracketedStageDirectionLine,
-  isCreditKeywordLine,
-  isCreditLyricLine,
-  isDuetRoleLine,
-  isInstrumentalLyricLine,
-  isNumericOnlyLyricLine,
-  isPlaceholderMaskLyricLine,
-  isSymbolOnlyLyricLine,
-  isTooShortLyricLine,
-  isUnusableLyricLine,
-  parseTTML,
-  sanitizeLyrics,
-} from "../../src/infrastructure/music/lyrics/LyricLines";
+import { isBopomofoOnlyLyricLine, isBracketedStageDirectionLine, isDuetRoleLine, isInstrumentalLyricLine, isNumericOnlyLyricLine, isPlaceholderMaskLyricLine, isSymbolOnlyLyricLine, isTooShortLyricLine } from "../../src/infrastructure/music/lyrics/LyricNoiseClassifier";
+import { isCreditKeywordLine, isCreditLyricLine } from "../../src/infrastructure/music/lyrics/LyricCreditClassifier";
+import { isUnusableLyricLine, sanitizeLyrics } from "../../src/infrastructure/music/lyrics/LyricSanitizer";
+import { parseTTML } from "../../src/infrastructure/music/lyrics/LyricTtml";
 
 describe("歌词清洗与解析", () => {
   const originalFetch = globalThis.fetch;

@@ -1,5 +1,6 @@
 import { describeError, type EventLogger } from "../../EventLogger";
-import { parseTTML, sanitizeLyrics } from "../lyrics/LyricLines";
+import { parseTTML } from "../lyrics/LyricTtml";
+import { sanitizeLyrics } from "../lyrics/LyricSanitizer";
 import {
   adoptVerbatimLyrics,
   mergeTranslations,

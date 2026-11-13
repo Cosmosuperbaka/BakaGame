@@ -1,6 +1,6 @@
 import { AppError } from "../../../domain/Errors";
 import { asArray, asRecord, readNumber, readString } from "../../JsonReaders";
-import { isCreditLyricLine } from "../lyrics/LyricLines";
+import { isCreditLyricLine } from "../lyrics/LyricCreditClassifier";
 import type {
   SongEncyclopedia,
   SongSearchResult,

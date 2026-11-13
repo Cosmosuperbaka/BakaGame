@@ -1,6 +1,6 @@
 import PQueue from "p-queue";
 import { describeError, type EventLogger } from "../../EventLogger";
-import { parseTTML } from "./LyricLines";
+import { parseTTML } from "./LyricTtml";
 import { asRecord } from "../../JsonReaders";
 import type { MusicCache } from "../MusicCache";
 

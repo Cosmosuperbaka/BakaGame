@@ -1,5 +1,6 @@
 import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
-import { isCreditLyricLine, sanitizeLyrics } from "../lyrics/LyricLines";
+import { isCreditLyricLine } from "../lyrics/LyricCreditClassifier";
+import { sanitizeLyrics } from "../lyrics/LyricSanitizer";
 import { asRecord, readString } from "../../JsonReaders";
 import type { SongLyricLine, SongSearchResult } from "../../../shared/Index";
 
