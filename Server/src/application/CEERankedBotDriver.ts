@@ -21,8 +21,13 @@ import type { CEERankedContext, CEERankedSeriesRuntime } from "./CEERankedRuntim
 
 /** 人机席位固定在 1 号席：真人对局里 0 号是发起者，人机对局里真人也排在 0 号。 */
 const BOT_SEAT: CEERankedSeatIndex = 1;
+
 /** 到点就出手；取不到视图的固定首猜只跳过、不占次数。 */
-export function driveBot(ctx: CEERankedContext, runtime: CEERankedSeriesRuntime, now: number): void {
+export function driveBot(
+  ctx: CEERankedContext,
+  runtime: CEERankedSeriesRuntime,
+  now: number
+): void {
   const game = runtime.series.current;
   if (!game || game.phase === "settled") {
     runtime.botNextGuessAt = null;

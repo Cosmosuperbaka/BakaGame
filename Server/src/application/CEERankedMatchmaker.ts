@@ -53,6 +53,7 @@ export interface CEERankedMatchHost {
 const MATCH_TICK_MS = 1_000;
 /** 缺省昵称解析失败时的显示名。 */
 const FALLBACK_NAME = "玩家";
+
 export class CEERankedMatchmaker {
   private readonly ctx: CEERankedContext;
   private readonly host: CEERankedMatchHost;

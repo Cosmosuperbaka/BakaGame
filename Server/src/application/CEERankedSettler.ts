@@ -1,8 +1,6 @@
 // ==================== 排位结算写库 ====================
 // 系列赛打完之后：先推「结算中」，算新评级与审计记录，带退避重试地写库，落定后记对手并推结果。
 // 「结算中」的账号集合归这里：期间排队回 RANKED_SETTLING，落定（成功、彻底失败或抛错）才放开。
-import type { CEERankedSeriesPlayerRecord, CEERankedSettlementRecord } from "./CEERankedStore";
-import { ceeRankedBotSampleOf } from "./CEERankedStore";
 import { ceeRankedSeriesScore } from "../domain/CEERankedSeries";
 import type { CEERankedProfileQueries } from "./CEERankedProfileQueries";
 import {
@@ -21,10 +19,16 @@ import {
   seriesRecord,
   settlementResults,
 } from "./CEERankedSettlement";
+import {
+  ceeRankedBotSampleOf,
+  type CEERankedSeriesPlayerRecord,
+  type CEERankedSettlementRecord,
+} from "./CEERankedStore";
 import type { CEERankedSeatResultMeta } from "./CEERankedViews";
 
 /** 每组每攒满这么多新样本打一次当前偏差，便于观察收敛。 */
 const HANDICAP_LOG_EVERY = 20;
+
 export class CEERankedSettler {
   private readonly ctx: CEERankedContext;
   private readonly profiles: CEERankedProfileQueries;
