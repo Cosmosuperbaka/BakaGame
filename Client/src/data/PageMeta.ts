@@ -634,6 +634,77 @@ export const PAGE_META: PageMeta[] = [
   },
 ];
 
+/**
+ * 运行时页（房间、单人、排位、状态、后台）与 404 的静态外壳：只写标题、描述与分享卡片字段，
+ * 一律 noindex，不写 canonical、正文与 FAQ。托管平台把这类地址改写到对应文件后，
+ * 不执行脚本的抓取器与聊天软件的链接预览读到的就是这里，而不是首页外壳。
+ * 房间邀请的描述是固定文案：外壳是构建期产物，本来也拿不到房号；不要尝试拼房号或房间名。
+ */
+export interface RuntimePageMeta {
+  /** 产物里的文件名（相对产物根目录） */
+  file: string;
+  title: string;
+  description: string;
+  image: string;
+  imageAlt: string;
+}
+
+const roomInvite = (
+  game: string,
+  zh: string,
+  file: string,
+  image: string,
+  imageAlt: string
+): RuntimePageMeta => ({
+  file,
+  title: `${game} 房间邀请 - ${SITE_NAME}`,
+  description: `朋友在 ${SITE_NAME} 开了一间${zh}。点开链接，填个昵称进房；设了密码的房间问房主要。`,
+  image,
+  imageAlt,
+});
+
+/** 站内没有的地址。客户端的「页面不存在」页与 404.html 外壳共用这份文案。 */
+export const NOT_FOUND_PAGE: RuntimePageMeta = {
+  file: "404.html",
+  title: `页面不存在 - ${SITE_NAME}`,
+  description: `这个地址在 ${SITE_NAME} 上没有对应的页面。谁是卧底、听歌猜歌、猜动漫角色都从首页进。`,
+  image: DEFAULT_OG_IMAGE,
+  imageAlt: DEFAULT_OG_IMAGE_ALT,
+};
+
+export const RUNTIME_PAGES: RuntimePageMeta[] = [
+  roomInvite(
+    "Who is Faker",
+    "谁是卧底",
+    "whoisfaker/room.html",
+    `${SITE_ORIGIN}/og/og-faker.jpg`,
+    "Who is Faker 分享卡片：游戏图标与谁是卧底字样"
+  ),
+  roomInvite(
+    "Songuessr",
+    "听歌猜歌",
+    "songuessr/room.html",
+    `${SITE_ORIGIN}/og/og-song.jpg`,
+    "Songuessr 分享卡片：游戏图标与听歌猜歌字样"
+  ),
+  roomInvite(
+    "CEE",
+    "猜动漫角色",
+    "cee/room.html",
+    `${SITE_ORIGIN}/og/og-cee.jpg`,
+    "CEE 分享卡片：游戏图标与猜动漫角色字样"
+  ),
+  // 状态、单人、排位与后台共用一份：它们没有可分享的固定内容，只需要不被当成首页。
+  {
+    file: "runtime.html",
+    title: SITE_NAME,
+    description: `${SITE_NAME} 是开给二次元朋友的游戏室：谁是卧底、听歌猜歌、猜动漫角色。`,
+    image: DEFAULT_OG_IMAGE,
+    imageAlt: DEFAULT_OG_IMAGE_ALT,
+  },
+  NOT_FOUND_PAGE,
+];
+
 /** 一条 head 标签：构建期序列化成字符串，运行时渲染成 React 元素，两处从同一份列表出发。 */
 export interface HeadTag {
   kind: "meta" | "link";
@@ -642,8 +713,11 @@ export interface HeadTag {
 }
 
 export interface HeadTagInput {
-  /** 站内路径（以 / 开头），用于 canonical 与 og:url */
-  path: string;
+  /**
+   * 站内路径（以 / 开头），用于 canonical 与 og:url。
+   * 运行时页的静态外壳省略它：一份外壳服务一类地址，写哪个 canonical 都是错的。
+   */
+  path?: string;
   title: string;
   description: string;
   image?: string;
@@ -657,7 +731,7 @@ export interface HeadTagInput {
  * 静态外壳与运行时 `Seo` 共用：加一个标签只改这里，两边不会一边有一边没有。
  */
 export function buildHeadTags(input: HeadTagInput): HeadTag[] {
-  const canonical = `${SITE_ORIGIN}${input.path}`;
+  const canonical = input.path === undefined ? undefined : `${SITE_ORIGIN}${input.path}`;
   const image = input.image ?? DEFAULT_OG_IMAGE;
   const imageAlt = input.image ? input.imageAlt : DEFAULT_OG_IMAGE_ALT;
   // 站内分享卡片都按同一尺寸出图（构建期校验），宽高可以直接写；外链图尺寸未知，不写。
@@ -668,7 +742,7 @@ export function buildHeadTags(input: HeadTagInput): HeadTag[] {
     ...(input.keywords && input.keywords.length > 0
       ? [meta({ name: "keywords", content: input.keywords.join(", ") })]
       : []),
-    { kind: "link", attrs: { rel: "canonical", href: canonical } },
+    ...(canonical ? [{ kind: "link" as const, attrs: { rel: "canonical", href: canonical } }] : []),
     meta({ name: "robots", content: input.indexable ? "index,follow" : "noindex,follow" }),
     meta({ property: "og:type", content: "website" }),
     meta({ property: "og:site_name", content: SITE_NAME }),
@@ -682,7 +756,7 @@ export function buildHeadTags(input: HeadTagInput): HeadTag[] {
         ]
       : []),
     ...(imageAlt ? [meta({ property: "og:image:alt", content: imageAlt })] : []),
-    meta({ property: "og:url", content: canonical }),
+    ...(canonical ? [meta({ property: "og:url", content: canonical })] : []),
     meta({ name: "twitter:card", content: "summary_large_image" }),
     meta({ name: "twitter:title", content: input.title }),
     meta({ name: "twitter:description", content: input.description }),

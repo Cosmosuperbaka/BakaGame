@@ -7,7 +7,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { staticShellPlugin } from "../../scripts/vite-plugins/StaticShell";
 import { Seo } from "@/components/common/Seo";
-import { PAGE_META, SITE_ORIGIN } from "@/data/PageMeta";
+import { PAGE_META, RUNTIME_PAGES, SITE_ORIGIN } from "@/data/PageMeta";
 
 // 用真实的入口 HTML 跑一遍静态外壳插件，产物写进临时目录：断言的是部署出去的文件本身。
 let root: string;
@@ -133,5 +133,42 @@ describe("结构化数据", () => {
       },
     });
     expect(site.publisher).not.toHaveProperty("slogan");
+  });
+});
+
+// 平台把未登记的地址兜底到首页外壳时，房间邀请的预览是首页卡片、运行时页在初始 HTML 里是 index，
+// 乱码地址是 200 加首页内容（软 404）。每类地址各有一份只带标题、描述与分享字段的外壳。
+describe("运行时页与 404 的静态外壳", () => {
+  it.each(RUNTIME_PAGES.map((page) => [page.file, page] as const))(
+    "%s 只写标题、描述、分享字段与 noindex",
+    (file, page) => {
+      const doc = parse(readDist(file));
+      const content = (selector: string) =>
+        doc.head.querySelector(selector)?.getAttribute("content");
+      expect(doc.title).toBe(page.title);
+      expect(content('meta[name="robots"]')).toBe("noindex,follow");
+      expect(content('meta[name="description"]')).toBe(page.description);
+      expect(content('meta[property="og:title"]')).toBe(page.title);
+      expect(content('meta[property="og:description"]')).toBe(page.description);
+      expect(content('meta[property="og:image"]')).toBe(page.image);
+      expect(content('meta[name="twitter:card"]')).toBe("summary_large_image");
+      expect(doc.head.querySelector('link[rel="canonical"]')).toBeNull();
+      expect(doc.head.querySelector('meta[property="og:url"]')).toBeNull();
+      expect(doc.head.querySelector('script[type="application/ld+json"]')).toBeNull();
+      // 挂载点保持空：正文由客户端渲染，外壳不替房间或运行时页编正文。
+      expect(doc.getElementById("root")?.childElementCount).toBe(0);
+      // 入口脚本还在：平台改写到这份文件后，应用照常启动。
+      expect(doc.querySelector('script[type="module"]')).not.toBeNull();
+    }
+  );
+
+  // 外壳是构建期产物，本来拿不到房号；这里防的是以后有人想「顺手」把房号或房间名拼进预览。
+  it("房间邀请外壳不含房号与房间名的占位", () => {
+    for (const page of RUNTIME_PAGES.filter((item) => item.file.endsWith("/room.html"))) {
+      const html = readDist(page.file);
+      expect(html).not.toMatch(/roomId|roomName|房号：|\{\{|:roomId/);
+      expect(page.description).not.toMatch(/\d{4}/);
+      expect(page.title).toContain("房间邀请");
+    }
   });
 });

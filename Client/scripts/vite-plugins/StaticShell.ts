@@ -31,6 +31,7 @@ import path from "path";
 import fs from "fs";
 import {
   PAGE_META,
+  RUNTIME_PAGES,
   SITE_NAME,
   SITE_TAGLINE,
   buildBreadcrumbStructuredData,
@@ -38,6 +39,7 @@ import {
   buildHeadTags,
   type HeadTag,
   type PageMeta,
+  type RuntimePageMeta,
 } from "../../src/data/PageMeta.ts";
 
 const STATIC_SEO_ATTRIBUTE = "data-static-seo";
@@ -151,6 +153,38 @@ function buildShellPage(
   };
 }
 
+/**
+ * 运行时页与 404 的外壳：只换标题、补 head 标签，挂载点保持空，入口脚本照常启动应用。
+ * 不写 canonical：一份外壳服务一类地址（所有房间、所有运行时页），写哪一个都是错的。
+ */
+function buildRuntimeShell(original: string, page: RuntimePageMeta): string {
+  const head = buildHeadTags({ ...page, indexable: false })
+    .map(serializeHeadTag)
+    .join("\n    ");
+  return original
+    .replace(FALLBACK_TITLE, `<title>${escapeHtml(page.title)}</title>`)
+    .replace("</head>", `  ${head}\n  </head>`);
+}
+
+/** 写出全部运行时外壳并回读核对：noindex 必须在、canonical 与正文必须不在。 */
+function writeRuntimeShells(distDir: string, original: string): void {
+  for (const page of RUNTIME_PAGES) {
+    const target = path.join(distDir, page.file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, buildRuntimeShell(original, page));
+    const written = fs.readFileSync(target, "utf8");
+    if (!written.includes(`<title>${escapeHtml(page.title)}</title>`)) {
+      throw new Error(`静态外壳：${page.file} 缺少标题`);
+    }
+    if (!written.includes('<meta name="robots" content="noindex,follow"')) {
+      throw new Error(`静态外壳：${page.file} 缺少 noindex`);
+    }
+    if (written.includes('rel="canonical"') || !written.includes('<div id="root"></div>')) {
+      throw new Error(`静态外壳：${page.file} 不得带 canonical 或正文`);
+    }
+  }
+}
+
 export function staticShellPlugin() {
   let distDir = path.resolve(import.meta.dirname, "../../dist");
   return {
@@ -205,7 +239,12 @@ export function staticShellPlugin() {
         }
       }
 
-      console.log(`静态外壳注入完成：${pages.map((page) => page.path).join("、")}`);
+      writeRuntimeShells(distDir, original);
+
+      console.log(
+        `静态外壳注入完成：${pages.map((page) => page.path).join("、")}；` +
+          `运行时外壳：${RUNTIME_PAGES.map((page) => page.file).join("、")}`
+      );
     },
   };
 }
