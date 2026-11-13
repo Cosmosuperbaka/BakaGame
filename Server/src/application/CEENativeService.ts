@@ -154,7 +154,8 @@ export class CEENativeService {
   private schedule(room: CEERoom): void {
     const { timers } = this.state;
     // 关房时内核已清掉本房的定时器：已关的房间只需要不再挂新的。
-    if (!this.state.rooms.has(room.id)) return;
+    // 比对房间对象而不是房号：同号房被重建后，旧对象的收尾不能把定时器挂到新房名下。
+    if (this.state.rooms.get(room.id) !== room) return;
     const times = [
       room.phaseDeadlineAt,
       ...[...(room.round?.units.values() ?? [])].map((unit) => unit.deadlineAt),
@@ -164,7 +165,7 @@ export class CEENativeService {
       return;
     }
     timers.arm(room.id, ROOM_DEADLINE_TIMER, Math.max(1, Math.min(...times) - this.now()), () => {
-      if (!this.state.rooms.has(room.id)) return;
+      if (this.state.rooms.get(room.id) !== room) return;
       if (room.phaseDeadlineAt !== null && this.now() >= room.phaseDeadlineAt)
         this.state.resetWaiting(room);
       tickCEERound(room, this.now());

@@ -485,7 +485,8 @@ export class CEERooms {
     }
   }
   publishRoom(room: CEERoom): void {
-    if (!this.rooms.has(room.id)) return;
+    // 比对房间对象而不是房号：同号房重建后，旧对象的收尾不能向新房的连接发旧房快照。
+    if (this.rooms.get(room.id) !== room) return;
     // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
     if (room.phase === "settled") this.recording.recordSettled(room);
     this.fanOutRoom(room, "state");

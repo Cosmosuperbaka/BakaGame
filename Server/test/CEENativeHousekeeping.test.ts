@@ -296,6 +296,72 @@ describe("CEE 房间定时器", () => {
     expect(timers.pending.size).toBe(0);
   });
 
+  describe("在途命令期间关房并同号重建", () => {
+    /**
+     * 猜测命令在等题库时，房间被后台关掉，同一张标签页随即用同一个房号重建。
+     * 旧命令随后以「本局已经结束」收尾，但收尾时拿在手里的仍是旧房间对象。
+     */
+    const closedAndRebuiltDuringGuess = async () => {
+      const timers = fakeTimers();
+      const pendingCharacter = deferred<CEECharacterView>();
+      const h = keep(
+        ceeTestHarness(
+          {
+            getCharacter: (id) =>
+              id === 3 ? pendingCharacter.promise : Promise.resolve(character(id)),
+          },
+          undefined,
+          { setTimer: timers.setTimer }
+        )
+      );
+      const host = await h.create("房主");
+      const guest = h.connect("猜题人");
+      guest.record.tabKey = "同一张标签页";
+      await h.send(guest, "cee.room.join", { userName: "猜题人" });
+      await h.configure(host, { timeLimit: 60 });
+      await h.chooseSetter(host, host.id!);
+      await h.send(host, "cee.game.setAnswer", { characterId: 1, hints: [] });
+      expect(h.snapshot(guest).phase).toBe("guessing");
+      expect(timers.pending.size).toBe(1);
+
+      const inFlight = h.guess(guest, 3).then(
+        () => undefined,
+        (error: unknown) => error
+      );
+      await Promise.resolve();
+      h.service.adminCloseRoom("1234");
+      expect(timers.pending.size).toBe(0);
+      await h.send(guest, "cee.room.create", {
+        source: "native",
+        roomId: "1234",
+        name: "新房间",
+        userName: "猜题人",
+        visibility: "public",
+        allowSpectators: true,
+      });
+      expect(h.snapshot(guest).phase).toBe("waiting");
+      expect(timers.pending.size).toBe(0);
+      return { h, guest, timers, inFlight, release: () => pendingCharacter.resolve(character(3)) };
+    };
+
+    test("旧命令收尾后新房没有多出定时器，旧命令只得到「本局已经结束」", async () => {
+      const { timers, inFlight, release } = await closedAndRebuiltDuringGuess();
+      release();
+      expect(await inFlight).toMatchObject({ code: "ROUND_CANCELLED" });
+      expect(timers.pending.size).toBe(0);
+    });
+
+    test("旧命令收尾不会把旧房的快照发给新房，新房阶段不受影响", async () => {
+      const { h, guest, inFlight, release } = await closedAndRebuiltDuringGuess();
+      const framesBefore = guest.sent.length;
+      release();
+      await inFlight;
+      expect(guest.sent.slice(framesBefore)).toEqual([]);
+      expect(h.snapshot(guest).phase).toBe("waiting");
+      expect(h.service.getHealthSnapshot().roomCount).toBe(1);
+    });
+  });
+
   test("服务关闭时清掉全部定时器", async () => {
     const timers = fakeTimers();
     const { h } = await answeringRoom(timers);
