@@ -8,9 +8,9 @@ import {
   type BangumiSubjectDetails,
   type SongDetails,
   type SonGuessrClientMessage,
-  type SonGuessrRoomSnapshot,
 } from "../src/shared/Index";
 import type { MusicProvider } from "../src/infrastructure/music/MusicProvider";
+import { chosenSongId } from "./songuessr/Fixtures";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({
@@ -79,9 +79,6 @@ const execute = (
   client: TestConnection,
   message: SonGuessrClientMessage
 ) => service.execute(client.record.id, message);
-
-const lastEvent = <T>(client: TestConnection, event: string): T =>
-  client.sent.filter((item) => item.type === "event" && item.event === event).at(-1)!.payload as T;
 
 describe("猜番版权伪条目防护", () => {
   test("版权署名条目识别只认无歧义标记，不误伤带美术字符的正常曲名", () => {
@@ -180,7 +177,6 @@ describe("猜番版权伪条目防护", () => {
 
     // 修复前抽到与番剧无关的《Music For All》（unrelated）；
     // 修复后必须落到与 MyGO 真正相关的《壱雫空》。
-    const round = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
-    expect(round?.audioUrl).toBe(correct.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(correct.id);
   });
 });

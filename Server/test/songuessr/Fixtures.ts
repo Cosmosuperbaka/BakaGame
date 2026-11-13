@@ -90,6 +90,13 @@ export const execute = <T = unknown>(
 export const lastEvent = <T>(client: TestConnection, event: string): T =>
   client.sent.filter((item) => item.type === "event" && item.event === event).at(-1)!.payload as T;
 
+/**
+ * 本回合选中的是哪首歌：直接读服务端回合记录。快照里的播放地址是不透明地址，
+ * 不能当作「选了哪首歌」的凭据，测试判定选曲只认歌曲标识。
+ */
+export const chosenSongId = (service: SonGuessrService, roomId: string): string | undefined =>
+  service.rooms.get(roomId)?.currentRound?.song.id;
+
 export const createRoom = async (
   service: SonGuessrService,
   host: TestConnection,

@@ -8,6 +8,7 @@ import {
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
+  chosenSongId,
   connection,
   createRoom,
   execute,
@@ -1240,6 +1241,6 @@ describe("上线前 P0 修复回归", () => {
     expect(fetched).toEqual(["broken-1", "broken-2", "healthy"]);
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
-    expect(snapshot.currentRound?.audioUrl).toBe(makeSong("healthy", "好候选", 2020).audioUrl);
+    expect(chosenSongId(service, "7810")).toBe("healthy");
   });
 });

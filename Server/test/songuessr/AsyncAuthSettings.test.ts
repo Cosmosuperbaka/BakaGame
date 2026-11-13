@@ -5,6 +5,7 @@ import {
   anime,
   wrongAnime,
   provider,
+  chosenSongId,
   connection,
   execute,
   lastEvent,
@@ -429,7 +430,7 @@ describe("SonGuessr service 音乐认证意图", () => {
     expect(capturedNeteaseCookie).toBe("MUSIC_U=netease-token");
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
-    expect(snapshot.currentRound?.audioUrl).toBe(testSong.audioUrl);
+    expect(chosenSongId(service, "9999")).toBe(testSong.id);
   });
 
   test("自动出题取候选时凭据被判死，账号池按失败归还：摘号并记失败原因", async () => {

@@ -8,6 +8,7 @@ import {
 import { describe, expect, test } from "bun:test";
 import {
   anime,
+  chosenSongId,
   connection,
   createRoom,
   execute,
@@ -112,7 +113,7 @@ describe("SonGuessr 非歌音轨否决", () => {
       roomId: "8889",
       payload: {},
     });
-    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    return chosenSongId(service, "8889");
   };
 
   /** Bangumi 把整张特典 CD 挂成关联曲目，CD 里第一条就是台词轨。 */
@@ -147,8 +148,8 @@ describe("SonGuessr 非歌音轨否决", () => {
       search: async () => [drama, real],
       getSong: async (id) => (id === "drama" ? drama : real),
     };
-    const snapshot = await animeSoloRound(musicProvider, bonusCdProvider([drama, real]));
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/real.mp3");
+    const chosenId = await animeSoloRound(musicProvider, bonusCdProvider([drama, real]));
+    expect(chosenId).toBe("real");
   });
 
   test("池里只有台词轨时宁可出不了题，也不放一段对白", async () => {
@@ -215,7 +216,7 @@ describe("SonGuessr 番剧级兜底归属证据", () => {
       roomId: "8890",
       payload: {},
     });
-    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    return chosenSongId(service, "8890");
   };
   /** 曲目名在网易云根本不存在，逼着走到番剧级兜底。 */
   const unreachableTrack = {
@@ -256,8 +257,8 @@ describe("SonGuessr 番剧级兜底归属证据", () => {
       search: async () => [song],
       getSong: async () => song,
     };
-    const snapshot = await soloRound(musicProvider, unreachableTrack);
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/same-name.mp3");
+    const chosenId = await soloRound(musicProvider, unreachableTrack);
+    expect(chosenId).toBe("same-name");
   });
 
   test("番剧级兜底不再放宽年代：同名却差了一代的歌不得出题", async () => {
@@ -488,9 +489,7 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
 
     // 会员专享曲不再因为「账号不是会员」被丢弃：能否出题由 getSong 的解灰结果决定。
     expect(fetched).toEqual(["vip-song"]);
-    expect(
-      lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").currentRound?.audioUrl
-    ).toBe(vipOnly.audioUrl);
+    expect(chosenSongId(service, "8888")).toBe(vipOnly.id);
   });
 
   test("首个可播放候选命中后不再为被丢弃的同名候选回源详情", async () => {
@@ -524,9 +523,7 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
 
     // 每次详情回源要拉歌词、音频与百科，并行验证等于把被丢弃候选的成本也付一遍。
     expect(fetched).toEqual(["候选一"]);
-    expect(
-      lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").currentRound?.audioUrl
-    ).toBe(candidates[0].audioUrl);
+    expect(chosenSongId(service, "8888")).toBe(candidates[0].id);
   });
 });
 
@@ -560,7 +557,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       roomId: "8888",
       payload: {},
     });
-    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    return chosenSongId(service, "8888");
   };
 
   test("原版与翻唱同时存在时优先选中原版", async () => {
@@ -594,8 +591,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "cover" ? cover : original),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(original.id);
   });
 
   test("年份容差边界：十年内放行，超出即视为同名不同曲", () => {
@@ -648,8 +645,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "xg-shooting-star" ? unrelated : original),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/kotoko-shooting-star.mp3");
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe("kotoko-shooting-star");
   });
 
   test("同名歌发行年未知时，靠番剧上下文命中胜出", async () => {
@@ -694,8 +691,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "kotoko-original" ? original : unrelated),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/kotoko.mp3");
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe("kotoko-original");
   });
 
   test("仅能召回翻唱版时仍可出题，不因缺少原版而失败", async () => {
@@ -720,8 +717,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => cover,
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(cover.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(cover.id);
   });
 
   test("歌手名不一致时通过番剧名宽检索召回原版", async () => {
@@ -755,8 +752,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       searchSubjects: async () => [anime],
     } as unknown as BangumiDataProvider;
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(original.id);
   });
 
   test("原声带条目按专辑名召回官方原版，而非同名器乐改编", async () => {
@@ -792,8 +789,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       searchSubjects: async () => [anime],
     } as unknown as BangumiDataProvider;
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(official.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(official.id);
   });
 
   test("翻唱即使曲名与专辑完全照抄也让位给原版", async () => {
@@ -831,8 +828,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "identical-cover" ? cover : original),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(original.id);
   });
 
   test("原版未进候选池时凭翻唱自带的原曲 ID 拉回原版", async () => {
@@ -872,8 +869,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "original-bakemonogatari" ? original : cover),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(original.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(original.id);
   });
 
   test("曲名只部分命中且无任何其它证据的弱候选不再出题", async () => {
@@ -935,8 +932,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => albumTrack,
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe(albumTrack.audioUrl);
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe(albumTrack.id);
   });
 
   test("专辑路径回落到条目名不符的其它专辑时不出题", async () => {
@@ -1040,8 +1037,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => legitTrack,
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/legit-track.mp3");
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe("legit-track");
   });
 
   test("专辑路径优先出原版分轨，Remix / TV Size 排后", async () => {
@@ -1083,8 +1080,8 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async (id) => (id === "remix-track" ? remixTrack : originalTrack),
     };
 
-    const snapshot = await animeSoloRound(musicProvider, bangumiProvider);
-    expect(snapshot.currentRound?.audioUrl).toBe("https://audio/original-track.mp3");
+    const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
+    expect(chosenId).toBe("original-track");
   });
 
   const resolveInternals = (musicProvider: MusicProvider) => {
@@ -1201,7 +1198,7 @@ describe("SonGuessrService 猜番出题等概率", () => {
       roomId: "8888",
       payload: {},
     });
-    return lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
+    return chosenSongId(service, "8888");
   };
 
   test("关联曲目顺序不再决定选曲：所有通过筛选的曲目等概率", async () => {
@@ -1236,16 +1233,15 @@ describe("SonGuessrService 猜番出题等概率", () => {
 
     const chosen = new Set<string>();
     for (let seed = 1; seed <= 8; seed += 1) {
-      const snapshot = await startAnimeRound(musicProvider, bangumiProvider, seededRandom(seed));
-      const audioUrl = snapshot.currentRound?.audioUrl;
-      expect(audioUrl).toBeDefined();
-      chosen.add(audioUrl!);
+      const songId = await startAnimeRound(musicProvider, bangumiProvider, seededRandom(seed));
+      expect(songId).toBeDefined();
+      chosen.add(songId!);
     }
 
     // 不同随机源必须落到不同曲目上——否则说明「顺序取首位」的旧行为还在。
     expect(chosen.size).toBeGreaterThan(1);
-    for (const audioUrl of chosen) {
-      expect(titles.some((title) => audioUrl === `https://audio/${title}.mp3`)).toBe(true);
+    for (const songId of chosen) {
+      expect(titles).toContain(songId);
     }
   });
 });

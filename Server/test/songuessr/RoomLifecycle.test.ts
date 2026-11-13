@@ -30,6 +30,7 @@ import { describe, expect, test } from "bun:test";
 import {
   TestConnection,
   anime,
+  chosenSongId,
   connection,
   createRoom,
   deferredServiceResult,
@@ -312,7 +313,7 @@ describe("SonGuessrService", () => {
 
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
-    expect(snapshot.currentRound?.audioUrl).toBe(secondSong.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(secondSong.id);
   });
 
   /** 建好房间并查询番剧的关联曲候选列表（手动出题的选曲面板走这条命令）。 */
@@ -621,9 +622,7 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    expect(
-      lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl
-    ).toBe(high.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(high.id);
   });
 
   test("歌名匹配度门禁精准识别兼容版本并拒绝无关歌曲", () => {
@@ -780,9 +779,7 @@ describe("SonGuessrService", () => {
     });
 
     // 必须跳过排在第一的 TAKE ME HIGHER，精准选出匹配的答案歌
-    expect(
-      lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl
-    ).toBe(matched.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(matched.id);
   });
 
   test("自动猜番多轮之间优先避开最近出过的番剧与歌曲", async () => {
@@ -835,8 +832,7 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const round1 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
-    expect(round1?.audioUrl).toBe(song1.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(song1.id);
 
     // 音频就绪并猜对：关掉血战时一名玩家猜对即结束第 1 轮，无需再有人投降
     await execute(service, guest, {
@@ -862,10 +858,9 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: {},
     });
-    const round2 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
 
     // 第 2 轮必须优先避让 anime-1，选择 anime-2 和 song-2
-    expect(round2?.audioUrl).toBe(song2.audioUrl);
+    expect(chosenSongId(service, "1234")).toBe(song2.id);
 
     await execute(service, guest, {
       id: "audio-2",

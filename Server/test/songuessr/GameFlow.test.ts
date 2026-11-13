@@ -3,6 +3,7 @@ import { AppError } from "../../src/domain/Errors";
 import { GameRoundRecord } from "../../src/domain/GameRecord";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  chosenSongId,
   connection,
   createRoom,
   deferredServiceResult,
@@ -277,7 +278,7 @@ describe("SonGuessrService", () => {
 
     const playing = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(playing.phase).toBe("playing");
-    expect(playing.currentRound?.audioUrl).toBe("https://audio/answer.mp3");
+    expect(chosenSongId(service, "1234")).toBe("answer");
     expect(playing.currentRound).not.toHaveProperty("attempts");
     expect(JSON.stringify(playing)).not.toContain("答案歌");
     await expect(
