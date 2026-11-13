@@ -125,10 +125,7 @@ function RoomCard({
 
 export function RoomsPanel() {
   const [game, setGame] = useState<RecordedGameKind | "">("");
-  // target 保留到退场动画结束，open 单独控制显隐：否则关闭瞬间标题与描述会闪回默认文案。
-  const [pending, setPending] = useState<{ target: Pending; open: boolean } | null>(null);
-  const target = pending?.target ?? null;
-  const ask = (next: Pending) => setPending({ target: next, open: true });
+  const [pending, setPending] = useState<Pending | null>(null);
   const rooms = useAdminQuery(
     `rooms:${game}`,
     () => api.admin.rooms.list(game ? { game } : {}),
@@ -137,15 +134,15 @@ export function RoomsPanel() {
   const list = rooms.data ?? [];
 
   const confirm = async () => {
-    if (!target) return null;
+    if (!pending) return null;
     try {
-      if (target.kind === "close")
-        await api.admin.rooms.close({ game: target.room.game, roomId: target.room.roomId });
+      if (pending.kind === "close")
+        await api.admin.rooms.close({ game: pending.room.game, roomId: pending.room.roomId });
       else
         await api.admin.rooms.kick({
-          game: target.room.game,
-          roomId: target.room.roomId,
-          playerId: target.player.id,
+          game: pending.room.game,
+          roomId: pending.room.roomId,
+          playerId: pending.player.id,
         });
       rooms.reload();
       return null;
@@ -187,25 +184,25 @@ export function RoomsPanel() {
           <RoomCard
             key={`${room.game}:${room.roomId}`}
             room={room}
-            onClose={() => ask({ kind: "close", room })}
-            onKick={(player) => ask({ kind: "kick", room, player })}
+            onClose={() => setPending({ kind: "close", room })}
+            onKick={(player) => setPending({ kind: "kick", room, player })}
           />
         ))}
       </ul>
       <ConfirmDialog
-        open={pending?.open ?? false}
+        open={pending !== null}
         onOpenChange={(open) => {
-          if (!open) setPending((current) => current && { ...current, open: false });
+          if (!open) setPending(null);
         }}
-        title={target?.kind === "kick" ? "移出玩家" : "关闭房间"}
+        title={pending?.kind === "kick" ? "移出玩家" : "关闭房间"}
         description={
-          target?.kind === "kick"
-            ? `把「${target.player.name}」移出房间「${target.room.name}」？`
-            : target
-              ? `关闭「${target.room.name}」（${GAME_LABELS[target.room.game]} · ${target.room.roomId}）？房内玩家会收到房间已关闭的通知。`
+          pending?.kind === "kick"
+            ? `把「${pending.player.name}」移出房间「${pending.room.name}」？`
+            : pending
+              ? `关闭「${pending.room.name}」（${GAME_LABELS[pending.room.game]} · ${pending.room.roomId}）？房内玩家会收到房间已关闭的通知。`
               : ""
         }
-        confirmLabel={target?.kind === "kick" ? "移出" : "关闭房间"}
+        confirmLabel={pending?.kind === "kick" ? "移出" : "关闭房间"}
         onConfirm={confirm}
       />
     </div>
