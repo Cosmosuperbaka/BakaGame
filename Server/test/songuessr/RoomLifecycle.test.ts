@@ -1576,6 +1576,57 @@ describe("SonGuessrService", () => {
       });
       expect(round.players[guestState.playerId]).toBeDefined();
     });
+
+    test("回座刷新播放地址的等待期间，缺状态的回座者不被当作已作答完毕", async () => {
+      let holdSong: Promise<SongDetails> | undefined;
+      const musicProvider: MusicProvider = {
+        ...provider,
+        getSong: (...args) => holdSong ?? provider.getSong(...args),
+      };
+      const service = new SonGuessrService({ musicProvider });
+      const host = connection(service, "wait-host");
+      const answerer = connection(service, "wait-answerer");
+      const returning = connection(service, "wait-returning");
+      await createRoom(service, host);
+      await joinRoom(service, answerer, "作答者");
+      const returningState = await joinRoom(service, returning, "回座者");
+      await execute(service, returning, {
+        id: "ready-returning",
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+      await startRound(
+        service,
+        host,
+        answerer,
+        lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId
+      );
+      const room = service.rooms.get("1234")!;
+      await service.unregisterConnection(returning.record.id);
+      // 掉线时的发布会顺手补齐状态，要在它之后再模拟「切轮瞬间状态缺失」。
+      delete room.currentRound!.players[returningState.playerId];
+
+      // 回座在刷新播放地址处挂起；此时别人放弃作答，会立刻判一次「本回合是否已结束」。
+      let release!: (song: SongDetails) => void;
+      holdSong = new Promise<SongDetails>((resolve) => (release = resolve));
+      const reconnecting = execute(service, connection(service, "wait-returning-2"), {
+        id: "wait-back",
+        type: "song.room.reconnect",
+        payload: { roomId: "1234", sessionToken: returningState.sessionToken },
+      });
+      await execute(service, answerer, {
+        id: "wait-give-up",
+        type: "song.game.giveUp",
+        roomId: "1234",
+        payload: {},
+      });
+      expect(room.phase).toBe("playing");
+
+      release(songs.answer);
+      await reconnecting;
+      expect(room.phase).toBe("playing");
+    });
   });
 
   describe("建私密房期间（口令摘要尚未算完）", () => {

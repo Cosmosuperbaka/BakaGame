@@ -826,6 +826,8 @@ export class SonGuessrService implements AdminRoomControl {
 
     // 房主空缺时回座的人当场接任：重选只挑在线的人，空缺期间回来的人不会再有第二次机会。
     this.attachConnection(room, player, connection);
+    // 不能留给发布时的视图兜底：下面刷新播放地址要等一次 await，期间别人的操作会判
+    // 「本回合是否已结束」，缺状态的人会被当成已作答完毕而提前收回合。
     this.ensureRoundPlayerState(room, player);
 
     // 网易云播放地址可能带有效期。刷新页面后重新取一次当前回合地址，
