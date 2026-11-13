@@ -60,7 +60,8 @@ export function LazyImage({
 }) {
   const container = useRef<HTMLSpanElement>(null);
   const [image, setImage] = useState<string | undefined>(initial ?? resolvedImages.get(cacheKey));
-  const [failed, setFailed] = useState(false);
+  // 记下加载失败的地址而不是布尔值：换图或升级成清晰图后自动重试，与 PlayerAvatar 同口径。
+  const [failedSrc, setFailedSrc] = useState<string | undefined>();
   // `request` 常是内联箭头函数，放进依赖会让 effect 每次渲染重跑；用 ref 取最新值。
   const latestRequest = useRef(request);
   useEffect(() => {
@@ -99,14 +100,14 @@ export function LazyImage({
         className
       )}
     >
-      {image && !failed ? (
+      {image && image !== failedSrc ? (
         <img
           src={image}
           alt=""
           className={cn("h-full w-full object-cover", imageClassName)}
           loading="lazy"
           decoding="async"
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(image)}
         />
       ) : (
         fallback
