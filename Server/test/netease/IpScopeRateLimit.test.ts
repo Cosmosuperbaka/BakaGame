@@ -6,7 +6,7 @@ import {
   randomChineseIp,
   readChinaIpRanges,
   runWithAnonymousMusicIpScope,
-} from "../../src/infrastructure/NeteaseMusicProvider";
+} from "../../src/infrastructure/music/NeteaseMusicProvider";
 
 describe("IP 作用域与限流", () => {
   const originalFetch = globalThis.fetch;

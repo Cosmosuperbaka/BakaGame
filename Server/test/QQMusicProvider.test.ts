@@ -4,7 +4,7 @@ import {
   stripHtmlTags,
   parseQrcLyrics,
   parseLrcLyrics,
-} from "../src/infrastructure/QQMusicProvider";
+} from "../src/infrastructure/music/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
 
 const originals = {
@@ -860,8 +860,8 @@ describe("QQMusicProvider · stripHtmlTags", () => {
 describe("QQMusicProvider · 没有热度与副歌数据", () => {
   it("经聚合层查询 QQ 歌曲热度与副歌直接得到空，不触发元数据加载", async () => {
     const { AggregatedMusicProvider } =
-      await import("../src/infrastructure/AggregatedMusicProvider");
-    const { NeteaseMusicProvider } = await import("../src/infrastructure/NeteaseMusicProvider");
+      await import("../src/infrastructure/music/AggregatedMusicProvider");
+    const { NeteaseMusicProvider } = await import("../src/infrastructure/music/NeteaseMusicProvider");
     const detail = mock(async () => {
       throw new Error("不应加载元数据");
     });

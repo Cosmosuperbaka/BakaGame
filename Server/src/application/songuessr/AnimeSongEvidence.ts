@@ -1,6 +1,6 @@
 /** 番剧歌曲归属证据评分与非人声音轨否决的纯函数。 */
 import { isReleaseYearOffTarget } from "./Records";
-import { MusicCookieInput, MusicProvider } from "../../infrastructure/NeteaseMusicProvider";
+import { MusicCookieInput, MusicProvider } from "../../infrastructure/music/NeteaseMusicProvider";
 import {
   BangumiSubjectDetails,
   SongDetails,

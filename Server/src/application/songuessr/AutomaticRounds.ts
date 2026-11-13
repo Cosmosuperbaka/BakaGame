@@ -4,12 +4,12 @@ import {
   extractArtistTokens,
   extractCanonicalTitle,
   isPlayableSong,
-} from "../../infrastructure/MusicDeduplicator";
+} from "../../infrastructure/music/MusicDeduplicator";
 import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
 import type {
   MusicCookieInput,
   MusicSearchOptions,
-} from "../../infrastructure/NeteaseMusicProvider";
+} from "../../infrastructure/music/NeteaseMusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   MAX_MIN_POPULARITY,

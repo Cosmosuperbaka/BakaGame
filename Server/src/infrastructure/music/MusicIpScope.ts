@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import type { EventLogger } from "./EventLogger";
-import { countServerMetric } from "./Sentry";
-import { stableStringify } from "./JsonReaders";
+import type { EventLogger } from "../EventLogger";
+import { countServerMetric } from "../Sentry";
+import { stableStringify } from "../JsonReaders";
 import { randomChineseIp, type ChinaIpRange } from "./ChinaIpRanges";
 
 /** 把凭据窄化成组合包形态；裸字符串与非对象凭据都走 `false` 分支。 */

@@ -6,7 +6,7 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   type MusicCookieInput,
   type MusicProvider,
-} from "../../src/infrastructure/NeteaseMusicProvider";
+} from "../../src/infrastructure/music/NeteaseMusicProvider";
 
 describe("账号池单号并发", () => {
   const gatedProvider = (usedCookies: Array<MusicCookieInput | undefined>) => {

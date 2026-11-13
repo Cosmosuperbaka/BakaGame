@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { NeteaseMusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../src/infrastructure/music/NeteaseMusicProvider";
 
 test("真实网易云接口可以返回 HTTPS 音频、时间轴歌词并支持分段读取", async () => {
   const cookie = Bun.env.NETEASE_COOKIE?.trim();

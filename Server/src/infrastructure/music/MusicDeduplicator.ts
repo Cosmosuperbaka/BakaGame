@@ -1,6 +1,6 @@
-import type { SongSearchResult } from "../shared/SonGuessr";
+import type { SongSearchResult } from "../../shared/SonGuessr";
 import type { MusicPlatform } from "./NeteaseMusicProvider";
-import { toSimplified } from "./ChineseConverter";
+import { toSimplified } from "../ChineseConverter";
 
 export interface AggregatedSongSearchResult extends SongSearchResult {
   /** 综合排序打分 */

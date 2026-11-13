@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { AppError } from "../domain/Errors";
+import { AppError } from "../../domain/Errors";
 import { LRUCache } from "lru-cache";
 import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
 import qqmusic from "qqmusic-api-enhanced";
-import { describeError, type EventLogger } from "./EventLogger";
+import { describeError, type EventLogger } from "../EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import { parseTTML, sanitizeLyrics } from "./LyricLines";
-import { asArray, asRecord, readNumber } from "./JsonReaders";
+import { asArray, asRecord, readNumber } from "../JsonReaders";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
 import { AmllLyricClient } from "./AmllLyricClient";
@@ -23,7 +23,7 @@ import type {
   SongLyricLine,
   SongPlaylistInfo,
   SongSearchResult,
-} from "../shared/SonGuessr";
+} from "../../shared/SonGuessr";
 
 export interface QQMusicProviderOptions {
   logger?: EventLogger;

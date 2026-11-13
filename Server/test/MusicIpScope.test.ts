@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { parseChinaIpRanges } from "../src/infrastructure/ChinaIpRanges";
-import { MusicIpScopeRegistry } from "../src/infrastructure/MusicIpScope";
+import { parseChinaIpRanges } from "../src/infrastructure/music/ChinaIpRanges";
+import { MusicIpScopeRegistry } from "../src/infrastructure/music/MusicIpScope";
 
 const createRegistry = (now: () => number = () => 0) => {
   let seed = 0;

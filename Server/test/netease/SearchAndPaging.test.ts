@@ -1,11 +1,11 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { NeteaseMusicProvider, parseLrc } from "../../src/infrastructure/NeteaseMusicProvider";
+import { NeteaseMusicProvider, parseLrc } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import {
   isCreditLyricLine,
   isInstrumentalLyricLine,
   isUnusableLyricLine,
   sanitizeLyrics,
-} from "../../src/infrastructure/LyricLines";
+} from "../../src/infrastructure/music/LyricLines";
 
 describe("网易云检索与歌单", () => {
   const originalFetch = globalThis.fetch;

@@ -1,5 +1,5 @@
 import { AppError } from "../../src/domain/Errors";
-import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
   TestConnection,

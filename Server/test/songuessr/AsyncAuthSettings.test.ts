@@ -24,8 +24,8 @@ import { AppError } from "../../src/domain/Errors";
 import {
   type MusicCookieInput,
   type MusicProvider,
-} from "../../src/infrastructure/NeteaseMusicProvider";
-import { AggregatedMusicProvider } from "../../src/infrastructure/AggregatedMusicProvider";
+} from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { AggregatedMusicProvider } from "../../src/infrastructure/music/AggregatedMusicProvider";
 import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
 
 describe("SonGuessr service 异步归属回归", () => {

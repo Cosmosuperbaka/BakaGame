@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { AmllLyricClient } from "../src/infrastructure/AmllLyricClient";
-import { MusicCache } from "../src/infrastructure/MusicCache";
+import { AmllLyricClient } from "../src/infrastructure/music/AmllLyricClient";
+import { MusicCache } from "../src/infrastructure/music/MusicCache";
 import { amllResponse, amllTtmlFixture } from "./netease/Fixtures";
 
 const createClient = (fetcher: (input: string, init?: RequestInit) => Promise<Response>) =>

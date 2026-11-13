@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseSongUrn, buildSongUrn, isSongUrn } from "../src/infrastructure/MusicUrn";
+import { parseSongUrn, buildSongUrn, isSongUrn } from "../src/infrastructure/music/MusicUrn";
 import { toSimplified } from "../src/infrastructure/ChineseConverter";
 import {
   normalizeComparableText,
@@ -12,7 +12,7 @@ import {
   calculateRelevanceScore,
   aggregateAndDeduplicateSongs,
   type SongPlayabilityContext,
-} from "../src/infrastructure/MusicDeduplicator";
+} from "../src/infrastructure/music/MusicDeduplicator";
 
 /** 两家音源都有账号、都下得来：把可播因素排除掉，只观察相关度与平台偏好。 */
 const ALL_PLAYABLE: SongPlayabilityContext = { availablePlatforms: ["netease", "qq"] };

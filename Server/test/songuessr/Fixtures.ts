@@ -1,5 +1,5 @@
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import {
   BangumiSubjectDetails,
   ConnectionRecord,

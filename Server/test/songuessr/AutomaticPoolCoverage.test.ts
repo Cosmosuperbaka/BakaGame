@@ -7,7 +7,7 @@ import {
 } from "../../src/application/songuessr/AutomaticRounds";
 import { installRound } from "../../src/application/songuessr/RoundInstall";
 import { AppError } from "../../src/domain/Errors";
-import type { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import type { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import type { SongSearchResult, SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { connection, createRoom, execute, lastEvent, makeSong, provider } from "./Fixtures";
 

@@ -120,7 +120,7 @@ import {
   type SeatBindingContext,
   type TabSeatContext,
 } from "./room/SeatBinding";
-import { musicIpScope } from "../infrastructure/NeteaseMusicProvider";
+import { musicIpScope } from "../infrastructure/music/NeteaseMusicProvider";
 import { createEvent } from "../transport/Packets";
 import {
   AUDIO_READY_GRACE_MS,

@@ -4,7 +4,7 @@ import {
   parseLrc,
   parseYrc,
   mergeTranslations,
-} from "../../src/infrastructure/NeteaseMusicProvider";
+} from "../../src/infrastructure/music/NeteaseMusicProvider";
 import {
   isBopomofoOnlyLyricLine,
   isBracketedStageDirectionLine,
@@ -19,7 +19,7 @@ import {
   isUnusableLyricLine,
   parseTTML,
   sanitizeLyrics,
-} from "../../src/infrastructure/LyricLines";
+} from "../../src/infrastructure/music/LyricLines";
 
 describe("歌词清洗与解析", () => {
   const originalFetch = globalThis.fetch;

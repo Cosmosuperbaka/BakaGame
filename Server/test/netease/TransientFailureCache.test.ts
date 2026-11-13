@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NeteaseMusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 
 const songDetail = async () => ({
   body: {

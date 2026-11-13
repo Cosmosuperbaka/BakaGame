@@ -8,7 +8,7 @@ import type {
   MusicCookieInput,
   MusicLoginSession,
   MusicProvider,
-} from "../../src/infrastructure/NeteaseMusicProvider";
+} from "../../src/infrastructure/music/NeteaseMusicProvider";
 import type {
   CEEAppearance,
   CEECharacterSummary,

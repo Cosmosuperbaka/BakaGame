@@ -1,7 +1,7 @@
-import { AppError } from "../domain/Errors";
+import { AppError } from "../../domain/Errors";
 import { randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import { describeError, type EventLogger } from "./EventLogger";
+import { describeError, type EventLogger } from "../EventLogger";
 import { isCreditLyricLine, parseTTML, sanitizeLyrics } from "./LyricLines";
 import { readChinaIpRanges } from "./ChinaIpRanges";
 import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "./MusicIpScope";
@@ -16,7 +16,7 @@ import {
 } from "./NeteaseLyricParse";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
-import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
+import { asArray, asRecord, readNumber, readString } from "../JsonReaders";
 import type {
   SongDetails,
   SongAlbumSearchResult,
@@ -28,7 +28,7 @@ import type {
   SongPlaylistInfo,
   SongSearchResult,
   SongChorus,
-} from "../shared/Index";
+} from "../../shared/Index";
 
 // 保持既有 API 边界：下列符号历史上从本文件导出，拆分到独立模块后仍从这里可导入。
 export { parseChinaIpRanges, randomChineseIp, readChinaIpRanges } from "./ChinaIpRanges";

@@ -12,7 +12,7 @@ import {
   type SongDetails,
   type SongSearchResult,
 } from "../../shared/Index";
-import type { MusicCookieInput, MusicProvider } from "../../infrastructure/NeteaseMusicProvider";
+import type { MusicCookieInput, MusicProvider } from "../../infrastructure/music/NeteaseMusicProvider";
 import {
   ALTERNATE_VERSION_PATTERN,
   buildTrackQueries,

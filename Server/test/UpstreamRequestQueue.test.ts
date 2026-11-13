@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { AppError } from "../src/domain/Errors";
-import { NeteaseMusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
-import { UpstreamRequestQueue } from "../src/infrastructure/UpstreamRequestQueue";
+import { NeteaseMusicProvider } from "../src/infrastructure/music/NeteaseMusicProvider";
+import { UpstreamRequestQueue } from "../src/infrastructure/music/UpstreamRequestQueue";
 
 interface CooldownRecord {
   scope?: string;

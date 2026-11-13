@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isCreditLyricLine, sanitizeLyrics } from "../src/infrastructure/LyricLines";
+import { isCreditLyricLine, sanitizeLyrics } from "../src/infrastructure/music/LyricLines";
 
 /** 用互不相同的 12 个中文字拼头部，避免命中任何已登记标签。 */
 const POOL = "我们走过岁月随风而去你还记得吗山海云天星河长路梦醒时分";

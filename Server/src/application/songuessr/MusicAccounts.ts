@@ -9,8 +9,8 @@ import type {
   MusicLoginSession,
   MusicPlatform,
   MusicSearchOptions,
-} from "../../infrastructure/NeteaseMusicProvider";
-import type { SongPlayabilityContext } from "../../infrastructure/MusicDeduplicator";
+} from "../../infrastructure/music/NeteaseMusicProvider";
+import type { SongPlayabilityContext } from "../../infrastructure/music/MusicDeduplicator";
 import { createEvent } from "../../transport/Packets";
 import {
   MUSIC_COOKIE_FRESH_MS,

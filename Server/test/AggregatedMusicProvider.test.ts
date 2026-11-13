@@ -1,12 +1,12 @@
 import { describe, expect, test, mock } from "bun:test";
 import { AppError } from "../src/domain/Errors";
-import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
+import { AggregatedMusicProvider } from "../src/infrastructure/music/AggregatedMusicProvider";
 import type {
   MusicProvider,
   MusicLoginSession,
   MusicQrLoginCheck,
-} from "../src/infrastructure/NeteaseMusicProvider";
-import type { AggregatedSongSearchResult } from "../src/infrastructure/MusicDeduplicator";
+} from "../src/infrastructure/music/NeteaseMusicProvider";
+import type { AggregatedSongSearchResult } from "../src/infrastructure/music/MusicDeduplicator";
 import type { SongDetails, SongPlaylistInfo, SongSearchResult } from "../src/shared/SonGuessr";
 
 // 返回类型不注解成 MusicProvider：那会让 `expect(mock.getSong)` 被判成游离方法引用，

@@ -1,6 +1,6 @@
 /** 猜歌房间/回合的记录类型、默认设置与出题、账号池、限流的调优常量。 */
 import { AppError } from "../../domain/Errors";
-import { MusicLoginSession } from "../../infrastructure/NeteaseMusicProvider";
+import { MusicLoginSession } from "../../infrastructure/music/NeteaseMusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   SongGuessDirection,

@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { amllTtmlFixture, amllResponse } from "./Fixtures";
-import { NeteaseMusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {

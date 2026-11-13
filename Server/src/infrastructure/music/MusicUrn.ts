@@ -1,4 +1,4 @@
-import { AppError } from "../domain/Errors";
+import { AppError } from "../../domain/Errors";
 
 export type MusicPlatform = "netease" | "qq";
 

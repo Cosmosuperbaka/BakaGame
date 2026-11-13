@@ -41,7 +41,7 @@ import {
   type SongDetails,
 } from "../../src/shared/Index";
 import { type BangumiMusicTrack, type SongSearchResult } from "../../src/shared/SonGuessr";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { type MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
 
 describe("SonGuessr 非歌音轨否决", () => {

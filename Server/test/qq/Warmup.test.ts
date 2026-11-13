@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
-import { QQMusicProvider } from "../../src/infrastructure/QQMusicProvider";
+import { QQMusicProvider } from "../../src/infrastructure/music/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
 
 const originals = { search: qqmusic.search };

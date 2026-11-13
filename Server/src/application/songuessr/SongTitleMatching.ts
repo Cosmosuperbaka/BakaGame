@@ -11,7 +11,7 @@ import {
   artistsOverlap,
   extractArtistTokens,
   extractCanonicalTitle,
-} from "../../infrastructure/MusicDeduplicator";
+} from "../../infrastructure/music/MusicDeduplicator";
 import {
   BangumiMusicTrack,
   BangumiMusicTrackKind,

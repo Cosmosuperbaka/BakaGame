@@ -6,7 +6,7 @@ import { resolveRecentSongWindow } from "../src/application/songuessr/Records";
 import {
   NeteaseMusicProvider,
   type MusicProvider,
-} from "../src/infrastructure/NeteaseMusicProvider";
+} from "../src/infrastructure/music/NeteaseMusicProvider";
 import type {
   ConnectionRecord,
   SongDetails,
@@ -414,7 +414,7 @@ async function main() {
     runtime: Bun.version,
     sourceSha256: Object.fromEntries(
       await Promise.all(
-        ["src/application/SonGuessrService.ts", "src/infrastructure/NeteaseMusicProvider.ts"].map(
+        ["src/application/SonGuessrService.ts", "src/infrastructure/music/NeteaseMusicProvider.ts"].map(
           async (path) => [
             path,
             createHash("sha256")

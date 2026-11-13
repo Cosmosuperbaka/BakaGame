@@ -1,5 +1,5 @@
-import { AppError } from "../domain/Errors";
-import { describeError, type EventLogger } from "./EventLogger";
+import { AppError } from "../../domain/Errors";
+import { describeError, type EventLogger } from "../EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import {
   aggregateAndDeduplicateSongs,
@@ -27,7 +27,7 @@ import type {
   SongDetails,
   SongPlaylistInfo,
   SongSearchResult,
-} from "../shared/SonGuessr";
+} from "../../shared/SonGuessr";
 
 export interface AggregatedMusicProviderOptions {
   neteaseProvider: MusicProvider;

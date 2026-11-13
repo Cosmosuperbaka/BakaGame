@@ -10,7 +10,7 @@ import {
   type SonGuessrClientMessage,
   type SonGuessrRoomSnapshot,
 } from "../src/shared/Index";
-import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import type { MusicProvider } from "../src/infrastructure/music/NeteaseMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({

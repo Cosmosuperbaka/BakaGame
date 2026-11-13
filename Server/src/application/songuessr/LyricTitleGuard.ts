@@ -6,7 +6,7 @@
  * 让「优先干净区间」退化成永远回退。
  */
 import { VERSION_MARKER_PATTERN } from "../../domain/TitlePatterns";
-import { normalizeComparableText } from "../../infrastructure/MusicDeduplicator";
+import { normalizeComparableText } from "../../infrastructure/music/MusicDeduplicator";
 import type { SongDetails, SongLyricLine } from "../../shared/Index";
 import { splitTitleSegments, stripSongVersionInfo } from "./SongTitleMatching";
 

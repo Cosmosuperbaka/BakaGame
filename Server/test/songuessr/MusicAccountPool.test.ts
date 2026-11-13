@@ -1,10 +1,10 @@
-import { AggregatedMusicProvider } from "../../src/infrastructure/AggregatedMusicProvider";
+import { AggregatedMusicProvider } from "../../src/infrastructure/music/AggregatedMusicProvider";
 import {
   MUSIC_POOL_COOLDOWN_MS,
   MUSIC_POOL_MAX_COOLDOWN_MS,
 } from "../../src/application/songuessr/Records";
 import { AppError } from "../../src/domain/Errors";
-import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
   TestConnection,

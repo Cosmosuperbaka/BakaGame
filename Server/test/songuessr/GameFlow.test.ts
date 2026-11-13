@@ -22,7 +22,7 @@ import {
   type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
 import { type SongSearchResult } from "../../src/shared/SonGuessr";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { type MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
 
 describe("SonGuessrService", () => {
   test("异步取歌期间出题人离开后不会安装无归属回合", async () => {

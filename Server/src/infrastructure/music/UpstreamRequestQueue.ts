@@ -1,6 +1,6 @@
 import PQueue from "p-queue";
-import { MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS } from "../config/Constants";
-import type { AppError } from "../domain/Errors";
+import { MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS } from "../../config/Constants";
+import type { AppError } from "../../domain/Errors";
 
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
