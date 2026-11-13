@@ -125,7 +125,7 @@ export class MusicCache {
           this.cache.set(key, {
             value,
             softExpireAt: fetchedAt + effectiveTtl * 0.8,
-            hardExpireAt: fetchedAt + Math.max(effectiveTtl, effectiveTtl * 3),
+            hardExpireAt: fetchedAt + effectiveTtl * 3,
             lastAccessAt: fetchedAt,
             hits: 1,
             priority: options.priority ?? 1,
