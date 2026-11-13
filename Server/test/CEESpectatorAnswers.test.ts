@@ -71,7 +71,8 @@ describe("CEE 旁观者的答案可见性", () => {
   test("全局禁选下旁观位也拿不到他人猜过的角色名单，参与者照旧", async () => {
     const { h, host, guest, spectator, late } = await startPlaying({ globalPick: true });
     expect(h.privateState(guest).bannedCharacterIds).toContain(3);
-    for (const viewer of [spectator, late]) expect(h.privateState(viewer).bannedCharacterIds).toEqual([]);
+    for (const viewer of [spectator, late])
+      expect(h.privateState(viewer).bannedCharacterIds).toEqual([]);
     expect(h.privateState(host).bannedCharacterIds).toContain(4);
   });
 
