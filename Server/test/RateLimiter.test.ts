@@ -28,6 +28,27 @@ test("consume 报出剩余额度与最早可重试时刻，供限流响应头直
   });
 });
 
+test("按成本扣多份：成本放不下整份就整条拒绝，不占任何额度，窗口过后恢复", () => {
+  const limiter = new SlidingWindowRateLimiter({ windowMs: 100, maxRequests: 10 });
+  expect(limiter.consume("a", 0, 4)).toMatchObject({ allowed: true, remaining: 6 });
+  expect(limiter.consume("a", 10, 4)).toMatchObject({ allowed: true, remaining: 2 });
+  // 只剩 2 份放不下成本 4：整条拒绝，而且拒绝本身不扣任何额度。
+  expect(limiter.consume("a", 20, 4)).toMatchObject({ allowed: false, remaining: 0 });
+  expect(limiter.consume("a", 30, 2)).toMatchObject({ allowed: true, remaining: 0 });
+  // 最早的 4 份在 100 毫秒后出窗，才又放得下成本 4。
+  expect(limiter.allow("a", 99, 4)).toBe(false);
+  expect(limiter.allow("a", 100, 4)).toBe(true);
+  // 缺省成本是 1：与之前的口径一致。
+  expect(new SlidingWindowRateLimiter({ windowMs: 100, maxRequests: 1 }).allow("b", 0)).toBe(true);
+});
+
+test("成本大于整桶额度的请求永远被拒", () => {
+  const limiter = new SlidingWindowRateLimiter({ windowMs: 100, maxRequests: 3 });
+  expect(limiter.allow("a", 0, 4)).toBe(false);
+  expect(limiter.allow("a", 1000, 4)).toBe(false);
+  expect(limiter.allow("a", 1000, 3)).toBe(true);
+});
+
 test("三层桶把第一个被拒的桶的额度报出来，响应头说得出是谁用完", () => {
   const limiter = new ThreeTierRateLimiter({
     windowMs: 100,

@@ -37,7 +37,11 @@ export class SlidingWindowRateLimiter {
     this.maxKeys = options.maxKeys ?? DEFAULT_MAX_TRACKED_KEYS;
   }
 
-  public consume(key: string, now = Date.now()): RateLimitVerdict {
+  /**
+   * 记一笔账。`cost` 是这次请求占几份额度（缺省 1）：成本高的请求按份数扣，
+   * 整份放不下就整条拒绝且不占任何额度，不会出现「扣了一半又拒绝」。
+   */
+  public consume(key: string, now = Date.now(), cost = 1): RateLimitVerdict {
     const windowStart = now - this.windowMs;
     // Map 按最后一次获准请求排序；每次最多回收 64 个已过期 key。
     // 不淘汰仍有配额记录的 key，否则高基数攻击会绕过限流。
@@ -54,7 +58,9 @@ export class SlidingWindowRateLimiter {
     const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
     // 窗口是滑动的：最早那次请求出窗的一刻就是配额开始恢复的一刻。
     const resetAt = (timestamps[0] ?? now) + this.windowMs;
-    if (timestamps.length >= this.maxRequests) {
+    // 写成「放进最后一份之前已有几份」而不是「放完共几份」：额度在个别调用点是小数，
+    // 成本 1 时必须与改动前的判定逐一等价。
+    if (timestamps.length + cost - 1 >= this.maxRequests) {
       this.windows.set(key, timestamps);
       return {
         allowed: false,
@@ -64,7 +70,7 @@ export class SlidingWindowRateLimiter {
         remaining: 0,
       };
     }
-    timestamps.push(now);
+    for (let share = 0; share < cost; share += 1) timestamps.push(now);
     this.windows.delete(key);
     this.windows.set(key, timestamps);
 
@@ -100,8 +106,8 @@ export class SlidingWindowRateLimiter {
     };
   }
 
-  public allow(key: string, now = Date.now()): boolean {
-    return this.consume(key, now).allowed;
+  public allow(key: string, now = Date.now(), cost = 1): boolean {
+    return this.consume(key, now, cost).allowed;
   }
 
   /** 当前记账的桶键数量；容量不变量测试用，业务代码不得据此判定。 */
