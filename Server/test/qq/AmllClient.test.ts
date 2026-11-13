@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { QQMusicProvider } from "../../src/infrastructure/music/QQMusicProvider";
+import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import { amllResponse, amllTtmlFixture } from "./Fixtures";
 
 describe("QQ音乐 AMLL 委托共享客户端", () => {

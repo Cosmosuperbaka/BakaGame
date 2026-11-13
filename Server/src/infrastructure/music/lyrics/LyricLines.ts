@@ -19,7 +19,7 @@ import {
 } from "./NeteaseMusicLyricVocabulary";
 import { parseTTML as amllParseTTML } from "@applemusic-like-lyrics/ttml";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import type { SongLyricLine, SongSearchResult } from "../../shared/Index";
+import type { SongLyricLine, SongSearchResult } from "../../../shared/Index";
 
 // AMLL 的 TTML 解析器要求 globalThis.DOMParser；谁提供解析就谁负责补齐它需要的运行环境。
 if (typeof globalThis.DOMParser === "undefined") {

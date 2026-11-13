@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
-import { parseLrc, parseYrc, mergeTranslations } from "../../src/infrastructure/music/NeteaseLyricParse";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
+import { parseLrc, parseYrc, mergeTranslations } from "../../src/infrastructure/music/netease/NeteaseLyricParse";
 import {
   isBopomofoOnlyLyricLine,
   isBracketedStageDirectionLine,
@@ -15,7 +15,7 @@ import {
   isUnusableLyricLine,
   parseTTML,
   sanitizeLyrics,
-} from "../../src/infrastructure/music/LyricLines";
+} from "../../src/infrastructure/music/lyrics/LyricLines";
 
 describe("歌词清洗与解析", () => {
   const originalFetch = globalThis.fetch;

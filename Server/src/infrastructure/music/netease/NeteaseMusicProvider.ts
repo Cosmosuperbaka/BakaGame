@@ -1,18 +1,18 @@
-import { AppError } from "../../domain/Errors";
+import { AppError } from "../../../domain/Errors";
 import { randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import { describeError, type EventLogger } from "../EventLogger";
-import { isCreditLyricLine, parseTTML, sanitizeLyrics } from "./LyricLines";
-import { readChinaIpRanges } from "./ChinaIpRanges";
-import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "./MusicIpScope";
-import { AmllLyricClient } from "./AmllLyricClient";
+import { describeError, type EventLogger } from "../../EventLogger";
+import { isCreditLyricLine, parseTTML, sanitizeLyrics } from "../lyrics/LyricLines";
+import { readChinaIpRanges } from "../ChinaIpRanges";
+import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "../MusicIpScope";
+import { AmllLyricClient } from "../lyrics/AmllLyricClient";
 import type {
   MusicCookieInput,
   MusicLoginSession,
   MusicProvider,
   MusicQrLogin,
   MusicQrLoginCheck,
-} from "./MusicProvider";
+} from "../MusicProvider";
 import {
   adoptVerbatimLyrics,
   mergeTranslations,
@@ -21,9 +21,9 @@ import {
   readLyricSources,
   type LyricChainInput,
 } from "./NeteaseLyricParse";
-import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
-import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
-import { asArray, asRecord, readNumber, readString } from "../JsonReaders";
+import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "../MusicCache";
+import { UpstreamRequestQueue } from "../UpstreamRequestQueue";
+import { asArray, asRecord, readNumber, readString } from "../../JsonReaders";
 import type {
   SongDetails,
   SongAlbumSearchResult,
@@ -34,7 +34,7 @@ import type {
   SongLyricLine,
   SongSearchResult,
   SongChorus,
-} from "../../shared/Index";
+} from "../../../shared/Index";
 
 type ApiResponse = { body?: unknown } | unknown;
 type ApiFunction = (params: Record<string, unknown>) => Promise<ApiResponse>;

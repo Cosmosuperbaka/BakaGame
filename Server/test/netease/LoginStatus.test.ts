@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
 
 describe("登录状态", () => {
   const originalFetch = globalThis.fetch;

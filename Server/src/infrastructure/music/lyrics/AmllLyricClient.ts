@@ -1,8 +1,8 @@
 import PQueue from "p-queue";
-import { describeError, type EventLogger } from "../EventLogger";
+import { describeError, type EventLogger } from "../../EventLogger";
 import { parseTTML } from "./LyricLines";
-import { asRecord } from "../JsonReaders";
-import type { MusicCache } from "./MusicCache";
+import { asRecord } from "../../JsonReaders";
+import type { MusicCache } from "../MusicCache";
 
 /** 单次响应体上限：数百 KB 的 TTML 是正常上限，超过它说明上游异常，不值得读进内存。 */
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;

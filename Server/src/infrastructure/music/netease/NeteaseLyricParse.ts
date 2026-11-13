@@ -1,7 +1,7 @@
 import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
-import { isCreditLyricLine, sanitizeLyrics } from "./LyricLines";
-import { asRecord, readString } from "../JsonReaders";
-import type { SongLyricLine, SongSearchResult } from "../../shared/Index";
+import { isCreditLyricLine, sanitizeLyrics } from "../lyrics/LyricLines";
+import { asRecord, readString } from "../../JsonReaders";
+import type { SongLyricLine, SongSearchResult } from "../../../shared/Index";
 
 /**
  * 网易云歌词侧的纯解析函数：LRC / YRC 解析、翻译与音译合并，以及四级歌词优先链

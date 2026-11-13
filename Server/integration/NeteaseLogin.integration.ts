@@ -1,6 +1,6 @@
 ﻿import { expect, test } from "bun:test";
 
-import { NeteaseMusicProvider } from "../src/infrastructure/music/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../src/infrastructure/music/netease/NeteaseMusicProvider";
 
 test("真实网易云 Cookie 可以校验账号并读取会员状态", async () => {
   const cookie = Bun.env.NETEASE_COOKIE?.trim();

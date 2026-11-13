@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AmllLyricClient } from "../src/infrastructure/music/AmllLyricClient";
+import { AmllLyricClient } from "../src/infrastructure/music/lyrics/AmllLyricClient";
 import { MusicCache } from "../src/infrastructure/music/MusicCache";
 import { amllResponse, amllTtmlFixture } from "./netease/Fixtures";
 
