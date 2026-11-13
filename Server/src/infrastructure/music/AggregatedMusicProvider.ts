@@ -1,14 +1,13 @@
 import { AppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
+import { resolvePlatformCookie } from "./MusicCookieResolver";
 import { raceWithTimeout } from "./RaceTimeout";
 import {
   aggregateAndDeduplicateSongs,
   markSongPlayability,
   normalizeComparableText,
-  platformRank,
-  songPlatform,
-  MUSIC_PLATFORM_PREFERENCE,
+  mergeSearchLists,
   type SongPlayabilityContext,
 } from "./MusicDeduplicator";
 import type { MusicCookieInput, MusicLoginSession, MusicPlatform, MusicProvider, MusicQrLogin, MusicQrLoginCheck, MusicSearchOptions, SongFailoverHint } from "./MusicProvider";
@@ -45,111 +44,6 @@ const withSearchTimeout = <T>(task: Promise<T>, timeoutMs: number, source: strin
   raceWithTimeout(task, timeoutMs, () => {
     throw new AppError("MUSIC_API_TIMEOUT", `${source}搜索超时`);
   });
-
-/**
- * 歌手/专辑这类非歌曲实体的双平台合并：按规范化键去重，再按平台偏好交错输出。
- *
- * 简单拼接后截断会让后一个平台的结果在正常输入下永远看不见（网易云先返回满额），
- * 交错保证两边都有席位；同名项取房间偏好更高的那一侧的 ID，后续取歌也走同一边。
- */
-function mergeSearchLists<T extends { id: string }>(
-  netease: T[],
-  qq: T[],
-  keyOf: (item: T) => string,
-  platformPreference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE,
-  limit?: number
-): T[] {
-  const preferred = new Map<string, T>();
-  for (const item of [...netease, ...qq]) {
-    const key = keyOf(item);
-    if (!key) continue;
-    const current = preferred.get(key);
-    if (
-      !current ||
-      platformRank(songPlatform(item.id), platformPreference) <
-        platformRank(songPlatform(current.id), platformPreference)
-    ) {
-      preferred.set(key, item);
-    }
-  }
-
-  const [first, second] = platformPreference[0] === "qq" ? [qq, netease] : [netease, qq];
-  const result: T[] = [];
-  const seen = new Set<string>();
-  const max = Math.max(first.length, second.length);
-  for (let index = 0; index < max; index += 1) {
-    for (const item of [first[index], second[index]]) {
-      if (!item) continue;
-      const key = keyOf(item);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      result.push(preferred.get(key) ?? item);
-      if (limit !== undefined && result.length >= limit) return result;
-    }
-  }
-  return result;
-}
-
-/** 组合凭据（JSON 形态）里按平台取值：非字符串一律视为未配置。 */
-const pickPlatformCookieField = (
-  fields: Partial<Record<MusicPlatform, unknown>>,
-  platform?: MusicPlatform
-): string | undefined => {
-  const val = platform === "qq" ? fields.qq : fields.netease;
-  return typeof val === "string" ? val : undefined;
-};
-
-/** 看起来是 `{ "netease": ..., "qq": ... }` 形态的组合凭据字符串。 */
-const looksLikeCompositeCookie = (cookie: string): boolean =>
-  cookie.startsWith("{") && (cookie.includes("netease") || cookie.includes("qq"));
-
-/** 解析组合凭据字符串；不是 JSON 形态时返回 null，交由单平台凭据特征继续判定。 */
-const parseCompositeCookie = (
-  cookie: string,
-  platform?: MusicPlatform
-): string | undefined | null => {
-  if (!looksLikeCompositeCookie(cookie)) return null;
-  try {
-    const obj = JSON.parse(cookie) as Partial<Record<MusicPlatform, unknown>>;
-    return pickPlatformCookieField(obj, platform);
-  } catch {
-    /* 不是 JSON 形态的组合凭据，按单平台凭据特征继续判定 */
-  }
-  return null;
-};
-
-/**
- * 单平台特定凭据特征检查：避免将特定平台的凭据传递给互斥平台。
- *
- * 返回 true 表示这份凭据对目标平台无效。
- */
-const isPlatformMismatchedCookie = (cookie: string, platform?: MusicPlatform): boolean => {
-  if (platform === "qq") return cookie.includes("MUSIC_U") || cookie.includes("NMTID");
-  if (platform === "netease") {
-    return (
-      cookie.includes("qm_keyst") || cookie.includes("musickey") || cookie.includes("qqmusic_key")
-    );
-  }
-  return false;
-};
-
-const resolveStringCookie = (cookie: string, platform?: MusicPlatform): string | undefined => {
-  const composite = parseCompositeCookie(cookie, platform);
-  if (composite !== null) return composite;
-  if (isPlatformMismatchedCookie(cookie, platform)) return undefined;
-  return cookie;
-};
-
-const resolvePlatformCookie = (
-  cookie?: MusicCookieInput,
-  platform?: MusicPlatform
-): string | undefined => {
-  if (!cookie) return undefined;
-  if (typeof cookie === "object" && cookie !== null)
-    return pickPlatformCookieField(cookie, platform);
-  if (typeof cookie === "string") return resolveStringCookie(cookie, platform);
-  return undefined;
-};
 
 export class AggregatedMusicProvider implements MusicProvider {
   private readonly neteaseProvider: MusicProvider;
