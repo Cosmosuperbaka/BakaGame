@@ -360,7 +360,7 @@ jobs:
     # 打包 CLI 的精确版本在这里单点声明，升级时同改这里与 Cargo.lock（两者主次版本必须匹配）。
     env:
       TAURI_CLI_VERSION: "2.12.3"
-      # HTTPDNS 凭据只在构建期读取（见 README §1）；三项都为空时壳自动保持系统 DNS。
+      # HTTPDNS 凭据只在构建期读取（见 Desktop 目录的 README）；三项都为空时壳自动保持系统 DNS。
       BAKA_HTTPDNS_APP_ID: ${{ secrets.BAKA_HTTPDNS_APP_ID }}
       BAKA_HTTPDNS_SECRET_KEY: ${{ secrets.BAKA_HTTPDNS_SECRET_KEY }}
       BAKA_HTTPDNS_TOKEN: ${{ secrets.BAKA_HTTPDNS_TOKEN }}

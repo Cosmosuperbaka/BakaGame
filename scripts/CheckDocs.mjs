@@ -12,12 +12,25 @@
  *
  * 纯 Node、无依赖：node scripts/CheckDocs.mjs
  */
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const ROOT_DOCS = ["AGENTS.md", "CLAUDE.md", "README.md", "Client/AGENTS.md", "Server/AGENTS.md"];
+const ROOT_DOCS = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "README.md",
+  "CONTRIBUTING.md",
+  "SECURITY.md",
+  "CODE_OF_CONDUCT.md",
+  ".github/labels.md",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".Skill/README.md",
+  "Client/AGENTS.md",
+  "Server/AGENTS.md",
+];
 const DOC_DIRS = ["Agents", "Client/docs", "Server/docs"];
 
 /** 导航规则：目录下的每篇文档都要被入口文档链接到。 */
@@ -65,7 +78,14 @@ const insideSubmodule = (rel) => SUBMODULES.some((sub) => rel === sub || rel.sta
 
 function collectAnchors(text) {
   const anchors = new Set();
+  let fenced = false;
   for (const line of text.split(/\r?\n/)) {
+    // 围栏代码块里的 # 行是注释或命令，不是标题。
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) anchors.add(slug(heading[1]));
     for (const manual of line.matchAll(/<a\s+(?:id|name)=["']([^"']+)["']/gi)) {
@@ -113,7 +133,8 @@ const problems = [];
 
 // 1、2：链接与锚点。
 for (const rel of files) {
-  const text = read(rel);
+  // 行内代码里的 [文字](链接) 是示例写法，不是真链接。
+  const text = read(rel).replace(/`[^`\n]*`/g, "");
   const dir = path.posix.dirname(rel);
   for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
     const link = match[1];
@@ -130,9 +151,14 @@ for (const rel of files) {
       continue;
     }
 
-    if (!target.endsWith(".md")) continue;
     const resolved = path.posix.normalize(path.posix.join(dir, target));
     if (insideSubmodule(resolved)) continue;
+    // 非 .md 的文件类链接（图片、yml 等）只校验存在；站内绝对路径不校验。
+    if (!target.endsWith(".md")) {
+      if (!target.startsWith("/") && !fs.existsSync(path.join(ROOT, resolved)))
+        problems.push(`${rel}: 目标文件不存在 ${target}`);
+      continue;
+    }
     if (!fs.existsSync(path.join(ROOT, resolved))) {
       problems.push(`${rel}: 目标文件不存在 ${target}`);
       continue;
@@ -192,14 +218,15 @@ const SOURCE_DIRS = [
   "Client/scripts",
   "Client/e2e",
 ];
+const WORKFLOW_DIR = ".github/workflows";
 const sourceFiles = (dir) =>
   fs.existsSync(path.join(ROOT, dir))
     ? fs
         .readdirSync(path.join(ROOT, dir), { recursive: true })
         .map((name) => path.posix.join(dir, String(name).replaceAll("\\", "/")))
-        .filter((rel) => /\.(?:[cm]?[jt]sx?|css)$/.test(rel))
+        .filter((rel) => /\.(?:[cm]?[jt]sx?|css|ya?ml)$/.test(rel))
     : [];
-for (const rel of SOURCE_DIRS.flatMap(sourceFiles)) {
+for (const rel of [...SOURCE_DIRS, WORKFLOW_DIR].flatMap(sourceFiles)) {
   read(rel)
     .split(/\r?\n/)
     .forEach((line, index) => {
@@ -207,12 +234,34 @@ for (const rel of SOURCE_DIRS.flatMap(sourceFiles)) {
         /\b([A-Z][A-Za-z]+)(?:\.md)? ?§ ?(\d+(?:\.\d+)*)/g
       )) {
         const sections = numberedSections.get(name);
+        // 工作流注释里引用不存在的文档（改名或删除后的残留）同样算失效引用。
+        if (!sections && rel.startsWith(WORKFLOW_DIR))
+          problems.push(`${rel}:${index + 1}: 引用的文档 ${name} 不存在`);
         if (sections && !sections.has(number))
           problems.push(
             `${rel}:${index + 1}: 引用的 ${name} §${number} 不存在，请改成现有章节或去掉章节号`
           );
       }
     });
+}
+
+// 6（可选）：生产域名不得出现在被追踪文件里。域名清单本身不能进仓库，由环境变量
+// BAKA_PROD_HOSTS（逗号或换行分隔）提供；未提供时跳过。只输出命中的文件，不回显域名。
+const prodHosts = (process.env.BAKA_PROD_HOSTS ?? "")
+  .split(/[,\n]/)
+  .map((host) => host.trim())
+  .filter(Boolean);
+if (prodHosts.length === 0) {
+  console.log("提示：未提供 BAKA_PROD_HOSTS，跳过生产域名检查。");
+} else {
+  for (const host of prodHosts) {
+    const result = spawnSync("git", ["grep", "-l", "-i", "-F", "-e", host], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+    for (const file of result.stdout.split(/\r?\n/).filter(Boolean))
+      problems.push(`${file}: 含生产域名清单中的条目（根 AGENTS.md 红线）`);
+  }
 }
 
 if (problems.length) {
