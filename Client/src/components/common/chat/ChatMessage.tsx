@@ -1,4 +1,6 @@
+import { useContext } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { BubbleRefContext } from "@/components/common/chat/BubbleRef";
 import { receiptMark, iconTappable } from "@/lib/Motion";
 import { Hint } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/Utils";
@@ -115,6 +117,7 @@ export function MessageBubble({
   repeatCount: number;
   onRepeatMessage: (text: string) => Promise<void> | void;
 }) {
+  const bubbleRef = useContext(BubbleRefContext);
   const isSticker = message.text.startsWith(STICKER_PREFIX);
   const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
   const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
@@ -124,6 +127,7 @@ export function MessageBubble({
   return (
     <div className="relative w-fit max-w-full">
       <div
+        ref={bubbleRef}
         data-testid="chat-message-bubble"
         className={cn(
           "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",

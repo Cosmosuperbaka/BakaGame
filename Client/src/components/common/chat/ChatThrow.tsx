@@ -1,6 +1,7 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type Ref, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { animate, motion, useMotionValue, type MotionValue, type Transition } from "framer-motion";
+import { BubbleRefContext } from "@/components/common/chat/BubbleRef";
 import { byAxes, chatThrow, springWithVelocity, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -117,7 +118,11 @@ export function SendThrow({
  * 先藏两帧（`visibility`，不经过透明度）等列表滚到底，再量出胶囊此刻的位置与尺寸，
  * 把气泡摆到胶囊上、继承胶囊的速度，按 thrust / wobble 飞进自己的落点；气泡显形与胶囊撤掉在同一帧。
  */
-function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHandoff | undefined) {
+function useThrowHandoff(
+  ref: RefObject<HTMLDivElement | null>,
+  bubbleRef: RefObject<HTMLDivElement | null>,
+  handoff: ThrowHandoff | undefined
+) {
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node || !handoff) return;
@@ -131,7 +136,7 @@ function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHa
     };
     const take = () => {
       const capsule = handoff.capsule.current;
-      const bubble = node.querySelector<HTMLElement>("[data-testid='chat-message-bubble']");
+      const bubble = bubbleRef.current;
       if (!capsule?.node || !bubble) {
         node.style.visibility = "";
         return;
@@ -180,7 +185,7 @@ function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHa
       stop?.();
       reset();
     };
-  }, [ref, handoff]);
+  }, [ref, bubbleRef, handoff]);
 }
 
 /** 气泡外壳：贴合内容宽度，接手胶囊时整体被带过来。 */
@@ -194,13 +199,14 @@ export function MessageShell({
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useThrowHandoff(ref, handoff);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  useThrowHandoff(ref, bubbleRef, handoff);
   return (
     <div
       ref={ref}
       className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}
     >
-      {children}
+      <BubbleRefContext.Provider value={bubbleRef}>{children}</BubbleRefContext.Provider>
     </div>
   );
 }
