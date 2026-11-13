@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { errorMessage } from "@/components/songuessr/SongErrorMessage";
+import { useWaitingSettingsSave } from "./UseWaitingSettingsSave";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { SearchCombobox } from "@/components/common/SearchCombobox";
@@ -27,7 +28,6 @@ import {
   SettingToggleChips,
 } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/Motion";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
@@ -74,14 +74,6 @@ const TRACK_KIND_OPTIONS = ALL_BANGUMI_TRACK_KINDS.map((kind) => ({
 const popularityText = (value: number) =>
   value === 0 ? "不限热度" : `热度 ${value.toLocaleString("zh-CN")}+`;
 
-// 阶段切换会直接卸载等待设置树，旧 props 的 enabled 来不及变为 false。
-// 三类设置共用发送边界：防抖、卸载刷新和飞行中后续草稿都以当前房间阶段为准。
-async function saveWaitingSettings(roomId: string, payload: Record<string, unknown>) {
-  const state = useSonGuessrStore.getState();
-  if (state.snapshot?.roomId !== roomId || state.snapshot.phase !== "waiting") return;
-  await state.sendCommand("song.room.updateSettings", payload);
-}
-
 /** 题目设置的取值：非房主直接读快照，房主的草稿也从它起步。 */
 const questionOf = (snapshot: SonGuessrRoomSnapshot) => ({
   questionType: snapshot.settings.questionType,
@@ -102,13 +94,11 @@ type QuestionDraft = ReturnType<typeof questionOf>;
 export function SongQuestionSettings({
   snapshot,
   solo = false,
-  readOnly = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
-  readOnly?: boolean;
 }) {
-  const showToast = useSonGuessrStore((state) => state.showToast);
+  const readOnly = useSettingsReadOnly();
   const [draft, setDraft] = useState(() => questionOf(snapshot));
   const values = readOnly ? questionOf(snapshot) : draft;
   const edit = <K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) =>
@@ -116,7 +106,8 @@ export function SongQuestionSettings({
   const editAnime = (patch: Partial<AnimeAutoFilters>) =>
     setDraft((current) => ({ ...current, animeFilters: { ...current.animeFilters, ...patch } }));
 
-  useAutoSave(
+  useWaitingSettingsSave(
+    snapshot,
     {
       questionType: draft.questionType,
       questionMode: draft.questionMode,
@@ -129,14 +120,12 @@ export function SongQuestionSettings({
       },
       animeAutoFilters: draft.animeFilters,
     },
-    (payload) => {
-      // 记住题目设置（单人模式不参与多人房间的记忆），下次创建的房间由等待页重放。
-      if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, question: payload }));
-      return saveWaitingSettings(snapshot.roomId, payload);
-    },
     {
-      enabled: !readOnly && snapshot.phase === "waiting",
-      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
+      // 记住题目设置（单人模式不参与多人房间的记忆），下次创建的房间由等待页重放。
+      remember: (payload) => {
+        if (!solo)
+          updateRoomSettingsMemory("song", (current) => ({ ...current, question: payload }));
+      },
     }
   );
 
@@ -200,7 +189,6 @@ export function SongQuestionSettings({
   );
 }
 
-/** 已选条目：可移除的胶囊，进出按 `listItem` 推入淡出。歌单与歌手共用。 */
 /**
  * 已选筛选项的标签：纸面小卡片，左侧图标标明种类（歌单 / 歌手），右侧以细分隔线隔出独立的移除格。
  * 移除格整格可点、悬停转为危险色，不再是挤在胶囊里的小圆钮。
@@ -518,30 +506,22 @@ const gameOf = (snapshot: SonGuessrRoomSnapshot) => ({
 export function SongGameSettings({
   snapshot,
   solo = false,
-  readOnly = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
   solo?: boolean;
-  readOnly?: boolean;
 }) {
-  const showToast = useSonGuessrStore((state) => state.showToast);
+  const readOnly = useSettingsReadOnly();
   const [draft, setDraft] = useState(() => gameOf(snapshot));
   const values = readOnly ? gameOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useAutoSave(
-    draft,
-    (payload) => {
-      // 与题目设置分开记，各存各的；同样只在多人房间里记忆。
+  useWaitingSettingsSave(snapshot, draft, {
+    // 与题目设置分开记，各存各的；同样只在多人房间里记忆。
+    remember: (payload) => {
       if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, game: payload }));
-      return saveWaitingSettings(snapshot.roomId, payload);
     },
-    {
-      enabled: !readOnly && snapshot.phase === "waiting",
-      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
-    }
-  );
+  });
 
   return (
     <SettingsFields>
@@ -606,34 +586,23 @@ const roomOf = (snapshot: SonGuessrRoomSnapshot) => ({
 });
 
 /** 房间设置：名称、私密与密码、旁观。非房主只看到名称、公开与否和旁观，看不到密码。 */
-export function SongRoomSettings({
-  snapshot,
-  readOnly = false,
-}: {
-  snapshot: SonGuessrRoomSnapshot;
-  readOnly?: boolean;
-}) {
-  const showToast = useSonGuessrStore((state) => state.showToast);
+export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
+  const readOnly = useSettingsReadOnly();
   const [draft, setDraft] = useState(() => roomOf(snapshot));
   const values = readOnly ? roomOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useAutoSave(
+  useWaitingSettingsSave(
+    snapshot,
     {
       name: draft.name || undefined,
       visibility: draft.isPrivate ? "private" : "public",
       password: draft.isPrivate ? draft.password || undefined : "",
       allowSpectators: draft.allowSpectators,
     },
-    (payload) => saveWaitingSettings(snapshot.roomId, payload),
-    {
-      enabled:
-        !readOnly &&
-        snapshot.phase === "waiting" &&
-        (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
-      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
-    }
+    // 私密房间必须有密码：还没有、也没填新的就先不保存。
+    { enabled: !draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0 }
   );
 
   return (

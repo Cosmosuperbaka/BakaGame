@@ -65,7 +65,7 @@ function SongSettingsGroups({
         open={questionOpen}
         onOpenChange={setQuestionOpen}
       >
-        <SongQuestionSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
+        <SongQuestionSettings snapshot={snapshot} solo={solo} />
       </SettingsAccordion>
       <SettingsAccordion
         icon={Search}
@@ -75,7 +75,7 @@ function SongSettingsGroups({
         open={gameOpen}
         onOpenChange={setGameOpen}
       >
-        <SongGameSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
+        <SongGameSettings snapshot={snapshot} solo={solo} />
       </SettingsAccordion>
       {!solo ? (
         <SettingsAccordion
@@ -86,7 +86,7 @@ function SongSettingsGroups({
           open={roomOpen}
           onOpenChange={setRoomOpen}
         >
-          <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
+          <SongRoomSettings snapshot={snapshot} />
         </SettingsAccordion>
       ) : null}
       {/* 单人房同样可以交给 Agent：房里只有自己那一个座位，凭证仍是自己的会话。 */}

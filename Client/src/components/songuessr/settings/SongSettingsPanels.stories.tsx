@@ -55,21 +55,21 @@ function AccordionGroup({
       title: "题目设置",
       icon: Music2,
       summary: summary.question,
-      body: <SongQuestionSettings snapshot={snapshot} readOnly={readOnly} />,
+      body: <SongQuestionSettings snapshot={snapshot} />,
     },
     {
       key: "game",
       title: "猜测设置",
       icon: Search,
       summary: summary.game,
-      body: <SongGameSettings snapshot={snapshot} readOnly={readOnly} />,
+      body: <SongGameSettings snapshot={snapshot} />,
     },
     {
       key: "room",
       title: "房间设置",
       icon: Settings,
       summary: summary.room,
-      body: <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />,
+      body: <SongRoomSettings snapshot={snapshot} />,
     },
   ];
   return (
