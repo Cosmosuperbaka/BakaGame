@@ -46,7 +46,6 @@ export function driveBot(
   }
 }
 
-
 function ensureBrain(
   ctx: CEERankedContext,
   runtime: CEERankedSeriesRuntime,
@@ -70,7 +69,6 @@ function ensureBrain(
   return brain;
 }
 
-
 function thinkMs(
   ctx: CEERankedContext,
   runtime: CEERankedSeriesRuntime,
@@ -78,7 +76,6 @@ function thinkMs(
 ): number {
   return ceeRankedBotThinkMs(brain, consistentCount(runtime, brain), ctx.random);
 }
-
 
 /** 一致候选数：人机「知道自己还没排除掉多少个」，影响它的犹豫程度。 */
 function consistentCount(runtime: CEERankedSeriesRuntime, brain: CEERankedBotBrain): number {
@@ -90,7 +87,6 @@ function consistentCount(runtime: CEERankedSeriesRuntime, brain: CEERankedBotBra
     runtime.series.settings
   ).length;
 }
-
 
 function botMove(
   ctx: CEERankedContext,
@@ -136,10 +132,8 @@ function botMove(
     : now + thinkMs(ctx, runtime, brain);
 }
 
-
 function botView(runtime: CEERankedSeriesRuntime, id: number): CEECharacterView | null {
   const candidate = runtime.pool.candidates.find((item) => item.character.id === id);
   if (candidate) return candidate.character;
   return runtime.pool.extras.find((item) => item.id === id) ?? null;
 }
-

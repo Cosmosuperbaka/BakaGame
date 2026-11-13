@@ -12,9 +12,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
  * 后者是瞬态失败（超时、排队过多、上游 5xx、响应无效），调用方据此决定结果能否固化。
  */
 export type AmllLookup =
-  | { status: "found"; ttml: string }
-  | { status: "missing" }
-  | { status: "failed" };
+  { status: "found"; ttml: string } | { status: "missing" } | { status: "failed" };
 
 export interface AmllLyricClientOptions {
   /** 按 ID 取正文的查询参数名：网易云 `ncmMusicId`、QQ 音乐 `qqMusicId`。 */

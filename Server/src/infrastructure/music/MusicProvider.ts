@@ -14,7 +14,6 @@ import type {
  */
 export type MusicCookieInput = string | Partial<Record<"netease" | "qq", string>>;
 
-
 /** 音源平台。URN 前缀即平台名（见 `MusicUrn`）。 */
 export type MusicPlatform = "netease" | "qq";
 
@@ -37,7 +36,6 @@ export interface SongFailoverHint {
   artist: string;
   durationMs?: number;
 }
-
 
 /**
  * 音乐上游适配层契约。实现有网易云、QQ 音乐与把两者合起来的聚合 provider。

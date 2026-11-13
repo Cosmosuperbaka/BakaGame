@@ -681,8 +681,7 @@ describe("手动出题片段", () => {
       type: "song.room.reconnect",
       payload: {
         roomId: "1234",
-        sessionToken: lastEvent<SonGuessrPrivateState>(host, "song.game.privateState")
-          .sessionToken,
+        sessionToken: lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").sessionToken,
       },
     });
     // 发够条数，让没有抬高的计数器一定会扫过快照里已用过的序号。

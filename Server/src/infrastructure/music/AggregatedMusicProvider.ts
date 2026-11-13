@@ -10,7 +10,16 @@ import {
   mergeSearchLists,
   type SongPlayabilityContext,
 } from "./MusicDeduplicator";
-import type { MusicCookieInput, MusicLoginSession, MusicPlatform, MusicProvider, MusicQrLogin, MusicQrLoginCheck, MusicSearchOptions, SongFailoverHint } from "./MusicProvider";
+import type {
+  MusicCookieInput,
+  MusicLoginSession,
+  MusicPlatform,
+  MusicProvider,
+  MusicQrLogin,
+  MusicQrLoginCheck,
+  MusicSearchOptions,
+  SongFailoverHint,
+} from "./MusicProvider";
 import type {
   SongAlbumSearchResult,
   SongArtistSearchResult,
@@ -319,10 +328,7 @@ export class AggregatedMusicProvider implements MusicProvider {
     const rawId = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
     const platformCookie = resolvePlatformCookie(cookie, platform);
     if (platform === "qq" && !platformCookie && !this.anonymousQqAllowed()) {
-      throw new AppError(
-        "MUSIC_LOGIN_REQUIRED",
-        "QQ 音乐匿名音源已关闭，请登录 QQ 音乐后读取歌单"
-      );
+      throw new AppError("MUSIC_LOGIN_REQUIRED", "QQ 音乐匿名音源已关闭，请登录 QQ 音乐后读取歌单");
     }
     const res = await this.providerFor(platform).getPlaylistSongs!(rawId, platformCookie);
     return {

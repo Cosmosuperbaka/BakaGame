@@ -1,7 +1,14 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
-import { parseChinaIpRanges, randomChineseIp, readChinaIpRanges } from "../../src/infrastructure/music/ChinaIpRanges";
-import { musicIpScope, runWithAnonymousMusicIpScope } from "../../src/infrastructure/music/MusicIpScope";
+import {
+  parseChinaIpRanges,
+  randomChineseIp,
+  readChinaIpRanges,
+} from "../../src/infrastructure/music/ChinaIpRanges";
+import {
+  musicIpScope,
+  runWithAnonymousMusicIpScope,
+} from "../../src/infrastructure/music/MusicIpScope";
 
 describe("IP 作用域与限流", () => {
   const originalFetch = globalThis.fetch;

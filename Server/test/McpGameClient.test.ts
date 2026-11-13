@@ -462,9 +462,13 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
         if (message.type === "room.leave" && message.payload?.sessionToken === "seat-token")
           return { reply: { type: "error", error: { code, message: "凭据失效" } } };
         if (message.type === "room.join")
-          return { reply: { type: "ack", payload: roomAck({ roomId: "5678", sessionToken: "t2" }) } };
+          return {
+            reply: { type: "ack", payload: roomAck({ roomId: "5678", sessionToken: "t2" }) },
+          };
         if (message.type === "room.create")
-          return { reply: { type: "ack", payload: roomAck({ roomId: "9999", sessionToken: "t3" }) } };
+          return {
+            reply: { type: "ack", payload: roomAck({ roomId: "9999", sessionToken: "t3" }) },
+          };
         return { reply: { type: "ack", payload: { ok: true } } };
       });
       socket.drop();

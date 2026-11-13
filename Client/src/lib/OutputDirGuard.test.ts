@@ -34,7 +34,9 @@ describe("截图脚本的输出目录护栏", () => {
     await mkdir(join(root, `${OUTPUT_PREFIX}-ab`));
     await mkdir(join(root, "custom"));
     await writeFile(join(root, "custom", OUTPUT_MARKER), "");
-    expect(assertSafeOutputDir(root, `${OUTPUT_PREFIX}-ab`)).toBe(join(root, `${OUTPUT_PREFIX}-ab`));
+    expect(assertSafeOutputDir(root, `${OUTPUT_PREFIX}-ab`)).toBe(
+      join(root, `${OUTPUT_PREFIX}-ab`)
+    );
     expect(assertSafeOutputDir(root, "custom")).toBe(join(root, "custom"));
     expect(assertSafeOutputDir(root, "fresh")).toBe(join(root, "fresh"));
   });

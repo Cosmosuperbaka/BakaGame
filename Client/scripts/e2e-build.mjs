@@ -10,10 +10,7 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 // 而不是 node_modules/typescript（那条线是给 lint 用的程序化 API，版本不同，结论可能不同）。
 // 包的 exports 不开放 bin 子路径，所以经 package.json 取 bin 声明再拼路径。
 const typescriptPackage = require.resolve("typescript7/package.json");
-const tscCli = path.join(
-  path.dirname(typescriptPackage),
-  require(typescriptPackage).bin.tsc
-);
+const tscCli = path.join(path.dirname(typescriptPackage), require(typescriptPackage).bin.tsc);
 
 // Explicit process values defeat inherited production values. envDir:false also blocks .env files.
 process.env.NODE_ENV = "production";

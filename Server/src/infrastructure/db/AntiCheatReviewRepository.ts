@@ -130,9 +130,6 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
   }
   async setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void> {
     const db = await this.database.client();
-    await db
-      .update(ceeAntiCheatReview)
-      .set({ status })
-      .where(eq(ceeAntiCheatReview.id, id));
+    await db.update(ceeAntiCheatReview).set({ status }).where(eq(ceeAntiCheatReview.id, id));
   }
 }

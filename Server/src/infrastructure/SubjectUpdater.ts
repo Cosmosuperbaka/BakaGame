@@ -266,7 +266,6 @@ export class SubjectUpdater {
     return refreshed;
   }
 
-
   /** 把库里现有作品登记为「此刻已刷新」，细则见刷新计划。 */
   markDatasetFresh(): number {
     return this.planner.markDatasetFresh();
@@ -283,9 +282,6 @@ export class SubjectUpdater {
     if (this.manual.size >= MANUAL_QUEUE_LIMIT) return;
     this.manual.add(subjectId);
   }
-
-
-
 
   /** 刷新单个作品：拉详情 → 覆盖落库 → 入索引待同步队列。返回是否成功。 */
   async refresh(subjectId: number, tier = 0): Promise<boolean> {
@@ -406,11 +402,6 @@ export class SubjectUpdater {
       );
     }
   }
-
-
-
-
-
 
   /**
    * 记下维护任务的结果。存进数据集而不是内存：每日任务只在固定时刻跑，部署重启后

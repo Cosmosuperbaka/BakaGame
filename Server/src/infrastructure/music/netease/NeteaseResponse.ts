@@ -232,10 +232,9 @@ export const readWiki = (raw: unknown): SongEncyclopedia & { language?: string }
     const title = readString(record.title ?? record.name ?? record.key)?.toLowerCase();
     const content = readString(record.content ?? record.text ?? record.value);
     if (title && content) {
-      WIKI_FIELD_RULES.find((rule) => rule.keywords.some((keyword) => title.includes(keyword)))?.apply(
-        content,
-        acc
-      );
+      WIKI_FIELD_RULES.find((rule) =>
+        rule.keywords.some((keyword) => title.includes(keyword))
+      )?.apply(content, acc);
     }
 
     const metaList = asArray(record.wikiSubMetaVos ?? record.tags);

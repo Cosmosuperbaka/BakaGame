@@ -2,7 +2,12 @@ import qqmusic from "qqmusic-api-enhanced";
 import { AppError } from "../../../domain/Errors";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { asRecord, readNumber } from "../../JsonReaders";
-import type { MusicCookieInput, MusicLoginSession, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
+import type {
+  MusicCookieInput,
+  MusicLoginSession,
+  MusicQrLogin,
+  MusicQrLoginCheck,
+} from "../MusicProvider";
 import { LoginStatusCache } from "../MusicCredential";
 import { audioCacheScope, extractQqCookie } from "./QQCookie";
 import { readString, readText } from "./QQResponse";

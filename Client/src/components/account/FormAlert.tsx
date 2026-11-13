@@ -9,7 +9,10 @@ import { cn } from "@/lib/Utils";
  */
 export function FormAlert({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <p role="alert" className={cn("flex items-start gap-1.5 text-xs leading-relaxed text-destructive", className)}>
+    <p
+      role="alert"
+      className={cn("flex items-start gap-1.5 text-xs leading-relaxed text-destructive", className)}
+    >
       <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0">{children}</span>
     </p>

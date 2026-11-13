@@ -25,7 +25,9 @@ const makeDb = (subjects: number) => {
 };
 
 const seed = (db: Database, id: number, refreshedAt: number, nextAt = 0, failures = 0) =>
-  db.query("INSERT OR REPLACE INTO bangumi_refresh VALUES (?,0,?,?,?)").run(id, refreshedAt, failures, nextAt);
+  db
+    .query("INSERT OR REPLACE INTO bangumi_refresh VALUES (?,0,?,?,?)")
+    .run(id, refreshedAt, failures, nextAt);
 
 const planner = (db: Database, tiers = DEFAULT_REFRESH_TIERS, roundLimit = 1000) =>
   new RefreshPlanner(db, () => NOW, tiers, roundLimit);
@@ -73,7 +75,11 @@ describe("到期选取的边界", () => {
     seed(db, 1, NOW - 2 * DAY_MS);
     seed(db, 2, NOW - 2 * DAY_MS + 1);
     for (let id = 3; id <= 10; id += 1) seed(db, id, NOW);
-    expect(planner(db, tiers).selectDue().map((row) => Number(row.id))).toEqual([1]);
+    expect(
+      planner(db, tiers)
+        .selectDue()
+        .map((row) => Number(row.id))
+    ).toEqual([1]);
     db.close();
   });
 
@@ -84,7 +90,11 @@ describe("到期选取的边界", () => {
     seed(db, 2, 0, NOW - 1, 3);
     seed(db, 3, NOW);
     seed(db, 4, NOW);
-    expect(planner(db, tiers).selectDue().map((row) => Number(row.id))).toEqual([1, 2]);
+    expect(
+      planner(db, tiers)
+        .selectDue()
+        .map((row) => Number(row.id))
+    ).toEqual([1, 2]);
     db.close();
   });
 
@@ -95,7 +105,11 @@ describe("到期选取的边界", () => {
     seed(db, 1, NOW - 9 * DAY_MS, NOW + 1, 2);
     seed(db, 2, NOW - 9 * DAY_MS, NOW, 1);
     seed(db, 3, NOW - 9 * DAY_MS, 0, 0);
-    expect(planner(db, tiers).selectDue().map((row) => Number(row.id))).toEqual([2, 3]);
+    expect(
+      planner(db, tiers)
+        .selectDue()
+        .map((row) => Number(row.id))
+    ).toEqual([2, 3]);
     db.close();
   });
 

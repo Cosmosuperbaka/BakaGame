@@ -150,7 +150,10 @@ export function settlementResults(
   return results;
 }
 
-export function seriesRecord(runtime: CEERankedSeriesRuntime, endedAt: number): CEERankedSeriesRecord {
+export function seriesRecord(
+  runtime: CEERankedSeriesRuntime,
+  endedAt: number
+): CEERankedSeriesRecord {
   const series = runtime.series;
   return {
     id: series.id,
@@ -198,7 +201,10 @@ export function playerRecord(
   };
 }
 
-export function gameRecords(runtime: CEERankedSeriesRuntime, endedAt: number): CEERankedGameRecord[] {
+export function gameRecords(
+  runtime: CEERankedSeriesRuntime,
+  endedAt: number
+): CEERankedGameRecord[] {
   return runtime.series.games.map((game): CEERankedGameRecord => ({
     number: game.number,
     answerCharacterId: game.answer.id,

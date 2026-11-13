@@ -28,7 +28,9 @@ interface RemainingPagesInput<TRaw> {
  * 停止条件：已取够声明总数、翻页失败、本页没有新增曲目、或本页不足一页
  * （避免上游对超范围 offset 仍返回整页时无限翻下去）。翻页失败不丢弃已取到的部分。
  */
-export const readRemainingPlaylistPages = async <TRaw>(input: RemainingPagesInput<TRaw>): Promise<void> => {
+export const readRemainingPlaylistPages = async <TRaw>(
+  input: RemainingPagesInput<TRaw>
+): Promise<void> => {
   for (let page = 1; page < PLAYLIST_MAX_PAGES && input.firstAdded > 0; page += 1) {
     if (input.declaredCount !== undefined && input.collectedCount() >= input.declaredCount) break;
     const rawSongs = await input.fetchPage(page);

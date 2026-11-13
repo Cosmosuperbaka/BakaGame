@@ -22,9 +22,7 @@ test("路径参数段按模板记名，真实参数值不进操作名", () => {
 });
 
 test("HEAD 复用 GET 模板，WS 升级在 HTTP 层按 GET 归类", () => {
-  expect(httpOperationAction(templates, "HEAD", "/api/users/u-1")).toBe(
-    "HTTP HEAD /api/users/:id"
-  );
+  expect(httpOperationAction(templates, "HEAD", "/api/users/u-1")).toBe("HTTP HEAD /api/users/:id");
   expect(httpOperationAction(templates, "GET", "/api/ws")).toBe("HTTP GET /api/ws");
 });
 

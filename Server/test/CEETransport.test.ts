@@ -168,7 +168,7 @@ function setup(options: { fetcher?: typeof fetch; initialClock?: number } = {}) 
       bangumiImageUrl: "",
     },
     games: { faker: new WhoIsFakerService({ eventLogger: logger }), cee: service },
-    
+
     logger,
   });
   app.listen({ hostname: "127.0.0.1", port: 0 });

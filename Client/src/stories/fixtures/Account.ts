@@ -71,7 +71,9 @@ export const STORY_PROFILE: AccountProfile = {
 
 /** 预置账号状态；Store 是模块单例，故事结束时回到读取中。 */
 export function presetAccount(
-  patch: Partial<Pick<ReturnType<typeof useAccountStore.getState>, "status" | "profile" | "unreadFeedback">>
+  patch: Partial<
+    Pick<ReturnType<typeof useAccountStore.getState>, "status" | "profile" | "unreadFeedback">
+  >
 ): () => void {
   useAccountStore.setState({ status: "guest", profile: null, unreadFeedback: 0, ...patch });
   return () => useAccountStore.setState({ status: "loading", profile: null, unreadFeedback: 0 });

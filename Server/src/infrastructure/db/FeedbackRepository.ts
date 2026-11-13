@@ -76,11 +76,7 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
 
   async get(id: string): Promise<FeedbackRecord | null> {
     const db = await this.database.client();
-    const [row] = await db
-      .select()
-      .from(feedback)
-      .where(eq(feedback.id, id))
-      .limit(1);
+    const [row] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1);
     return row ? asFeedback(row) : null;
   }
 

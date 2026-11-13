@@ -858,7 +858,8 @@ describe("QQMusicProvider · 没有热度与副歌数据", () => {
   it("经聚合层查询 QQ 歌曲热度与副歌直接得到空，不触发元数据加载", async () => {
     const { AggregatedMusicProvider } =
       await import("../src/infrastructure/music/AggregatedMusicProvider");
-    const { NeteaseMusicProvider } = await import("../src/infrastructure/music/netease/NeteaseMusicProvider");
+    const { NeteaseMusicProvider } =
+      await import("../src/infrastructure/music/netease/NeteaseMusicProvider");
     const detail = mock(async () => {
       throw new Error("不应加载元数据");
     });

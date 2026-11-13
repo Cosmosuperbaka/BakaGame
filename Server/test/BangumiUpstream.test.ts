@@ -91,7 +91,10 @@ describe("共享上游部件", () => {
     const clock = fakeClock();
     let retryAfter = "30";
     const fetcher = (async () =>
-      new Response(null, { status: 429, headers: { "Retry-After": retryAfter } })) as unknown as typeof fetch;
+      new Response(null, {
+        status: 429,
+        headers: { "Retry-After": retryAfter },
+      })) as unknown as typeof fetch;
     const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
     await expect(
       upstream.fetch("https://api.invalid/a", { timeoutMs: 1000, priority: "interactive" })
@@ -203,9 +206,13 @@ describe("冷却与时隙的时序", () => {
       sleep: clock.sleep,
       rate: () => 10,
     });
-    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const first = upstream
+      .fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     // 乙紧接着排到下一个时隙，正在等。
-    const second = upstream.fetch(next, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const second = upstream
+      .fetch(next, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     await Bun.sleep(0);
     expect(clock.pending.map((item) => item.ms)).toEqual([100]);
     answer(limited, 429);
@@ -228,7 +235,9 @@ describe("冷却与时隙的时序", () => {
       sleep: clock.sleep,
       rate: () => 10,
     });
-    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const first = upstream
+      .fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     const second = upstream.fetch(next, { timeoutMs: 1000, priority: "background" });
     await Bun.sleep(0);
     answer(limited, 429);
@@ -255,7 +264,9 @@ describe("冷却与时隙的时序", () => {
     const slowRequest = upstream
       .fetch(slow, { timeoutMs: 1000, priority: "interactive" })
       .catch((e) => e);
-    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const first = upstream
+      .fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     await Bun.sleep(0);
     answer(limited, 429);
     await first;
@@ -284,7 +295,9 @@ describe("冷却与时隙的时序", () => {
     const slowRequest = upstream
       .fetch(slow, { timeoutMs: 1000, priority: "interactive" })
       .catch((e) => e);
-    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const first = upstream
+      .fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     await Bun.sleep(0);
     answer(limited, 429);
     await first;
@@ -298,7 +311,9 @@ describe("冷却与时隙的时序", () => {
     const clock = manualClock();
     const { sent, fetcher, answer } = deferredUpstream();
     const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
-    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const first = upstream
+      .fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
     await Bun.sleep(0);
     answer(limited, 429);
     await first;
@@ -443,10 +458,9 @@ describe("四个调用方共用一个上游部件", () => {
       score REAL NOT NULL, rating_count INTEGER NOT NULL, heat INTEGER NOT NULL, rank INTEGER NOT NULL,
       image TEXT NOT NULL)`);
     for (const id of [1, 2])
-      db.query("INSERT INTO subjects VALUES (?,2,'n','','[]','','','2020-01-01',0,'[]','{}','[]',0,0,?,0,'')").run(
-        id,
-        10 - id
-      );
+      db.query(
+        "INSERT INTO subjects VALUES (?,2,'n','','[]','','','2020-01-01',0,'[]','{}','[]',0,0,?,0,'')"
+      ).run(id, 10 - id);
     const updater = new SubjectUpdater({
       db,
       base: "https://api.invalid",
@@ -455,9 +469,14 @@ describe("四个调用方共用一个上游部件", () => {
     });
     // 条目 1 撞上限流：本轮不算它失败；条目 2 在冷却期内等够再发。
     expect(await updater.runRound()).toBe(1);
-    expect(calls).toEqual(["https://api.invalid/v0/subjects/1", "https://api.invalid/v0/subjects/2"]);
+    expect(calls).toEqual([
+      "https://api.invalid/v0/subjects/1",
+      "https://api.invalid/v0/subjects/2",
+    ]);
     expect(clock.sleeps).toContain(5000);
-    const failures = db.query("SELECT subject_id, failures FROM bangumi_refresh ORDER BY subject_id").all();
+    const failures = db
+      .query("SELECT subject_id, failures FROM bangumi_refresh ORDER BY subject_id")
+      .all();
     expect(failures).toEqual([{ subject_id: 2, failures: 0 }]);
     db.close();
   });

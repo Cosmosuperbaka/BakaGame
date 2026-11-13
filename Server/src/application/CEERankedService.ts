@@ -8,10 +8,7 @@ import type {
   CEERankedResponse,
   CEERankedState,
 } from "../shared/CEERanked";
-import {
-  CEE_RANKED_OFFLINE_FORFEIT_MS,
-  CEE_RANKED_STATE_EVENT,
-} from "../shared/CEERanked";
+import { CEE_RANKED_OFFLINE_FORFEIT_MS, CEE_RANKED_STATE_EVENT } from "../shared/CEERanked";
 import { AppError } from "../domain/Errors";
 import {
   applyCEERankedSeriesGuess,
@@ -20,32 +17,22 @@ import {
   surrenderCEERankedSeriesGame,
   tickCEERankedSeries,
 } from "../domain/CEERankedSeries";
-import {
-  type CEERankedSeatIndex,
-} from "../domain/CEERankedGame";
+import { type CEERankedSeatIndex } from "../domain/CEERankedGame";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { createEvent } from "../transport/Packets";
-import {
-  type CEESearchProvenance,
-} from "./CEEAntiCheatSignals";
+import { type CEESearchProvenance } from "./CEEAntiCheatSignals";
 import { requireCEEClientAdmission } from "./CEEClientAdmission";
 import { CEERankedHandicap } from "./CEERankedHandicap";
-import {
-  CEE_RANKED_REMATCH_COOLDOWN_MS,
-} from "./CEERankedQueue";
+import { CEE_RANKED_REMATCH_COOLDOWN_MS } from "./CEERankedQueue";
 import type { CEERankedPoolProvider } from "./CEERankedPool";
 import { runCEEDataCommand } from "./CEEDataCommands";
 import { driveBot } from "./CEERankedBotDriver";
 import { CEERankedMatchmaker } from "./CEERankedMatchmaker";
 import { CEERankedProfileQueries } from "./CEERankedProfileQueries";
 import { CEERankedSettler } from "./CEERankedSettler";
-import {
-  ceeRankedSeriesView,
-} from "./CEERankedViews";
-import {
-  type CEERankedStore,
-} from "./CEERankedStore";
+import { ceeRankedSeriesView } from "./CEERankedViews";
+import { type CEERankedStore } from "./CEERankedStore";
 
 import {
   errorMessageOf,
@@ -58,7 +45,6 @@ import {
   type CEERankedContext,
   type CEERankedSeriesRuntime,
 } from "./CEERankedRuntime";
-
 
 /**
  * 排位命令信封的可穷尽联合：`switch (message.type)` 在这一层就能把 payload 收窄到对应命令，
@@ -572,6 +558,4 @@ export class CEERankedService {
       this.ctx.seriesById.delete(series.id);
     }
   }
-
 }
-

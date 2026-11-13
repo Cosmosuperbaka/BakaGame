@@ -1,7 +1,11 @@
 import { describe, expect, test, mock } from "bun:test";
 import { AppError } from "../src/domain/Errors";
 import { AggregatedMusicProvider } from "../src/infrastructure/music/AggregatedMusicProvider";
-import type { MusicProvider, MusicLoginSession, MusicQrLoginCheck } from "../src/infrastructure/music/MusicProvider";
+import type {
+  MusicProvider,
+  MusicLoginSession,
+  MusicQrLoginCheck,
+} from "../src/infrastructure/music/MusicProvider";
 import type { AggregatedSongSearchResult } from "../src/infrastructure/music/MusicDeduplicator";
 import type { SongDetails, SongPlaylistInfo, SongSearchResult } from "../src/shared/SonGuessr";
 
@@ -698,7 +702,8 @@ describe("AggregatedMusicProvider · 跨平台兜底失败留痕", () => {
     const infos: Array<{ message: string; context?: Record<string, unknown> }> = [];
     const logger = {
       debug: () => {},
-      info: (message: string, context?: Record<string, unknown>) => infos.push({ message, context }),
+      info: (message: string, context?: Record<string, unknown>) =>
+        infos.push({ message, context }),
       warn: () => {},
       error: () => {},
     };

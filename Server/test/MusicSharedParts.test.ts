@@ -65,10 +65,7 @@ describe("LoginStatusCache", () => {
       await Bun.sleep(5);
       return session("cookie-a");
     };
-    const [first, second] = await Promise.all([
-      cache.resolve("k", load),
-      cache.resolve("k", load),
-    ]);
+    const [first, second] = await Promise.all([cache.resolve("k", load), cache.resolve("k", load)]);
     expect(calls).toBe(1);
     first.account.nickname = "被改写";
     expect(second.account.nickname).toBe("测试号");
@@ -217,7 +214,10 @@ describe("readRemainingPlaylistPages", () => {
 describe("warnIfPlaylistTruncated", () => {
   it("读到的比声明的少才告警，带声明数与实取数", () => {
     const warnings: Array<{ message: string; context: unknown }> = [];
-    const logger = { warn: (message: string, context?: Record<string, unknown>) => warnings.push({ message, context }) };
+    const logger = {
+      warn: (message: string, context?: Record<string, unknown>) =>
+        warnings.push({ message, context }),
+    };
     warnIfPlaylistTruncated(logger, "歌单读取不完整", { playlistId: "1" }, 100, 100);
     expect(warnings).toEqual([]);
     warnIfPlaylistTruncated(logger, "歌单读取不完整", { playlistId: "1" }, 100, 40);
@@ -232,7 +232,9 @@ describe("warnIfPlaylistTruncated", () => {
 
 describe("createMusicQueue", () => {
   const limited = (value: unknown) =>
-    typeof value === "object" && value !== null && (value as { limited?: boolean }).limited === true;
+    typeof value === "object" &&
+    value !== null &&
+    (value as { limited?: boolean }).limited === true;
   const create = (rateLimitUpstreamCode?: number) =>
     createMusicQueue({
       now: () => Date.now(),

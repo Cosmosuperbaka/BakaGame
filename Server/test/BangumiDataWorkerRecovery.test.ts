@@ -36,7 +36,7 @@ const originalWorker = globalThis.Worker;
 const clients: BangumiDataWorkerClient[] = [];
 
 const fast = { baseDelayMs: 10, maxDelayMs: 40, maxRestarts: 3, stableMs: 5_000 };
-const INIT = { method: "init", dataset: { dbPath: "x" }, } as const;
+const INIT = { method: "init", dataset: { dbPath: "x" } } as const;
 const QUERY = { method: "song.getSubject", subjectId: "1" } as const;
 
 const createClient = (recovery = fast) => {

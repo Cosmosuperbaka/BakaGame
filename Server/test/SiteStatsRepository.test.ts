@@ -75,7 +75,9 @@ describe("站点访问统计仓储（连接桩）", () => {
     expect(await repository.purgeVisitors("2026-01-01", 100)).toBe(3);
     expect(stub.queries).toHaveLength(1);
     const query = stub.queryAt(0);
-    expect(query.statement).toBe("delete from `site_visit_daily` where `site_visit_daily`.`day` < ? limit ?");
+    expect(query.statement).toBe(
+      "delete from `site_visit_daily` where `site_visit_daily`.`day` < ? limit ?"
+    );
     expect(query.params).toEqual(["2026-01-01", 100]);
   });
 

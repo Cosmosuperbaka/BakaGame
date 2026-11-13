@@ -135,7 +135,10 @@ export class CEESearch {
     query: string,
     count: number
   ): CEECharacterSummary[] {
-    const candidates = rows.map((row) => ({ row, summary: toCharacterSummary(this.enrichment, row) }));
+    const candidates = rows.map((row) => ({
+      row,
+      summary: toCharacterSummary(this.enrichment, row),
+    }));
     if (query) candidates.sort((a, b) => compareCharacterMatchRank(a, b, query));
     return candidates.slice(0, count).map(({ summary }) => summary);
   }

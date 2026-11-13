@@ -481,7 +481,9 @@ const slowCreateServer = (ackDelayMs: number) => {
           payload?: { roomId?: string };
         };
         const reply = (payload: unknown) =>
-          ws.send(JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload }));
+          ws.send(
+            JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload })
+          );
         if (message.type === "room.create") {
           const roomId = message.payload?.roomId ?? "";
           order.push(`recv:${roomId}`);
@@ -582,7 +584,10 @@ test("持有方超过持有上限会被强制放行，后续调用不必等它�
 test("JSON-RPC 通知不回响应，带 id 的未知方法才回错误；不认识的协议版本回默认版本", async () => {
   sessionsRef = newSessions();
   const url = "http://127.0.0.1:9/api/mcp";
-  const notification = await rpc(url, { jsonrpc: "2.0", method: "notifications/roots/list_changed" });
+  const notification = await rpc(url, {
+    jsonrpc: "2.0",
+    method: "notifications/roots/list_changed",
+  });
   expect(notification.status).toBe(202);
   expect(notification.payload).toBeNull();
 
@@ -621,7 +626,7 @@ test("远程审计日志带动作、游戏、房间与来源摘要，不含原�
     "198.51.100.7"
   );
   const entry = JSON.stringify(
-    records.find((record) => JSON.stringify(record).includes("mcp.remote.tool\""))
+    records.find((record) => JSON.stringify(record).includes('mcp.remote.tool"'))
   );
   expect(entry).toContain('"game":"faker"');
   expect(entry).toContain('"roomId":"1234"');

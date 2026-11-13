@@ -10,7 +10,13 @@ import {
   warnIfPlaylistTruncated,
 } from "../PlaylistPaging";
 import { AmllLyricClient } from "../lyrics/AmllLyricClient";
-import type { MusicCookieInput, MusicLoginSession, MusicProvider, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
+import type {
+  MusicCookieInput,
+  MusicLoginSession,
+  MusicProvider,
+  MusicQrLogin,
+  MusicQrLoginCheck,
+} from "../MusicProvider";
 import {
   NO_OP_SEARCH_NOTES,
   QQAnonymousCircuit,
@@ -112,7 +118,7 @@ export class QQMusicProvider implements MusicProvider {
       fetchById: options.fetchAmllLyrics,
       fetchBySearch: options.fetchAmllSearchLyrics,
     });
-    const callUpstream = <T,>(cookie: string | undefined, task: () => Promise<T>) =>
+    const callUpstream = <T>(cookie: string | undefined, task: () => Promise<T>) =>
       this.upstream.callUpstream(cookie, task);
     this.login = new QQLogin({ callUpstream, logger: options.logger });
     this.lyricChain = new QQLyricChain({

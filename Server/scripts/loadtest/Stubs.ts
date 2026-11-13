@@ -4,7 +4,11 @@ import type {
   CEERawCharacter,
 } from "../../src/infrastructure/CEEData";
 import type { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
-import type { MusicCookieInput, MusicLoginSession, MusicProvider } from "../../src/infrastructure/music/MusicProvider";
+import type {
+  MusicCookieInput,
+  MusicLoginSession,
+  MusicProvider,
+} from "../../src/infrastructure/music/MusicProvider";
 import type {
   CEEAppearance,
   CEECharacterSummary,

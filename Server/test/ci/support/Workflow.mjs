@@ -33,7 +33,8 @@ export function job(id) {
 /** 作业的步骤列表，每步至少有 name（缺 name 的步骤无法被门禁点名，直接报红）。 */
 export function stepsOf(id) {
   const steps = job(id).steps ?? [];
-  for (const step of steps) assert.ok(step.name, `作业 ${id} 里有未命名的步骤：${JSON.stringify(step)}`);
+  for (const step of steps)
+    assert.ok(step.name, `作业 ${id} 里有未命名的步骤：${JSON.stringify(step)}`);
   return steps;
 }
 

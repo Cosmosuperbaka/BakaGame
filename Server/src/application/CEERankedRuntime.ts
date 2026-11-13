@@ -124,30 +124,23 @@ export function requireStore(ctx: CEERankedContext): CEERankedStore {
   return store;
 }
 
-
 export function requirePool(ctx: CEERankedContext): CEERankedPoolProvider {
   const pool = ctx.poolProvider;
   if (pool === undefined) throw new AppError("RANKED_UNAVAILABLE", "排位赛暂不可用");
   return pool;
 }
 
-
-export function connectionFor(
-  ctx: CEERankedContext,
-  userId: string
-): ConnectionRecord | undefined {
+export function connectionFor(ctx: CEERankedContext, userId: string): ConnectionRecord | undefined {
   const connectionId = ctx.attachment.get(userId);
   if (connectionId === undefined) return undefined;
   return ctx.connections.get(connectionId);
 }
-
 
 export function pushState(ctx: CEERankedContext, userId: string, state: CEERankedState): void {
   const connection = connectionFor(ctx, userId);
   if (!connection) return;
   connection.send(createEvent(CEE_RANKED_STATE_EVENT, state));
 }
-
 
 export function pushSeries(ctx: CEERankedContext, runtime: CEERankedSeriesRuntime): void {
   for (const index of [0, 1] as const) {
@@ -157,7 +150,6 @@ export function pushSeries(ctx: CEERankedContext, runtime: CEERankedSeriesRuntim
     pushState(ctx, seat.userId, { status: "series", series: view });
   }
 }
-
 
 function seatMeta(runtime: CEERankedSeriesRuntime, index: CEERankedSeatIndex): CEERankedSeatMeta {
   const seat = runtime.seats[index];
@@ -171,7 +163,6 @@ function seatMeta(runtime: CEERankedSeriesRuntime, index: CEERankedSeatIndex): C
   };
 }
 
-
 export function metaFor(runtime: CEERankedSeriesRuntime): CEERankedViewMeta {
   return {
     seats: [seatMeta(runtime, 0), seatMeta(runtime, 1)],
@@ -180,4 +171,3 @@ export function metaFor(runtime: CEERankedSeriesRuntime): CEERankedViewMeta {
     results: runtime.results,
   };
 }
-

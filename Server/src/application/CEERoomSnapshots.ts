@@ -46,7 +46,11 @@ export const flattenRoom = (room: CEERoom): SerializedCEERoom => {
 };
 
 /** 还原 Map 与 Set，截止时刻按停机时长后移；公共的「全员离线、计时重起」交给内核。 */
-export const expandRoom = (raw: SnapshottedRoom, now: number, pausedMs: number): CEERoom | undefined => {
+export const expandRoom = (
+  raw: SnapshottedRoom,
+  now: number,
+  pausedMs: number
+): CEERoom | undefined => {
   if (!hasSnapshotShape(raw)) return undefined;
   const saved = raw as unknown as SerializedCEERoom;
 

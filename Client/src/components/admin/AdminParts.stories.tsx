@@ -3,7 +3,16 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen } from "storybook/test";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
-import { AdminTable, AdminToolbar, ConfirmDialog, Pager, QueryState, RowButton, Stat, UserCell } from "./AdminParts";
+import {
+  AdminTable,
+  AdminToolbar,
+  ConfirmDialog,
+  Pager,
+  QueryState,
+  RowButton,
+  Stat,
+  UserCell,
+} from "./AdminParts";
 
 /**
  * 管理后台各面板共用的零件：标题行、查询状态、表格、数字卡、分页与危险操作确认。
@@ -26,9 +35,30 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const USERS = [
-  { name: "小布丁", qqNumber: "123456789", image: null, role: "管理员", games: 128, created: "2026-09-01" },
-  { name: "一个昵称起得非常非常长的玩家", qqNumber: "2345678901", image: null, role: "玩家", games: 3, created: "2026-10-12" },
-  { name: "路人甲", qqNumber: "345678", image: null, role: "玩家", games: 0, created: "2026-12-30" },
+  {
+    name: "小布丁",
+    qqNumber: "123456789",
+    image: null,
+    role: "管理员",
+    games: 128,
+    created: "2026-09-01",
+  },
+  {
+    name: "一个昵称起得非常非常长的玩家",
+    qqNumber: "2345678901",
+    image: null,
+    role: "玩家",
+    games: 3,
+    created: "2026-10-12",
+  },
+  {
+    name: "路人甲",
+    qqNumber: "345678",
+    image: null,
+    role: "玩家",
+    games: 0,
+    created: "2026-12-30",
+  },
 ];
 
 /** 标题行 + 数字卡 + 表格（头像昵称、可点名字、角色徽章、右对齐数字）+ 分页。 */
@@ -90,7 +120,14 @@ export const Loading: Story = {
   render: () => (
     <div>
       <AdminToolbar title="用户" count={null} onReload={() => {}} loading />
-      <QueryState loading error={null} empty={false} hasData={false} onRetry={() => {}} emptyText="" />
+      <QueryState
+        loading
+        error={null}
+        empty={false}
+        hasData={false}
+        onRetry={() => {}}
+        emptyText=""
+      />
     </div>
   ),
 };

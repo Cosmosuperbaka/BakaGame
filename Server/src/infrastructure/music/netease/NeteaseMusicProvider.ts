@@ -331,7 +331,12 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
     return this.musicCache.cached(
-      this.gateway.cacheKey("artist-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
+      this.gateway.cacheKey(
+        "artist-search",
+        undefined,
+        normalized.toLocaleLowerCase(),
+        normalizedLimit
+      ),
       SEARCH_CACHE_TTL_MS,
       async () => {
         const response = await this.gateway.call(
@@ -400,7 +405,12 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 30));
     return this.musicCache.cached(
-      this.gateway.cacheKey("album-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
+      this.gateway.cacheKey(
+        "album-search",
+        undefined,
+        normalized.toLocaleLowerCase(),
+        normalizedLimit
+      ),
       SEARCH_CACHE_TTL_MS,
       async () => {
         // cloudsearch 的 type 枚举：1 单曲 / 10 专辑 / 100 歌手 / 1000 歌单。
@@ -620,5 +630,4 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!value) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     return value;
   }
-
 }

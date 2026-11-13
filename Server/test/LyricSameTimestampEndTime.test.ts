@@ -19,12 +19,16 @@ const ends = (lines: SongLyricLine[]) => lines.map((l) => l.endTime);
 
 describe("行级歌词清洗：同起点的行共享结束时刻", () => {
   it("原文加译文同起点：两行结束时刻相同，都等于下一个更晚的起点", () => {
-    const lines = clean(`${stamp(10)}Original one\n${stamp(10)}译文一\n${stamp(14)}Original two\n${stamp(14)}译文二`);
+    const lines = clean(
+      `${stamp(10)}Original one\n${stamp(10)}译文一\n${stamp(14)}Original two\n${stamp(14)}译文二`
+    );
     expect(ends(lines).slice(0, 2)).toEqual([14_000, 14_000]);
   });
 
   it("三行同起点同理", () => {
-    const lines = clean(`${stamp(10)}Original one\n${stamp(10)}译文一\n${stamp(10)}罗马音一\n${stamp(15)}Original two`);
+    const lines = clean(
+      `${stamp(10)}Original one\n${stamp(10)}译文一\n${stamp(10)}罗马音一\n${stamp(15)}Original two`
+    );
     expect(ends(lines).slice(0, 3)).toEqual([15_000, 15_000, 15_000]);
   });
 
@@ -34,7 +38,9 @@ describe("行级歌词清洗：同起点的行共享结束时刻", () => {
   });
 
   it("单语歌词的结束时刻与修前一致：下一行起点，末行加 5 秒", () => {
-    const lines = clean(Array.from({ length: 5 }, (_, i) => `${stamp(10 + i * 4)}第${i + 1}句歌词内容`).join("\n"));
+    const lines = clean(
+      Array.from({ length: 5 }, (_, i) => `${stamp(10 + i * 4)}第${i + 1}句歌词内容`).join("\n")
+    );
     expect(ends(lines)).toEqual([14_000, 18_000, 22_000, 26_000, 31_000]);
   });
 
@@ -44,7 +50,12 @@ describe("行级歌词清洗：同起点的行共享结束时刻", () => {
       [
         { time: 10_000, endTime: 11_200, text: "逐字歌词内容", words: [word] },
         { time: 10_000, endTime: 10_000, text: "同起点译文行" },
-        { time: 20_000, endTime: 22_000, text: "后一句歌词内容", words: [{ ...word, startTime: 20_000, endTime: 22_000 }] },
+        {
+          time: 20_000,
+          endTime: 22_000,
+          text: "后一句歌词内容",
+          words: [{ ...word, startTime: 20_000, endTime: 22_000 }],
+        },
       ],
       song
     );
@@ -63,7 +74,10 @@ describe("出题切片：同时间戳双语歌词", () => {
   });
 
   it("单语对照歌词选出的窗口与修前相同", () => {
-    const lrc = Array.from({ length: 8 }, (_, i) => `${stamp(10 + i * 4)}第${i + 1}句歌词内容`).join("\n");
+    const lrc = Array.from(
+      { length: 8 },
+      (_, i) => `${stamp(10 + i * 4)}第${i + 1}句歌词内容`
+    ).join("\n");
     const clip = createSongLyricClip(clean(lrc), 2, random, 240_000);
     expect(clip.lines.map((l) => l.text)).toEqual(["第3句歌词内容", "第4句歌词内容"]);
   });

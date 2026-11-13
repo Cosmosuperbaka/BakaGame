@@ -658,8 +658,12 @@ describe("Android Key Attestation 链验证", () => {
     });
 
     test("超长标签号续位（全 0xFF）→ rejected 且不溢出", async () => {
-      await expectRejected(Buffer.concat([Buffer.from([0x1f]), Buffer.alloc(64, 0xff), Buffer.from([0x00])]));
-      await expectRejected(Buffer.concat([Buffer.from([0x30, 0x20, 0x1f]), Buffer.alloc(30, 0xff)]));
+      await expectRejected(
+        Buffer.concat([Buffer.from([0x1f]), Buffer.alloc(64, 0xff), Buffer.from([0x00])])
+      );
+      await expectRejected(
+        Buffer.concat([Buffer.from([0x30, 0x20, 0x1f]), Buffer.alloc(30, 0xff)])
+      );
     });
 
     test("子节点数量超过上限（大量空 NULL）→ rejected", async () => {

@@ -171,7 +171,11 @@ export class RemoteMcpSessions {
    * 按会话串行执行 `run`。前一个调用超过等待上限仍未结束就如实回 BUSY（由 `onBusy` 构造），
    * 不无限排队；持有方超过持有上限会被强制放行，后续调用不会被一个挂起的调用永久堵住。
    */
-  async runExclusive<T>(session: RemoteSession, run: () => Promise<T>, onBusy: () => T): Promise<T> {
+  async runExclusive<T>(
+    session: RemoteSession,
+    run: () => Promise<T>,
+    onBusy: () => T
+  ): Promise<T> {
     if (session.queued >= CALL_QUEUE_MAX) return onBusy();
     session.queued += 1;
     const previous = session.tail;
@@ -452,7 +456,11 @@ const auditContext = (
     action: typeof args.action === "string" ? args.action : undefined,
     game,
     roomId:
-      typeof args.roomId === "string" ? args.roomId : game ? session.client.currentRoom(game) : undefined,
+      typeof args.roomId === "string"
+        ? args.roomId
+        : game
+          ? session.client.currentRoom(game)
+          : undefined,
   };
 };
 

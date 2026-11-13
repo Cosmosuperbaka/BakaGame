@@ -73,8 +73,7 @@ type Story = StoryObj<typeof meta>;
 function scrollPanelTo(heading: HTMLElement) {
   const panel = heading.closest<HTMLElement>("[role='tabpanel']");
   if (!panel) return;
-  panel.scrollTop +=
-    heading.getBoundingClientRect().top - panel.getBoundingClientRect().top - 16;
+  panel.scrollTop += heading.getBoundingClientRect().top - panel.getBoundingClientRect().top - 16;
 }
 
 export const Credits: Story = {

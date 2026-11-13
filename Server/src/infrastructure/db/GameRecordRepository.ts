@@ -179,11 +179,7 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
 
   async get(id: string): Promise<StoredGameRecordDetail | null> {
     const db = await this.database.client();
-    const [row] = await db
-      .select()
-      .from(gameRecord)
-      .where(eq(gameRecord.id, id))
-      .limit(1);
+    const [row] = await db.select().from(gameRecord).where(eq(gameRecord.id, id)).limit(1);
     if (!row) return null;
     const rounds = await db
       .select()

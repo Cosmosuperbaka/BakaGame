@@ -27,7 +27,12 @@ const runGate = (lcov: string) => {
     const report = path.join(dir, "lcov.info");
     writeFileSync(report, lcov);
     const result = Bun.spawnSync(
-      [process.execPath, "run", path.resolve(import.meta.dir, "../scripts/CheckCoverage.ts"), report],
+      [
+        process.execPath,
+        "run",
+        path.resolve(import.meta.dir, "../scripts/CheckCoverage.ts"),
+        report,
+      ],
       { stdout: "pipe", stderr: "pipe" }
     );
     return {
@@ -52,7 +57,12 @@ test("覆盖率达标时门禁脚本以零退出", () => {
 
 test("覆盖率报告缺失时门禁脚本以非零退出，而不是当作通过", () => {
   const result = Bun.spawnSync(
-    [process.execPath, "run", path.resolve(import.meta.dir, "../scripts/CheckCoverage.ts"), path.join(tmpdir(), "no-such-lcov.info")],
+    [
+      process.execPath,
+      "run",
+      path.resolve(import.meta.dir, "../scripts/CheckCoverage.ts"),
+      path.join(tmpdir(), "no-such-lcov.info"),
+    ],
     { stdout: "pipe", stderr: "pipe" }
   );
   expect(result.exitCode).not.toBe(0);

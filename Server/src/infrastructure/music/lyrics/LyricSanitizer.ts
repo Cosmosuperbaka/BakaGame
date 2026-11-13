@@ -101,4 +101,3 @@ export const sanitizeLyrics = (
     return { ...line, endTime: next?.time ?? Math.max(line.endTime, line.time + 5_000) };
   });
 };
-

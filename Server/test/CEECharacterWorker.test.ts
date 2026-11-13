@@ -21,7 +21,7 @@ const rejectionOf = (request: Promise<unknown>) =>
  */
 const startCee = (dbPath: string) => {
   const client = new BangumiDataWorkerClient();
-  const ready = client.init({ method: "init", dataset: { dbPath }, });
+  const ready = client.init({ method: "init", dataset: { dbPath } });
   return { client, provider: new CEECharacterWorkerProvider(client, ready) };
 };
 

@@ -76,12 +76,11 @@ export class NeteaseLogin {
     const scope = `qr-login:${randomUUID()}`;
     // 取 unikey 这一步还没有可用于分桶的 key，先把 scope 显式传进去；
     // 拿到 key 后登记到同一个 scope 上，保证整轮握手始终是同一个出口 IP。
-    const keyResponse = await this.gateway.call(
-      ["login_qr_key"],
-      { ua: loginUa },
-      loginCookie,
-      { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope: scope }
-    );
+    const keyResponse = await this.gateway.call(["login_qr_key"], { ua: loginUa }, loginCookie, {
+      preserveErrorResponse: true,
+      includeAnonymousCookie: false,
+      loginScope: scope,
+    });
     const keyBody = responseBody(keyResponse);
     if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
@@ -180,12 +179,11 @@ export class NeteaseLogin {
   private async verifyLoginStatus(cookie: string, loginScope?: string): Promise<MusicLoginSession> {
     // 该校验请求必须携带与登录同源的 IP：历史实现显式关闭 randomCNIP 导致校验请求无 realIP，
     // 网易云按出口 IP 比对后判定为异地调用，正是「设备还在但凭证反复失效」的直接触发点。
-    const response = await this.gateway.call(
-      ["login_status"],
-      {},
-      cookie,
-      { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope }
-    );
+    const response = await this.gateway.call(["login_status"], {}, cookie, {
+      preserveErrorResponse: true,
+      includeAnonymousCookie: false,
+      loginScope,
+    });
     const body = responseBody(response);
     const data = asRecord(body.data);
     const profile = asRecord(body.profile ?? data.profile);

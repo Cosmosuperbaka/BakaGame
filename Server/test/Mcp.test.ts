@@ -234,12 +234,18 @@ test("stdio 写限流按 Agent 与游戏计数：每次换房号拿不到新额�
           jsonrpc: "2.0",
           id: index + 1,
           method: "tools/call",
-          params: { name: "control_page", arguments: { code: "ABCD2345", game: "faker", roomId: `r${index}` } },
+          params: {
+            name: "control_page",
+            arguments: { code: "ABCD2345", game: "faker", roomId: `r${index}` },
+          },
         })}
 `
       );
       const line = await readLine(stdoutReader, buffered);
-      texts.push((JSON.parse(line!) as { result: { content: Array<{ text: string }> } }).result.content[0]!.text);
+      texts.push(
+        (JSON.parse(line!) as { result: { content: Array<{ text: string }> } }).result.content[0]!
+          .text
+      );
     }
     expect(texts.slice(0, 30).every((text) => text.includes("页面接管只能经站内远程"))).toBe(true);
     expect(texts[30]).toContain("Agent 操作过于频繁");

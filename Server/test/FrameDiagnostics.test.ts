@@ -65,7 +65,9 @@ test("校验失败回错误包：带回抢救出的 id 与 traceId，日志只�
     throw new AppError("INVALID_MESSAGE", "字段不合法");
   });
   const value = { id: "m-9", traceId: "t-9", secret: "x" };
-  const packet = handler({ error: new ValidationError("body", t.Object({ id: t.Number() }), value) });
+  const packet = handler({
+    error: new ValidationError("body", t.Object({ id: t.Number() }), value),
+  });
   expect(packet).toMatchObject({
     type: "error",
     id: "m-9",

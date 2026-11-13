@@ -49,12 +49,20 @@ const DETAIL = {
   content: "在 CEE 多人房间也遇到过一次。\n复现：连续输入三个字后删掉再输入。",
   page: "/songuessr/room/1234",
   replies: [
-    { id: 1, content: "已复现，是搜索请求被旧结果覆盖，下个版本修。", createdAt: "2026-12-31T20:00:00.000Z" },
+    {
+      id: 1,
+      content: "已复现，是搜索请求被旧结果覆盖，下个版本修。",
+      createdAt: "2026-12-31T20:00:00.000Z",
+    },
   ],
 };
 
 function signedIn() {
-  const restoreAccount = presetAccount({ status: "signedIn", profile: STORY_PROFILE, unreadFeedback: 1 });
+  const restoreAccount = presetAccount({
+    status: "signedIn",
+    profile: STORY_PROFILE,
+    unreadFeedback: 1,
+  });
   const restoreApi = stubApi({ "feedback/listMine": LIST, "feedback/get": DETAIL });
   return () => {
     restoreApi();
@@ -123,7 +131,11 @@ export const Thread: Story = {
 export const ListLoading: Story = {
   name: "列表读取中",
   beforeEach: () => {
-    const restoreAccount = presetAccount({ status: "signedIn", profile: STORY_PROFILE, unreadFeedback: 1 });
+    const restoreAccount = presetAccount({
+      status: "signedIn",
+      profile: STORY_PROFILE,
+      unreadFeedback: 1,
+    });
     const restoreApi = stubApi({ "feedback/listMine": "pending" });
     return () => {
       restoreApi();

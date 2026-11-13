@@ -9,7 +9,9 @@ test("回显目标只含主机、端口与库名，不含账号口令", () => {
   expect(target.label).toBe("db.example.com:3307/app_db");
   expect(target.label).not.toContain("s3cret");
   expect(target.label).not.toContain("admin");
-  expect(describeTarget("mysql://u:p@db.example.com/app_db").label).toBe("db.example.com:3306/app_db");
+  expect(describeTarget("mysql://u:p@db.example.com/app_db").label).toBe(
+    "db.example.com:3306/app_db"
+  );
 });
 
 test("连接地址不合法或缺库名时报错，且不回显原串", () => {
@@ -43,7 +45,10 @@ test("真正执行前先回显目标并在无 --yes 时中止，不会去连库"
         sqlFile,
       ],
       {
-        env: { PATH: process.env.PATH ?? "", DATABASE_URL: "mysql://admin:s3cret@db.example.com:3306/app_db" },
+        env: {
+          PATH: process.env.PATH ?? "",
+          DATABASE_URL: "mysql://admin:s3cret@db.example.com:3306/app_db",
+        },
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",

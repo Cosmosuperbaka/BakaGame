@@ -8,7 +8,12 @@ import { EnrichmentStore } from "../src/infrastructure/EnrichmentStore";
 describe("回填缓存存取", () => {
   test("合并写入只覆盖给出的字段，另一个写入方的字段保留", () => {
     const store = new EnrichmentStore();
-    store.merge("character", 7, { image: "https://lain.bgm.tv/a.jpg", grid: "https://lain.bgm.tv/g.jpg" }, 1);
+    store.merge(
+      "character",
+      7,
+      { image: "https://lain.bgm.tv/a.jpg", grid: "https://lain.bgm.tv/g.jpg" },
+      1
+    );
     // 猜歌侧只带 image：不能抹掉 CEE 已落的 grid。
     store.merge("character", 7, { image: "https://lain.bgm.tv/b.jpg" }, 2);
     expect(store.read("character", 7)).toEqual({

@@ -67,14 +67,7 @@ const testRooms = createTestRoomPolicy(() => settings.boolean("enableTestRooms")
 
 let isShuttingDown = false;
 
-const {
-  app,
-  dispose,
-  games,
-  reportBangumiLoad,
-  statusHistory,
-  statusSamples,
-} = createServer({
+const { app, dispose, games, reportBangumiLoad, statusHistory, statusSamples } = createServer({
   env,
   database,
   gameRecords,

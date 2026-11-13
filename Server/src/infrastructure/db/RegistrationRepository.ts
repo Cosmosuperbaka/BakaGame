@@ -207,7 +207,9 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
     if (!outcome?.moves.length) return;
     const { moves } = outcome;
     this.logger?.warn(
-      outcome.kind === "compact" ? "注册序号跳号已压实" : "注册序号跳号且次序不符，已按建号时间重排",
+      outcome.kind === "compact"
+        ? "注册序号跳号已压实"
+        : "注册序号跳号且次序不符，已按建号时间重排",
       {
         rows: moves.length,
         maxBefore: Math.max(...moves.map((move) => move.from)),
@@ -218,10 +220,7 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
   }
 
   private async moveSerial(executor: SerialExecutor, from: number, to: number): Promise<void> {
-    await executor
-      .update(userRegistration)
-      .set({ seq: to })
-      .where(eq(userRegistration.seq, from));
+    await executor.update(userRegistration).set({ seq: to }).where(eq(userRegistration.seq, from));
   }
 
   /** 次序自检：序号顺序与账号创建时间相反的相邻对只告警数量，不自动改；失败只记日志。 */

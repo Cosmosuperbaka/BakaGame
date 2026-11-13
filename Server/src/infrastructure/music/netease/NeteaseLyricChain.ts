@@ -42,10 +42,14 @@ export class NeteaseLyricChain {
     ];
     if (input.song.title) {
       tiers.push(
-        this.ttmlTier(input, () => this.deps.searchAmllTtmlLyrics(input.song.title, input.song.artist), {
-          message: "解析 AMLL 歌曲名搜索 TTML 歌词失败",
-          context: { title: input.song.title },
-        })
+        this.ttmlTier(
+          input,
+          () => this.deps.searchAmllTtmlLyrics(input.song.title, input.song.artist),
+          {
+            message: "解析 AMLL 歌曲名搜索 TTML 歌词失败",
+            context: { title: input.song.title },
+          }
+        )
       );
     }
     tiers.push({
