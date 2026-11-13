@@ -1578,10 +1578,11 @@ describe("SonGuessrService", () => {
     });
 
     test("回座刷新播放地址的等待期间，缺状态的回座者不被当作已作答完毕", async () => {
-      let holdSong: Promise<SongDetails> | undefined;
+      const hold = deferredServiceResult<SongDetails>();
+      let holding = false;
       const musicProvider: MusicProvider = {
         ...provider,
-        getSong: (...args) => holdSong ?? provider.getSong(...args),
+        getSong: (...args) => (holding ? hold.promise : provider.getSong(...args)),
       };
       const service = new SonGuessrService({ musicProvider });
       const host = connection(service, "wait-host");
@@ -1608,8 +1609,7 @@ describe("SonGuessrService", () => {
       delete room.currentRound!.players[returningState.playerId];
 
       // 回座在刷新播放地址处挂起；此时别人放弃作答，会立刻判一次「本回合是否已结束」。
-      let release!: (song: SongDetails) => void;
-      holdSong = new Promise<SongDetails>((resolve) => (release = resolve));
+      holding = true;
       const reconnecting = execute(service, connection(service, "wait-returning-2"), {
         id: "wait-back",
         type: "song.room.reconnect",
@@ -1623,7 +1623,7 @@ describe("SonGuessrService", () => {
       });
       expect(room.phase).toBe("playing");
 
-      release(songs.answer);
+      hold.resolve(songs.answer);
       await reconnecting;
       expect(room.phase).toBe("playing");
     });
