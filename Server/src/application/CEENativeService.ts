@@ -151,10 +151,8 @@ export class CEENativeService {
   /** 每房只留一个「最近截止」定时器：每次命令、巡检与到点回调之后重算。 */
   private schedule(room: CEERoom): void {
     const { timers } = this.state;
-    if (!this.state.rooms.has(room.id)) {
-      timers.clear(room.id);
-      return;
-    }
+    // 关房时内核已清掉本房的定时器：已关的房间只需要不再挂新的。
+    if (!this.state.rooms.has(room.id)) return;
     const times = [
       room.phaseDeadlineAt,
       ...[...(room.round?.units.values() ?? [])].map((unit) => unit.deadlineAt),
