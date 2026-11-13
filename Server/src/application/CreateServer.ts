@@ -54,10 +54,8 @@ import { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import { ClientWebBundle } from "../infrastructure/ClientWebBundle";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
-import {
-  DatabaseFeedbackRepository,
-  DatabaseUserSettingRepository,
-} from "../infrastructure/db/UserDataRepository";
+import { DatabaseFeedbackRepository } from "../infrastructure/db/FeedbackRepository";
+import { DatabaseUserSettingRepository } from "../infrastructure/db/UserSettingRepository";
 import { captureServerFeedback } from "../infrastructure/Sentry";
 import { isAllowedOrigin } from "../transport/Origin";
 import type { AppEnv } from "../config/Env";

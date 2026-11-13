@@ -8,8 +8,8 @@ import type {
   FeedbackRecord,
   FeedbackReplyRecord,
   FeedbackRepository,
-  UserSettingRepository,
-} from "../infrastructure/db/UserDataRepository";
+} from "../infrastructure/db/FeedbackRepository";
+import type { UserSettingRepository } from "../infrastructure/db/UserSettingRepository";
 import {
   musicSessionSchema,
   type CloudMusicSession,

@@ -37,9 +37,11 @@ import type {
   FeedbackRecord,
   FeedbackReplyRecord,
   FeedbackRepository,
+} from "../src/infrastructure/db/FeedbackRepository";
+import type {
   StoredSetting,
   UserSettingRepository,
-} from "../src/infrastructure/db/UserDataRepository";
+} from "../src/infrastructure/db/UserSettingRepository";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { FeedbackStatus } from "../src/shared/ApiContract";
 import { BADGE_KINDS, type AccountBadge, type BadgeKind } from "../src/shared/Badges";

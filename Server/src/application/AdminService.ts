@@ -34,7 +34,7 @@ import type {
   GameRecordListItem,
   GameRecordRepository,
 } from "../infrastructure/db/GameRecordRepository";
-import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/UserDataRepository";
+import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/FeedbackRepository";
 import {
   aggregateCEEAntiCheatReviews,
   CEE_ANTI_CHEAT_AGGREGATE_WINDOW_MS,
