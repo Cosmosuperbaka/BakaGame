@@ -42,11 +42,11 @@ export const readText = (value: unknown): string => {
  * `pay_down` 只约束下载，计入播放门槛会把 `pay_play=0` 的可播曲误标成会员专享；
  * `time_free=1` 是限时免费，此时即使 `pay_play=1` 也先放行，交给真实音频判定兜底。
  */
-export const requiresVipAccount = (pay: Record<string, unknown>): boolean =>
+const requiresVipAccount = (pay: Record<string, unknown>): boolean =>
   Number(pay.pay_play) === 1 && Number(pay.time_free) !== 1;
 
 /** 歌手字段是对象数组（`name` / `title` 两种键），也见过裸字符串。 */
-export const singerNames = (value: unknown): string[] => {
+const singerNames = (value: unknown): string[] => {
   if (typeof value === "string") return [stripHtmlTags(value)];
   return asArray(value).map((singer) => {
     const record = asRecord(singer);
@@ -55,7 +55,7 @@ export const singerNames = (value: unknown): string[] => {
 };
 
 /** QQ 音乐专辑封面的固定 CDN 路径按 albumId 取模分桶。 */
-export const albumPictureUrl = (albumId: number): string | undefined =>
+const albumPictureUrl = (albumId: number): string | undefined =>
   albumId
     ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
     : undefined;
@@ -75,24 +75,77 @@ export const extractQrcPayload = (raw: string): string => {
   return payload.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
 };
 
-/** 检索结果条目的字段映射（`body.songs` / `data.body.item_song` 两种形状归一后）。 */
-export const normalizeSearchSong = (item: Record<string, unknown>): SongSearchResult => {
-  const mid = readText(item.mid || item.songmid);
-  const rawTitle = readText(item.title || item.name || item.songname);
-  const title = stripHtmlTags(rawTitle);
-  const artist = singerNames(item.singer).filter(Boolean).join(" / ");
-  const album = asRecord(item.album);
-  const rawAlbum = album.name || album.title || item.albumname || undefined;
-  const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-  const durationMs = Number(item.interval || 0) * 1000;
+/** 各上游形状里取出的歌曲原始字段：形状差异留在读取函数里，归一与映射只此一份。 */
+export interface QqSongFields {
+  mid: string;
+  rawTitle: unknown;
+  singer: unknown;
+  rawAlbum: unknown;
+  albumId: number;
+  intervalSec: unknown;
+  /** 支付标记；缺省表示该形状不带会员信息，结果里不出现 requiresVip。 */
+  pay?: Record<string, unknown>;
+}
 
+export const mapQqSong = (fields: QqSongFields): SongSearchResult => {
+  const title = stripHtmlTags(fields.rawTitle);
+  const artist = singerNames(fields.singer).filter(Boolean).join(" / ");
+  const albumName = fields.rawAlbum ? stripHtmlTags(fields.rawAlbum) || undefined : undefined;
+  const durationMs = Number(fields.intervalSec || 0) * 1000;
   return {
-    id: buildSongUrn("qq", mid),
+    id: buildSongUrn("qq", fields.mid),
     title,
     artist: artist || "未知歌手",
     album: albumName,
-    pictureUrl: albumPictureUrl(Number(album.id || item.albumid)),
+    pictureUrl: albumPictureUrl(fields.albumId),
     durationMs: durationMs > 0 ? durationMs : undefined,
-    requiresVip: requiresVipAccount(asRecord(item.pay)),
+    ...(fields.pay ? { requiresVip: requiresVipAccount(fields.pay) } : {}),
   };
+};
+
+/** 检索结果条目（`body.songs` / `data.body.item_song` 两种形状归一后）。 */
+export const normalizeSearchSong = (item: Record<string, unknown>): SongSearchResult => {
+  const album = asRecord(item.album);
+  return mapQqSong({
+    mid: readText(item.mid || item.songmid),
+    rawTitle: readText(item.title || item.name || item.songname),
+    singer: item.singer,
+    rawAlbum: album.name || album.title || item.albumname || undefined,
+    albumId: Number(album.id || item.albumid),
+    intervalSec: item.interval,
+    pay: asRecord(item.pay),
+  });
+};
+
+/** 歌单曲目条目（`songmid` / `songname` 老字段优先）。 */
+export const normalizePlaylistSong = (
+  item: Record<string, unknown>,
+  mid: string
+): SongSearchResult => {
+  const album = asRecord(item.album);
+  return mapQqSong({
+    mid,
+    rawTitle: readText(item.songname || item.name || item.title),
+    singer: item.singer,
+    rawAlbum: item.albumname || album.name || undefined,
+    albumId: Number(item.albumid || album.id),
+    intervalSec: item.interval,
+    pay: asRecord(item.pay),
+  });
+};
+
+/** 歌手曲目条目（歌曲信息嵌在 `songInfo` 里；该形状不带会员标记）。 */
+export const normalizeArtistSong = (item: Record<string, unknown>): SongSearchResult => {
+  const songInfo = asRecord(item.songInfo);
+  const songInfoAlbum = asRecord(songInfo.album);
+  const itemAlbum = asRecord(item.album);
+  const singerValue = songInfo.singer || item.singer;
+  return mapQqSong({
+    mid: readText(songInfo.mid || item.mid),
+    rawTitle: readText(songInfo.name || songInfo.title || item.name),
+    singer: Array.isArray(singerValue) ? singerValue : undefined,
+    rawAlbum: songInfoAlbum.name || itemAlbum.name || undefined,
+    albumId: Number(songInfoAlbum.id || itemAlbum.id),
+    intervalSec: songInfo.interval || item.interval,
+  });
 };

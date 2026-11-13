@@ -4,6 +4,11 @@ import { describeError } from "../../EventLogger";
 import { parseSongUrn, buildSongUrn } from "../MusicUrn";
 import { asArray, asRecord, readNumber } from "../../JsonReaders";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "../MusicCache";
+import {
+  PLAYLIST_PAGE_SIZE,
+  readRemainingPlaylistPages,
+  warnIfPlaylistTruncated,
+} from "../PlaylistPaging";
 import { AmllLyricClient } from "../lyrics/AmllLyricClient";
 import type { MusicCookieInput, MusicLoginSession, MusicProvider, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
 import {
@@ -16,13 +21,13 @@ import { audioCacheScope, extractQqCookie } from "./QQCookie";
 import { QQLogin } from "./QQLogin";
 import { QQLyricChain } from "./QQLyrics";
 import {
-  albumPictureUrl,
   firstRecord,
+  mapQqSong,
+  normalizeArtistSong,
+  normalizePlaylistSong,
   normalizeSearchSong,
   readRecords,
   readText,
-  requiresVipAccount,
-  singerNames,
   stripHtmlTags,
 } from "./QQResponse";
 import type { QQMusicProviderOptions } from "./QQTypes";
@@ -50,14 +55,6 @@ const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 1000;
 /** AMLL 歌词缓存的条目数上限，与改造前 LRU 一致。 */
 const AMLL_CACHE_MAX_ENTRIES = 500;
-/** 歌单单页曲目上限：`playlist_track_all` 的 limit 上限就是 1000（对齐网易云口径）。 */
-const PLAYLIST_PAGE_SIZE = 1000;
-/**
- * 歌单翻页硬上限（50 页 = 50000 首）。正常歌单远达不到，仅作兜底：
- * 上游对超范围 offset 若仍返回整页，没有上界就会一直翻下去。
- */
-const PLAYLIST_MAX_PAGES = 50;
-
 // QQ 音乐上游返回的是未标注类型的 JSON：通用窄化助手取自 JsonReaders（与网易云
 // 同一套约定）；`readString` 留在本地——它不 trim、不接受数字，与通用版语义不同，
 // 音频直链与 Cookie 判定依赖这一差异。不引入 any。
@@ -304,23 +301,21 @@ export class QQMusicProvider implements MusicProvider {
       throw new AppError("INVALID_SONG", `未找到 QQ 音乐歌曲信息: ${mid}`);
     }
 
-    const artist = singerNames(rawTrack.singer).filter(Boolean).join(" / ");
     const album = asRecord(rawTrack.album);
-    const rawAlbum = album.name || album.title || undefined;
-    const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-    const durationMs = Number(rawTrack.interval || 0) * 1000;
     const releaseYear = rawTrack.time_public
       ? Number(readText(rawTrack.time_public).slice(0, 4))
       : undefined;
 
     const baseDetails: SongDetails = {
-      id: buildSongUrn("qq", mid),
-      title,
-      artist: artist || "未知歌手",
-      album: albumName,
-      pictureUrl: albumPictureUrl(Number(album.id)),
-      durationMs: durationMs > 0 ? durationMs : undefined,
-      requiresVip: requiresVipAccount(asRecord(rawTrack.pay)),
+      ...mapQqSong({
+        mid,
+        rawTitle: title,
+        singer: rawTrack.singer,
+        rawAlbum: album.name || album.title || undefined,
+        albumId: Number(album.id),
+        intervalSec: rawTrack.interval,
+        pay: asRecord(rawTrack.pay),
+      }),
       audioUrl: "",
       lyrics: [],
       releaseYear: Number.isFinite(releaseYear) ? releaseYear : undefined,
@@ -438,24 +433,10 @@ export class QQMusicProvider implements MusicProvider {
         const item = asRecord(raw);
         const mid = readText(item.songmid || item.mid);
         if (!mid || seenMids.has(mid)) continue;
-        const rawTitle = readText(item.songname || item.name || item.title);
-        const title = stripHtmlTags(rawTitle);
-        const artist = singerNames(item.singer).filter(Boolean).join(" / ");
-        const album = asRecord(item.album);
-        const rawAlbum = item.albumname || album.name || undefined;
-        const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-        const durationMs = Number(item.interval || 0) * 1000;
-        if (!title) continue;
+        const song = normalizePlaylistSong(item, mid);
+        if (!song.title) continue;
         seenMids.add(mid);
-        songs.push({
-          id: buildSongUrn("qq", mid),
-          title,
-          artist: artist || "未知歌手",
-          album: albumName,
-          pictureUrl: albumPictureUrl(Number(item.albumid || album.id)),
-          durationMs: durationMs > 0 ? durationMs : undefined,
-          requiresVip: requiresVipAccount(asRecord(item.pay)),
-        });
+        songs.push(song);
         added += 1;
       }
       return added;
@@ -476,33 +457,34 @@ export class QQMusicProvider implements MusicProvider {
     );
     const songCount = readNumber(firstBody.total);
 
-    // 翻页失败只结束翻页、保留已取到的曲目；「本页没有新增曲目」或「不足一页」即停，
-    // 避免上游对超范围 offset 仍返回整页时无限翻下去。
-    for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
-      if (songCount !== undefined && songs.length >= songCount) break;
-      let pageRes: Awaited<ReturnType<typeof fetchPage>>;
-      try {
-        pageRes = await fetchPage(page * PLAYLIST_PAGE_SIZE);
-      } catch (error) {
-        this.options.logger?.warn?.("QQ音乐歌单翻页失败，保留已取曲目", {
-          dissId,
-          page,
-          ...describeError(error),
-        });
-        break;
-      }
-      const rawSongs = readRecords(asRecord(pageRes.body).songs);
-      const added = collect(rawSongs);
-      if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
-    }
+    // 翻页失败只结束翻页、保留已取到的曲目；其余停止条件见 readRemainingPlaylistPages。
+    await readRemainingPlaylistPages({
+      firstAdded,
+      declaredCount: songCount,
+      collectedCount: () => songs.length,
+      collect,
+      fetchPage: async (page) => {
+        try {
+          const pageRes = await fetchPage(page * PLAYLIST_PAGE_SIZE);
+          return readRecords(asRecord(pageRes.body).songs);
+        } catch (error) {
+          this.options.logger?.warn?.("QQ音乐歌单翻页失败，保留已取曲目", {
+            dissId,
+            page,
+            ...describeError(error),
+          });
+          return undefined;
+        }
+      },
+    });
 
-    if (isPlaylistTruncated(songCount, songs.length)) {
-      this.options.logger?.warn?.("QQ音乐歌单读取不完整，题库被缩小", {
-        dissId,
-        declared: songCount,
-        fetched: songs.length,
-      });
-    }
+    warnIfPlaylistTruncated(
+      this.options.logger,
+      "QQ音乐歌单读取不完整，题库被缩小",
+      { dissId },
+      songCount,
+      songs.length
+    );
     const info: SongPlaylistInfo = {
       id: buildSongUrn("qq", dissId),
       name: dissName,
@@ -572,30 +554,7 @@ export class QQMusicProvider implements MusicProvider {
 
       return rawSongs
         .filter((item) => readText(asRecord(item.songInfo).mid || item.mid))
-        .map((item): SongSearchResult => {
-          const songInfo = asRecord(item.songInfo);
-          const songMid = readText(songInfo.mid || item.mid);
-          const rawTitle = readText(songInfo.name || songInfo.title || item.name);
-          const title = stripHtmlTags(rawTitle);
-          const singerValue = songInfo.singer || item.singer;
-          const artist = Array.isArray(singerValue)
-            ? singerNames(singerValue).filter(Boolean).join(" / ")
-            : "未知歌手";
-          const songInfoAlbum = asRecord(songInfo.album);
-          const itemAlbum = asRecord(item.album);
-          const rawAlbum = songInfoAlbum.name || itemAlbum.name || undefined;
-          const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-          const durationMs = Number(songInfo.interval || item.interval || 0) * 1000;
-
-          return {
-            id: buildSongUrn("qq", songMid),
-            title,
-            artist,
-            album: albumName,
-            pictureUrl: albumPictureUrl(Number(songInfoAlbum.id || itemAlbum.id)),
-            durationMs: durationMs > 0 ? durationMs : undefined,
-          };
-        })
+        .map(normalizeArtistSong)
         .filter((s) => s.id && s.title);
     });
   }

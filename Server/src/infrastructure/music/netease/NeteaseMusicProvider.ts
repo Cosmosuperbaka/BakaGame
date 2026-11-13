@@ -10,6 +10,11 @@ import type {
 } from "../MusicProvider";
 import { readLyricSources } from "./NeteaseLyricParse";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "../MusicCache";
+import {
+  PLAYLIST_PAGE_SIZE,
+  readRemainingPlaylistPages,
+  warnIfPlaylistTruncated,
+} from "../PlaylistPaging";
 import { asArray, asRecord, readNumber, readString } from "../../JsonReaders";
 import { NeteaseApiGateway, NON_RETRYABLE_API_ERROR_CODES } from "./NeteaseApiGateway";
 import { NeteaseAudioUnblocker } from "./NeteaseAudioUnblock";
@@ -38,13 +43,6 @@ const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_LYRICS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_WIKI_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
 const COLLECTION_CACHE_TTL_MS = 6 * 60 * 60_000;
-/** 歌单单页曲目上限：`playlist_track_all` 的 limit 上限就是 1000。 */
-const PLAYLIST_PAGE_SIZE = 1000;
-/**
- * 歌单翻页硬上限（50000 首）。正常歌单远达不到，仅作兜底：
- * 上游对超范围 offset 若仍返回整页，没有上界就会一直翻下去。
- */
-const PLAYLIST_MAX_PAGES = 50;
 const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const POPULARITY_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_CHORUS_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
@@ -285,32 +283,34 @@ export class NeteaseMusicProvider implements MusicProvider {
           }
         }
 
-        // 单页装不下的歌单必须继续翻页，否则尾部曲目永远进不了题库。
         // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
-        // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
-        for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
-          if (songCount !== undefined && songs.length >= songCount) break;
-          const response = await readOptional(["playlist_track_all", "playlist_detail"], {
-            id,
-            limit: PLAYLIST_PAGE_SIZE,
-            offset: page * PLAYLIST_PAGE_SIZE,
-          });
-          if (!response) break;
-          const body = responseBody(response);
-          const rawSongs = asArray(
-            body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs
-          );
-          const added = collect(rawSongs);
-          if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
-        }
+        // 因此翻页用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
+        await readRemainingPlaylistPages({
+          firstAdded,
+          declaredCount: songCount,
+          collectedCount: () => songs.length,
+          collect,
+          fetchPage: async (page) => {
+            const response = await readOptional(["playlist_track_all", "playlist_detail"], {
+              id,
+              limit: PLAYLIST_PAGE_SIZE,
+              offset: page * PLAYLIST_PAGE_SIZE,
+            });
+            if (!response) return undefined;
+            const body = responseBody(response);
+            return asArray(
+              body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs
+            );
+          },
+        });
 
-        if (isPlaylistTruncated(songCount, songs.length)) {
-          this.logger?.warn("网易云歌单读取不完整，题库被缩小", {
-            playlistId: id,
-            declared: songCount,
-            fetched: songs.length,
-          });
-        }
+        warnIfPlaylistTruncated(
+          this.logger,
+          "网易云歌单读取不完整，题库被缩小",
+          { playlistId: id },
+          songCount,
+          songs.length
+        );
         return {
           info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
           songs,
