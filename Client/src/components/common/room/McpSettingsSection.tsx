@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Bot } from "lucide-react";
 import { McpPairingPanel } from "@/components/common/McpPairingPanel";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
-import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { usePageControl } from "@/stores/UsePageControl";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";

@@ -11,20 +11,10 @@ import {
   SearchOptionContent,
   type SearchStatus,
 } from "@/components/common/SearchCombobox";
-import {
-  SettingReveal,
-  SettingScaleSlider,
-  SettingSegmented,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingToggleChips,
-  SettingValue,
-  SettingYearRange,
-  SettingsFields,
-  SettingsSection,
-  useSettingsReadOnly,
-} from "@/components/common/room/SettingFields";
+import { SettingReveal, SettingValue, SettingsFields, SettingsSection, useSettingsReadOnly } from "@/components/common/room/settings/Layout";
+import { SettingScaleSlider, SettingStepper, SettingYearRange } from "@/components/common/room/settings/NumberFields";
+import { SettingSegmented, SettingSwitchRow, SettingToggleChips } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/Motion";

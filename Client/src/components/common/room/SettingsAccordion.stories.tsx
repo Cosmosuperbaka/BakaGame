@@ -3,7 +3,9 @@ import { fn } from "storybook/test";
 import { Badge } from "@/components/ui/Badge";
 import { Music, Settings2, Users } from "lucide-react";
 import { SettingsAccordion, SettingsStack } from "./SettingsAccordion";
-import { SettingStepper, SettingSwitchRow, SettingsFields } from "./SettingFields";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingStepper } from "@/components/common/room/settings/NumberFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 
 const fields = (
   <SettingsFields>

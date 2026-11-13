@@ -5,7 +5,7 @@ import { Button } from "./Button";
 import { Collapsible } from "./Collapsible";
 import { PresenceBoundary } from "./PresenceBoundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./Tabs";
-import { SettingsSection } from "@/components/common/room/SettingFields";
+import { SettingsSection } from "@/components/common/room/settings/Layout";
 import { CEERankedHistory } from "@/components/cee/ranked/CEERankedHistory";
 import { CEERankedLeaderboardPanel } from "@/components/cee/ranked/CEERankedLeaderboard";
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";

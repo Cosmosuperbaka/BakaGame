@@ -20,12 +20,9 @@ import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Textarea } from "@/components/ui/Textarea";
 import { ToggleChip } from "@/components/ui/ToggleChip";
-import {
-  SettingSelect,
-  SettingSegmented,
-  SettingTextField,
-  SettingsFields,
-} from "@/components/common/room/SettingFields";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingSelect, SettingSegmented } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
   AdminTable,
   AdminToolbar,

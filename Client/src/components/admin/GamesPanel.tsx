@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/Dialog";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
-import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
   AdminTable,
   AdminToolbar,

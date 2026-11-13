@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { SettingSelect } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import {
   AdminTable,
   AdminToolbar,

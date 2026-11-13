@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Textarea } from "@/components/ui/Textarea";
-import { SettingSelect } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import {
   AdminTable,
   AdminToolbar,

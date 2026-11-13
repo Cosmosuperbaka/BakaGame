@@ -1,11 +1,9 @@
 import type { CEESettings } from "@bakagame/shared";
 import { Lightbulb, Search, Swords, Tags } from "lucide-react";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
-import {
-  SettingStepper,
-  SettingSwitchRow,
-  SettingsSection,
-} from "@/components/common/room/SettingFields";
+import { SettingsSection } from "@/components/common/room/settings/Layout";
+import { SettingStepper } from "@/components/common/room/settings/NumberFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { offOr } from "./CEESettingsRules";
 
 interface GuessPanelProps {

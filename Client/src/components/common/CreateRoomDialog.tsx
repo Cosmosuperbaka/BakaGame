@@ -9,7 +9,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/Dialog";
-import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import type { OriginPoint } from "@/lib/Motion";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 

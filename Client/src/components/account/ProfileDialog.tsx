@@ -16,11 +16,8 @@ import {
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
-import {
-  SettingSwitchRow,
-  SettingsFields,
-  SettingsSection,
-} from "@/components/common/room/SettingFields";
+import { SettingsFields, SettingsSection } from "@/components/common/room/settings/Layout";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { api, apiErrorMessage } from "@/lib/Api";
 import type { OriginPoint } from "@/lib/Motion";
 import {

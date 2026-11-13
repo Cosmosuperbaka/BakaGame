@@ -20,7 +20,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
 import { Hint } from "@/components/ui/Tooltip";
-import { SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { api, apiErrorMessage } from "@/lib/Api";
 import {
   FEEDBACK_KIND_LABELS,

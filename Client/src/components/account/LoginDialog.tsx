@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { FormAlert } from "./FormAlert";
 import { Collapsible, CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";
-import { SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";

@@ -13,11 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import {
-  SettingSelect,
-  SettingTextField,
-  SettingsFields,
-} from "@/components/common/room/SettingFields";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { QueryState, UserCell } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";

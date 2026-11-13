@@ -1,21 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Eye, Filter, Globe, Music, Users } from "lucide-react";
-import {
-  SettingReveal,
-  SettingScaleSlider,
-  SettingSegmented,
-  SettingSelect,
-  SettingsFields,
-  SettingsReadOnly,
-  SettingsSection,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingToggleChips,
-  SettingValue,
-  SettingYearRange,
-} from "./SettingFields";
+import { SettingReveal, SettingsFields, SettingsReadOnly, SettingsSection, SettingValue } from "@/components/common/room/settings/Layout";
+import { SettingScaleSlider, SettingStepper, SettingYearRange } from "@/components/common/room/settings/NumberFields";
+import { SettingSegmented, SettingSelect, SettingSwitchRow, SettingToggleChips } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 
 const meta = {
   title: "公共组件/SettingFields",

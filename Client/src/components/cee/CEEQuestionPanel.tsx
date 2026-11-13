@@ -5,17 +5,10 @@ import { BookOpen, Filter, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
-import {
-  SettingReveal,
-  SettingSegmented,
-  SettingSelect,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingValue,
-  SettingYearRange,
-  SettingsSection,
-} from "@/components/common/room/SettingFields";
+import { SettingReveal, SettingValue, SettingsSection } from "@/components/common/room/settings/Layout";
+import { SettingStepper, SettingYearRange } from "@/components/common/room/settings/NumberFields";
+import { SettingSegmented, SettingSelect, SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { listItem } from "@/lib/Motion";
 import type { Dispatch, SetStateAction } from "react";
 import type { useCEESubjectNames } from "./UseCEESubjectNames";

@@ -16,13 +16,10 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
-import {
-  SettingReveal,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingsFields,
-} from "@/components/common/room/SettingFields";
+import { SettingReveal, SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingStepper } from "@/components/common/room/settings/NumberFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";

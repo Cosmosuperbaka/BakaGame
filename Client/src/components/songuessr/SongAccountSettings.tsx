@@ -6,7 +6,7 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";
-import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { NeteaseCloudMusicIcon, QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 import {

@@ -1,13 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import {
-  SettingSelect,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingYearRange,
-} from "./SettingFields";
+import { SettingStepper, SettingYearRange } from "@/components/common/room/settings/NumberFields";
+import { SettingSelect, SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 
 it("开关行用可见标签命名开关，说明挂为开关的描述", () => {
   render(

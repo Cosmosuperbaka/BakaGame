@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { AdminUser } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { BadgeList } from "@/components/common/BadgeList";
-import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
   AdminTable,
   AdminToolbar,

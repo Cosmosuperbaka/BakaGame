@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SettingSelect } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import {
   AdminTable,
   AdminToolbar,

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { DotSeparated } from "@/components/ui/DotSeparated";
-import { SettingsReadOnly } from "@/components/common/room/SettingFields";
+import { SettingsReadOnly } from "@/components/common/room/settings/Layout";
 import { headerTappable, readoutSwap } from "@/lib/Motion";
 
 /**

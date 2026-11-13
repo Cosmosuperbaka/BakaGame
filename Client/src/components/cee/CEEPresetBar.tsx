@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { Download, Upload } from "lucide-react";
 import type { CEESettings } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { SettingSelect } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 
 /** 房主工具：套用预设、导出与导入玩法配置，以及导入失败的提示；非房主不出现。 */
 export function CEEPresetBar({

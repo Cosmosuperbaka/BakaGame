@@ -4,7 +4,7 @@ import type { AdminRoom, RecordedGameKind } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
-import { SettingSelect } from "@/components/common/room/SettingFields";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { AdminToolbar, ConfirmDialog, QueryState } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api, apiErrorMessage } from "@/lib/Api";

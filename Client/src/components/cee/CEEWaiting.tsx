@@ -9,12 +9,9 @@ import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
-import {
-  SettingReveal,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingsFields,
-} from "@/components/common/room/SettingFields";
+import { SettingReveal, SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";

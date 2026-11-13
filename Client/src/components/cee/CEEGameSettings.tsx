@@ -3,7 +3,7 @@ import equal from "fast-deep-equal";
 import { ShieldCheck } from "lucide-react";
 import type { CEESettings, CEESource } from "@bakagame/shared";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
-import { SettingValue, SettingsSection } from "@/components/common/room/SettingFields";
+import { SettingValue, SettingsSection } from "@/components/common/room/settings/Layout";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bot, Check, Copy, Lock } from "lucide-react";
-import { SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { Button } from "@/components/ui/Button";
 import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { mcpEndpoint, mcpSiteOrigin } from "@/lib/McpConfig";

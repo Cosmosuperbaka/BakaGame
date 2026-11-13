@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/Dialog";
 import { Slider } from "@/components/ui/Slider";
 import { McpPairingPanel } from "@/components/common/McpPairingPanel";
-import { SettingsSection, SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { SettingsSection } from "@/components/common/room/settings/Layout";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { setCloudSyncEnabled, useCloudSyncEnabled } from "@/lib/CloudSync";
