@@ -22,7 +22,7 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   resolveAlbumTrackCandidates,
   resolveAnimeLevelCandidates,
-} from "../../src/application/songuessr/AnimeResolution";
+} from "../../src/application/songuessr/AnimeCandidateSearch";
 import {
   buildAlbumQueries,
   isSongTitleMatch,
