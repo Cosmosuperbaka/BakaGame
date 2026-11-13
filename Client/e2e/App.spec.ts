@@ -87,16 +87,16 @@ test("landing page exposes three playable games and keeps placeholders disabled"
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Who is Faker/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Who is Faker/ })).toBeVisible();
   await expect(page.getByText("Songuessr")).toBeVisible();
   await expect(
-    page.getByTestId("game-entry-songuessr").getByRole("button", { name: /多人模式/ })
+    page.getByTestId("game-entry-songuessr").getByRole("link", { name: /多人模式/ })
   ).toBeVisible();
   await expect(
-    page.getByTestId("game-entry-animecharguessr").getByRole("button", { name: /多人模式/ })
+    page.getByTestId("game-entry-animecharguessr").getByRole("link", { name: /多人模式/ })
   ).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
-  await page.getByRole("button", { name: /Who is Faker/ }).click();
+  await page.getByRole("link", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
@@ -160,12 +160,19 @@ test("players in a room are prompted when a newer build is deployed", async ({ p
   await expect(page.getByRole("button", { name: "刷新", exact: true })).toBeVisible();
 });
 
-test("removed and unknown routes fall back to a live page", async ({ page }) => {
-  for (const path of ["/animecharguessr", "/unknown"]) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
-  }
+test("removed routes fall back to a live page and unknown routes say so", async ({ page }) => {
+  // 已下线的旧入口仍跳回首页。
+  await page.goto("/animecharguessr");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
+
+  // 站内没有的地址明说页面不存在：地址留在原处，并给一个回首页的真链接。
+  await page.goto("/unknown");
+  await expect(page).toHaveURL(/\/unknown$/);
+  await expect(page.getByRole("heading", { name: "页面不存在" })).toBeVisible();
+  await page.getByRole("link", { name: "回到首页" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
 
   await page.goto("/whoisfaker/unknown");
   await expect(page).toHaveURL(/\/whoisfaker$/);
@@ -180,7 +187,7 @@ test("Songuessr is reachable from the landing page", async ({ page }) => {
   await page.goto("/");
   await page
     .getByTestId("game-entry-songuessr")
-    .getByRole("button", { name: /多人模式/ })
+    .getByRole("link", { name: /多人模式/ })
     .click();
 
   await expect(page).toHaveURL(/\/songuessr$/);
@@ -248,7 +255,7 @@ test("landing and lobby stay within a mobile viewport", async ({ page }) => {
     }))
   ).toEqual({ widthFits: true, heightFits: true, overflow: "hidden" });
 
-  await page.getByRole("button", { name: /Who is Faker/ }).click();
+  await page.getByRole("link", { name: /Who is Faker/ }).click();
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
   expect(
     await page.evaluate(() => ({
@@ -359,7 +366,7 @@ test("two browser sessions can create and join the same server room", async ({
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
   await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
-  await expect(page.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "身份设置", exact: true }).click();
@@ -374,7 +381,7 @@ test("two browser sessions can create and join the same server room", async ({
   await guestPage.getByRole("button", { name: new RegExp(roomName) }).click();
 
   await expect(guestPage).toHaveURL(new RegExp(`/whoisfaker/room/${roomId}$`));
-  await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(guestPage.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
@@ -662,7 +669,7 @@ test("two browser sessions can create and join a Songuessr room", async ({
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
   await expect(page).toHaveURL(/\/songuessr\/room\/\d{4}$/);
-  await expect(page.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   await expect(page.locator("header").first()).toBeVisible();
   await expect(page.locator("main").first()).toBeVisible();
   await expect(page.locator("aside").first()).toBeVisible();
@@ -680,7 +687,7 @@ test("two browser sessions can create and join a Songuessr room", async ({
   await guestPage.getByRole("button", { name: new RegExp(roomName) }).click();
 
   await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
-  await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(guestPage.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   await expect(guestPage.getByRole("button", { name: "复制房间链接" })).toHaveCount(0);
   await expect(guestPage.getByRole("button", { name: "复制", exact: true })).toBeVisible();
   await expect(page.getByText(guestName, { exact: true })).toBeVisible();
@@ -729,7 +736,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   await page.getByRole("button", { name: "进入房间" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
-  await expect(page.getByText(`${userName}的房间`, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `${userName}的房间`, exact: true })).toBeVisible();
   await expect(page.getByRole("slider", { name: "播放音量" })).toBeVisible();
   await page.getByRole("button", { name: /音乐账号配置/ }).click();
   const qrImage = page.getByAltText("网易云登录二维码");
@@ -762,7 +769,7 @@ test("private Songuessr rooms stay listed and direct links request the password"
   await createDialog.getByPlaceholder("设置房间密码").fill(password);
   await createDialog.getByRole("button", { name: "创建", exact: true }).click();
   await expect(page).toHaveURL(/\/songuessr\/room\/\d{4}$/);
-  await expect(page.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   const roomId = page.url().split("/").at(-1)!;
 
   const guestContext = await isolatedContext();
@@ -775,7 +782,7 @@ test("private Songuessr rooms stay listed and direct links request the password"
   await guestPage.getByPlaceholder("请输入密码").fill(password);
   await guestPage.getByRole("button", { name: "加入房间" }).click();
   await expect(guestPage).toHaveURL(new RegExp(`/songuessr/room/${roomId}$`));
-  await expect(guestPage.getByText(roomName, { exact: true })).toBeVisible();
+  await expect(guestPage.getByRole("heading", { name: roomName, exact: true })).toBeVisible();
   await closeIsolatedContext(guestContext);
 });
 

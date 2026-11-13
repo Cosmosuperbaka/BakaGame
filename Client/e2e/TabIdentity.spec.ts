@@ -102,7 +102,8 @@ test("退出房间再进：自己的历史消息仍显示为自己发的", async
   );
   const history = `退房前说的话${unique}`;
   await say(guest, history);
-  expect(await isOwnMessage(guest, history)).toBe(true);
+  // 刚发出的气泡还在落位动画里，按轮询取稳定后的几何位置。
+  await expect.poll(() => isOwnMessage(guest, history)).toBe(true);
 
   await guest.getByRole("button", { name: "离开房间" }).click();
   await expect(guest).toHaveURL(/\/whoisfaker$/);
