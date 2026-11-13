@@ -11,7 +11,13 @@ import {
   type CEEUnit,
 } from "../domain/CEEModel";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
-import { advanceCEERound, getCEEUnit, surrenderCEE, unitHasActor } from "../domain/CEERound";
+import {
+  advanceCEERound,
+  getCEEUnit,
+  surrenderCEE,
+  tickCEERound,
+  unitHasActor,
+} from "../domain/CEERound";
 import { tabSeatId } from "./TabSeat";
 import { ensureRoomId, normalizeWord, safeEqualToken } from "../domain/Rules";
 import {
@@ -24,13 +30,9 @@ import {
   type CEESettings,
   type ConnectionRecord,
 } from "../shared/Index";
-import {
-  CHAT_LIMIT,
-  HOST_RECONNECT_TIMEOUT_MS,
-  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
-  ROOM_EMPTY_GRACE_PERIOD_MS,
-  ROOM_IDLE_TIMEOUT_MS,
-} from "../config/Constants";
+import { CHAT_LIMIT } from "../config/Constants";
+import type { EventLogger } from "../infrastructure/EventLogger";
+import { describeError } from "../infrastructure/Sentry";
 import { createEvent } from "../transport/Packets";
 import {
   NOOP_ANTI_CHEAT_REVIEW_QUEUE,
@@ -43,11 +45,22 @@ import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
 import type { RoomShape } from "./room/RoomCore";
 import { reassignHost, resolveHostGrace, transferHost as handOverHost } from "./room/HostPolicy";
+import { expiredOfflineSeats, forEachRoomIsolated, judgeReclaim } from "./room/RoomJanitor";
+import { publishRoomState } from "./room/RoomPublisher";
+import { countOnline } from "./room/RoomSummaries";
+import {
+  adoptRoomCore,
+  exportRoomJson,
+  hasSnapshotShape,
+  restoreRooms,
+  shiftDeadline,
+} from "./room/RoomSnapshotCodec";
 import {
   assertAgentAdmission,
   assertSeatResumable,
   assertTabAgentsAllowed,
   bindSeat,
+  dissolveRoom,
   findSeat,
   markSeatOffline,
   roomsOfTab,
@@ -130,7 +143,9 @@ export class CEERooms {
     private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER,
     private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE,
     /** 测试房特权（大厅隐藏、豁免回收、单人开局）的唯一判定来源；缺省关闭。 */
-    readonly testRooms: TestRoomPolicy = TEST_ROOMS_DISABLED
+    readonly testRooms: TestRoomPolicy = TEST_ROOMS_DISABLED,
+    /** 巡检与快照恢复的失败出口：一间坏房只记一条日志，不连累其余房间。 */
+    private readonly logger?: EventLogger
   ) {}
   /** 房号是否已被增强房占用：含建房途中尚未登记的房间，统一房号目录据此避让。 */
   isRoomIdTaken(roomId: string): boolean {
@@ -262,7 +277,9 @@ export class CEERooms {
   }
   /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
   private markSeatOffline(room: CEERoom, player: CEEPlayerRecord): void {
-    markSeatOffline(this.seatContext, room, player, { emptyRoomExempt: false });
+    markSeatOffline(this.seatContext, room, player, {
+      emptyRoomExempt: this.testRooms.isTestRoom(room.id),
+    });
     if (room.phase === "answering" && room.setterPlayerId === player.id) this.resetWaiting(room);
     advanceCEERound(room, this.now());
     this.publishRoom(room);
@@ -619,28 +636,29 @@ export class CEERooms {
     if (!this.rooms.has(room.id)) return;
     // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
     if (room.phase === "settled") this.recordSettled(room);
-    const snapshot = this.snapshotOf(room);
-    for (const connection of this.connections.getRoomConnections(room.id)) {
-      const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
-      if (!player) continue;
-      connection.send(createEvent("cee.room.snapshot", snapshot));
-      // 私有态按连接裁剪：同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
-      connection.send(
-        createEvent("cee.game.privateState", ceePrivateState(room, player, this.testRooms))
-      );
-    }
+    this.fanOutRoom(room, "state");
     this.onChange?.();
   }
   publishRoomCalibration(room: CEERoom): void {
+    this.fanOutRoom(room, "calibration");
+  }
+  /**
+   * 快照与私有态扇出：正常发布与校准共用同一份帧来源，公共快照每次发布只构造一次。
+   * 只给在座的连接发；私有态按连接裁剪，同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
+   */
+  private fanOutRoom(room: CEERoom, mode: "state" | "calibration"): void {
     const snapshot = this.snapshotOf(room);
-    for (const connection of this.connections.getRoomConnections(room.id)) {
-      const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
-      if (!player) continue;
-      connection.sendStateSyncCalibration?.(createEvent("cee.room.snapshot", snapshot));
-      connection.sendStateSyncCalibration?.(
-        createEvent("cee.game.privateState", ceePrivateState(room, player, this.testRooms))
-      );
-    }
+    publishRoomState(
+      this.connections.getRoomConnections(room.id),
+      (connection) => (connection.playerId ? room.players.get(connection.playerId) : undefined),
+      {
+        snapshotEvent: CEE_ROOM_SHAPE.events.snapshot,
+        privateEvent: CEE_ROOM_SHAPE.events.privateState,
+        snapshotFor: (seat) => (seat ? snapshot : undefined),
+        privateFor: (seat) => ceePrivateState(room, seat, this.testRooms),
+      },
+      mode
+    );
   }
 
   /**
@@ -651,7 +669,7 @@ export class CEERooms {
    * 得到的是「房间还在、座位和进度全空」的空壳。所以这里逐处摊平成普通对象。
    */
   exportSnapshots(): SnapshottedRoom[] {
-    return [...this.rooms.values()].map((room) => serializeRoom(room));
+    return [...this.rooms.values()].map((room) => exportRoomJson(flattenRoom(room)));
   }
 
   /**
@@ -659,54 +677,70 @@ export class CEERooms {
    *
    * 时间字段分两类：截止时刻按停机时长后移（停机期间没人能操作），
    * 而空房、离线、空闲三类计时衡量的是「人离开多久」，从恢复时刻重新起算。
+   * 单间恢复失败只丢这一间。
    */
   restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
-    const now = this.now();
-    const pausedMs = Math.max(0, now - savedAt);
-    let restored = 0;
-    for (const raw of rooms) {
-      const room = deserializeRoom(raw, now, pausedMs);
-      if (!room || this.rooms.has(room.id)) continue;
-      this.rooms.set(room.id, room);
-      restored += 1;
-    }
-    return restored;
+    return restoreRooms(
+      this.rooms,
+      rooms,
+      { savedAt, now: this.now() },
+      {
+        adopt: expandRoom,
+        onError: (raw, error) =>
+          this.logger?.warn("增强房快照恢复失败，已丢弃该房间", {
+            roomId: raw?.id,
+            ...describeError(error),
+          }),
+      }
+    );
   }
 
+  /** 逐房巡检：一间房的坏状态只记日志，其余房间的回收与截止推进照常进行。 */
   housekeeping(): void {
     const now = this.now();
-    for (const room of this.rooms.values()) {
-      if (
-        !this.testRooms.isTestRoom(room.id) &&
-        ((room.emptySinceAt !== undefined && now - room.emptySinceAt >= ROOM_EMPTY_GRACE_PERIOD_MS) ||
-          now - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS)
-      ) {
-        this.closeRoom(room, "房间长时间无人活动，已关闭");
-        continue;
-      }
-      let changed = false;
-      if (this.sweepOfflinePlayers(room, now)) changed = true;
-      const hostChange = resolveHostGrace(room, room.players.values(), now);
-      if (hostChange.changed) {
-        this.markHostReady(room);
-        changed = true;
-      }
-      if (room.phaseDeadlineAt !== null && now >= room.phaseDeadlineAt) {
-        this.system(room, "出题等待超时，已返回准备阶段");
-        this.resetWaiting(room);
-        changed = true;
-      }
-      // 旁观请求的兜底收口：超时自动拒绝，玩家已离开的条目也要从队列里摘掉。
-      if (this.expireSpectateRequests(room, now)) changed = true;
-      if (changed) this.publishRoom(room);
-      else this.publishRoomCalibration(room);
-    }
-  }
-  private sweepOfflinePlayers(room: CEERoom, now: number): boolean {
-    const expired = [...room.players.values()].filter(
-      (player) =>
-        !player.online && now - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+    void forEachRoomIsolated(
+      this.rooms,
+      (room) => this.sweepRoom(room, now),
+      (room, error) =>
+        this.logger?.warn("增强房巡检失败，已跳过该房间", {
+          roomId: room.id,
+          ...describeError(error),
+        })
     );
+  }
+  /**
+   * 单间房的巡检：先推进回合计时，再判回收，之后才做离线清理、房主改选与截止收口。
+   * 测试房只豁免空房回收，仍受闲置超时约束；空房宽限内照常巡检（没有连接，发布不会送出任何帧）。
+   */
+  private sweepRoom(room: CEERoom, now: number): void {
+    if (tickCEERound(room, this.now())) this.publishRoom(room);
+    const verdict = judgeReclaim(room, countOnline(room.players.values()), now, {
+      emptyRoomExempt: this.testRooms.isTestRoom(room.id),
+    });
+    if (verdict === "close-empty" || verdict === "close-idle") {
+      this.closeRoom(room, "房间长时间无人活动，已关闭");
+      return;
+    }
+    let changed = false;
+    if (this.sweepOfflinePlayers(room, now)) changed = true;
+    const hostChange = resolveHostGrace(room, room.players.values(), now);
+    if (hostChange.changed) {
+      this.markHostReady(room);
+      changed = true;
+    }
+    if (room.phaseDeadlineAt !== null && now >= room.phaseDeadlineAt) {
+      this.system(room, "出题等待超时，已返回准备阶段");
+      this.resetWaiting(room);
+      changed = true;
+    }
+    // 旁观请求的兜底收口：超时自动拒绝，玩家已离开的条目也要从队列里摘掉。
+    if (this.expireSpectateRequests(room, now)) changed = true;
+    if (changed) this.publishRoom(room);
+    else this.publishRoomCalibration(room);
+  }
+  /** 离线超过保留时长的真人座位清出名册；0 分旁观者的保留期更短（由内核判定）。 */
+  private sweepOfflinePlayers(room: CEERoom, now: number): boolean {
+    const expired = expiredOfflineSeats(room, room.players.values(), now);
     for (const player of expired) this.remove(room, player);
     return expired.length > 0;
   }
@@ -823,24 +857,15 @@ export class CEERooms {
     if (reassignHost(room, room.players.values())) this.markHostReady(room);
     if (!room.players.size) this.closeRoom(room, "房间已关闭");
     else {
-      if (![...room.players.values()].some((member) => member.online)) room.emptySinceAt = this.now();
+      if (![...room.players.values()].some((member) => member.online))
+        room.emptySinceAt = this.now();
       advanceCEERound(room, this.now());
       this.publishRoom(room);
     }
   }
   private closeRoom(room: CEERoom, reason: string): void {
-    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
-    this.gameRecorder.finishRoom({
-      game: "cee",
-      roomId: room.id,
-      roomCreatedAt: room.createdAt,
-      endedAt: this.now(),
-    });
-    for (const connection of this.connections.getRoomConnections(room.id)) {
-      connection.send(createEvent("cee.room.closed", { reason }));
-      this.connections.detach(connection);
-      connection.resetStateSync?.();
-    }
+    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房。
+    dissolveRoom({ ...this.seatContext, recorder: this.gameRecorder }, room, { reason });
     // 回合中途关房时结算不会再来清，信号表要随房间一起走。
     this.guessSignals.delete(room.id);
     this.rooms.delete(room.id);
@@ -873,7 +898,8 @@ const setsToRecord = (map: Map<string, Set<string>>): Record<string, string[]> =
 const recordToSets = (record: Record<string, string[]> | undefined): Map<string, Set<string>> =>
   new Map(Object.entries(record ?? {}).map(([key, list]) => [key, new Set(list)]));
 
-const serializeRoom = (room: CEERoom): SnapshottedRoom => {
+/** 摊平成可序列化的形状；落盘出口与「丢弃运行时状态」由内核统一处理。 */
+const flattenRoom = (room: CEERoom): SerializedCEERoom => {
   const round: SerializedCEERound | null = room.round
     ? {
         ...room.round,
@@ -888,28 +914,16 @@ const serializeRoom = (room: CEERoom): SnapshottedRoom => {
     players: Object.fromEntries(room.players),
     spectatorRequests: Object.fromEntries(room.spectatorRequests),
     round,
-  } as unknown as SnapshottedRoom;
+  };
 };
 
-const deserializeRoom = (
-  raw: SnapshottedRoom,
-  now: number,
-  pausedMs: number
-): CEERoom | undefined => {
-  if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
+/** 还原 Map 与 Set，截止时刻按停机时长后移；公共的「全员离线、计时重起」交给内核。 */
+const expandRoom = (raw: SnapshottedRoom, now: number, pausedMs: number): CEERoom | undefined => {
+  if (!hasSnapshotShape(raw)) return undefined;
   const saved = raw as unknown as SerializedCEERoom;
-  if (!saved.players || typeof saved.players !== "object") return undefined;
 
   const players = new Map<string, CEEPlayerRecord>();
-  for (const [id, player] of Object.entries(saved.players)) {
-    players.set(id, {
-      ...player,
-      online: false,
-      connectionId: undefined,
-      // 离线清理按 lastSeenAt 起算：恢复时从当下重新计，旧值不可信。
-      lastSeenAt: now,
-    });
-  }
+  for (const [id, player] of Object.entries(saved.players)) players.set(id, { ...player });
 
   const round: CEERound | null = saved.round
     ? {
@@ -917,7 +931,7 @@ const deserializeRoom = (
         units: new Map(
           Object.entries(saved.round.units ?? {}).map(([id, unit]) => [
             id,
-            { ...unit, deadlineAt: unit.deadlineAt === null ? null : unit.deadlineAt + pausedMs },
+            { ...unit, deadlineAt: shiftDeadline(unit.deadlineAt, pausedMs) },
           ])
         ),
         characters: new Map(
@@ -928,19 +942,16 @@ const deserializeRoom = (
       }
     : null;
 
-  return {
+  const room: CEERoom = {
     ...saved,
     players,
     spectatorRequests: new Map(
       Object.entries(saved.spectatorRequests ?? {}).map(([id, at]) => [id, Number(at)])
     ),
     // 阶段截止时刻暂停：停机期间没人能作答，按原时刻结算等于用故障惩罚玩家。
-    phaseDeadlineAt: saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
-    lastActivityAt: now,
-    emptySinceAt: undefined,
-    // 恢复后所有人都离线，房主一律带完整的重连宽限：没有截止的离线房主按「宽限已过」处理，
-    // 第一个回来的人会当场抢走房主。
-    hostReconnectDeadlineAt: now + HOST_RECONNECT_TIMEOUT_MS,
+    phaseDeadlineAt: shiftDeadline(saved.phaseDeadlineAt, pausedMs),
     round,
   };
+  adoptRoomCore(room, players.values(), now);
+  return room;
 };

@@ -1,5 +1,6 @@
 import type { GameRecorder } from "../domain/GameRecord";
 import type { TestRoomPolicy } from "../domain/TestRooms";
+import type { EventLogger } from "../infrastructure/EventLogger";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { CEEGuess, CEERoomClientMessage, ConnectionRecord } from "../shared/Index";
 import { AppError } from "../domain/Errors";
@@ -45,6 +46,7 @@ export class CEENativeService {
     reviewQueue?: CEEAntiCheatReviewQueue;
     provenance?: CEESearchProvenance;
     testRooms?: TestRoomPolicy;
+    eventLogger?: EventLogger;
   }) {
     this.data = options.data;
     this.now = options.now ?? Date.now;
@@ -56,7 +58,8 @@ export class CEENativeService {
       options.isRoomIdReserved,
       options.gameRecorder,
       options.reviewQueue,
-      options.testRooms
+      options.testRooms,
+      options.eventLogger
     );
   }
   registerConnection(connection: ConnectionRecord) {
@@ -100,9 +103,6 @@ export class CEENativeService {
     this.timers.clear();
   }
   runHousekeeping() {
-    for (const room of this.state.rooms.values()) {
-      if (tickCEERound(room, this.now())) this.state.publishRoom(room);
-    }
     this.state.housekeeping();
     this.rescheduleAll();
   }

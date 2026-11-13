@@ -10,6 +10,7 @@ import {
 import { AppError } from "../src/domain/Errors";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
 import type { CEEImageHints } from "../src/infrastructure/CEEImageHints";
+import type { EventLogger } from "../src/infrastructure/EventLogger";
 import {
   createDefaultCEESettings,
   type CEECharacterView,
@@ -81,11 +82,13 @@ export function ceeTestHarness(
     gameRecorder,
     reviewQueue,
     testRooms = TEST_ROOMS_ON,
+    eventLogger,
   }: {
     roomId?: string;
     gameRecorder?: GameRecorder;
     reviewQueue?: CEEAntiCheatReviewQueue;
     testRooms?: TestRoomPolicy;
+    eventLogger?: EventLogger;
   } = {}
 ) {
   let clock = 1_000_000;
@@ -133,6 +136,7 @@ export function ceeTestHarness(
     reviewQueue,
     provenance,
     testRooms,
+    eventLogger,
   });
   const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],
