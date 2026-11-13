@@ -22,7 +22,6 @@ import {
   resolveAlbumTrackCandidates,
   resolveAnimeLevelCandidates,
 } from "../../src/application/songuessr/AnimeResolution";
-import type { SonGuessrServiceInternals } from "../../src/application/songuessr/ServiceInternals";
 import {
   buildAlbumQueries,
   isSongTitleMatch,
@@ -1094,7 +1093,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       bangumiProvider: {} as BangumiDataProvider,
       random: { nextInt: () => 0 },
     });
-    return service as unknown as SonGuessrServiceInternals;
+    return service.ctx;
   };
 
   /**

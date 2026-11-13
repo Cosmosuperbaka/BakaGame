@@ -51,7 +51,8 @@ import {
   normalizedArtists,
   retryOnce,
 } from "./SongTitleMatching";
-import type { SonGuessrServiceInternals } from "./ServiceInternals";
+import type { SonGuessrContext } from "./Context";
+import { requireRoomPlayer } from "./RoomAccess";
 
 /** 猜番出题的番剧关联曲目解析：检索、专辑/番剧级兜底与逐候选验证。 */
 
@@ -67,17 +68,15 @@ interface AnimeTrackMatchContext {
 }
 
 export const resolveSpecifiedAnimeSong = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   anime: BangumiSubjectDetails,
   songId: string
 ): Promise<{ song: SongDetails; track: BangumiMusicTrack }> => {
-  const provider = service.options.musicProvider;
+  const provider = ctx.options.musicProvider;
   let song: SongDetails;
   try {
-    song = await withSongAccount(service, room, songId, (cookie) =>
-      provider.getSong(songId, cookie)
-    );
+    song = await withSongAccount(ctx, room, songId, (cookie) => provider.getSong(songId, cookie));
   } catch (error) {
     if (!isUnusableSongCandidate(error)) throw error;
     throw new AppError("BANGUMI_NO_MUSIC", "所选歌曲无法播放或获取音频失败");
@@ -100,7 +99,7 @@ export const resolveSpecifiedAnimeSong = async (
 };
 
 export const resolveAnimeSong = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   anime: BangumiSubjectDetails
 ): Promise<AnimeSongPick> => {
@@ -120,14 +119,14 @@ export const resolveAnimeSong = async (
   // 被预算截掉的曲目同样等概率，而不是永远只有排在前面的几首有机会。
   const candidates = shuffle(
     anime.musicTracks.filter((track) => allowedKinds.has(track.kind)),
-    service.random
+    ctx.random
   ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
   // 整段解析（多个候选、每个都可能多次回源）共用一次取号：这确实是同一批在途请求，
   // 一次一租比每个内部请求各自取号更省，也让池里的在途数反映真实的占用者。
   // 按成败归还：内部只吞单曲不可用，凭据判死、风控与限流原样透传到这里摘号或冷却。
-  return withAggregatedAccounts(service, room, (cookie) =>
-    pickAnimeSong(service, candidates, {
-      provider: service.options.musicProvider,
+  return withAggregatedAccounts(ctx, room, (cookie) =>
+    pickAnimeSong(ctx, candidates, {
+      provider: ctx.options.musicProvider,
       anime,
       cookie,
       animeNames,
@@ -143,13 +142,13 @@ export const resolveAnimeSong = async (
 };
 
 const pickAnimeSong = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   candidates: BangumiMusicTrack[],
   lookup: AnimeSongLookup
 ): Promise<AnimeSongPick> => {
   for (const track of candidates) {
     if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
-    const pick = await resolveTrackSong(service, lookup, track);
+    const pick = await resolveTrackSong(ctx, lookup, track);
     if (pick) return pick;
   }
 
@@ -177,7 +176,7 @@ const pickAnimeSong = async (
 
 /** 单条关联曲目的出题：拼检索词 → 证据排序 → 三级候选池 → 逐首验证。 */
 export const resolveTrackSong = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   lookup: AnimeSongLookup,
   track: BangumiMusicTrack
 ): Promise<AnimeSongPick | undefined> => {
@@ -196,10 +195,10 @@ export const resolveTrackSong = async (
   // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
   // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
   const ranked = rankEvidencedCandidates(matched, track, animeNames);
-  const pool = await resolveTrackPool(service, lookup, track, ranked);
+  const pool = await resolveTrackPool(ctx, lookup, track, ranked);
   // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
   if (pool.list.length === 0) return undefined;
-  return verifyTrackPool(service, lookup, pool);
+  return verifyTrackPool(ctx, lookup, pool);
 };
 
 /**
@@ -207,7 +206,7 @@ export const resolveTrackSong = async (
  * 只有「常规检索」这一条路允许放宽身份与年代（见 `looseFallback`）。
  */
 export const resolveTrackPool = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   lookup: AnimeSongLookup,
   track: BangumiMusicTrack,
   ranked: SongSearchResult[]
@@ -219,7 +218,7 @@ export const resolveTrackPool = async (
   // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
   if (isAlbumLikeTrackKind(track.kind)) {
     const albumPool = await resolveAlbumTrackCandidates(
-      service,
+      ctx,
       provider,
       track,
       anime,
@@ -234,7 +233,7 @@ export const resolveTrackPool = async (
   // 这条路拿到的歌**与本条目无关**（只是同一部番的其它曲目），因此条目分类也不能再用 ——
   // 实测《四月は君の嘘 第8巻 特典CD》条目下的歌曲实际来自 OST 专辑，却因条目分类
   // 显示成「Radio」。
-  const animePool = await resolveAnimeLevelCandidates(service, provider, anime, cookie, budget);
+  const animePool = await resolveAnimeLevelCandidates(ctx, provider, anime, cookie, budget);
   return { track, list: animePool, fromAnimeLevel: true, looseFallback: false };
 };
 
@@ -245,7 +244,7 @@ export const resolveTrackPool = async (
  * 排在后面的原版连被验证的机会都没有。
  */
 export const verifyTrackPool = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   lookup: AnimeSongLookup,
   pool: TrackCandidatePool
 ): Promise<AnimeSongPick | undefined> => {
@@ -258,8 +257,8 @@ export const verifyTrackPool = async (
     attempts += 1;
     // 热度不达标就无法出题，先用一次廉价的红心数查询判掉，
     // 避免为一个必然被否决的候选拉取歌词、音频与百科（约 5~6 个上游请求）。
-    if (await isCandidateTooCold(service, lookup, candidate.id)) continue;
-    const song = await loadPlayableSong(service, lookup, candidate.id);
+    if (await isCandidateTooCold(ctx, lookup, candidate.id)) continue;
+    const song = await loadPlayableSong(ctx, lookup, candidate.id);
     if (!song) continue;
     if (isBelowMinPopularity(song, lookup.minPopularity)) continue;
     // 台词轨 / 伴奏 / 纯音乐一律否决，且**不占验证名额**：特典 CD 里它们常成批
@@ -280,7 +279,7 @@ export const verifyTrackPool = async (
 
 /** 红心数预筛：热度明确不达标的候选不值得拉详情；查询本身失败按「不知道」放行。 */
 export const isCandidateTooCold = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   lookup: AnimeSongLookup,
   songId: string
 ): Promise<boolean> => {
@@ -298,7 +297,7 @@ export const isCandidateTooCold = async (
 
 /** 取歌曲详情；仅这一首不可播放时返回 undefined 交给下一候选，全局依赖失败原样透传。 */
 export const loadPlayableSong = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   lookup: AnimeSongLookup,
   songId: string
 ): Promise<SongDetails | undefined> => {
@@ -418,7 +417,7 @@ export const searchAnimeTrackCandidates = async (
  * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
  */
 export const resolveAlbumTrackCandidates = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   provider: MusicProvider,
   track: BangumiMusicTrack,
   anime: BangumiSubjectDetails,
@@ -505,7 +504,7 @@ export const resolveAlbumTrackCandidates = async (
   // 兜底可出），但原版存在时不得随机抢先。
   const originals = playable.filter((song) => !ALTERNATE_VERSION_PATTERN.test(song.title));
   const alternates = playable.filter((song) => ALTERNATE_VERSION_PATTERN.test(song.title));
-  return [...shuffle(originals, service.random), ...shuffle(alternates, service.random)];
+  return [...shuffle(originals, ctx.random), ...shuffle(alternates, ctx.random)];
 };
 
 /**
@@ -523,7 +522,7 @@ export const resolveAlbumTrackCandidates = async (
  * 玩家猜的是番剧名，出一首确实属于该番的歌远好于整条出不了题。
  */
 export const resolveAnimeLevelCandidates = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   provider: MusicProvider,
   anime: BangumiSubjectDetails,
   cookie: MusicCookieInput | undefined,
@@ -562,24 +561,24 @@ export const resolveAnimeLevelCandidates = async (
     }
     return otherTrackTitles.some((title) => isSongTitleMatch(candidate.title, title));
   };
-  return shuffle([...collected.values()].filter(belongsToAnime), service.random);
+  return shuffle([...collected.values()].filter(belongsToAnime), ctx.random);
 };
 
 export const resolveAnimeMatchedSongs = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   anime: BangumiSubjectDetails,
   connection: ConnectionRecord
 ): Promise<BangumiSongCandidate[]> => {
-  const provider = service.options.musicProvider;
-  const { room } = service.requireRoomPlayer(connection);
+  const provider = ctx.options.musicProvider;
+  const { room } = requireRoomPlayer(ctx, connection);
   if (anime.musicTracks.length === 0) return [];
   // 与自动出题同源：番剧名既用于拼检索词，也用于「候选是否确属本番」的锚点判定。
   const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
   const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
   // 与自动出题同口径按成败归还租约，凭据失效才能在这里摘号。
-  return withAggregatedAccounts(service, room, async (cookie) => {
-    const ctx: AnimeTrackMatchContext = {
+  return withAggregatedAccounts(ctx, room, async (cookie) => {
+    const match: AnimeTrackMatchContext = {
       provider,
       cookie,
       anime,
@@ -590,32 +589,32 @@ export const resolveAnimeMatchedSongs = async (
     };
     for (const track of anime.musicTracks) {
       if (budget.search <= 0) break;
-      await matchAnimeTrack(service, ctx, track);
+      await matchAnimeTrack(ctx, match, track);
     }
-    await fillAnimeLevelFallback(service, ctx);
-    return ctx.results;
+    await fillAnimeLevelFallback(ctx, match);
+    return match.results;
   });
 };
 
 /** 单个音乐条目：常规检索 → 专辑兜底 → 按展示规则写入结果。 */
 export const matchAnimeTrack = async (
-  service: SonGuessrServiceInternals,
-  ctx: AnimeTrackMatchContext,
+  ctx: SonGuessrContext,
+  match: AnimeTrackMatchContext,
   track: BangumiMusicTrack
 ): Promise<void> => {
-  const { queries, scopeQueries } = buildTrackQueries(track, ctx.anime);
+  const { queries, scopeQueries } = buildTrackQueries(track, match.anime);
 
   let matchedCandidates: SongSearchResult[] = [];
   try {
     const matched = await searchAnimeTrackCandidates(
-      ctx.provider,
+      match.provider,
       queries,
       track,
-      ctx.cookie,
-      ctx.budget,
+      match.cookie,
+      match.budget,
       scopeQueries
     );
-    matchedCandidates = rankEvidencedCandidates(matched, track, ctx.animeNames);
+    matchedCandidates = rankEvidencedCandidates(matched, track, match.animeNames);
   } catch (error) {
     if (!isUnusableSongCandidate(error)) throw error;
   }
@@ -625,12 +624,12 @@ export const matchAnimeTrack = async (
   if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
     try {
       matchedCandidates = await resolveAlbumTrackCandidates(
-        service,
-        ctx.provider,
+        ctx,
+        match.provider,
         track,
-        ctx.anime,
-        ctx.cookie,
-        ctx.budget
+        match.anime,
+        match.cookie,
+        match.budget
       );
       albumFallback = true;
     } catch (error) {
@@ -644,7 +643,7 @@ export const matchAnimeTrack = async (
   // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
   // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
   registerMatchedSongs(
-    ctx,
+    match,
     track,
     albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)
   );
@@ -652,15 +651,15 @@ export const matchAnimeTrack = async (
 
 /** 把条目候选写进手动选曲列表；已在别的条目出现过的歌曲直接跳过。 */
 export const registerMatchedSongs = (
-  ctx: AnimeTrackMatchContext,
+  match: AnimeTrackMatchContext,
   track: BangumiMusicTrack,
   candidates: SongSearchResult[]
 ): void => {
   for (const song of candidates) {
-    if (ctx.seenSongIds.has(song.id)) continue;
-    ctx.seenSongIds.add(song.id);
+    if (match.seenSongIds.has(song.id)) continue;
+    match.seenSongIds.add(song.id);
     // 类型同样按「歌曲自身文本」细化（与自动出题的 refineTrackKind 同源）。
-    ctx.results.push({
+    match.results.push({
       track: {
         ...track,
         kind: refineTrackKindByText(track.kind, `${song.title} ${song.album ?? ""}`),
@@ -672,25 +671,25 @@ export const registerMatchedSongs = (
 
 /** 番剧级兜底：条目全无命中且有剩余预算时，按整张番剧再搜一次。 */
 export const fillAnimeLevelFallback = async (
-  service: SonGuessrServiceInternals,
-  ctx: AnimeTrackMatchContext
+  ctx: SonGuessrContext,
+  match: AnimeTrackMatchContext
 ): Promise<void> => {
-  if (ctx.results.length > 0 || ctx.budget.search <= 0) return;
+  if (match.results.length > 0 || match.budget.search <= 0) return;
 
   try {
     const animeLevelSongs = await resolveAnimeLevelCandidates(
-      service,
-      ctx.provider,
-      ctx.anime,
-      ctx.cookie,
-      ctx.budget
+      ctx,
+      match.provider,
+      match.anime,
+      match.cookie,
+      match.budget
     );
     for (const song of animeLevelSongs) {
-      if (ctx.seenSongIds.has(song.id)) continue;
-      ctx.seenSongIds.add(song.id);
+      if (match.seenSongIds.has(song.id)) continue;
+      match.seenSongIds.add(song.id);
       // 番剧级兜底没有「条目」可言，类型只能从歌曲自身文本推（原声带 / 特典 CD /
       // 角色歌…）；推不出来时才落到主题曲。
-      ctx.results.push({
+      match.results.push({
         track: {
           title: song.title,
           artist: song.artist,

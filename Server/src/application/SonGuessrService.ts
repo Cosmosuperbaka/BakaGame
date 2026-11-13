@@ -3,17 +3,9 @@ import {
   computeSongDifficulty,
   computeSongSubmitterScore,
 } from "../domain/SongRules";
-import { AnimeSongPick } from "./songuessr/AnimeSongEvidence";
 import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
 import { songTitleNames } from "./songuessr/LyricTitleGuard";
-import {
-  buildPrivateState,
-  buildRoomSnapshot,
-  buildRoomSummary,
-  buildScores,
-  publicAnime,
-  publicSong,
-} from "./songuessr/RoomViews";
+import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import {
   resolveAnimeMatchedSongs,
   resolveAnimeSong,
@@ -25,8 +17,6 @@ import {
   clearMusicSession,
   createMusicQrLogin,
   hasEnabledPoolAccount,
-  isCoolingDown,
-  isPoolEntryUsable,
   loadSongWithSources,
   musicPool,
   musicSearchOptions,
@@ -46,7 +36,6 @@ import {
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
-import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   BOT_NAME_SUFFIXES,
   ROOM_EXPIRING_WARNING_MS,
@@ -57,39 +46,58 @@ import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
 import { AppError, unsupportedCommand } from "../domain/Errors";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
-import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
+import { ensureRoomId, normalizeName, normalizeWord } from "../domain/Rules";
 import {
-  BangumiMusicTrack,
   ChatMessage,
   SERVER_SHUTDOWN_MESSAGE,
-  SONGUESSR_LOBBY_ROOMS_EVENT,
   SONGUESSR_MAX_TEAM,
   SonGuessrClientMessage,
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
   SonGuessrRoomSummary,
   SonGuessrRoundSummary,
-  SonGuessrScore,
   SonGuessrScoreBreakdown,
   SongClipPreview,
   SongClipRange,
   SongDetails,
   SongGuessAttempt,
   SongGuessFeedback,
-  SongLyricClip,
-  type BangumiSongCandidate,
   type BangumiSubjectDetails,
   type ConnectionRecord,
   type SonGuessrRoundMark,
 } from "../shared/Index";
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError } from "../infrastructure/EventLogger";
-import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import type { SonGuessrServiceOptions } from "./songuessr/Options";
+import {
+  createSonGuessrContext,
+  publishPrivateState,
+  publishRoomCalibration,
+  type SonGuessrContext,
+} from "./songuessr/Context";
+import {
+  buildPrivateState,
+  buildRoomSnapshot,
+  buildScores,
+  listRoomSummaries,
+} from "./songuessr/RoomViews";
+import {
+  activePlayers,
+  appendSystemMessage,
+  canTestSubmitterGuess,
+  getRoom,
+  isTestRoom,
+  requireRoomPlayer,
+} from "./songuessr/RoomAccess";
+import {
+  clearRoundMarks,
+  ensureRoundPlayerState,
+  submitterCandidates,
+} from "./songuessr/RoundParticipants";
+import { installRound } from "./songuessr/RoundInstall";
+import { parsePlaylistId } from "./songuessr/PlaylistId";
+
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
-import { ChatLimiter, acceptChatText, appendChat, systemMessage } from "./room/ChatLog";
-import { IdCounter } from "./room/IdCounter";
+import { ChatLimiter, acceptChatText, appendChat } from "./room/ChatLog";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
@@ -100,7 +108,6 @@ import {
   judgeReclaim,
   markIdleWarningSent,
 } from "./room/RoomJanitor";
-import { publishRoomState } from "./room/RoomPublisher";
 import {
   adoptRoomCore,
   exportRoomJson,
@@ -119,25 +126,14 @@ import {
   type SeatBindingContext,
   type TabSeatContext,
 } from "./room/SeatBinding";
-import {
-  MusicSearchOptions,
-  musicIpScope,
-  type MusicCookieInput,
-} from "../infrastructure/NeteaseMusicProvider";
+import { musicIpScope } from "../infrastructure/NeteaseMusicProvider";
 import { createEvent } from "../transport/Packets";
-import { ConnectionRegistry } from "./ConnectionRegistry";
-import { LobbyFanout } from "./LobbyFanout";
 import {
   AUDIO_READY_GRACE_MS,
   DEFAULT_SETTINGS,
-  MAX_RECENT_SONG_WINDOW,
-  MUSIC_RATE_LIMIT_PER_CONNECTION,
-  MUSIC_RATE_LIMIT_WINDOW_MS,
   MusicAuthPlatform,
-  MusicSessionRevalidation,
   ROUND_HARD_TIMEOUT_MARGIN_S,
   SUBMIT_SONG_TIMEOUT_MS,
-  SonGuessrMusicPoolEntry,
   SonGuessrPlayerRecord,
   SonGuessrRoomRecord,
   SonGuessrRoundPlayerState,
@@ -171,35 +167,9 @@ type RoundSweep = {
 };
 
 export class SonGuessrService implements AdminRoomControl {
-  readonly rooms = new Map<string, SonGuessrRoomRecord>();
-  readonly connections = new ConnectionRegistry();
-  /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
-  private readonly lobbyFanout: LobbyFanout;
-  readonly now: () => number;
-  readonly random: RandomSource;
-  /** 只回收本玩法发的前缀；会话令牌与标签页座位号不落进来。 */
-  private readonly ids = new IdCounter(/^song_(?:chat|guess|player)_([0-9a-z]+)$/);
-  /**
-   * 按连接统计的音乐上游调用配额。
-   *
-   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64），退避虽然按出口作用域隔离，
-   * 没有按连接的配额时，一个人仍会先把本进程的并发与队列打满，搜歌与出题一起排队。
-   */
-  private readonly musicLimiter = new SlidingWindowRateLimiter({
-    windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
-    maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
-  });
+  readonly ctx: SonGuessrContext;
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */
   private readonly chatLimiter: ChatLimiter;
-  /**
-   * 每个房间在等号的请求。所有可用号都达到单号并发上限时在这里排队，任一租约归还
-   * 或池子变化即唤醒重试；只在进程内，房间关闭时整段丢弃。
-   */
-  readonly musicPoolWaiters = new Map<string, Set<() => void>>();
-  nextMusicRefreshSweepAt = 0;
-  musicRefreshSweepInFlight = false;
-
-  readonly testRooms: TestRoomPolicy;
   /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
   private readonly reservations = new RoomIdReservations();
   private readonly passwordGate: RoomPasswordGate;
@@ -208,44 +178,43 @@ export class SonGuessrService implements AdminRoomControl {
     TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> & { recorder: GameRecorder };
 
   constructor(readonly options: SonGuessrServiceOptions) {
-    this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
-    this.now = options.now ?? (() => Date.now());
+    this.ctx = createSonGuessrContext(options);
+    const { ctx } = this;
     this.roomKernel = {
       shape: SONG_ROOM_SHAPE,
-      connections: this.connections,
-      rooms: this.rooms,
-      now: () => this.now(),
+      connections: ctx.connections,
+      rooms: ctx.rooms,
+      now: () => ctx.now(),
       recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
     };
     this.passwordGate = new RoomPasswordGate({
-      now: () => this.now(),
+      now: () => ctx.now(),
       normalize: normalizeRoomPassword,
       missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
       missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
       hasher: options.passwordHasher,
     });
-    this.chatLimiter = new ChatLimiter({ now: () => this.now() });
-    this.random = options.random ?? {
-      nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
-    };
-    this.lobbyFanout = new LobbyFanout({
-      event: SONGUESSR_LOBBY_ROOMS_EVENT,
-      now: () => this.now(),
-      broadcast: (payload) => this.connections.broadcastToLobby(payload),
-      summaries: () => this.getRoomSummaries(),
-      schedule: options.lobbyFanoutSchedule,
-    });
+    this.chatLimiter = new ChatLimiter({ now: () => ctx.now() });
+  }
+
+  /** 房间表：测试直接读它，写入只走命令与巡检。 */
+  get rooms(): Map<string, SonGuessrRoomRecord> {
+    return this.ctx.rooms;
+  }
+
+  getRoomSummaries(): SonGuessrRoomSummary[] {
+    return listRoomSummaries(this.ctx);
   }
 
   registerConnection(connection: ConnectionRecord): void {
-    this.connections.registerConnection(connection);
+    this.ctx.connections.registerConnection(connection);
   }
 
   getHealthSnapshot() {
     return {
-      roomCount: this.rooms.size,
-      connectionCount: this.connections.stats.totalConnections,
-      onlinePlayerCount: [...this.rooms.values()].reduce(
+      roomCount: this.ctx.rooms.size,
+      connectionCount: this.ctx.connections.stats.totalConnections,
+      onlinePlayerCount: [...this.ctx.rooms.values()].reduce(
         (sum, room) => sum + countOnline(Object.values(room.players)),
         0
       ),
@@ -253,7 +222,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   notifyShutdown(): void {
-    this.connections.broadcastToAll(
+    this.ctx.connections.broadcastToAll(
       createEvent("server.shutdown", {
         message: SERVER_SHUTDOWN_MESSAGE,
       })
@@ -271,7 +240,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   exportSnapshots(): SnapshottedRoom[] {
     const snapshots: SnapshottedRoom[] = [];
-    for (const room of this.rooms.values()) {
+    for (const room of this.ctx.rooms.values()) {
       try {
         snapshots.push(exportRoomJson(room, ["musicPool"]));
       } catch (error) {
@@ -293,12 +262,12 @@ export class SonGuessrService implements AdminRoomControl {
    */
   restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
     return restoreRooms(
-      this.rooms,
+      this.ctx.rooms,
       rooms,
-      { savedAt, now: this.now() },
+      { savedAt, now: this.ctx.now() },
       {
         adopt: (raw, now, pausedMs) => this.adoptSnapshot(raw, now, pausedMs),
-        onRestored: (room) => this.ids.absorb(room),
+        onRestored: (room) => this.ctx.ids.absorb(room),
         onError: (raw, error) =>
           this.options.eventLogger?.warn("猜歌房间快照恢复失败，已跳过该房间", {
             roomId: raw.id,
@@ -342,17 +311,17 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   async unregisterConnection(connectionId: string): Promise<void> {
-    const connection = this.connections.unregisterConnection(connectionId);
+    const connection = this.ctx.connections.unregisterConnection(connectionId);
     if (!connection?.roomId || !connection.playerId) return;
-    const room = this.rooms.get(connection.roomId);
+    const room = this.ctx.rooms.get(connection.roomId);
     const player = room?.players[connection.playerId];
     if (!room || !player) return;
 
-    this.connections.detach(connection);
+    this.ctx.connections.detach(connection);
     if (player.connectionId !== connection.id) return;
 
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
-    markSeatOffline(this.roomKernel, room, player, { emptyRoomExempt: this.isTestRoom(room) });
+    markSeatOffline(this.roomKernel, room, player, { emptyRoomExempt: isTestRoom(this.ctx, room) });
     this.releasePendingSubmitter(
       room,
       player.id,
@@ -360,14 +329,14 @@ export class SonGuessrService implements AdminRoomControl {
     );
     // 普通断线可能只是刷新或切到后台，不能因此把仍在进行的回合提前结算。
     // 显式离开和踢出会移除正式席位，并在各自路径重新检查回合完成状态。
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
-    this.log("song.player.disconnected", room.id, player.id);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
+    this.ctx.log("song.player.disconnected", room.id, player.id);
   }
 
   async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
-    const connection = this.connections.getConnection(connectionId);
+    const connection = this.ctx.connections.getConnection(connectionId);
     // 玩家级伪装 IP 归属：同一连接的匿名请求复用同一个 CN IP，不同玩家各持一个，
     // 避免全服匿名请求共享同一份网易云限流配额（见 NeteaseMusicProvider 的 musicIpScope）。
     return musicIpScope.run(`player:${connectionId}`, async () =>
@@ -390,7 +359,7 @@ export class SonGuessrService implements AdminRoomControl {
         connection.lobbySubscribed = true;
         // 只给这条连接发当前列表：合并窗下全量广播可能刚刚发过，
         // 新订阅者不能因为「还在窗内」而一份列表都拿不到。
-        this.lobbyFanout.sendTo(connection);
+        this.ctx.lobby.sendTo(connection);
         return { subscribed: true };
       case "song.room.create":
         return this.createRoom(connection, message.payload);
@@ -430,7 +399,12 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.auth.clear":
         return this.clearMusicAccount(connection, message.payload.platform);
       case "song.auth.setPoolSharing":
-        return this.setPoolSharing(connection, message.payload.platform, message.payload.enabled);
+        return setPoolSharing(
+          this.ctx,
+          connection,
+          message.payload.platform,
+          message.payload.enabled
+        );
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
       case "song.music.detail":
@@ -495,9 +469,9 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   async runHousekeeping(): Promise<void> {
-    const currentTime = this.now();
+    const currentTime = this.ctx.now();
     await forEachRoomIsolated(
-      this.rooms,
+      this.ctx.rooms,
       (room) => this.sweepRoom(room, currentTime),
       (room, error) =>
         this.options.eventLogger?.warn("猜歌房间巡检失败，已跳过该房间", {
@@ -505,7 +479,7 @@ export class SonGuessrService implements AdminRoomControl {
           ...describeError(error),
         })
     );
-    this.scheduleMusicSessionRefresh(currentTime);
+    scheduleMusicSessionRefresh(this.ctx, currentTime);
   }
 
   /** 单间房的巡检：回收判定之后才做离线清理、房主改选与回合推进。 */
@@ -515,11 +489,7 @@ export class SonGuessrService implements AdminRoomControl {
     this.resolveHost(room, currentTime);
     this.expirePendingSubmitter(room, currentTime);
     this.settlePlayingRound(room, currentTime);
-    this.publishRoomCalibration(room);
-  }
-
-  private scheduleMusicSessionRefresh(currentTime: number): void {
-    return scheduleMusicSessionRefresh(this, currentTime);
+    publishRoomCalibration(this.ctx, room);
   }
 
   /**
@@ -529,7 +499,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private reclaimIdleRoom(room: SonGuessrRoomRecord, currentTime: number): RoomReclaim {
     const onlineCount = countOnline(Object.values(room.players));
-    const emptyRoomExempt = this.isTestRoom(room);
+    const emptyRoomExempt = isTestRoom(this.ctx, room);
     if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
       markIdleWarningSent(room);
       this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
@@ -537,7 +507,7 @@ export class SonGuessrService implements AdminRoomControl {
     const verdict = judgeReclaim(room, onlineCount, currentTime, { emptyRoomExempt });
     switch (verdict) {
       case "grace":
-        this.publishRoomCalibration(room);
+        publishRoomCalibration(this.ctx, room);
         return "grace";
       case "close-empty":
       case "close-idle":
@@ -554,14 +524,14 @@ export class SonGuessrService implements AdminRoomControl {
     for (const player of expiredOfflineSeats(room, Object.values(room.players), currentTime)) {
       delete room.players[player.id];
       // 掉线超过宽限：人和他贡献的号一起清出房间（宽限内号仍在，房主面板也能看到）。
-      this.clearMusicSession(room, player.id);
+      clearMusicSession(this.ctx, room, player.id);
       if (room.hostPlayerId === player.id) this.reassignRemovedHost(room);
-      this.touch(room);
-      if (countOnline(Object.values(room.players)) === 0 && !this.isTestRoom(room)) {
+      this.ctx.touch(room);
+      if (countOnline(Object.values(room.players)) === 0 && !isTestRoom(this.ctx, room)) {
         this.closeRoom(room, "empty");
       } else {
-        this.publishRoom(room);
-        this.publishLobby();
+        this.ctx.publishRoom(room);
+        this.ctx.publishLobby();
       }
     }
   }
@@ -579,8 +549,8 @@ export class SonGuessrService implements AdminRoomControl {
       playerId,
       `${submitter ? `出题人 ${submitter.name}` : "出题人"} 没有在时限内选好${target}，请重新指定出题人`
     );
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
   }
 
   /** 进行中的回合：先按人补音频就绪，再按作答单元判超时，最后按变化结算与广播。 */
@@ -601,7 +571,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     if (changed || sweep.isRoundHardExpired) {
       if (this.isRoundComplete(room) || sweep.isRoundHardExpired) this.finishRound(room);
-      this.publishRoom(room);
+      this.ctx.publishRoom(room);
     }
   }
 
@@ -614,7 +584,10 @@ export class SonGuessrService implements AdminRoomControl {
     const audioReadyDeadlineAt = round.audioReadyDeadlineAt ?? round.audioPreparationDeadlineAt;
     let changed = false;
     for (const [playerId, state] of Object.entries(round.players)) {
-      if (playerId === round.submitterPlayerId && !this.canTestSubmitterGuess(room, playerId)) {
+      if (
+        playerId === round.submitterPlayerId &&
+        !canTestSubmitterGuess(this.ctx, room, playerId)
+      ) {
         continue;
       }
       if (this.isUnitFinished(round, state)) continue;
@@ -652,22 +625,15 @@ export class SonGuessrService implements AdminRoomControl {
     return changed;
   }
 
-  getRoomSummaries(): SonGuessrRoomSummary[] {
-    return [...this.rooms.values()]
-      .filter((room) => !this.isTestRoom(room) && !room.solo)
-      .map((room) => this.buildRoomSummary(room))
-      .sort((left, right) => left.roomId.localeCompare(right.roomId));
-  }
-
   private async createRoom(
     connection: ConnectionRecord,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
-    const roomId = ensureRoomId(payload.roomId, this.testRooms);
+    const roomId = ensureRoomId(payload.roomId, this.ctx.testRooms);
     assertTextAllowed(payload.name, payload.userName);
     // 算摘要要跨一次 await：先同步占号挡住并发建房，房间对象在摘要算完、连接复核通过之前
     // 不进房间表，入房、大厅与巡检都看不到没有摘要的私密房。
-    const release = this.reservations.hold(roomId, (id) => this.rooms.has(id));
+    const release = this.reservations.hold(roomId, (id) => this.ctx.rooms.has(id));
     try {
       const password =
         payload.visibility === "private" ? this.passwordGate.require(payload.password) : undefined;
@@ -679,7 +645,7 @@ export class SonGuessrService implements AdminRoomControl {
         tabSeatId(connection, "song", roomId)
       );
       if (connection.isAgent === true) player.isAgent = true;
-      const now = this.now();
+      const now = this.ctx.now();
       const solo = payload.solo === true;
       const room: SonGuessrRoomRecord = {
         id: roomId,
@@ -706,22 +672,22 @@ export class SonGuessrService implements AdminRoomControl {
 
       if (password) room.passwordHash = await this.passwordGate.hash(password);
       // 摘要期间连接可能已经断开：断开后再登记会留下一个没有连接的在线房主，房间永远不空。
-      if (!this.connections.findConnection(connection.id))
+      if (!this.ctx.connections.findConnection(connection.id))
         throw new AppError("SESSION_INVALID", "连接状态已经变化，请重新加入");
       // 目标校验全部通过后才解绑旧席位：被拒绝的建房不得销毁原绑定。
       this.ensureConnectionFree(connection);
-      this.rooms.set(roomId, room);
+      this.ctx.rooms.set(roomId, room);
       this.attachConnection(room, player, connection);
-      this.appendSystemMessage(room, `${player.name} 创建了房间`);
-      this.publishRoom(room);
-      this.publishLobby();
-      this.log("song.room.created", room.id, player.id);
+      appendSystemMessage(this.ctx, room, `${player.name} 创建了房间`);
+      this.ctx.publishRoom(room);
+      this.ctx.publishLobby();
+      this.ctx.log("song.room.created", room.id, player.id);
       return {
         roomId,
         playerId: player.id,
         sessionToken: player.sessionToken,
-        snapshot: this.buildRoomSnapshot(room),
-        privateState: this.buildPrivateState(room, player),
+        snapshot: buildRoomSnapshot(this.ctx, room),
+        privateState: buildPrivateState(this.ctx, room, player),
       };
     } finally {
       release();
@@ -733,7 +699,7 @@ export class SonGuessrService implements AdminRoomControl {
     roomIdValue: string | undefined,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"]
   ) {
-    const room = this.getRoom(ensureRoomId(roomIdValue ?? "", this.testRooms));
+    const room = getRoom(this.ctx, ensureRoomId(roomIdValue ?? "", this.ctx.testRooms));
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
     const seat = findSeat(this.roomKernel, room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
@@ -741,7 +707,7 @@ export class SonGuessrService implements AdminRoomControl {
     assertAgentAdmission(connection, SONG_ROOM_SHAPE.admission(room));
     await this.passwordGate.verify(room, room.visibility, payload.password, connection.id);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
-    if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
+    if (this.ctx.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     const name = this.requireName(payload.userName);
     if (
       Object.values(room.players).some(
@@ -763,23 +729,23 @@ export class SonGuessrService implements AdminRoomControl {
     player.membership = membership;
     room.players[player.id] = player;
     this.attachConnection(room, player, connection);
-    this.touch(room);
-    this.appendSystemMessage(room, `${player.name} 加入了房间`);
-    this.publishRoom(room);
-    this.publishLobby();
-    this.log("song.room.joined", room.id, player.id);
+    this.ctx.touch(room);
+    appendSystemMessage(this.ctx, room, `${player.name} 加入了房间`);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
+    this.ctx.log("song.room.joined", room.id, player.id);
     return {
       roomId: room.id,
       playerId: player.id,
       sessionToken: player.sessionToken,
-      snapshot: this.buildRoomSnapshot(room),
-      privateState: this.buildPrivateState(room, player),
+      snapshot: buildRoomSnapshot(this.ctx, room),
+      privateState: buildPrivateState(this.ctx, room, player),
     };
   }
 
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
-    const targetRoomId = ensureRoomId(roomIdValue, this.testRooms);
-    const room = this.getRoom(targetRoomId);
+    const targetRoomId = ensureRoomId(roomIdValue, this.ctx.testRooms);
+    const room = getRoom(this.ctx, targetRoomId);
     this.ensureAgentsAllowed(room, connection);
 
     const player = findSeat(this.roomKernel, room, connection, token);
@@ -807,14 +773,15 @@ export class SonGuessrService implements AdminRoomControl {
     this.attachConnection(room, player, connection);
     // 不能留给发布时的视图兜底：下面刷新播放地址要等一次 await，期间别人的操作会判
     // 「本回合是否已结束」，缺状态的人会被当成已作答完毕而提前收回合。
-    this.ensureRoundPlayerState(room, player);
+    ensureRoundPlayerState(this.ctx, room, player);
 
     // 网易云播放地址可能带有效期。刷新页面后重新取一次当前回合地址，
     // 只替换 URL，不改动已经固定的答案、歌词片段和回合状态。
     const activeRound = room.phase === "playing" ? room.currentRound : undefined;
     if (activeRound) {
       try {
-        const refreshedSong = await this.withSongAccount(
+        const refreshedSong = await withSongAccount(
+          this.ctx,
           room,
           activeRound.song.id,
           (cookie) => this.options.musicProvider.getSong(activeRound.song.id, cookie),
@@ -836,20 +803,20 @@ export class SonGuessrService implements AdminRoomControl {
         });
       }
     }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return {
       roomId: room.id,
       playerId: player.id,
       sessionToken: player.sessionToken,
-      snapshot: this.buildRoomSnapshot(room),
-      privateState: this.buildPrivateState(room, player),
+      snapshot: buildRoomSnapshot(this.ctx, room),
+      privateState: buildPrivateState(this.ctx, room, player),
     };
   }
 
   private leaveRoom(connection: ConnectionRecord) {
-    this.requireRoomPlayer(connection);
+    requireRoomPlayer(this.ctx, connection);
     // 显式离开代表账号主动退出：号跟着人一起撤掉。
     return this.detachFromRoom(connection);
   }
@@ -864,12 +831,12 @@ export class SonGuessrService implements AdminRoomControl {
    * 由离线宽限期处理（宽限内号仍在，超期连人带号一起清）。
    */
   private detachFromRoom(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    this.clearMusicSession(room, player.id);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    clearMusicSession(this.ctx, room, player.id);
     delete room.players[player.id];
-    this.connections.detach(connection);
+    this.ctx.connections.detach(connection);
 
-    if (Object.keys(room.players).length === 0 && !this.isTestRoom(room)) {
+    if (Object.keys(room.players).length === 0 && !isTestRoom(this.ctx, room)) {
       this.closeRoom(room, "empty");
       return { left: true, roomClosed: true };
     }
@@ -882,32 +849,32 @@ export class SonGuessrService implements AdminRoomControl {
     );
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
 
-    this.touch(room);
-    this.appendSystemMessage(room, `${player.name} 离开了房间`);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    appendSystemMessage(this.ctx, room, `${player.name} 离开了房间`);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { left: true, roomClosed: false };
   }
 
   private requestSync(connection: ConnectionRecord) {
-    const { room } = this.requireRoomPlayer(connection);
+    const { room } = requireRoomPlayer(this.ctx, connection);
     connection.resetStateSync?.();
-    this.publishRoom(room, connection);
+    this.ctx.publishRoom(room, connection);
     return { synced: true };
   }
 
   private setReady(connection: ConnectionRecord, ready: boolean) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "只能在等待阶段准备");
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能准备");
     player.isReady = player.id === room.hostPlayerId ? true : ready;
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { ready: player.isReady };
   }
 
   private setSpectator(connection: ConnectionRecord, spectator: boolean) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.phase !== "waiting") {
       const targetMembership = spectator ? "spectator" : "active";
       if (targetMembership === "spectator" && !room.allowSpectators) {
@@ -916,13 +883,13 @@ export class SonGuessrService implements AdminRoomControl {
       // 再次点击同个预约选项时撤销预约
       if (player.nextRoundMembership === targetMembership) {
         player.nextRoundMembership = undefined;
-        this.touch(room);
-        this.publishRoom(room);
+        this.ctx.touch(room);
+        this.ctx.publishRoom(room);
         return { spectator: player.membership === "spectator", queued: false };
       }
       player.nextRoundMembership = targetMembership;
-      this.touch(room);
-      this.publishRoom(room);
+      this.ctx.touch(room);
+      this.ctx.publishRoom(room);
       return { spectator, queued: true };
     }
     const nextMembership = spectator ? "spectator" : "active";
@@ -938,15 +905,15 @@ export class SonGuessrService implements AdminRoomControl {
       player.membership = "active";
       player.isReady = player.id === room.hostPlayerId;
     }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { spectator, queued: false };
   }
 
   /** 选队伍：只在等待阶段、只给参与玩家，与 CEE 的 `cee.player.team` 同口径。准备状态保留。 */
   private setTeam(connection: ConnectionRecord, team: number | null) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间没有队伍");
     if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "只能在等待阶段更换队伍");
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者没有队伍");
@@ -954,13 +921,13 @@ export class SonGuessrService implements AdminRoomControl {
       throw new AppError("INVALID_TEAM", `队伍号只能是 1–${SONGUESSR_MAX_TEAM}`);
     }
     player.team = team;
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { team };
   }
 
   private async updateSettings(connection: ConnectionRecord, payload: SongUpdateSettingsPayload) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     this.assertSettingsEditable(room);
     const next = { ...room, settings: cloneSettings(room.settings) };
@@ -974,9 +941,9 @@ export class SonGuessrService implements AdminRoomControl {
     room.passwordHash = next.passwordHash;
     room.allowSpectators = next.allowSpectators;
     room.settings = next.settings;
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { settings: room.settings };
   }
 
@@ -985,7 +952,7 @@ export class SonGuessrService implements AdminRoomControl {
    * 只看阶段会放过题型或出题方式的改动，让回合按旧条件选歌却克隆新设置。
    */
   private assertSettingsEditable(room: SonGuessrRoomRecord) {
-    if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
+    if (this.ctx.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     if (room.phase !== "waiting" || this.isStarting(room)) {
       throw new AppError("INVALID_PHASE", "只能在等待阶段修改房间设置");
     }
@@ -1036,7 +1003,7 @@ export class SonGuessrService implements AdminRoomControl {
       settings.allowCustomClip = payload.allowCustomClip;
     }
     if (payload.autoFilters !== undefined)
-      settings.autoFilters = normalizeAutoFilters(this, payload.autoFilters);
+      settings.autoFilters = normalizeAutoFilters(this.ctx, payload.autoFilters);
     if (payload.animeAutoFilters !== undefined) {
       settings.animeAutoFilters = normalizeAnimeAutoFilters(payload.animeAutoFilters);
     }
@@ -1054,47 +1021,47 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.requireMusicQuota(room, connection, player);
     // 先算可播标注再取号：取号会把在途数抬起来，反着算会把刚好打满上限的会员号误判成不可用。
-    const options = this.musicSearchOptions(room);
+    const options = musicSearchOptions(this.ctx, room);
     return {
-      results: await this.withAggregatedAccounts(room, (cookie) =>
+      results: await withAggregatedAccounts(this.ctx, room, (cookie) =>
         this.options.musicProvider.search(keyword, undefined, cookie, options)
       ),
     };
   }
 
   private async resolvePlaylist(connection: ConnectionRecord, value: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.requireMusicQuota(room, connection, player);
-    const playlistId = this.parsePlaylistId(value);
+    const playlistId = parsePlaylistId(value);
     const provider = this.options.musicProvider;
     const resolve = provider.getPlaylistSongs?.bind(provider);
     if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
-    const result = await this.withSongAccount(room, playlistId, (cookie) =>
+    const result = await withSongAccount(this.ctx, room, playlistId, (cookie) =>
       resolve(playlistId, cookie)
     );
     return { playlist: result.info };
   }
 
   private async searchArtists(connection: ConnectionRecord, keyword: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.requireMusicQuota(room, connection, player);
     const provider = this.options.musicProvider;
     const search = provider.searchArtists?.bind(provider);
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
     // 与歌曲检索同口径：先按池内能力算偏好，再取号，避免在途数影响会员判定。
-    const options = this.musicSearchOptions(room);
+    const options = musicSearchOptions(this.ctx, room);
     return {
-      results: await this.withAggregatedAccounts(room, (cookie) =>
+      results: await withAggregatedAccounts(this.ctx, room, (cookie) =>
         search(keyword, 20, cookie, options)
       ),
     };
   }
 
   private async searchBangumi(connection: ConnectionRecord, keyword: string) {
-    this.requireRoomPlayer(connection);
+    requireRoomPlayer(this.ctx, connection);
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     return { results: await provider.searchSubjects(keyword, 20) };
@@ -1105,18 +1072,18 @@ export class SonGuessrService implements AdminRoomControl {
    * 命中回填缓存就不回源，所以反复搜索同一部番剧不会再打上游。
    */
   private async getSubjectImage(connection: ConnectionRecord, subjectId: string) {
-    this.requireRoomPlayer(connection);
+    requireRoomPlayer(this.ctx, connection);
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     return { imageUrl: await provider.resolveSubjectImage(subjectId) };
   }
 
   private async getAnimeSongs(connection: ConnectionRecord, subjectId: string) {
-    this.requireRoomPlayer(connection);
+    requireRoomPlayer(this.ctx, connection);
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     const anime = await provider.getSubject(subjectId);
-    const results = await this.resolveAnimeMatchedSongs(anime, connection);
+    const results = await resolveAnimeMatchedSongs(this.ctx, anime, connection);
     return { results };
   }
 
@@ -1138,64 +1105,13 @@ export class SonGuessrService implements AdminRoomControl {
     if (!maySearchMusic) {
       throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能进行音乐操作");
     }
-    if (!this.musicLimiter.allow(connection.id, this.now())) {
+    if (!this.ctx.musicLimiter.allow(connection.id, this.ctx.now())) {
       throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
     }
   }
 
-  parsePlaylistId(value: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) throw new AppError("INVALID_PLAYLIST", "请输入歌单链接或数字 ID");
-    if (trimmed.startsWith("qq:") && /^\d+$/.test(trimmed.slice(3))) return trimmed;
-    if (trimmed.startsWith("netease:") && /^\d+$/.test(trimmed.slice(8))) return trimmed;
-    if (/^\d+$/.test(trimmed)) return trimmed;
-
-    const parseFromUrl = (url: URL): string | undefined => {
-      // 1. QQ 音乐歌单
-      if (/y\.qq\.com/i.test(url.hostname)) {
-        const id = url.searchParams.get("id") || url.searchParams.get("dissid");
-        if (id && /^\d+$/.test(id)) return `qq:${id}`;
-        const pathMatch = url.pathname.match(/\/(?:playlist|taoge)\/(\d+)/i);
-        if (pathMatch?.[1]) return `qq:${pathMatch[1]}`;
-      }
-
-      // 2. 网易云歌单
-      const queryId = url.searchParams.get("id");
-      if (queryId && /^\d+$/.test(queryId)) return queryId;
-
-      if (url.hash.includes("?")) {
-        const hashQuery = url.hash.slice(url.hash.indexOf("?") + 1);
-        const hashParams = new URLSearchParams(hashQuery);
-        const hashId = hashParams.get("id");
-        if (hashId && /^\d+$/.test(hashId)) return hashId;
-      }
-
-      const pathMatch = url.pathname.match(/\/playlist\/(\d+)/i);
-      if (pathMatch?.[1]) return pathMatch[1];
-      return undefined;
-    };
-
-    try {
-      const url = new URL(trimmed);
-      const parsed = parseFromUrl(url);
-      if (parsed) return parsed;
-    } catch {
-      if (trimmed.includes("/")) {
-        try {
-          const fallbackUrl = new URL(`https://${trimmed.replace(/^\/+/, "")}`);
-          const parsed = parseFromUrl(fallbackUrl);
-          if (parsed) return parsed;
-        } catch {
-          // 忽略
-        }
-      }
-    }
-
-    throw new AppError("INVALID_PLAYLIST", "请输入网易云或 QQ 音乐歌单链接或数字 ID");
-  }
-
   private kick(connection: ConnectionRecord, targetPlayerId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     if (targetPlayerId === player.id) throw new AppError("INVALID_TARGET", "房主不能踢出自己");
     const target = room.players[targetPlayerId];
@@ -1207,15 +1123,15 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 房主踢人与后台移人共用；后台可能移走房主，此时按掉线口径重选房主。 */
   private kickPlayer(room: SonGuessrRoomRecord, target: SonGuessrPlayerRecord) {
-    this.clearMusicSession(room, target.id);
+    clearMusicSession(this.ctx, room, target.id);
     target.membership = "kicked";
     target.online = false;
-    const targetConnection = this.connections.findConnectionByPlayer(room.id, target.id);
+    const targetConnection = this.ctx.connections.findConnectionByPlayer(room.id, target.id);
     if (targetConnection) {
       (targetConnection.sendPacket ?? targetConnection.send)(
         createEvent("song.room.kicked", { roomId: room.id })
       );
-      this.connections.detach(targetConnection);
+      this.ctx.connections.detach(targetConnection);
       targetConnection.close(4003, "kicked");
     }
 
@@ -1226,30 +1142,30 @@ export class SonGuessrService implements AdminRoomControl {
     );
     if (room.hostPlayerId === target.id) this.reassignRemovedHost(room);
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
   }
 
   adminListRooms(): AdminRoomView[] {
-    return [...this.rooms.values()].map((room) =>
+    return [...this.ctx.rooms.values()].map((room) =>
       adminRoomView(room, Object.values(room.players), {
         game: "song",
         name: room.name,
         phase: room.phase,
         visibility: room.visibility,
-        hidden: this.isTestRoom(room) || room.solo,
+        hidden: isTestRoom(this.ctx, room) || room.solo,
         roundNumber: room.roundNumber,
       })
     );
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {
-    this.closeRoom(requireAdminRoom(this.rooms, roomId), ADMIN_CLOSE_REASON);
+    this.closeRoom(requireAdminRoom(this.ctx.rooms, roomId), ADMIN_CLOSE_REASON);
   }
 
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
-    const room = requireAdminRoom(this.rooms, roomId);
+    const room = requireAdminRoom(this.ctx.rooms, roomId);
     const target = room.players[playerId];
     if (!target || target.membership === "kicked")
       throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
@@ -1257,34 +1173,34 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private transferHost(connection: ConnectionRecord, targetPlayerId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     const target = room.players[targetPlayerId];
     const previousHostId = room.hostPlayerId;
     transferHost(room, target);
     this.settleHostChange(room, previousHostId);
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { hostPlayerId: room.hostPlayerId };
   }
 
   private sendChat(connection: ConnectionRecord, rawText: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.chatLimiter.consume(connection.id);
     const text = acceptChatText(rawText, {
       maxLength: SONG_CHAT_TEXT_MAX_LENGTH,
       emptyError: { code: "INVALID_MESSAGE", message: "消息不能为空" },
     });
     const message: ChatMessage = {
-      id: this.ids.next("song_chat"),
+      id: this.ctx.ids.next("song_chat"),
       playerId: player.id,
       playerName: player.name,
       text,
-      createdAt: this.now(),
+      createdAt: this.ctx.now(),
       system: false,
     };
     appendChat(room, message);
-    this.touch(room);
+    this.ctx.touch(room);
     // 只走增量事件，不再为一条聊天广播整套房间快照：
     // N 人房间刷 M 条消息会从 O(N×M) 次全量序列化降到 O(N) 次小事件。
     this.broadcastRoomEvent(room, "song.chat.message", { message });
@@ -1293,7 +1209,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 向房间内所有连接下发一条非状态事件（差量同步通道之外的独立事件）。 */
   private broadcastRoomEvent(room: SonGuessrRoomRecord, name: string, payload: unknown) {
-    for (const connection of this.connections.getRoomConnections(room.id)) {
+    for (const connection of this.ctx.connections.getRoomConnections(room.id)) {
       connection.send(createEvent(name, payload));
     }
   }
@@ -1303,7 +1219,7 @@ export class SonGuessrService implements AdminRoomControl {
     platform: "netease" | "qq" = "netease",
     type?: "qq" | "wx" | "mobile"
   ) {
-    return createMusicQrLogin(this, connection, platform, type);
+    return createMusicQrLogin(this.ctx, connection, platform, type);
   }
 
   private async checkMusicQrLogin(
@@ -1312,7 +1228,7 @@ export class SonGuessrService implements AdminRoomControl {
     platform: "netease" | "qq" = "netease",
     type?: "qq" | "wx" | "mobile"
   ) {
-    return checkMusicQrLogin(this, connection, keyValue, platform, type);
+    return checkMusicQrLogin(this.ctx, connection, keyValue, platform, type);
   }
 
   private async useMusicCookie(
@@ -1320,100 +1236,20 @@ export class SonGuessrService implements AdminRoomControl {
     cookieValue: string,
     platform: "netease" | "qq" = "netease"
   ) {
-    return useMusicCookie(this, connection, cookieValue, platform);
+    return useMusicCookie(this.ctx, connection, cookieValue, platform);
   }
 
   private clearMusicAccount(
     connection: ConnectionRecord,
     platform: "netease" | "qq" | "all" = "all"
   ) {
-    return clearMusicAccount(this, connection, platform);
-  }
-
-  private musicPool(room: SonGuessrRoomRecord): SonGuessrMusicPoolEntry[] {
-    return musicPool(room);
-  }
-
-  private clearMusicSession(
-    room: SonGuessrRoomRecord,
-    ownerPlayerId?: string,
-    platform: "netease" | "qq" | "all" = "all"
-  ): boolean {
-    return clearMusicSession(this, room, ownerPlayerId, platform);
-  }
-
-  private setPoolSharing(
-    connection: ConnectionRecord,
-    platform: MusicAuthPlatform,
-    enabled: boolean
-  ) {
-    return setPoolSharing(this, connection, platform, enabled);
-  }
-
-  private isPoolEntryUsable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
-    return isPoolEntryUsable(entry, now);
-  }
-
-  private isCoolingDown(entry: SonGuessrMusicPoolEntry, now: number): boolean {
-    return isCoolingDown(entry, now);
-  }
-
-  private wakeMusicPoolWaiters(roomId: string): void {
-    return wakeMusicPoolWaiters(this, roomId);
-  }
-
-  private async withSongAccount<T>(
-    room: SonGuessrRoomRecord,
-    songId: string | undefined,
-    run: (cookie: string | undefined) => Promise<T>,
-    options: { requireVip?: boolean } = {}
-  ): Promise<T> {
-    return withSongAccount(this, room, songId, run, options);
-  }
-
-  private async loadSongWithSources(
-    room: SonGuessrRoomRecord,
-    songId: string,
-    sources?: readonly string[],
-    requiresVip?: boolean
-  ): Promise<{ song: SongDetails; alternateSongIds: string[] }> {
-    return loadSongWithSources(this, room, songId, sources, requiresVip);
-  }
-
-  private async refreshRoundAudio(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
-    refresh: (songId: string, cookie?: MusicCookieInput) => Promise<string>
-  ): Promise<string> {
-    return refreshRoundAudio(this, room, round, refresh);
-  }
-
-  private async withAggregatedAccounts<T>(
-    room: SonGuessrRoomRecord,
-    run: (cookie: MusicCookieInput | undefined) => Promise<T>
-  ): Promise<T> {
-    return withAggregatedAccounts(this, room, run);
-  }
-
-  private musicSearchOptions(room: SonGuessrRoomRecord): MusicSearchOptions {
-    return musicSearchOptions(this, room);
-  }
-
-  private primaryPoolEntry(
-    room: SonGuessrRoomRecord,
-    platform: MusicAuthPlatform
-  ): SonGuessrMusicPoolEntry | undefined {
-    return primaryPoolEntry(this, room, platform);
-  }
-
-  private hasEnabledPoolAccount(room: SonGuessrRoomRecord, platform: MusicAuthPlatform): boolean {
-    return hasEnabledPoolAccount(this, room, platform);
+    return clearMusicAccount(this.ctx, connection, platform);
   }
 
   private addBots(connection: ConnectionRecord, countValue?: number) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
-    if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
+    if (!isTestRoom(this.ctx, room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
     const currentCount = Object.values(room.players).length;
     if (currentCount >= TEST_MODE_MAX_PLAYERS) {
       throw new AppError("ROOM_FULL", `测试房间最多 ${TEST_MODE_MAX_PLAYERS} 名玩家`);
@@ -1434,15 +1270,15 @@ export class SonGuessrService implements AdminRoomControl {
       room.players[bot.id] = bot;
       added.push(bot.id);
     }
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { addedPlayerIds: added };
   }
 
   private removeBots(connection: ConnectionRecord, countValue?: number) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
-    if (!this.isTestRoom(room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
+    if (!isTestRoom(this.ctx, room)) throw new AppError("TEST_ROOM_ONLY", "该指令仅用于测试房间");
     const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
     const bots = Object.values(room.players)
       .filter((candidate) => candidate.isBot)
@@ -1450,13 +1286,13 @@ export class SonGuessrService implements AdminRoomControl {
       .slice(0, count);
     for (const bot of bots) delete room.players[bot.id];
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { removedPlayerIds: bots.map((bot) => bot.id) };
   }
 
   private async startGame(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     const automatic = room.solo || room.settings.questionMode === "automatic";
     if (room.phase !== "waiting" || this.isStarting(room)) {
@@ -1467,7 +1303,10 @@ export class SonGuessrService implements AdminRoomControl {
     const operation = Symbol("automaticRound");
     this.acquireStartLock(room, automatic, operation);
     try {
-      if (!this.hasEnabledPoolAccount(room, "netease") && !this.hasEnabledPoolAccount(room, "qq")) {
+      if (
+        !hasEnabledPoolAccount(this.ctx, room, "netease") &&
+        !hasEnabledPoolAccount(this.ctx, room, "qq")
+      ) {
         throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录音乐账号");
       }
       const provider = this.options.musicProvider;
@@ -1478,7 +1317,7 @@ export class SonGuessrService implements AdminRoomControl {
       // 复核每端当前会被选中的那一号：复核的意义是「开局前发现凭据已失效」，
       // 池里排在前面的号失效就会被选中，逐个复核只会把开局拖成 N 倍慢。
       const revalidations = (["netease", "qq"] as const).flatMap((platform) => {
-        const entry = this.primaryPoolEntry(room, platform);
+        const entry = primaryPoolEntry(this.ctx, room, platform);
         return entry
           ? [
               {
@@ -1495,7 +1334,7 @@ export class SonGuessrService implements AdminRoomControl {
       });
       const verifySession = (platform?: MusicAuthPlatform) => {
         if (
-          this.rooms.get(room.id) !== room ||
+          this.ctx.rooms.get(room.id) !== room ||
           room.hostPlayerId !== player.id ||
           connection.roomId !== room.id ||
           connection.playerId !== player.id ||
@@ -1509,13 +1348,13 @@ export class SonGuessrService implements AdminRoomControl {
             room.runtime?.musicAuthOperations?.[
               musicAuthOperationKey(target.entry.playerId, target.platform)
             ];
-          if (!this.musicPool(room).includes(target.entry) || current !== target.operation) {
+          if (!musicPool(room).includes(target.entry) || current !== target.operation) {
             throw new AppError("MUSIC_SESSION_INVALID", `${target.label}会话已变更，请重新开始`);
           }
         }
       };
       for (const target of revalidations) {
-        await this.refreshMusicSessionAccount({
+        await refreshMusicSessionAccount(this.ctx, {
           room,
           platform: target.platform,
           entry: target.entry,
@@ -1527,7 +1366,7 @@ export class SonGuessrService implements AdminRoomControl {
       }
 
       // 上面的复核跨了 await：回来先确认房间还在、阶段没被别的流程推进，再动任何状态。
-      if (this.rooms.get(room.id) !== room || room.phase !== "waiting") {
+      if (this.ctx.rooms.get(room.id) !== room || room.phase !== "waiting") {
         throw new AppError("ROUND_EXPIRED", "出题操作已失效");
       }
 
@@ -1542,7 +1381,7 @@ export class SonGuessrService implements AdminRoomControl {
       room.currentRound = undefined;
       room.roundSummary = undefined;
       if (automatic) {
-        await startAutomaticRound(this, room, () => {
+        await startAutomaticRound(this.ctx, room, () => {
           verifySession();
           if (room.phase !== "waiting" || room.runtime?.automaticRoundOperation !== operation) {
             throw new AppError("ROUND_EXPIRED", "出题操作已失效");
@@ -1552,10 +1391,10 @@ export class SonGuessrService implements AdminRoomControl {
         room.phase = "choosingSubmitter";
       }
       room.finalScores = undefined;
-      this.touch(room);
-      this.publishRoom(room);
-      this.publishLobby();
-      this.log("song.game.started", room.id, player.id);
+      this.ctx.touch(room);
+      this.ctx.publishRoom(room);
+      this.ctx.publishLobby();
+      this.ctx.log("song.game.started", room.id, player.id);
       return { started: true };
     } finally {
       this.releaseStartLock(room, automatic, operation);
@@ -1585,21 +1424,17 @@ export class SonGuessrService implements AdminRoomControl {
     roomRuntime(room).automaticRoundLoading = false;
   }
 
-  private async refreshMusicSessionAccount(check: MusicSessionRevalidation): Promise<void> {
-    return refreshMusicSessionAccount(this, check);
-  }
-
   /** 开局门槛：至少两名在线真人且全部准备；手动开局还得有可选出题人。 */
   private ensurePlayersReadyToStart(room: SonGuessrRoomRecord, automatic: boolean) {
     // 单人房间由系统直接出题，没有出题人与准备环节。
     if (room.solo) return;
 
-    const activePlayers = this.activePlayers(room);
-    if (activePlayers.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
-    if (activePlayers.some((candidate) => !candidate.isReady)) {
+    const players = activePlayers(room);
+    if (players.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
+    if (players.some((candidate) => !candidate.isReady)) {
       throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
     }
-    if (!automatic && this.submitterCandidates(room).length === 0) {
+    if (!automatic && submitterCandidates(this.ctx, room).length === 0) {
       throw new AppError(
         "NO_SUBMITTER_CANDIDATE",
         "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家"
@@ -1609,21 +1444,21 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 指定出题人：时限从此刻起算，同时记下起点作为后续顺延的封顶基准。 */
   private assignSubmitterDeadline(room: SonGuessrRoomRecord) {
-    room.pendingSubmitterAssignedAt = this.now();
-    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+    room.pendingSubmitterAssignedAt = this.ctx.now();
+    room.pendingSubmitterDeadlineAt = this.ctx.now() + SUBMIT_SONG_TIMEOUT_MS;
   }
 
   /** 出题人提交时顺延时限，但以指定时刻起算的两个时限封顶：选题阶段必须有服务端硬上限。 */
   private extendSubmitterDeadline(room: SonGuessrRoomRecord) {
-    const assignedAt = room.pendingSubmitterAssignedAt ?? this.now();
+    const assignedAt = room.pendingSubmitterAssignedAt ?? this.ctx.now();
     room.pendingSubmitterDeadlineAt = Math.min(
-      this.now() + SUBMIT_SONG_TIMEOUT_MS,
+      this.ctx.now() + SUBMIT_SONG_TIMEOUT_MS,
       assignedAt + 2 * SUBMIT_SONG_TIMEOUT_MS
     );
   }
 
   private chooseSubmitter(connection: ConnectionRecord, targetPlayerId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "choosingSubmitter")
       throw new AppError("INVALID_PHASE", "当前不能选择出题人");
@@ -1631,7 +1466,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (!target || !target.online || target.membership === "kicked" || target.isBot) {
       throw new AppError("INVALID_TARGET", "出题人必须是在线真人玩家");
     }
-    if (!this.submitterCandidates(room).includes(target)) {
+    if (!submitterCandidates(this.ctx, room).includes(target)) {
       throw new AppError("INVALID_TARGET", "指定后没有可以猜歌的玩家：出题人的队友会一起观战");
     }
 
@@ -1640,9 +1475,9 @@ export class SonGuessrService implements AdminRoomControl {
     room.submitterPrompt = undefined;
     room.phase = "submittingSong";
     room.roundSummary = undefined;
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { submitterPlayerId: target.id };
   }
 
@@ -1658,7 +1493,7 @@ export class SonGuessrService implements AdminRoomControl {
     sources?: readonly string[],
     requiresVip?: boolean
   ): Promise<{ song: SongClipPreview }> {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以预览歌曲");
     }
@@ -1667,7 +1502,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
     this.requireMusicQuota(room, connection, player);
     const submitterId = player.id;
-    const { song, alternateSongIds } = await this.loadSongWithSources(
+    const { song, alternateSongIds } = await loadSongWithSources(
+      this.ctx,
       room,
       songId,
       sources,
@@ -1684,7 +1520,7 @@ export class SonGuessrService implements AdminRoomControl {
     const suggested = createSongLyricClip(
       song.lyrics,
       room.settings.lyricsLineCount,
-      this.random,
+      this.ctx.random,
       song.durationMs,
       songTitleNames(song)
     );
@@ -1713,7 +1549,7 @@ export class SonGuessrService implements AdminRoomControl {
     sources?: readonly string[],
     requiresVip?: boolean
   ) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交歌曲");
     }
@@ -1721,7 +1557,8 @@ export class SonGuessrService implements AdminRoomControl {
     const submitterId = player.id;
     // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
     this.extendSubmitterDeadline(room);
-    const { song, alternateSongIds } = await this.loadSongWithSources(
+    const { song, alternateSongIds } = await loadSongWithSources(
+      this.ctx,
       room,
       songId,
       sources,
@@ -1739,7 +1576,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
     // 不再按会员状态拦截会员专享曲：`getSong` 已经负责把受限歌曲交给解灰链路取回完整音频，
     // 拿不到地址时会直接抛 `SONG_UNAVAILABLE`，出题资格以「实际有没有音频」为准。
-    const roundNumber = this.installRound(
+    const roundNumber = installRound(
+      this.ctx,
       room,
       song,
       player.id,
@@ -1751,19 +1589,19 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.currentRound?.number === roundNumber) {
       room.currentRound.alternateSongIds = alternateSongIds;
     }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
 
     if (this.isRoundComplete(room)) {
       this.finishRound(room);
-      this.publishRoom(room);
+      this.ctx.publishRoom(room);
     }
     return { roundNumber };
   }
 
   private async submitAnime(connection: ConnectionRecord, subjectId: string, songId?: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     if (room.settings.questionType !== "anime") {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
@@ -1776,8 +1614,8 @@ export class SonGuessrService implements AdminRoomControl {
     this.extendSubmitterDeadline(room);
     const anime = await provider.getSubject(subjectId);
     const resolved = songId
-      ? await this.resolveSpecifiedAnimeSong(room, anime, songId)
-      : await this.resolveAnimeSong(room, anime);
+      ? await resolveSpecifiedAnimeSong(this.ctx, room, anime, songId)
+      : await resolveAnimeSong(this.ctx, room, anime);
     if (
       room.phase !== "submittingSong" ||
       room.pendingSubmitterPlayerId !== submitterId ||
@@ -1786,146 +1624,22 @@ export class SonGuessrService implements AdminRoomControl {
       !player.online
     )
       return { ignored: true };
-    const roundNumber = this.installRound(room, resolved.song, player.id, anime, resolved.track);
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    const roundNumber = installRound(
+      this.ctx,
+      room,
+      resolved.song,
+      player.id,
+      anime,
+      resolved.track
+    );
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     if (this.isRoundComplete(room)) {
       this.finishRound(room);
-      this.publishRoom(room);
+      this.ctx.publishRoom(room);
     }
     return { roundNumber };
-  }
-
-  private async resolveSpecifiedAnimeSong(
-    room: SonGuessrRoomRecord,
-    anime: BangumiSubjectDetails,
-    songId: string
-  ): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
-    return resolveSpecifiedAnimeSong(this, room, anime, songId);
-  }
-
-  private async resolveAnimeSong(
-    room: SonGuessrRoomRecord,
-    anime: BangumiSubjectDetails
-  ): Promise<AnimeSongPick> {
-    return resolveAnimeSong(this, room, anime);
-  }
-
-  private async resolveAnimeMatchedSongs(
-    anime: BangumiSubjectDetails,
-    connection: ConnectionRecord
-  ): Promise<BangumiSongCandidate[]> {
-    return resolveAnimeMatchedSongs(this, anime, connection);
-  }
-
-  installRound(
-    room: SonGuessrRoomRecord,
-    song: SongDetails,
-    submitterPlayerId: string,
-    anime?: BangumiSubjectDetails,
-    animeTrack?: BangumiMusicTrack,
-    /** 手动出题选定的片段；缺省时按房间设置自动切片。 */
-    lyricClipOverride?: SongLyricClip,
-    /**
-     * 自动选曲时被抽中的候选 ID。取曲可能经聚合器跨平台兜底，返回的 `song.id` 与候选 ID 不一致，
-     * 候选和实际播放的歌都要记，否则兜底成功的歌永远不会被排除，反复被抽中。
-     */
-    recordedSongId?: string
-  ): number {
-    // 席位预约只在「下一轮开始」的转移点生效（点再来一轮进入选出题人时），这里不应用：
-    // 选出题人与选歌已经属于本轮，交歌这一刻再把人切成旁观等于在本轮中间换席位。
-    if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
-      throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
-    }
-    // 随机切片优先避开唱出歌名的区间；猜番题的答案是番剧而不是曲名，不做这层回避。
-    const lyricClip =
-      lyricClipOverride ??
-      createSongLyricClip(
-        song.lyrics,
-        room.settings.lyricsLineCount,
-        this.random,
-        song.durationMs,
-        anime ? undefined : songTitleNames(song)
-      );
-    const roundNumber = room.roundNumber + 1;
-    const roundSettings = cloneSettings(room.settings);
-    const observerIds = this.teammateIds(room, submitterPlayerId);
-    const units = new Map<string, SonGuessrRoundPlayerState>();
-    const participantStates: Record<string, SonGuessrRoundPlayerState> = {};
-    const audioReady: Record<string, boolean> = {};
-    for (const candidate of this.activePlayers(room)) {
-      if (observerIds.includes(candidate.id)) continue;
-      // 出题人与人机各自单独一份：出题人（测试房以外）不作答，人机开局即放弃，都不能拖累所在队伍。
-      const key =
-        candidate.team === null || candidate.isBot || candidate.id === submitterPlayerId
-          ? candidate.id
-          : `team:${candidate.team}`;
-      let unit = units.get(key);
-      if (!unit) {
-        unit = {
-          memberIds: [],
-          guessesUsed: candidate.isBot ? roundSettings.maxGuessesPerRound : 0,
-          correct: false,
-          gaveUp: candidate.isBot,
-          ...(candidate.isBot ? { bot: true as const } : {}),
-        };
-        units.set(key, unit);
-      }
-      unit.memberIds.push(candidate.id);
-      participantStates[candidate.id] = unit;
-      audioReady[candidate.id] = candidate.isBot;
-    }
-    // 逐轮结果只描述本轮：安装新回合时先清空，结算时再把本轮的结局写回去。
-    this.clearRoundMarks(room);
-    room.roundNumber = roundNumber;
-    room.currentRound = {
-      number: roundNumber,
-      submitterPlayerId,
-      song,
-      anime,
-      animeTrack,
-      lyricClip,
-      attempts: [],
-      correctPlayerIds: [],
-      answererBreakdown: [],
-      startScores: Object.fromEntries(
-        Object.values(room.players).map((candidate) => [candidate.id, candidate.score])
-      ),
-      players: participantStates,
-      audioReady,
-      observerIds,
-      settings: roundSettings,
-      audioPreparationDeadlineAt: this.now() + AUDIO_READY_GRACE_MS,
-      audioReadyDeadlineAt: undefined,
-      hardDeadlineAt: undefined,
-      startedAt: this.now(),
-    };
-    room.pendingSubmitterPlayerId = undefined;
-    room.pendingSubmitterDeadlineAt = undefined;
-    room.pendingSubmitterAssignedAt = undefined;
-    room.submitterPrompt = undefined;
-    room.roundSummary = undefined;
-    room.phase = "playing";
-
-    const recentSongIds = room.recentSongIds ?? [];
-    // 写入时固定存满上限，窗口长度只在读取时取：单次候选池偏小或穿插一轮手动出题，
-    // 都不能把长窗口的历史截短。
-    const recordedIds = [...new Set([recordedSongId ?? song.id, song.id])];
-    room.recentSongIds = [
-      ...recordedIds,
-      ...recentSongIds.filter((id) => !recordedIds.includes(id)),
-    ].slice(0, MAX_RECENT_SONG_WINDOW);
-    if (anime) {
-      const recentSubjectIds = room.recentSubjectIds ?? [];
-      room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(
-        0,
-        10
-      );
-    }
-
-    this.appendSystemMessage(room, `第 ${roundNumber} 轮开始`);
-    return roundNumber;
   }
 
   /**
@@ -1935,7 +1649,7 @@ export class SonGuessrService implements AdminRoomControl {
   private armRoundDeadlines(room: SonGuessrRoomRecord) {
     const round = room.currentRound;
     if (!round || round.hardDeadlineAt !== undefined) return;
-    const now = this.now();
+    const now = this.ctx.now();
     round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
     // 硬截止必须覆盖本回合全部猜测窗口：每次作答（猜错、超时或宽限补偿）都会重开
     // 一整段 `guessDurationSeconds`。只按单次窗口计算时，第一次超时后剩余窗口就只会
@@ -1950,7 +1664,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private audioReady(connection: ConnectionRecord, roundNumber: number) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     // 页面切后台/重连时可能补发旧回合的 ready；状态过渡期间应幂等忽略，
     // 不把一个正常的陈旧通知显示成「当前没有进行中的回合」。
     if (room.phase !== "playing" || !room.currentRound || room.runtime?.automaticRoundLoading) {
@@ -1958,10 +1672,11 @@ export class SonGuessrService implements AdminRoomControl {
     }
     const round = room.currentRound;
     if (round.number !== roundNumber) return { ignored: true };
-    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
+    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
     if (
       !state ||
-      (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) ||
+      (player.id === round.submitterPlayerId &&
+        !canTestSubmitterGuess(this.ctx, room, player.id)) ||
       player.membership !== "active"
     ) {
       return { ignored: true };
@@ -1976,38 +1691,38 @@ export class SonGuessrService implements AdminRoomControl {
       // 队伍共用一份限时：队友先就绪时计时已经开始，不再重开。
       if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
     }
-    this.touch(room);
+    this.ctx.touch(room);
     // 全队的截止时刻可能刚起算，队友的私有状态一并刷新。
     for (const memberId of state.memberIds) {
       const member = room.players[memberId];
-      if (member) this.publishPrivateState(room, member);
+      if (member) publishPrivateState(this.ctx, room, member);
     }
     return { deadlineAt: state.deadlineAt };
   }
 
   private async audioFailed(connection: ConnectionRecord, roundNumber: number) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     const round = room.currentRound;
     if (room.phase !== "playing" || !round || round.number !== roundNumber)
       return { ignored: true };
     if (
       player.membership !== "active" ||
-      (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id))
+      (player.id === round.submitterPlayerId && !canTestSubmitterGuess(this.ctx, room, player.id))
     ) {
       return { ignored: true };
     }
     // 刷新播放地址同样命中那个共享的上游实例，必须一起计入配额。
-    if (!this.musicLimiter.allow(connection.id, this.now())) {
+    if (!this.ctx.musicLimiter.allow(connection.id, this.ctx.now())) {
       throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
     }
     const provider = this.options.musicProvider;
     const refresh = provider.refreshSongAudio?.bind(provider);
     if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
-    const audioUrl = await this.refreshRoundAudio(room, round, refresh);
+    const audioUrl = await refreshRoundAudio(this.ctx, room, round, refresh);
     if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
     round.song = { ...round.song, audioUrl };
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { refreshed: true };
   }
 
@@ -2024,7 +1739,7 @@ export class SonGuessrService implements AdminRoomControl {
   private settleExpiredGuessWindow(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
     const round = room.currentRound;
     if (!round) return;
-    const now = this.now();
+    const now = this.ctx.now();
     if (round.hardDeadlineAt !== undefined && now >= round.hardDeadlineAt) {
       this.settlePlayingRound(room, now);
       return;
@@ -2032,8 +1747,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (state.deadlineAt === undefined || state.deadlineAt > now) return;
     this.recordTimeout(room, state);
     if (this.isRoundComplete(room)) this.finishRound(room);
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
   }
 
   /** 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限。 */
@@ -2084,7 +1799,7 @@ export class SonGuessrService implements AdminRoomControl {
     round: SonGuessrRoundRecord
   ): SonGuessrRoundPlayerState[] {
     const submitterState = round.players[round.submitterPlayerId];
-    const submitterAnswers = this.canTestSubmitterGuess(room, round.submitterPlayerId);
+    const submitterAnswers = canTestSubmitterGuess(this.ctx, room, round.submitterPlayerId);
     return [...new Set(Object.values(round.players))].filter(
       (unit) => !unit.bot && (submitterAnswers || unit !== submitterState)
     );
@@ -2118,7 +1833,7 @@ export class SonGuessrService implements AdminRoomControl {
       // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
       rank: round.correctPlayerIds.length + 1,
       answerableCount: this.answerableUnits(room, round).length,
-      elapsedRatio: this.answerElapsedRatio(round, this.now()),
+      elapsedRatio: this.answerElapsedRatio(round, this.ctx.now()),
       guessesUsed: state.guessesUsed,
       maxGuessesPerRound: round.settings.maxGuessesPerRound,
     });
@@ -2149,7 +1864,7 @@ export class SonGuessrService implements AdminRoomControl {
         const attempt = round.attempts.find(
           (item) => item.playerId === factor.playerId && item.result === "correct"
         );
-        return this.answerElapsedRatio(round, attempt?.createdAt ?? this.now());
+        return this.answerElapsedRatio(round, attempt?.createdAt ?? this.ctx.now());
       }),
       maxGuessesPerRound: round.settings.maxGuessesPerRound,
     });
@@ -2168,15 +1883,18 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private async guess(connection: ConnectionRecord, songId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     const round = this.requireActiveRound(room);
     // 猜番回合的答案是番剧，不是歌：用猜歌命令认出出题歌曲就会绕过猜番。按回合本身判定题型。
     if (round.settings.questionType !== "song" || round.anime) {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间是听歌猜番模式");
     }
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
-    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
-    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
+    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
+    if (
+      player.id === round.submitterPlayerId &&
+      !canTestSubmitterGuess(this.ctx, room, player.id)
+    ) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
     }
     if (round.observerIds.includes(player.id))
@@ -2194,7 +1912,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     let guessedSong: SongDetails;
     try {
-      guessedSong = await this.withSongAccount(room, songId, (cookie) =>
+      guessedSong = await withSongAccount(this.ctx, room, songId, (cookie) =>
         this.options.musicProvider.getSongMetadata(songId, cookie)
       );
     } catch (error) {
@@ -2206,11 +1924,11 @@ export class SonGuessrService implements AdminRoomControl {
     this.requireGuessStillCurrent(room, round, player, state);
     const correct = this.isCorrectSong(guessedSong, round);
     const attempt: SongGuessAttempt = {
-      id: this.ids.next("song_guess"),
+      id: this.ctx.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed,
-      createdAt: this.now(),
+      createdAt: this.ctx.now(),
       result: correct ? "correct" : "wrong",
       guessedSong: publicSong(guessedSong),
       feedback: this.buildFeedback(guessedSong, round.song),
@@ -2222,8 +1940,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (this.isRoundComplete(room)) {
       this.finishRound(room);
     }
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return {
       attempt,
       remainingGuesses: Math.max(0, round.settings.maxGuessesPerRound - state.guessesUsed),
@@ -2231,17 +1949,20 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private async guessAnime(connection: ConnectionRecord, subjectId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     const round = this.requireActiveRound(room);
     if (room.settings.questionType !== "anime" || !round.anime) {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
     if (round.observerIds.includes(player.id))
       throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
-    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
+    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
     if (!state || player.membership !== "active")
       throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
-    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
+    if (
+      player.id === round.submitterPlayerId &&
+      !canTestSubmitterGuess(this.ctx, room, player.id)
+    ) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
     }
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
@@ -2266,19 +1987,19 @@ export class SonGuessrService implements AdminRoomControl {
     this.requireGuessStillCurrent(room, round, player, state);
     const correct = guessedAnime.id === round.anime.id;
     const attempt: SongGuessAttempt = {
-      id: this.ids.next("song_guess"),
+      id: this.ctx.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed,
-      createdAt: this.now(),
+      createdAt: this.ctx.now(),
       result: correct ? "correct" : "wrong",
       guessedAnime: publicAnime(guessedAnime),
     };
     round.attempts.push(attempt);
     this.settleGuessResult(room, round, player, state, correct);
     if (this.isRoundComplete(room)) this.finishRound(room);
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return {
       attempt,
       remainingGuesses: Math.max(0, round.settings.maxGuessesPerRound - state.guessesUsed),
@@ -2286,13 +2007,16 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private giveUp(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     const round = this.requireActiveRound(room);
-    const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
+    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
     if (!state || player.membership !== "active") {
       throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能执行猜歌操作");
     }
-    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
+    if (
+      player.id === round.submitterPlayerId &&
+      !canTestSubmitterGuess(this.ctx, room, player.id)
+    ) {
       throw new AppError("SUBMITTER_CANNOT_GIVE_UP", "出题人无需放弃");
     }
     if (state.inFlight)
@@ -2315,32 +2039,32 @@ export class SonGuessrService implements AdminRoomControl {
     state.gaveUp = true;
     state.deadlineAt = undefined;
     round.attempts.push({
-      id: this.ids.next("song_guess"),
+      id: this.ctx.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed + 1,
-      createdAt: this.now(),
+      createdAt: this.ctx.now(),
       result: "gaveUp",
     });
     if (this.isRoundComplete(room)) this.finishRound(room);
-    this.touch(room);
-    this.publishRoom(room);
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
     return { gaveUp: true };
   }
 
   private skipRound(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     this.requireActiveRound(room);
     // 跳过不参与结算：出题人拿不到任何奖励，避免「选出题人 → 立刻跳过」的零成本刷分。
     this.finishRound(room, true);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { skipped: true };
   }
 
   private async nextRound(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "当前不在回合结算阶段");
     if (room.solo || room.settings.questionMode === "automatic")
@@ -2362,7 +2086,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = reason;
     room.phase = "choosingSubmitter";
-    this.appendSystemMessage(room, reason);
+    appendSystemMessage(this.ctx, room, reason);
   }
 
   /** 人数不足以开局：退回等待阶段，两名玩家的准备状态清零。 */
@@ -2372,17 +2096,17 @@ export class SonGuessrService implements AdminRoomControl {
     room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = undefined;
     room.phase = "waiting";
-    this.clearRoundMarks(room);
+    clearRoundMarks(room);
     this.resetReadyState(room);
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
   }
 
   /** 单人房永远满足开局人数，其余房间要两名在线正式玩家。 */
   private hasNextRoundQuorum(room: SonGuessrRoomRecord) {
     if (room.solo) return true;
-    return this.activePlayers(room).filter((candidate) => candidate.online).length >= 2;
+    return activePlayers(room).filter((candidate) => candidate.online).length >= 2;
   }
 
   /** 自动出题下一回合：抽题期间房主可能换人或回合被别处推进，失效即丢弃结果。 */
@@ -2398,7 +2122,7 @@ export class SonGuessrService implements AdminRoomControl {
     roomRuntime(room).automaticRoundOperation = operation;
     roomRuntime(room).automaticRoundLoading = true;
     const isCurrent = () =>
-      this.rooms.get(room.id) === room &&
+      this.ctx.rooms.get(room.id) === room &&
       room.runtime?.automaticRoundOperation === operation &&
       room.phase === "roundResult" &&
       room.currentRound === previousRound &&
@@ -2417,7 +2141,7 @@ export class SonGuessrService implements AdminRoomControl {
         this.fallBackToWaiting(room);
         return { nextRound: room.roundNumber + 1, waiting: true };
       }
-      await startAutomaticRound(this, room, verify);
+      await startAutomaticRound(this.ctx, room, verify);
     } catch (error) {
       // 自动题库临时失败时保留答案页，房主可以重试或回到等待阶段，
       // 不能留下既没有 currentRound 也没有 roundSummary 的悬空状态。
@@ -2433,9 +2157,9 @@ export class SonGuessrService implements AdminRoomControl {
         roomRuntime(room).automaticRoundLoading = false;
       }
     }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { nextRound: room.roundNumber + 1 };
   }
 
@@ -2454,7 +2178,7 @@ export class SonGuessrService implements AdminRoomControl {
       ? this.nextRotatingSubmitter(room, previousSubmitterId)
       : undefined;
     // 「再来一轮」已经把界面切到下一轮：上一轮的结局不跟着进新回合。
-    this.clearRoundMarks(room);
+    clearRoundMarks(room);
     // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
     if (nextSubmitter) {
       room.pendingSubmitterPlayerId = nextSubmitter.id;
@@ -2464,14 +2188,14 @@ export class SonGuessrService implements AdminRoomControl {
     } else {
       room.phase = "choosingSubmitter";
     }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { nextRound: room.roundNumber + 1 };
   }
 
   private finishGame(connection: ConnectionRecord) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    const { room, player } = requireRoomPlayer(this.ctx, connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult")
       throw new AppError("INVALID_PHASE", "只能在回合结算后返回等待阶段");
@@ -2485,54 +2209,13 @@ export class SonGuessrService implements AdminRoomControl {
     room.currentRound = undefined;
     room.roundSummary = undefined;
     room.finalScores = undefined;
-    this.clearRoundMarks(room);
+    clearRoundMarks(room);
     this.applyQueuedMemberships(room);
     this.resetReadyState(room);
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
     return { waiting: true, roundNumber: room.roundNumber };
-  }
-
-  /**
-   * 保证处于进行中回合的正式非出题玩家持有合法的回合状态（自愈机制）。
-   * 覆盖场景：切轮瞬间短暂断线、重连或状态异步，杜绝玩家缺失回合状态被误判为操作完成。
-   */
-  ensureRoundPlayerState(
-    room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord
-  ): SonGuessrRoundPlayerState | undefined {
-    if (room.phase !== "playing" || !room.currentRound) return undefined;
-    const round = room.currentRound;
-    if (player.membership !== "active") return undefined;
-    if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
-      return undefined;
-    }
-    if (round.observerIds.includes(player.id)) return undefined;
-    let state = round.players[player.id];
-    if (!state) {
-      // 有队伍时并回队友那一份，不另起一套次数。
-      const teammate =
-        player.team === null
-          ? undefined
-          : Object.entries(round.players).find(
-              ([id]) =>
-                id !== round.submitterPlayerId &&
-                room.players[id]?.team === player.team &&
-                !room.players[id]?.isBot
-            );
-      state = teammate?.[1] ?? {
-        memberIds: [],
-        guessesUsed: 0,
-        correct: false,
-        gaveUp: false,
-        deadlineAt: undefined,
-      };
-      state.memberIds.push(player.id);
-      round.players[player.id] = state;
-      round.audioReady[player.id] ??= false;
-    }
-    return state;
   }
 
   /**
@@ -2553,11 +2236,11 @@ export class SonGuessrService implements AdminRoomControl {
       state.guessesUsed += 1;
       player.totalGuesses += 1;
       round.attempts.push({
-        id: this.ids.next("song_guess"),
+        id: this.ctx.ids.next("song_guess"),
         playerId,
         playerName: player.name,
         guessNumber: state.guessesUsed,
-        createdAt: this.now(),
+        createdAt: this.ctx.now(),
         result: "timeout",
       });
     }
@@ -2598,28 +2281,6 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /** 与 `submitterId` 同队的其他参与玩家；出题人个人游玩或没有出题人（自动出题）时为空。 */
-  private teammateIds(room: SonGuessrRoomRecord, submitterId: string): string[] {
-    const team = room.players[submitterId]?.team ?? null;
-    if (team === null) return [];
-    return this.activePlayers(room)
-      .filter((candidate) => candidate.id !== submitterId && candidate.team === team)
-      .map((candidate) => candidate.id);
-  }
-
-  /**
-   * 可以担任出题人的玩家：在线真人，且他出题后（连同队友一起观战）还留得下在线的猜歌玩家。
-   * 测试房的出题人自己也能猜，只看前一条。
-   */
-  submitterCandidates(room: SonGuessrRoomRecord): SonGuessrPlayerRecord[] {
-    const testRoom = this.isTestRoom(room);
-    return Object.values(room.players).filter((candidate) => {
-      if (!candidate.online || candidate.membership === "kicked" || candidate.isBot) return false;
-      if (testRoom) return true;
-      const observers = new Set([candidate.id, ...this.teammateIds(room, candidate.id)]);
-      return this.activePlayers(room).some((player) => player.online && !observers.has(player.id));
-    });
-  }
-
   /**
    * 重开一次猜测倒计时。倒计时的锚点必须永远取「当前时刻」，且不得超过回合硬截止：
    * 用旧锚点（如本回合统一的 audioReadyDeadlineAt）续期，会得到一个可能已经过期的时刻，
@@ -2638,16 +2299,11 @@ export class SonGuessrService implements AdminRoomControl {
       state.deadlineAt = undefined;
       return;
     }
-    const deadlineAt = this.now() + round.settings.guessDurationSeconds * 1_000;
+    const deadlineAt = this.ctx.now() + round.settings.guessDurationSeconds * 1_000;
     // 单次猜测的倒计时绝不能越过回合硬截止，否则玩家的可见倒计时会长于真实剩余时间：
     // 界面显示还剩数十秒，房间却已经强制结算。
     state.deadlineAt =
       round.hardDeadlineAt === undefined ? deadlineAt : Math.min(deadlineAt, round.hardDeadlineAt);
-  }
-
-  /** 清空逐轮结果。标记只描述当前这一轮，换轮与回到等待时都不该留下上一轮的结局。 */
-  private clearRoundMarks(room: SonGuessrRoomRecord): void {
-    for (const player of Object.values(room.players)) player.roundMarks = [];
   }
 
   /**
@@ -2704,13 +2360,13 @@ export class SonGuessrService implements AdminRoomControl {
       submitterPlayerId: round.submitterPlayerId,
       correctPlayerIds: [...round.correctPlayerIds],
       attempts: [...round.attempts],
-      scores: this.buildScores(room, round.startScores),
+      scores: buildScores(this.ctx, room, round.startScores),
       ...(scoring.breakdown ? { breakdown: scoring.breakdown } : {}),
     };
     room.phase = "roundResult";
     this.recordRound(room, round, room.roundSummary, skipped);
-    this.touch(room);
-    this.log("song.game.round_finished", room.id, round.submitterPlayerId, {
+    this.ctx.touch(room);
+    this.ctx.log("song.game.round_finished", room.id, round.submitterPlayerId, {
       roundNumber: round.number,
       correctCount: round.correctPlayerIds.length,
     });
@@ -2730,7 +2386,7 @@ export class SonGuessrService implements AdminRoomControl {
       roomCreatedAt: room.createdAt,
       roundNumber: round.number,
       startedAt: round.startedAt,
-      endedAt: this.now(),
+      endedAt: this.ctx.now(),
       players: summary.scores.map((score) => ({
         playerId: score.playerId,
         userId: room.players[score.playerId]?.account?.userId ?? null,
@@ -2805,7 +2461,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private nextRotatingSubmitter(room: SonGuessrRoomRecord, previousSubmitterId?: string) {
     // 轮流也只轮到留得下猜歌玩家的人：整队出题会把队友一起带去观战。
-    const eligible = new Set(this.submitterCandidates(room));
+    const eligible = new Set(submitterCandidates(this.ctx, room));
     const candidates = Object.values(room.players)
       .filter((player) => player.membership === "active" && eligible.has(player))
       .sort((left, right) => left.joinedAt - right.joinedAt);
@@ -2814,22 +2470,15 @@ export class SonGuessrService implements AdminRoomControl {
     return candidates[(previousIndex + 1 + candidates.length) % candidates.length];
   }
 
-  canTestSubmitterGuess(room: SonGuessrRoomRecord, playerId: string) {
-    return Boolean(
-      this.isTestRoom(room) &&
-      room.currentRound?.submitterPlayerId === playerId &&
-      room.players[playerId]?.membership === "active"
-    );
-  }
-
   private isRoundComplete(room: SonGuessrRoomRecord) {
     const round = room.currentRound;
     if (!round) return false;
     // 关掉血战时，第一个猜中就把本局结束：其余人不再继续作答，也没有名次可争。
     if (!round.settings.bloodMode && round.correctPlayerIds.length > 0) return true;
-    const guessers = this.activePlayers(room).filter(
+    const guessers = activePlayers(room).filter(
       (player) =>
-        (player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id)) &&
+        (player.id !== round.submitterPlayerId ||
+          canTestSubmitterGuess(this.ctx, room, player.id)) &&
         !round.observerIds.includes(player.id)
     );
     return guessers.every((player) => {
@@ -2838,77 +2487,14 @@ export class SonGuessrService implements AdminRoomControl {
     });
   }
 
-  private buildRoomSummary(room: SonGuessrRoomRecord): SonGuessrRoomSummary {
-    return buildRoomSummary(this, room);
-  }
-
-  private buildRoomSnapshot(room: SonGuessrRoomRecord): SonGuessrRoomSnapshot {
-    return buildRoomSnapshot(this, room);
-  }
-
-  private buildPrivateState(
-    room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord
-  ): SonGuessrPrivateState {
-    return buildPrivateState(this, room, player);
-  }
-
-  private buildScores(
-    room: SonGuessrRoomRecord,
-    startScores: Record<string, number>
-  ): SonGuessrScore[] {
-    return buildScores(this, room, startScores);
-  }
-
-  publishRoom(room: SonGuessrRoomRecord, targetConnection?: ConnectionRecord) {
-    this.fanOutRoom(
-      room,
-      targetConnection ? [targetConnection] : this.connections.getRoomConnections(room.id),
-      "state"
-    );
-  }
-
-  private publishPrivateState(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
-    const connection = this.connections.findConnectionByPlayer(room.id, player.id);
-    connection?.send(createEvent("song.game.privateState", this.buildPrivateState(room, player)));
-  }
-
-  private publishRoomCalibration(room: SonGuessrRoomRecord) {
-    this.fanOutRoom(room, this.connections.getRoomConnections(room.id), "calibration");
-  }
-
-  /** 快照与私有态扇出：正常发布与校准共用同一份帧来源，公共快照每次发布只构造一次。 */
-  private fanOutRoom(
-    room: SonGuessrRoomRecord,
-    targets: readonly ConnectionRecord[],
-    mode: "state" | "calibration"
-  ) {
-    const snapshot = this.buildRoomSnapshot(room);
-    publishRoomState(
-      targets,
-      (connection) => (connection.playerId ? room.players[connection.playerId] : undefined),
-      {
-        snapshotEvent: SONG_ROOM_SHAPE.events.snapshot,
-        privateEvent: SONG_ROOM_SHAPE.events.privateState,
-        snapshotFor: () => snapshot,
-        privateFor: (player) => this.buildPrivateState(room, player),
-      },
-      mode
-    );
-  }
-
-  publishLobby() {
-    this.lobbyFanout.request();
-  }
-
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
     // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、刷新大厅。
     dissolveRoom(this.roomKernel, room, { roomId: room.id, reason });
     room.musicPool = [];
     // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
-    this.wakeMusicPoolWaiters(room.id);
-    this.rooms.delete(room.id);
-    this.publishLobby();
+    wakeMusicPoolWaiters(this.ctx, room.id);
+    this.ctx.rooms.delete(room.id);
+    this.ctx.publishLobby();
   }
 
   /** 把连接绑到座位；内核可能在绑定时改选房主，易主后的猜歌收尾在这里统一做。 */
@@ -2922,13 +2508,6 @@ export class SonGuessrService implements AdminRoomControl {
     this.settleHostChange(room, previousHostId);
   }
 
-  private appendSystemMessage(room: SonGuessrRoomRecord, text: string) {
-    appendChat(
-      room,
-      systemMessage({ id: this.ids.next("song_chat"), text, createdAt: this.now() })
-    );
-  }
-
   private createPlayer(
     nameValue: string,
     host: boolean,
@@ -2936,10 +2515,10 @@ export class SonGuessrService implements AdminRoomControl {
     seatId?: string
   ): SonGuessrPlayerRecord {
     const name = this.requireName(nameValue);
-    const now = this.now();
+    const now = this.ctx.now();
     return {
-      id: seatId ?? this.ids.next("song_player"),
-      sessionToken: `${this.ids.next("song_session")}_${crypto.randomUUID()}`,
+      id: seatId ?? this.ctx.ids.next("song_player"),
+      sessionToken: `${this.ctx.ids.next("song_session")}_${crypto.randomUUID()}`,
       name,
       membership: "active",
       online: true,
@@ -2955,21 +2534,6 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  activePlayers(room: SonGuessrRoomRecord) {
-    return Object.values(room.players).filter((player) => player.membership === "active");
-  }
-
-  requireRoomPlayer(connection: ConnectionRecord) {
-    if (!connection.roomId || !connection.playerId) {
-      throw new AppError("PLAYER_NOT_IN_ROOM", "当前连接尚未加入房间");
-    }
-    const room = this.getRoom(connection.roomId);
-    const player = room.players[connection.playerId];
-    if (!player || player.membership === "kicked")
-      throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
-    return { room, player };
-  }
-
   private requireActiveRound(room: SonGuessrRoomRecord) {
     if (room.phase !== "playing" || !room.currentRound) {
       throw new AppError("NO_ACTIVE_ROUND", "当前没有进行中的回合");
@@ -2977,21 +2541,15 @@ export class SonGuessrService implements AdminRoomControl {
     return room.currentRound;
   }
 
-  private getRoom(roomId: string) {
-    const room = this.rooms.get(roomId);
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在");
-    return room;
-  }
-
   private ensureConnectionFree(connection: ConnectionRecord) {
     if (!connection.roomId && !connection.playerId) return;
-    if (connection.roomId && connection.playerId && this.rooms.has(connection.roomId)) {
+    if (connection.roomId && connection.playerId && this.ctx.rooms.has(connection.roomId)) {
       this.detachFromRoom(connection);
       return;
     }
     // 房间已经不存在（或只有一半字段有值）时，requireRoomPlayer 会抛 ROOM_NOT_FOUND
     // 并把正常的 create / join / reconnect 一起打断；这种残余状态退回原来的置空即可。
-    this.connections.detach(connection);
+    this.ctx.connections.detach(connection);
   }
 
   private ensureHost(room: SonGuessrRoomRecord, playerId: string) {
@@ -3011,7 +2569,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
-    for (const room of roomsOfTab(this.roomKernel, tabKey)) this.publishRoom(room);
+    for (const room of roomsOfTab(this.roomKernel, tabKey)) this.ctx.publishRoom(room);
   }
 
   private requireName(value: string) {
@@ -3047,28 +2605,8 @@ export class SonGuessrService implements AdminRoomControl {
     const { changed } = resolveHostGrace(room, Object.values(room.players), currentTime);
     if (!changed) return;
     this.settleHostChange(room, previousHostId);
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
-  }
-
-  /** 测试房特权的唯一判定点：只认策略，房号对上而开关关闭时就是普通房。 */
-  isTestRoom(room: SonGuessrRoomRecord) {
-    return this.testRooms.isTestRoom(room.id);
-  }
-
-  touch(room: SonGuessrRoomRecord) {
-    room.updatedAt = this.now();
-    room.lastActivityAt = this.now();
-  }
-
-  log(type: string, roomId?: string, playerId?: string, payload?: unknown) {
-    void this.options.eventLogger?.write({
-      type,
-      roomId,
-      playerId,
-      payload,
-      createdAt: this.now(),
-    });
+    this.ctx.touch(room);
+    this.ctx.publishRoom(room);
+    this.ctx.publishLobby();
   }
 }

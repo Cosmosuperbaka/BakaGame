@@ -1583,7 +1583,7 @@ describe("账号池凭据与开关的竞态边界", () => {
     const host = connection(service, "dead-host");
     const { room, entry } = await hostEntry(service, host);
     expect(entry.enabled).toBe(true);
-    releaseMusicAccount(service as never, room.id, entry, {
+    releaseMusicAccount(service.ctx, room.id, entry, {
       ok: false,
       code: "MUSIC_SESSION_INVALID",
       reason: "登录状态已失效",
@@ -1608,7 +1608,7 @@ describe("账号池凭据与开关的竞态边界", () => {
       session: Awaited<ReturnType<Parameters<typeof refreshMusicPoolEntry>[3]>>
     ) => void;
     const pending = refreshMusicPoolEntry(
-      service as never,
+      service.ctx,
       room,
       entry,
       () => new Promise((resolve) => (settle = resolve))
@@ -1653,7 +1653,7 @@ describe("账号池凭据与开关的竞态边界", () => {
     const host = connection(service, "cooldown-host");
     const { room, entry } = await hostEntry(service, host);
     const rateLimited = () =>
-      releaseMusicAccount(service, room.id, entry, {
+      releaseMusicAccount(service.ctx, room.id, entry, {
         ok: false,
         code: "MUSIC_API_RATE_LIMITED",
         reason: "操作频繁，请稍候再试",
@@ -1672,7 +1672,7 @@ describe("账号池凭据与开关的竞态边界", () => {
     expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_MAX_COOLDOWN_MS);
 
     // 成功取歌说明额度已恢复：下一次再被限流从基础档重新计。
-    releaseMusicAccount(service, room.id, entry, { ok: true });
+    releaseMusicAccount(service.ctx, room.id, entry, { ok: true });
     expect(entry.rateLimitStrikes).toBeUndefined();
     now += 1;
     rateLimited();

@@ -40,17 +40,19 @@ import {
   isUnusableSongCandidate,
   resolveRecentSongWindow,
 } from "./Records";
-import type { SonGuessrServiceInternals } from "./ServiceInternals";
+import type { SonGuessrContext } from "./Context";
+import { parsePlaylistId } from "./PlaylistId";
+import { installRound } from "./RoundInstall";
 import { normalizeSongText } from "./SongTitleMatching";
 
 /** 猜歌自动出题选曲：筛选条件归一化、自动开局候选池构建与逐首重试出题；状态仍由 SonGuessrService 持有，这里只放共享行为。 */
 export const normalizeAutoFilters = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   filters: SongAutoFiltersInput
 ): SongAutoFilters => {
   const playlist = filters.playlist
     ? {
-        id: service.parsePlaylistId(filters.playlist.id),
+        id: parsePlaylistId(filters.playlist.id),
         name: filters.playlist.name?.trim(),
         songCount: filters.playlist.songCount,
       }
@@ -84,22 +86,20 @@ export const normalizeAnimeAutoFilters = (filters: AnimeAutoFilters): AnimeAutoF
 };
 
 export const startAutomaticRound = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   verify: () => void
 ): Promise<void> => {
   if (room.settings.questionType === "anime") {
-    const provider = service.options.bangumiProvider;
+    const provider = ctx.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-    await runLoggedAutomaticRound(service, room, () =>
-      startAutomaticAnimeRound(service, room, provider, verify)
+    await runLoggedAutomaticRound(ctx, room, () =>
+      startAutomaticAnimeRound(ctx, room, provider, verify)
     );
     return;
   }
 
-  await runLoggedAutomaticRound(service, room, () =>
-    startAutomaticSongRound(service, room, verify)
-  );
+  await runLoggedAutomaticRound(ctx, room, () => startAutomaticSongRound(ctx, room, verify));
 };
 
 /**
@@ -107,14 +107,14 @@ export const startAutomaticRound = async (
  * 失败时留下错误码，原样再抛，不改变对玩家的报错。
  */
 const runLoggedAutomaticRound = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   run: () => Promise<void>
 ): Promise<void> => {
   try {
     await run();
   } catch (error) {
-    service.log("song.auto.failed", room.id, undefined, {
+    ctx.log("song.auto.failed", room.id, undefined, {
       questionType: room.settings.questionType,
       code: error instanceof AppError ? error.code : "UNKNOWN",
     });
@@ -124,7 +124,7 @@ const runLoggedAutomaticRound = async (
 
 /** 自动出题（番剧）：在筛选池里逐个试到第一部有可播关联曲的番剧为止。 */
 export const startAutomaticAnimeRound = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   provider: BangumiDataProvider,
   verify: () => void
@@ -133,7 +133,7 @@ export const startAutomaticAnimeRound = async (
   const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
   const year =
     filters.ranking === "year" && filters.startYear && filters.endYear
-      ? filters.startYear + service.random.nextInt(filters.endYear - filters.startYear + 1)
+      ? filters.startYear + ctx.random.nextInt(filters.endYear - filters.startYear + 1)
       : undefined;
   const candidates = await provider.searchSubjects(
     "",
@@ -153,12 +153,12 @@ export const startAutomaticAnimeRound = async (
   while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
     attempts += 1;
     verify();
-    const selected = pool.splice(service.random.nextInt(pool.length), 1)[0];
+    const selected = pool.splice(ctx.random.nextInt(pool.length), 1)[0];
     try {
       const anime = await provider.getSubject(selected.id);
-      const resolved = await resolveAnimeSong(service, room, anime);
+      const resolved = await resolveAnimeSong(ctx, room, anime);
       verify();
-      service.installRound(room, resolved.song, "", anime, resolved.track);
+      installRound(ctx, room, resolved.song, "", anime, resolved.track);
       return;
     } catch (error) {
       if (
@@ -286,18 +286,18 @@ const liveUnavailableIds = (room: SonGuessrRoomRecord, now: number): Set<string>
 
 /** 自动出题（歌曲）：先按整池定近期窗口，再分层抽取，试到能拿到音频的一首。 */
 export const startAutomaticSongRound = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   verify: () => void
 ): Promise<void> => {
-  const candidates = await resolveAutomaticCandidates(service, room);
+  const candidates = await resolveAutomaticCandidates(ctx, room);
   if (candidates.length === 0) {
     throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
   }
   // 候选池不再按会员状态预剔除：会员专享曲会由 `getSong` 的解灰链路取回完整音频，
   // 能否出题以「实际拿到的音频」为准，不再看账号是不是会员。
-  const now = service.now();
-  const playability = songPlayabilityContext(service, room);
+  const now = ctx.now();
+  const playability = songPlayabilityContext(ctx, room);
   const isPlayable = (song: SongSearchResult): boolean => isPlayableSong(song, playability);
   const works = collapseSameWorks(candidates, room.recentSongIds ?? [], isPlayable);
   // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
@@ -310,7 +310,7 @@ export const startAutomaticSongRound = async (
     isPlayable
   );
   // 候选被近期窗口、失败记录或不可播悄悄缩小时必须留痕，否则「总是那几首」无从排查。
-  service.log("song.auto.pool", room.id, undefined, {
+  ctx.log("song.auto.pool", room.id, undefined, {
     candidates: candidates.length,
     works: works.length,
     fresh: layout.fresh,
@@ -331,7 +331,7 @@ export const startAutomaticSongRound = async (
       if (usable < 0) continue;
       const index = tier.ordered
         ? usable
-        : pickUsableIndex(tier.songs, limitedPlatforms, service.random);
+        : pickUsableIndex(tier.songs, limitedPlatforms, ctx.random);
       return tier.songs.splice(index, 1)[0];
     }
     return undefined;
@@ -343,11 +343,11 @@ export const startAutomaticSongRound = async (
     let song: SongDetails;
     try {
       song = await withSongAccount(
-        service,
+        ctx,
         room,
         selected.id,
         (cookie) =>
-          service.options.musicProvider.getSong(selected!.id, cookie, {
+          ctx.options.musicProvider.getSong(selected!.id, cookie, {
             // 题库里已有标题与歌手：原平台被限流时，跨平台兜底不必再回源取元数据。
             hint: {
               title: selected!.title,
@@ -366,14 +366,14 @@ export const startAutomaticSongRound = async (
       }
       if (!isUnusableSongCandidate(error)) throw error;
       failures += 1;
-      rememberUnavailableSong(room, selected.id, service.now());
+      rememberUnavailableSong(room, selected.id, ctx.now());
       continue;
     }
     verify();
-    service.installRound(room, song, "", undefined, undefined, undefined, selected.id);
+    installRound(ctx, room, song, "", undefined, undefined, undefined, selected.id);
     return;
   }
-  service.log("song.auto.exhausted", room.id, undefined, {
+  ctx.log("song.auto.exhausted", room.id, undefined, {
     candidates: candidates.length,
     attempts,
     failures,
@@ -388,7 +388,7 @@ export const startAutomaticSongRound = async (
 const pickUsableIndex = (
   songs: readonly SongSearchResult[],
   limitedPlatforms: ReadonlySet<string>,
-  random: SonGuessrServiceInternals["random"]
+  random: SonGuessrContext["random"]
 ): number => {
   if (limitedPlatforms.size === 0) return random.nextInt(songs.length);
   const usable: number[] = [];
@@ -400,12 +400,12 @@ const pickUsableIndex = (
 
 /** 自动题库取候选：整轮（歌单 / 歌手 / 热度补全）共用一次取号，结束即归还。 */
 export const resolveAutomaticCandidates = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
 ): Promise<SongSearchResult[]> => {
   // 必须按成败归还：判死、风控与限流只在失败结果上摘号或冷却，恒记成功会让死号反复被选中。
-  return withAggregatedAccounts(service, room, (cookie) =>
-    collectAutomaticCandidates(service, room, cookie)
+  return withAggregatedAccounts(ctx, room, (cookie) =>
+    collectAutomaticCandidates(ctx, room, cookie)
   );
 };
 
@@ -414,11 +414,11 @@ export const resolveAutomaticCandidates = async (
  * 匿名通道。没有 QQ 账号时直接给出明确原因，而不是让歌单/歌手交集悄悄变成空集。
  */
 export const assertAutomaticFiltersSupported = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   filters: SonGuessrRoomRecord["settings"]["autoFilters"]
 ): void => {
-  if (hasAvailablePoolAccount(service, room, "qq")) return;
+  if (hasAvailablePoolAccount(ctx, room, "qq")) return;
   const usesQqPlaylist = filters.playlist?.id.startsWith("qq:") ?? false;
   const usesQqArtist = filters.artists.some((artist) => artist.id.startsWith("qq:"));
   if (!usesQqPlaylist && !usesQqArtist) return;
@@ -437,12 +437,12 @@ export const assertAutomaticFiltersSupported = (
  * 「网易云歌单 + QQ 歌手」的交集必然为空。按名字补一次同名歌手是最小代价的修正。
  */
 export const resolveArtistFilterSongs = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   cookie: MusicCookieInput | undefined,
   filters: SongAutoFilters
 ): Promise<SongSearchResult[]> => {
-  const provider = service.options.musicProvider;
+  const provider = ctx.options.musicProvider;
   const getArtistSongs = provider.getArtistSongs?.bind(provider);
   if (!getArtistSongs) return [];
   const playlistPlatform = filters.playlist
@@ -451,7 +451,7 @@ export const resolveArtistFilterSongs = async (
       : "netease"
     : undefined;
   const searchArtists = provider.searchArtists?.bind(provider);
-  const options = musicSearchOptions(service, room);
+  const options = musicSearchOptions(ctx, room);
   // 查同名歌手时把歌单平台排到偏好首位：聚合结果会按名字去重，若仍按房间默认偏好，
   // 「网易云歌单 + QQ 歌手」在两边都有账号时只会留下网易云条目，QQ ID 根本拿不到。
   const lookupOptions: MusicSearchOptions = {
@@ -498,36 +498,36 @@ export const assertAutomaticFilterMatch = (
 };
 
 export const collectAutomaticCandidates = async (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   cookie: MusicCookieInput | undefined
 ): Promise<SongSearchResult[]> => {
   const filters = room.settings.autoFilters;
-  assertAutomaticFiltersSupported(service, room, filters);
+  assertAutomaticFiltersSupported(ctx, room, filters);
   const sets: SongSearchResult[][] = [];
-  if (filters.playlist && service.options.musicProvider.getPlaylistSongs) {
+  if (filters.playlist && ctx.options.musicProvider.getPlaylistSongs) {
     const playlistId = filters.playlist.id;
     sets.push(
       (
         await onMusicPlatform(
           songPlatformOf(playlistId),
-          service.options.musicProvider.getPlaylistSongs(playlistId, cookie)
+          ctx.options.musicProvider.getPlaylistSongs(playlistId, cookie)
         )
       ).songs
     );
   }
   if (filters.artists.length > 0) {
-    sets.push(await resolveArtistFilterSongs(service, room, cookie, filters));
+    sets.push(await resolveArtistFilterSongs(ctx, room, cookie, filters));
   }
   if (sets.length === 0) {
-    if (!service.options.musicProvider.getPlaylistSongs) {
+    if (!ctx.options.musicProvider.getPlaylistSongs) {
       throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持自动题库");
     }
     sets.push(
       (
         await onMusicPlatform(
           songPlatformOf(DEFAULT_AUTO_PLAYLIST_ID),
-          service.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)
+          ctx.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)
         )
       ).songs
     );
@@ -549,7 +549,7 @@ export const collectAutomaticCandidates = async (
   );
   if (knownMatches.length > 0) return [...knownMatches, ...exempt];
 
-  const provider = service.options.musicProvider;
+  const provider = ctx.options.musicProvider;
   const getPopularity = provider.getSongPopularity?.bind(provider);
   if (!getPopularity) {
     return exempt;
@@ -560,7 +560,7 @@ export const collectAutomaticCandidates = async (
   const lookupPool = [...lookupCandidates];
   const sampled: SongSearchResult[] = [];
   while (lookupPool.length > 0 && sampled.length < AUTO_POPULARITY_LOOKUP_LIMIT) {
-    sampled.push(lookupPool.splice(service.random.nextInt(lookupPool.length), 1)[0]);
+    sampled.push(lookupPool.splice(ctx.random.nextInt(lookupPool.length), 1)[0]);
   }
 
   const enriched: SongSearchResult[] = [];

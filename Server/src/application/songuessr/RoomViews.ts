@@ -12,11 +12,13 @@ import type {
 } from "../../shared/Index";
 import { hasEnabledPoolAccount, isCoolingDown, musicPool, primaryPoolEntry } from "./MusicAccounts";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
-import type { SonGuessrServiceInternals } from "./ServiceInternals";
+import type { SonGuessrContext } from "./Context";
+import { canTestSubmitterGuess, activePlayers, isTestRoom } from "./RoomAccess";
+import { ensureRoundPlayerState, submitterCandidates } from "./RoundParticipants";
 
-/** 猜歌房间快照、玩家视图与私有状态的构建：只读 service 状态，不发副作用。 */
+/** 猜歌房间快照、玩家视图与私有状态的构建：只读 ctx 状态，不发副作用。 */
 export const buildRoomSummary = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
 ): SonGuessrRoomSummary => {
   const activeCount = Object.values(room.players).filter(
@@ -47,10 +49,10 @@ export const buildRoomSummary = (
  * 快照要发给房里的每个人，凭据进快照就等于把玩家登录态广播出去（见 `Server/docs/`账号约束）。
  */
 export const buildMusicPoolView = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
 ): SonGuessrMusicPoolView[] => {
-  const now = service.now();
+  const now = ctx.now();
   return musicPool(room)
     .slice()
     .sort((left, right) => {
@@ -76,7 +78,7 @@ export const buildMusicPoolView = (
 };
 
 export const buildRoomSnapshot = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
 ): SonGuessrRoomSnapshot => {
   const round = room.currentRound;
@@ -88,14 +90,14 @@ export const buildRoomSnapshot = (
     allowSpectators: room.allowSpectators,
     hasPassword: Boolean(room.passwordHash),
     hostPlayerId: room.hostPlayerId,
-    testMode: service.isTestRoom(room),
-    musicAccountReady: hasEnabledPoolAccount(service, room, "netease"),
-    qqMusicAccountReady: hasEnabledPoolAccount(service, room, "qq"),
+    testMode: isTestRoom(ctx, room),
+    musicAccountReady: hasEnabledPoolAccount(ctx, room, "netease"),
+    qqMusicAccountReady: hasEnabledPoolAccount(ctx, room, "qq"),
     musicAccounts: {
-      netease: primaryPoolEntry(service, room, "netease")?.account,
-      qq: primaryPoolEntry(service, room, "qq")?.account,
+      netease: primaryPoolEntry(ctx, room, "netease")?.account,
+      qq: primaryPoolEntry(ctx, room, "qq")?.account,
     },
-    musicPool: buildMusicPoolView(service, room),
+    musicPool: buildMusicPoolView(ctx, room),
     settings: room.settings,
     phase: room.phase,
     roundNumber: room.roundNumber,
@@ -115,7 +117,7 @@ export const buildRoomSnapshot = (
     players: Object.values(room.players)
       .filter((player) => player.membership !== "kicked")
       .sort((left, right) => left.joinedAt - right.joinedAt)
-      .map((player) => buildPlayerView(service, room, player)),
+      .map((player) => buildPlayerView(ctx, room, player)),
     chat: room.chat,
     ...(room.roundSummary ? { roundSummary: room.roundSummary } : {}),
     ...(room.finalScores ? { finalScores: room.finalScores } : {}),
@@ -123,11 +125,11 @@ export const buildRoomSnapshot = (
 };
 
 export const buildPlayerView = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   player: SonGuessrPlayerRecord
 ): SonGuessrPlayerView => {
-  service.ensureRoundPlayerState(room, player);
+  ensureRoundPlayerState(ctx, room, player);
   const round = room.currentRound;
   const state = round?.players[player.id];
   let roundStatus: SonGuessrPlayerView["roundStatus"] = "waiting";
@@ -155,7 +157,7 @@ export const buildPlayerView = (
     isReady: player.isReady,
     isBot: player.isBot,
     ...(player.isAgent ? { isAgent: true } : {}),
-    ...(service.connections.isAgentDriven(player.connectionId) ? { mcpControlled: true } : {}),
+    ...(ctx.connections.isAgentDriven(player.connectionId) ? { mcpControlled: true } : {}),
     isHost: room.hostPlayerId === player.id,
     account: player.account,
     correctGuesses: player.correctGuesses,
@@ -167,18 +169,18 @@ export const buildPlayerView = (
 };
 
 export const buildPrivateState = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   player: SonGuessrPlayerRecord
 ): SonGuessrPrivateState => {
-  service.ensureRoundPlayerState(room, player);
+  ensureRoundPlayerState(ctx, room, player);
   const round = room.currentRound;
   const state = round?.players[player.id];
   const isSubmitter =
     round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
   const teamObserver = room.phase === "playing" && Boolean(round?.observerIds.includes(player.id));
   const canParticipateAsGuesser =
-    (!isSubmitter || service.canTestSubmitterGuess(room, player.id)) && !teamObserver;
+    (!isSubmitter || canTestSubmitterGuess(ctx, room, player.id)) && !teamObserver;
   const canObserveAllAttempts = isSubmitter || teamObserver || player.membership === "spectator";
   const seesAnswer = isSubmitter || teamObserver || player.membership === "spectator";
   // 候选名单逐人重算观战队友是 O(n²)，私有状态又按连接逐个生成：只给房主、只在手动出题的等待与选人阶段算。
@@ -193,7 +195,7 @@ export const buildPrivateState = (
     isSubmitter,
     teamObserver,
     submitterCandidateIds: needsCandidates
-      ? service.submitterCandidates(room).map((candidate) => candidate.id)
+      ? submitterCandidates(ctx, room).map((candidate) => candidate.id)
       : [],
     canSubmitSong: room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id,
     canGuess:
@@ -236,13 +238,19 @@ export const buildPrivateState = (
   };
 };
 
+/** 大厅列表：测试房与单人房不外露，按房号排序。 */
+export const listRoomSummaries = (ctx: SonGuessrContext): SonGuessrRoomSummary[] =>
+  [...ctx.rooms.values()]
+    .filter((room) => !isTestRoom(ctx, room) && !room.solo)
+    .map((room) => buildRoomSummary(ctx, room))
+    .sort((left, right) => left.roomId.localeCompare(right.roomId));
+
 export const buildScores = (
-  service: SonGuessrServiceInternals,
+  ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   startScores: Record<string, number>
 ): SonGuessrScore[] => {
-  return service
-    .activePlayers(room)
+  return activePlayers(room)
     .map((player) => ({
       playerId: player.id,
       playerName: player.name,

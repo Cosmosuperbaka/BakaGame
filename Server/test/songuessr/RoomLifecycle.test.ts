@@ -1300,7 +1300,7 @@ describe("SonGuessrService", () => {
         online: true,
         connectionId: "swap-guest",
       });
-      expect(service.connections.findConnectionByPlayer("1234", hostState.playerId)?.id).toBe(
+      expect(service.ctx.connections.findConnectionByPlayer("1234", hostState.playerId)?.id).toBe(
         "swap-guest"
       );
     });
@@ -1496,7 +1496,7 @@ describe("SonGuessrService", () => {
       await createRoom(service, host);
       const room = service.rooms.get("1234")!;
       let woken = 0;
-      service.musicPoolWaiters.set("1234", new Set([() => woken++]));
+      service.ctx.musicPoolWaiters.set("1234", new Set([() => woken++]));
 
       now += ROOM_IDLE_TIMEOUT_MS + 1;
       await service.runHousekeeping();

@@ -5,6 +5,7 @@ import {
   collapseSameWorks,
   collectAutomaticCandidates,
 } from "../../src/application/songuessr/AutomaticRounds";
+import { installRound } from "../../src/application/songuessr/RoundInstall";
 import { AppError } from "../../src/domain/Errors";
 import type { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import type { SongSearchResult, SonGuessrRoomSnapshot } from "../../src/shared/Index";
@@ -390,7 +391,7 @@ describe("近期窗口的写入", () => {
 
   test("手动出题或猜番这类不带池子的回合不会把长窗口截短", async () => {
     const { service, room } = await prepare();
-    service.installRound(room, makeSong("netease:manual", "手动", 2020), "");
+    installRound(service.ctx, room, makeSong("netease:manual", "手动", 2020), "");
     expect(room.recentSongIds).toHaveLength(301);
     expect(room.recentSongIds?.[0]).toBe("netease:manual");
     expect(room.recentSongIds).toContain("netease:old-299");
@@ -398,7 +399,8 @@ describe("近期窗口的写入", () => {
 
   test("跨平台兜底时候选和实际播放的歌都进窗口", async () => {
     const { service, room } = await prepare();
-    service.installRound(
+    installRound(
+      service.ctx,
       room,
       makeSong("qq:played", "兜底", 2020),
       "",
@@ -456,7 +458,7 @@ describe("热度筛选与 QQ 候选", () => {
       [song("netease:hot"), song("netease:cold"), song("qq:any")],
       { "netease:hot": 5_000, "netease:cold": 500 }
     );
-    const result = await collectAutomaticCandidates(service, room, undefined);
+    const result = await collectAutomaticCandidates(service.ctx, room, undefined);
     expect(result.map((item) => item.id).sort()).toEqual(["netease:hot", "qq:any"]);
     expect(lookups.some((id) => id.startsWith("qq:"))).toBe(false);
   });
@@ -466,7 +468,7 @@ describe("热度筛选与 QQ 候选", () => {
       [song("netease:hot", 5_000), song("netease:cold", 10), song("qq:any")],
       {}
     );
-    const result = await collectAutomaticCandidates(service, room, undefined);
+    const result = await collectAutomaticCandidates(service.ctx, room, undefined);
     expect(result.map((item) => item.id).sort()).toEqual(["netease:hot", "qq:any"]);
     expect(lookups).toEqual([]);
   });
@@ -475,12 +477,12 @@ describe("热度筛选与 QQ 候选", () => {
     const { service, room } = await prepare([song("netease:any"), song("qq:any")], {});
     const musicProvider = service.options.musicProvider as { getSongPopularity?: unknown };
     delete musicProvider.getSongPopularity;
-    const result = await collectAutomaticCandidates(service, room, undefined);
+    const result = await collectAutomaticCandidates(service.ctx, room, undefined);
     expect(result.map((item) => item.id)).toEqual(["qq:any"]);
   });
 
   test("只有网易云候选且都不达标时仍然没有候选", async () => {
     const { service, room } = await prepare([song("netease:cold")], { "netease:cold": 500 });
-    expect(await collectAutomaticCandidates(service, room, undefined)).toEqual([]);
+    expect(await collectAutomaticCandidates(service.ctx, room, undefined)).toEqual([]);
   });
 });
