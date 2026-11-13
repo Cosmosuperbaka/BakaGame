@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { PHASE_RESULT_DISPLAY_MS } from "../src/config/Constants";
+import { FAKER_ROOM_MAX_MEMBERS } from "../src/shared/WhoIsFaker";
 import type {
   WhoIsFakerPrivateState,
   WhoIsFakerRoomSnapshot,
@@ -21,7 +22,8 @@ type ViewClient = TestConnection & {
 };
 
 // 真实开局、投票淘汰与旁观者身份；每批清理历史，避免建房广播占用夹具内存。
-const setupViews = async (connectionCount = 150) => {
+// 房间人数有上限：权限分组复用的预算按满员房间钉。
+const setupViews = async (connectionCount = FAKER_ROOM_MAX_MEMBERS) => {
   const context = createTestContext();
   const { service } = context;
   const roomId = "8940";
@@ -221,14 +223,14 @@ const measureClones = async (operation: () => Promise<unknown>) => {
   }
 };
 
-test("150连接按ghost权限复用公开对象和编码准备，私有状态仍逐连接隔离", async () => {
+test("满员房间连接按ghost权限复用公开对象和编码准备，私有状态仍逐连接隔离", async () => {
   const f = await setupViews();
   f.enableEncoding();
   const clones = await measureClones(() =>
     f.command(f.spectators[0], { type: "chat.send", payload: { text: "观战秘密" } })
   );
   assertViews(f);
-  expect(clones).toEqual({ publicClones: 2, privateClones: 150 });
+  expect(clones).toEqual({ publicClones: 2, privateClones: FAKER_ROOM_MAX_MEMBERS });
   const fullStates = f.clients.map((client) => {
     const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
     expect(sync.mode).toBe("full");
@@ -241,7 +243,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
     f.command(f.active[1], { type: "chat.send", payload: { text: "公开消息" } })
   );
   assertViews(f);
-  expect(nextClones).toEqual({ publicClones: 2, privateClones: 150 });
+  expect(nextClones).toEqual({ publicClones: 2, privateClones: FAKER_ROOM_MAX_MEMBERS });
   for (const [index, client] of f.clients.entries())
     expect(snapshot(client)).not.toBe(firstViews[index]);
   const patches = f.clients.map((client) => {
@@ -252,7 +254,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   // 相同当前视图和相同基线只生成一份操作内容；两组权限分别复用（线上是文本帧，以内容区分）。
   expect(new Set(patches).size).toBe(2);
   console.info(
-    "Faker 150连接准备计数:",
+    "Faker 满员房间连接准备计数:",
     JSON.stringify({ first: clones, next: nextClones, patchIdentities: new Set(patches).size })
   );
   await f.command(f.dead, { type: "chat.send", payload: { text: "亡者秘密" } });
@@ -266,7 +268,7 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   }
 });
 
-test("150连接无变化校准复用权限视图且全量修复丢失补丁，两个通道均保持最终真相", async () => {
+test("满员房间连接无变化校准复用权限视图且全量修复丢失补丁，两个通道均保持最终真相", async () => {
   const f = await setupViews();
   f.enableEncoding();
   await f.command(f.spectators[0], { type: "chat.send", payload: { text: "观战秘密" } });
@@ -287,7 +289,7 @@ test("150连接无变化校准复用权限视图且全量修复丢失补丁，�
   f.clear();
   const clones = await measureClones(() => f.service.runHousekeeping());
   assertViews(f);
-  expect(clones).toEqual({ publicClones: 2, privateClones: 150 });
+  expect(clones).toEqual({ publicClones: 2, privateClones: FAKER_ROOM_MAX_MEMBERS });
   const fullStates = f.clients.map((client, index) => {
     expect(client.wire).toHaveLength(2);
     const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
@@ -311,7 +313,7 @@ test("150连接无变化校准复用权限视图且全量修复丢失补丁，�
   });
   // 线上是文本帧，复用以序列化后的内容区分：公开视图只有两份（克隆次数由上面的计数断言守着）。
   expect(new Set(fullStates.map((state) => JSON.stringify(state))).size).toBe(2);
-  console.info("Faker 150连接校准准备计数:", JSON.stringify(clones));
+  console.info("Faker 满员房间连接校准准备计数:", JSON.stringify(clones));
 });
 
 test("目标同步和阶段切换重新核算ghost权限，不跨发布缓存或泄露私有字段", async () => {

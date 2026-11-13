@@ -15,6 +15,7 @@ import {
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { fakerDescriptionOverflow } from "../shared/TextUnits";
+import { FAKER_ROOM_MAX_MEMBERS } from "../shared/WhoIsFaker";
 import { tabSeatId } from "./TabSeat";
 import type { GameService } from "./GameService";
 import {
@@ -558,6 +559,13 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
     // 例外放行会让名册里同时留下两个同名玩家。要走接管就用 room.reconnect 的会话票据。
     assertTextAllowed(message.payload.userName);
     ensureUniqueName(room, message.payload.userName);
+    // 与插入同一个同步段里判定：比对口令的 await 期间别的连接可能已经占满了名额。
+    // 被移出的记录不占席位；旁观者与离线保留的席位都占，它们同样要被发布与保存。
+    if (
+      Object.values(room.players).filter((member) => member.membership !== "kicked").length >=
+      FAKER_ROOM_MAX_MEMBERS
+    )
+      throw new AppError("ROOM_FULL", "房间已满");
 
     const joiningAsSpectator = isRoundActive(room);
 

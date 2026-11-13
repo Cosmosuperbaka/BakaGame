@@ -551,6 +551,13 @@ export interface WhoIsFakerPrivateState {
  */
 export const WHOISFAKER_LOBBY_ROOMS_EVENT = "lobby.rooms";
 
+/**
+ * 一个房间最多容纳的成员数（玩家与旁观者合计，不含被移出的）。
+ * 与测试机器人填充时「满」的数字同一口径：房间发布的成本随人数增长，没有上限就没有可信的容量预算。
+ * 补充发言名单与手动身份表的大小上限也取它，因为这两处入参的合法大小不会超过房间人数。
+ */
+export const FAKER_ROOM_MAX_MEMBERS = 12;
+
 const emptyPayload = t.Object({}, strict);
 const gamePhaseSchema = schemaUnion(WHOISFAKER_PHASES.map((phase) => t.Literal(phase)));
 const playerRoleSchema = schemaUnion(WHOISFAKER_ROLES.map((role) => t.Literal(role)));
@@ -601,7 +608,9 @@ export const WhoIsFakerPayloadSchemas = {
     {
       words: wordPair,
       blankHint: t.Optional(t.String({ maxLength: 50 })),
-      manualRoles: t.Optional(t.Record(playerId, playerRoleSchema)),
+      manualRoles: t.Optional(
+        t.Record(playerId, playerRoleSchema, { maxProperties: FAKER_ROOM_MAX_MEMBERS })
+      ),
     },
     strict
   ),
@@ -628,7 +637,10 @@ export const WhoIsFakerPayloadSchemas = {
   ),
   "game.cancelVote": emptyPayload,
   "game.cancelNightAction": emptyPayload,
-  "game.requestSupplement": t.Object({ playerIds: t.Array(playerId, { minItems: 1 }) }, strict),
+  "game.requestSupplement": t.Object(
+    { playerIds: t.Array(playerId, { minItems: 1, maxItems: FAKER_ROOM_MAX_MEMBERS }) },
+    strict
+  ),
   "game.startPhaseTimer": t.Object({ durationSeconds: positiveInt }, strict),
   "game.stopPhaseTimer": emptyPayload,
 } as const;
