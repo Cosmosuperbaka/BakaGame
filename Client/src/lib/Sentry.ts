@@ -4,7 +4,6 @@ import commitHistory from "virtual:commit-history";
 import appVersion from "virtual:app-version";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 import { bakaChannel, bakaClientType } from "@/lib/BakaChannel";
-import { isSelfHealedModuleLoadError } from "@/lib/LazyImport";
 
 export type ClientLogLevel = "info" | "warning" | "error";
 
@@ -141,7 +140,7 @@ export function isInjectedBrowserAdRejection(reason: unknown): boolean {
 
 /** 与事件侧 ignoreErrors 同类的良性文案；日志通道按同一边界过滤，避免比事件侧更吵或更钝。 */
 const BENIGN_CLIENT_NOISE_TEXT =
-  /(Failed to fetch dynamically imported module|error loading dynamically imported module|Loading chunk [\d]+ failed|Importing a module script failed|ResizeObserver loop|removeChild' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
+  /(ResizeObserver loop|removeChild' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
 
 export const initClientSentry = (
   options?: SentryOptions,
@@ -189,21 +188,11 @@ export const initClientSentry = (
       "ResizeObserver loop completed with undelivered notifications",
       "The play() request was interrupted by a new load request.",
       "The play() request was interrupted by a call to pause().",
-      // 名单只收「模块/分块加载失败」这一类别的文案——这些字样只可能由 import()
-      // 或分块加载本身抛出，错误类别与文案绑定：Chromium "Failed to fetch
-      // dynamically imported module"、Firefox "error loading dynamically imported
-      // module"、WebKit "Importing a module script failed"、webpack
-      // "Loading chunk N failed"。
-      // 注意：Firefox/Safari 的通用网络失败文案（"NetworkError when attempting to
-      // fetch resource." / "Load failed"）**不收进名单**——它们同样由普通 API fetch
-      // 失败抛出，入名单会让弱网、CORS 与边缘故障在这两个引擎整体失明，而同类故障
-      // 在 Chromium（"Failed to fetch"，从未入名单）依旧可见，跨引擎结局不对称。
-      // 真正经 retryLazyImport 自愈重载恢复的动态导入失败会在错误对象上留下标记，
-      // 由下方 beforeSend 按标记丢弃（见 LazyImport.ts）。
-      /Failed to fetch dynamically imported module/i,
-      /error loading dynamically imported module/i,
-      /Loading chunk [\d]+ failed/i,
-      /Importing a module script failed/i,
+      // 分块加载失败不在名单里：能自愈的（会话首次）由 `ChunkRecovery` 取消预加载失败事件后
+      // 重载，错误根本不会抛出；自愈之后仍失败的是玩家真正看得见的故障，必须照报。
+      // Firefox/Safari 的通用网络失败文案（"NetworkError when attempting to fetch
+      // resource." / "Load failed"）同样不收进名单：它们也由普通 API fetch 失败抛出，
+      // 入名单会让弱网、CORS 与边缘故障在这两个引擎整体失明。
       // 浏览器翻译插件等第三方扩展会直接改写 DOM，破坏 React 的父子节点不变量。
       // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。
       /Failed to execute 'removeChild' on 'Node'/i,
@@ -215,8 +204,6 @@ export const initClientSentry = (
     beforeSend: (event, hint) => {
       if (isModuleScriptParseFailure(event)) return null;
       if (isInjectedBrowserAdRejection(hint?.originalException)) return null;
-      // 已被 retryLazyImport 自愈重载吸收的模块加载失败不再上报（页面即将重载，非用户可见缺陷）。
-      if (isSelfHealedModuleLoadError(hint?.originalException)) return null;
       return event;
     },
     beforeSendLog: (log) => (BENIGN_CLIENT_NOISE_TEXT.test(String(log.message)) ? null : log),

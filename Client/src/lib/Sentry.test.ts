@@ -91,7 +91,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     );
   });
 
-  it("噪声豁免名单只收模块/分块加载类别文案，普通 API fetch 失败不再被吞", () => {
+  it("噪声豁免名单不收分块加载失败（自愈后仍失败的要照报），也不吞普通 API fetch 失败", () => {
     const mockDriver = createMockDriver();
     initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
 
@@ -101,15 +101,15 @@ describe("Client Sentry 客户端接入与异常转发", () => {
         typeof entry === "string" ? candidate.includes(entry) : entry.test(candidate)
       );
 
-    // 模块/分块加载失败：文案与错误类别绑定，各引擎都要覆盖，维持豁免。
+    // 分块加载失败：能自愈的在抛出之前就被取消，抛到上报侧的就是自愈之后仍失败的真实故障。
     expect(
       isFiltered("TypeError: Failed to fetch dynamically imported module: /assets/main.js")
-    ).toBe(true);
-    expect(isFiltered("TypeError: Loading chunk 42 failed.")).toBe(true);
-    expect(isFiltered("TypeError: Importing a module script failed.")).toBe(true);
+    ).toBe(false);
+    expect(isFiltered("TypeError: Loading chunk 42 failed.")).toBe(false);
+    expect(isFiltered("TypeError: Importing a module script failed.")).toBe(false);
     expect(
       isFiltered('TypeError: error loading dynamically imported module for "/assets/x.js"')
-    ).toBe(true);
+    ).toBe(false);
     // 第三方扩展改写 DOM 与浏览器级良性中断维持豁免。
     expect(
       isFiltered(
@@ -127,7 +127,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     expect(isFiltered("TypeError: NetworkError when attempting to fetch resource.")).toBe(false);
   });
 
-  it("模块脚本解析失败与已自愈的模块加载在事件组装阶段被丢弃，业务异常不受影响", () => {
+  it("模块脚本解析失败在事件组装阶段被丢弃，业务异常不受影响", () => {
     const mockDriver = createMockDriver();
     initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
 
@@ -175,11 +175,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     };
     expect(beforeSend(jsonFailure)).toBe(jsonFailure);
 
-    // retryLazyImport 触发自愈重载时打标记的事件丢弃；未自愈（门闩已耗尽）的必须保留。
-    const selfHealed = new Error("Load failed");
-    (selfHealed as Error & { bakagameSelfHealedModuleLoad?: true }).bakagameSelfHealedModuleLoad =
-      true;
-    expect(beforeSend(logicFailure, { originalException: selfHealed })).toBeNull();
+    // 分块加载失败没有任何特殊过滤：自愈在抛出之前完成，抛出来的都是真实故障。
     expect(beforeSend(logicFailure, { originalException: new Error("Load failed") })).toBe(
       logicFailure
     );
@@ -253,9 +249,11 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
 
     const { beforeSendLog } = capturedOptions(mockDriver.init);
+    expect(beforeSendLog({ message: "ResizeObserver loop completed with undelivered" })).toBeNull();
+    // 与事件侧一致：分块加载失败的日志也不被吞。
     expect(
       beforeSendLog({ message: "Failed to fetch dynamically imported module: /assets/app.js" })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(beforeSendLog({ message: "WebSocket 命令失败" })).toEqual({
       message: "WebSocket 命令失败",
     });

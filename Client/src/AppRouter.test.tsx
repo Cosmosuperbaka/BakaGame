@@ -39,19 +39,10 @@ vi.mock("@/pages/StatusPage", () => ({
     throw new Error("page-render-boom");
   },
 }));
-// 分块下载失败发生在浏览器的动态导入里，测试里让 admin 的加载器拒绝，其余逻辑走真实的自愈实现。
-vi.mock("@/lib/LazyImport", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/LazyImport")>();
-  return {
-    ...actual,
-    retryLazyImport: <T,>(load: () => Promise<T>, key: string) =>
-      actual.retryLazyImport(
-        key === "admin"
-          ? () => Promise.reject(new Error("Failed to fetch dynamically imported module: /a.js"))
-          : load,
-        key
-      ),
-  };
+// 分块下载失败发生在浏览器的动态导入里：让 admin 页面模块加载即抛错来模拟（自愈重载由预加载失败事件
+// 触发，见 ChunkRecovery 的用例；这里只看自愈之后仍然失败时的路由出口）。
+vi.mock("@/pages/AdminPage", () => {
+  throw new Error("Failed to fetch dynamically imported module: /a.js");
 });
 
 import App from "./App";
@@ -94,15 +85,20 @@ describe("路由错误出口", () => {
     );
   });
 
-  it("分块加载失败时走自愈重载，仍显示站内回退界面且错误带自愈标记", async () => {
+  it("分块加载失败（自愈之后仍失败）时显示站内回退界面并如实上报", async () => {
     renderAt("/admin");
 
     expect(await screen.findByRole("button", { name: "刷新页面" })).toBeInTheDocument();
-    expect(reload).toHaveBeenCalledTimes(1);
-    const reported = captureClientException.mock.calls[0]?.[0] as Error & {
-      bakagameSelfHealedModuleLoad?: true;
-    };
-    expect(reported.bakagameSelfHealedModuleLoad).toBe(true);
+    // 模块工厂抛出的错误被测试框架包了一层，原始错误在 cause 里。
+    expect(captureClientException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cause: expect.objectContaining({
+          message: expect.stringContaining("Failed to fetch dynamically"),
+        }),
+      })
+    );
+    // 路由层本身不再触发重载：自愈只在预加载失败事件里做。
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it.each([
