@@ -5,7 +5,6 @@ import { validateCEESettings } from "../domain/CEERules";
 import { safeEqualToken } from "../domain/Rules";
 import type { ConnectionRecord } from "../shared/Index";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
-import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { createCEEOriginalSocket } from "../infrastructure/CEEOriginalSocket";
 import {
   originalObject,
@@ -53,7 +52,6 @@ export class CEEOriginalService {
   private readonly byConnection = new Map<string, CEEOriginalSession>();
   private readonly entering = new Set<string>();
   private readonly chats = new Map<string, CEEOriginalChatRoom>();
-  private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10_000, maxRequests: 8 });
   private readonly now: () => number;
   private readonly fetcher: NonNullable<CEEOriginalOptions["fetcher"]>;
   private readonly imageHints: Pick<CEEImageHints, "render">;
@@ -540,12 +538,6 @@ export class CEEOriginalService {
   }
 
   private chat(session: CEEOriginalSession, text: string): unknown {
-    const connectionId = session.connectionId;
-    // 桶键用服务端分配的连接号，不用会话凭据：凭据每次进房都重新签发，
-    // 离开再进来就换一个全新桶，配额变成「每次重进送 8 条」；同时签发过的凭据个数没有上限，
-    // 限流 Map 会随对方重进的次数一直长。
-    if (!connectionId || !this.chatLimiter.allow(connectionId, this.now()))
-      throw new AppError("CHAT_RATE_LIMIT", "发送消息太快，请稍后重试");
     const me = selfOf(session);
     const room = this.chats.get(session.roomId)!;
     const message = {
