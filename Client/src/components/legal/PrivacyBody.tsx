@@ -1,15 +1,38 @@
-import type { ReactNode } from "react";
 import { LegalSection } from "@/components/common/LegalPage";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
 export const PRIVACY_UPDATED_AT = "2026-10-22";
 
-/** 一条信息项：来源与用途分开写，便于读者逐项核对。 */
-function DataItem({ title, children }: { title: string; children: ReactNode }) {
+/** 一条信息项：来源、用途（与可选的说明）固定三段样板，标签与样式只在这里写一份。 */
+function DataItem({
+  title,
+  source,
+  purpose,
+  note,
+}: {
+  title: string;
+  source: string;
+  purpose: string;
+  note?: string;
+}) {
+  const rows: [string, string | undefined][] = [
+    ["来源", source],
+    ["用途", purpose],
+    ["说明", note],
+  ];
   return (
     <div>
       <dt className="font-serif text-sm font-semibold">{title}</dt>
-      <dd className="mt-1 space-y-1 text-sm leading-6 text-muted-foreground">{children}</dd>
+      <dd className="mt-1 space-y-1 text-sm leading-6 text-muted-foreground">
+        {rows.map(([label, text]) =>
+          text === undefined ? null : (
+            <p key={label}>
+              <span className="text-foreground">{label}：</span>
+              {text}
+            </p>
+          )
+        )}
+      </dd>
     </div>
   );
 }
@@ -24,95 +47,49 @@ export function PrivacyBody() {
 
       <LegalSection title="一、我们收集的信息">
         <dl className="space-y-4">
-          <DataItem title="QQ 号、QQ 昵称与 QQ 头像">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你使用账号功能时主动输入的 QQ 邮箱；昵称由运营方自建的 QQ
-              昵称服务读取；头像经站内代理从 QQ 头像源获取。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              创建与识别账号、展示昵称与头像、账号安全与找回。QQ
-              号默认不公开，只有你本人在资料设置中开启后，其他玩家才能通过资料卡看到。
-            </p>
-          </DataItem>
+          <DataItem
+            title="QQ 号、QQ 昵称与 QQ 头像"
+            source="你使用账号功能时主动输入的 QQ 邮箱；昵称由运营方自建的 QQ 昵称服务读取；头像经站内代理从 QQ 头像源获取。"
+            purpose="创建与识别账号、展示昵称与头像、账号安全与找回。QQ 号默认不公开，只有你本人在资料设置中开启后，其他玩家才能通过资料卡看到。"
+          />
 
-          <DataItem title="对局记录">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你在房间内的结算结果与关键对局事件。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              后台复盘、对局统计、反作弊与问题排查。对局记录长期保留，不包含房间聊天内容。
-            </p>
-          </DataItem>
+          <DataItem
+            title="对局记录"
+            source="你在房间内的结算结果与关键对局事件。"
+            purpose="后台复盘、对局统计、反作弊与问题排查。对局记录长期保留，不包含房间聊天内容。"
+          />
 
-          <DataItem title="访问日志与 IP 地址">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你访问本站时产生的网络请求，包括边缘节点写入的客户端地址。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              安全审计、访问限流、故障排查与服务稳定性维护。服务端运行日志按运维需要保留有限期限；管理后台的审计记录不保存
-              IP 地址。
-            </p>
-          </DataItem>
+          <DataItem
+            title="访问日志与 IP 地址"
+            source="你访问本站时产生的网络请求，包括边缘节点写入的客户端地址。"
+            purpose="安全审计、访问限流、故障排查与服务稳定性维护。服务端运行日志按运维需要保留有限期限；管理后台的审计记录不保存 IP 地址。"
+          />
 
-          <DataItem title="Cookie 与浏览器本地存储">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你使用本站时由浏览器自动保存。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              会话 Cookie
-              用于保持登录状态与完成通行密钥等安全校验；本地存储用于记住房间设置、音量与界面偏好、客户端更新提示，以及一个随机生成的匿名访客标识。
-            </p>
-            <p>
-              <span className="text-foreground">说明：</span>
-              访问统计使用本机随机生成的访客标识，服务端按天加盐摘要后才会写入数据库，跨天不可关联，且不记录
-              IP。
-            </p>
-          </DataItem>
+          <DataItem
+            title="Cookie 与浏览器本地存储"
+            source="你使用本站时由浏览器自动保存。"
+            purpose="会话 Cookie 用于保持登录状态与完成通行密钥等安全校验；本地存储用于记住房间设置、音量与界面偏好、客户端更新提示，以及一个随机生成的匿名访客标识。"
+            note="访问统计使用本机随机生成的访客标识，服务端按天加盐摘要后才会写入数据库，跨天不可关联，且不记录 IP。"
+          />
 
-          <DataItem title="错误与性能数据（Sentry）">
-            <p>
-              <span className="text-foreground">来源：</span>
-              客户端与服务端运行时自动采集，经站内隧道转发至 Sentry。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              定位崩溃、接口异常与性能问题，改进服务稳定性。数据可能包含错误堆栈、页面路径、浏览器与设备类型、客户端版本与构建版本。
-            </p>
-          </DataItem>
+          <DataItem
+            title="错误与性能数据（Sentry）"
+            source="客户端与服务端运行时自动采集，经站内隧道转发至 Sentry。"
+            purpose="定位崩溃、接口异常与性能问题，改进服务稳定性。数据可能包含错误堆栈、页面路径、浏览器与设备类型、客户端版本与构建版本。"
+          />
 
-          <DataItem title="音乐平台账号凭据（仅在你主动配置时）">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你主动填写或扫码登录产生的网易云音乐、QQ 音乐凭据。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              以你的身份向对应平台请求歌曲信息与播放地址，并支持账号设置的云端同步。凭据在服务端加密后保存，只有你本人能读写自己的设置；退出平台时删除云端副本。
-            </p>
-          </DataItem>
+          <DataItem
+            title="音乐平台账号凭据（仅在你主动配置时）"
+            source="你主动填写或扫码登录产生的网易云音乐、QQ 音乐凭据。"
+            purpose="以你的身份向对应平台请求歌曲信息与播放地址，并支持账号设置的云端同步。凭据在服务端加密后保存，只有你本人能读写自己的设置；退出平台时删除云端副本。"
+          />
 
-          <DataItem title="房间聊天消息">
-            <p>
-              <span className="text-foreground">来源：</span>
-              你在房间内发送的聊天内容。
-            </p>
-            <p>
-              <span className="text-foreground">用途：</span>
-              实时展示给房间内玩家；服务重启时随房间状态快照恢复仍在进行的房间。
-            </p>
-            <p>
-              <span className="text-foreground">说明：</span>
-              聊天消息不写入对局记录，房间结束后不再保留。
-            </p>
-          </DataItem>
+          <DataItem
+            title="房间聊天消息"
+            source="你在房间内发送的聊天内容。"
+            purpose="实时展示给房间内玩家；服务重启时随房间状态快照恢复仍在进行的房间。"
+            note="聊天消息不写入对局记录，房间结束后不再保留。"
+          />
         </dl>
       </LegalSection>
 
