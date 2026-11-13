@@ -20,9 +20,11 @@ const startAuthentication = vi.hoisted(() =>
 const startRegistration = vi.hoisted(() =>
   vi.fn<(input: { optionsJSON: unknown }) => Promise<unknown>>()
 );
+const platformAuthenticatorIsAvailable = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
 
 vi.mock("@simplewebauthn/browser", () => ({
   browserSupportsWebAuthn,
+  platformAuthenticatorIsAvailable,
   startAuthentication,
   startRegistration,
 }));
@@ -34,7 +36,6 @@ import {
   describeDevice,
   listPasskeys,
   passkeyErrorMessage,
-  passkeyRegistrationErrorMessage,
   passkeySupported,
   platformAuthenticatorAvailable,
   removePasskey,
@@ -51,14 +52,12 @@ afterEach(() => vi.unstubAllGlobals());
 const UA = {
   windowsChrome:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  windowsFirefox:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
-  iphoneSafari:
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
-  wechatIphone:
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50 NetType/WIFI Language/zh_CN",
-  macSafari:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+};
+
+/** Chromium 系给得出的品牌清单；测试里据此拼出「Windows · Chrome」。 */
+const chromeHints = {
+  platform: "Windows",
+  brands: [{ brand: "Chromium" }, { brand: "Google Chrome" }],
 };
 
 describe("通行密钥客户端", () => {
@@ -84,17 +83,10 @@ describe("通行密钥客户端", () => {
     ).toBe("macOS · Microsoft Edge");
   });
 
-  it("没有品牌清单时退回 UA 字符串认出系统与浏览器", () => {
-    expect(describeDevice({ userAgent: UA.windowsChrome })).toBe("Windows · Chrome");
-    expect(describeDevice({ userAgent: UA.windowsFirefox })).toBe("Windows · Firefox");
-    expect(describeDevice({ userAgent: UA.iphoneSafari })).toBe("iOS · Safari");
-    expect(describeDevice({ userAgent: UA.macSafari })).toBe("macOS · Safari");
-    expect(describeDevice({ userAgent: UA.wechatIphone })).toBe("iOS · 微信");
-  });
-
-  it("认不出的线索给空串，由调用方兜底而不是编一个「未知设备」", () => {
+  it("不嗅探 UA 字符串：只有 UA、没有品牌清单时设备名为空，由调用方兜底", () => {
     expect(describeDevice({})).toBe("");
-    expect(describeDevice({ userAgent: "SomeBot/1.0" })).toBe("");
+    // 只给系统不给品牌：名字就只有系统，不去猜浏览器。
+    expect(describeDevice({ platform: "Windows" })).toBe("Windows");
   });
 
   it("登录：取认证选项交给浏览器，再把响应回传给校验端点", async () => {
@@ -146,6 +138,12 @@ describe("通行密钥客户端", () => {
     expect(autoPasskeyName("platform")).toBe("Windows · Chrome（本机解锁）");
     expect(autoPasskeyName("cross-platform")).toBe("Windows · Chrome（跨设备密钥）");
     expect(autoPasskeyName()).toBe("Windows · Chrome");
+  });
+
+  it("没有 UA-Client-Hints 时不去解析 UA 字符串，自动名回落为「本设备」", () => {
+    stubNavigator(UA.windowsChrome);
+    expect(autoPasskeyName()).toBe("本设备");
+    expect(autoPasskeyName("platform")).toBe("本机解锁");
   });
 
   it("认不出设备时也给出可读的名字，不留空名", async () => {
@@ -216,7 +214,7 @@ describe("通行密钥客户端", () => {
   });
 
   it("回执不报保管方时，名字退回玩家选的那一类", async () => {
-    stubNavigator(UA.windowsChrome, { platform: "Windows" });
+    stubNavigator(UA.windowsChrome, chromeHints);
     authGet.mockResolvedValue({ challenge: "c5" });
     startRegistration.mockResolvedValue({ id: "cred-5" });
 
@@ -231,16 +229,15 @@ describe("通行密钥客户端", () => {
   it("系统验证器探测：不支持或异常时返回 undefined，交给调用方决定", async () => {
     browserSupportsWebAuthn.mockReturnValue(false);
     await expect(platformAuthenticatorAvailable()).resolves.toBeUndefined();
+    expect(platformAuthenticatorIsAvailable).not.toHaveBeenCalled();
 
     browserSupportsWebAuthn.mockReturnValue(true);
-    vi.stubGlobal("PublicKeyCredential", {
-      isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(false),
-    });
+    platformAuthenticatorIsAvailable.mockResolvedValue(false);
     await expect(platformAuthenticatorAvailable()).resolves.toBe(false);
+    platformAuthenticatorIsAvailable.mockResolvedValue(true);
+    await expect(platformAuthenticatorAvailable()).resolves.toBe(true);
 
-    vi.stubGlobal("PublicKeyCredential", {
-      isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockRejectedValue(new Error("x")),
-    });
+    platformAuthenticatorIsAvailable.mockRejectedValue(new Error("x"));
     await expect(platformAuthenticatorAvailable()).resolves.toBeUndefined();
   });
 
@@ -280,18 +277,25 @@ describe("通行密钥客户端", () => {
   it("注册失败按已知线索拆开：域名未关联 / 无系统验证器 / 取消或不可用", () => {
     const security = new DOMException("x", "SecurityError");
     const notAllowed = new DOMException("x", "NotAllowedError");
-    expect(passkeyRegistrationErrorMessage(security, "platform", true, "兜底")).toBe(
-      "当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试"
-    );
-    expect(passkeyRegistrationErrorMessage(notAllowed, "platform", false, "兜底")).toBe(
-      "本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」"
-    );
-    expect(passkeyRegistrationErrorMessage(notAllowed, "cross-platform", undefined, "兜底")).toBe(
+    expect(
+      passkeyErrorMessage(security, "兜底", { attachment: "platform", platformAuthenticator: true })
+    ).toBe("当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试");
+    expect(
+      passkeyErrorMessage(notAllowed, "兜底", {
+        attachment: "platform",
+        platformAuthenticator: false,
+      })
+    ).toBe("本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」");
+    expect(passkeyErrorMessage(notAllowed, "兜底", { attachment: "cross-platform" })).toBe(
       "已取消通行密钥验证，或所选验证器不可用"
     );
     expect(
-      passkeyRegistrationErrorMessage(new DOMException("x", "AbortError"), "platform", true, "兜底")
+      passkeyErrorMessage(new DOMException("x", "AbortError"), "兜底", { attachment: "platform" })
     ).toBe("已取消通行密钥验证");
+    // 登录不带注册线索：NotAllowed 的文案不提验证器类型。
+    expect(passkeyErrorMessage(notAllowed, "兜底")).toBe(
+      "已取消通行密钥验证，或本设备没有可用的通行密钥"
+    );
   });
 
   it("服务端中文原因原样透出，其余错误只给兜底文案", () => {

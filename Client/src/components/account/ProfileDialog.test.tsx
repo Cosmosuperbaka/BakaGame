@@ -36,12 +36,6 @@ vi.mock("@/lib/Passkey", () => ({
   // 组件只关心「拿到一句中文」，映射规则本身在 lib/Passkey.test.ts 里验。
   passkeyErrorMessage: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
-  passkeyRegistrationErrorMessage: (
-    error: unknown,
-    _attachment: unknown,
-    _platform: unknown,
-    fallback: string
-  ) => (error instanceof Error ? error.message : fallback),
 }));
 
 const profile: AccountProfile = {

@@ -1,5 +1,6 @@
 import {
   browserSupportsWebAuthn,
+  platformAuthenticatorIsAvailable,
   startAuthentication,
   startRegistration,
   type PublicKeyCredentialCreationOptionsJSON,
@@ -26,61 +27,33 @@ export interface PasskeyEntry {
 /** 输入框与请求里统一的密钥名上限：库列是 255 字符，列表一行也放不下更长的那串。 */
 export const PASSKEY_NAME_MAX = 40;
 
-/** 交给 `describeDevice` 的浏览器线索；做成参数是为了能在测试里喂假 UA。 */
+/** 交给 `describeDevice` 的浏览器线索（UA-Client-Hints）；做成参数是为了能在测试里喂假数据。 */
 export interface DeviceHints {
   platform?: string;
   brands?: readonly { brand: string }[];
-  userAgent?: string;
 }
 
-/** UA-Client-Hints 的品牌清单里，内核名与「Not:A-Brand」这类占位都不是浏览器的名字。 */
+/** 品牌清单里，内核名与「Not:A-Brand」这类占位都不是浏览器的名字。 */
 const isMeaningfulBrand = (brand: string): boolean =>
   brand !== "Chromium" && !brand.startsWith("Not");
 
-// 顺序即优先级：Android 的 UA 里也带 Linux，iOS 的也带 Mac OS。
-const PLATFORM_BY_UA: readonly (readonly [RegExp, string])[] = [
-  [/Windows NT/, "Windows"],
-  [/(iPhone|iPad|iPod)/, "iOS"],
-  [/Android/, "Android"],
-  [/Mac OS X/, "macOS"],
-  [/CrOS/, "ChromeOS"],
-  [/Linux/, "Linux"],
-];
-
-// 顺序即优先级：Edge / Opera 的 UA 里也带 Chrome，微信、Safari 与所有 Chromium 内核都带 Safari 字样，
-// 所以 Safari 只能垫在最后，靠前面的规则先把它挡掉。
-const BROWSER_BY_UA: readonly (readonly [RegExp, string])[] = [
-  [/Edg\//, "Edge"],
-  [/OPR\//, "Opera"],
-  [/Firefox\//, "Firefox"],
-  [/MicroMessenger/, "微信"],
-  [/Chrome\//, "Chrome"],
-  [/Safari\//, "Safari"],
-];
-
 /**
- * 设备名：优先读 UA-Client-Hints（只有 Chromium 系给得出品牌清单），认不出再退到 UA 字符串。
- * 两段都认不出就是空串，由调用方兜底，不编一个「未知设备」占位。
+ * 设备名只读 UA-Client-Hints（Chromium 系才给得出系统与品牌清单），不嗅探 UA 字符串。
+ * 认不出的部分就是空串，由调用方兜底，不编一个「未知设备」占位。
  */
 export const describeDevice = (hints: DeviceHints): string => {
-  const ua = hints.userAgent ?? "";
-  const platform =
-    hints.platform ?? PLATFORM_BY_UA.find(([pattern]) => pattern.test(ua))?.[1] ?? "";
-  const brand =
-    hints.brands
-      ?.filter((item) => isMeaningfulBrand(item.brand))
-      .at(-1)
-      ?.brand.replace(/^Google /, "") ??
-    BROWSER_BY_UA.find(([pattern]) => pattern.test(ua))?.[1] ??
-    "";
-  return [platform, brand].filter(Boolean).join(" · ");
+  const brand = hints.brands
+    ?.filter((item) => isMeaningfulBrand(item.brand))
+    .at(-1)
+    ?.brand.replace(/^Google /, "");
+  return [hints.platform, brand].filter(Boolean).join(" · ");
 };
 
 const hintsOf = (): DeviceHints => {
   const data = (
     navigator as { userAgentData?: { platform?: string; brands?: readonly { brand: string }[] } }
   ).userAgentData;
-  return { platform: data?.platform, brands: data?.brands, userAgent: navigator.userAgent };
+  return { platform: data?.platform, brands: data?.brands };
 };
 
 /**
@@ -109,14 +82,9 @@ export const passkeySupported = (): boolean => browserSupportsWebAuthn();
  * 返回 `undefined` 表示浏览器没给答案，调用方不应据此禁用入口。
  */
 export const platformAuthenticatorAvailable = async (): Promise<boolean | undefined> => {
-  if (
-    !passkeySupported() ||
-    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function"
-  ) {
-    return undefined;
-  }
+  if (!passkeySupported()) return undefined;
   try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    return await platformAuthenticatorIsAvailable();
   } catch {
     return undefined;
   }
@@ -127,40 +95,40 @@ const errorName = (error: unknown): string => (error instanceof DOMException ? e
 /** 页面 origin 与 rpID 不同域（Android 壳未对齐、或 DNS 换了域）时的唯一可辨信号是 `SecurityError`。 */
 const DOMAIN_MISMATCH_MESSAGE = "当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试";
 
+const CANCELLED_MESSAGE = "已取消通行密钥验证";
+
 /**
- * 通行密钥流程的错误文案：服务端错误码已在 `Api.ts` 换成中文。
+ * 注册时的已知线索：玩家明确选了「本机解锁」、而能力探测说本机没有系统验证器时，
+ * 可以直接告诉他换另一条路。
+ */
+export interface PasskeyRegistrationContext {
+  attachment?: PasskeyAttachment;
+  platformAuthenticator?: boolean;
+}
+
+const notAllowedMessage = (registration?: PasskeyRegistrationContext): string => {
+  if (!registration) return "已取消通行密钥验证，或本设备没有可用的通行密钥";
+  if (registration.attachment === "platform" && registration.platformAuthenticator === false) {
+    return "本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」";
+  }
+  return "已取消通行密钥验证，或所选验证器不可用";
+};
+
+/**
+ * 通行密钥流程的错误文案（登录与注册共用，注册传 `registration`）：服务端错误码已在 `Api.ts` 换成中文。
  *
  * WebAuthn 把「用户取消」「超时」「没有可用验证器」都压成 `NotAllowedError`，
  * 只能给出包含两种可能的文案；域名未关联是独立的 `SecurityError`，可以单独说清。
  */
-export const passkeyErrorMessage = (error: unknown, fallback: string): string => {
-  const name = errorName(error);
-  if (name === "SecurityError") return DOMAIN_MISMATCH_MESSAGE;
-  if (name === "AbortError") return "已取消通行密钥验证";
-  if (name === "NotAllowedError") return "已取消通行密钥验证，或本设备没有可用的通行密钥";
-  if (error instanceof AuthRequestError) return error.message;
-  return fallback;
-};
-
-/**
- * 注册失败的文案比登录多一条已知线索：玩家明确选了「本机解锁」、
- * 而能力探测说本机没有系统验证器时，可以直接告诉他换另一条路。
- */
-export const passkeyRegistrationErrorMessage = (
+export const passkeyErrorMessage = (
   error: unknown,
-  attachment: PasskeyAttachment | undefined,
-  platformAuthenticator: boolean | undefined,
-  fallback: string
+  fallback: string,
+  registration?: PasskeyRegistrationContext
 ): string => {
   const name = errorName(error);
   if (name === "SecurityError") return DOMAIN_MISMATCH_MESSAGE;
-  if (name === "AbortError") return "已取消通行密钥验证";
-  if (name === "NotAllowedError") {
-    if (attachment === "platform" && platformAuthenticator === false) {
-      return "本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」";
-    }
-    return "已取消通行密钥验证，或所选验证器不可用";
-  }
+  if (name === "AbortError") return CANCELLED_MESSAGE;
+  if (name === "NotAllowedError") return notAllowedMessage(registration);
   if (error instanceof AuthRequestError) return error.message;
   return fallback;
 };

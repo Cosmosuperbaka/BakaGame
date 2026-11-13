@@ -28,7 +28,6 @@ import {
   addPasskey,
   listPasskeys,
   passkeyErrorMessage,
-  passkeyRegistrationErrorMessage,
   passkeySupported,
   platformAuthenticatorAvailable,
   removePasskey,
@@ -131,12 +130,10 @@ function PasskeySection() {
       await reload();
     } catch (cause) {
       setError(
-        passkeyRegistrationErrorMessage(
-          cause,
+        passkeyErrorMessage(cause, "通行密钥添加失败，请稍后重试", {
           attachment,
           platformAuthenticator,
-          "通行密钥添加失败，请稍后重试"
-        )
+        })
       );
     } finally {
       setBusy(null);
@@ -313,9 +310,7 @@ function PasskeySection() {
           <p className="text-xs text-muted-foreground">本设备未检测到系统验证器。</p>
         ) : null}
       </div>
-      {error ? (
-        <FormAlert>{error}</FormAlert>
-      ) : null}
+      {error ? <FormAlert>{error}</FormAlert> : null}
     </SettingsSection>
   );
 }
@@ -380,9 +375,7 @@ function BadgeSection({ profile }: { profile: AccountProfile }) {
       ) : (
         <p className="text-xs text-muted-foreground">还没有获得徽章。</p>
       )}
-      {error ? (
-        <FormAlert>{error}</FormAlert>
-      ) : null}
+      {error ? <FormAlert>{error}</FormAlert> : null}
     </SettingsSection>
   );
 }
@@ -443,9 +436,7 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
         </SettingsFields>
         <BadgeSection profile={profile} />
         {supportsPasskey ? <PasskeySection /> : null}
-        {error ? (
-          <FormAlert>{error}</FormAlert>
-        ) : null}
+        {error ? <FormAlert>{error}</FormAlert> : null}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onDone}>
             取消
