@@ -63,7 +63,7 @@ export function DependencyListHeader({ compact = false }: { compact?: boolean })
 }
 
 /**
- * 一行一个依赖。`onSelect` 给出时整行可点、打开该包的二级抽屉；省略时渲染成静态行。
+ * 一行一个依赖，整行可点、打开该包的二级抽屉。
  */
 export function DependencyRow({
   dependency,
@@ -71,7 +71,7 @@ export function DependencyRow({
   compact = false,
 }: {
   dependency: CreditDependency;
-  onSelect?: (name: string) => void;
+  onSelect: (name: string) => void;
   /** 抽屉内的窄行：去掉类型列，其余列仍然逐列对齐。 */
   compact?: boolean;
 }) {
@@ -130,14 +130,6 @@ export function DependencyRow({
       />
     </>
   );
-
-  if (!onSelect) {
-    return (
-      <div className={cn(rowClass(compact), "grid items-center")} aria-label={dependency.name}>
-        {content}
-      </div>
-    );
-  }
 
   return (
     <motion.button

@@ -43,6 +43,141 @@ function Stat({ value, label }: { value: number; label: string }) {
   );
 }
 
+/** 下钻路径：返回上一层，加上整条路径，中间每一格都可点。 */
+function SheetBreadcrumb({
+  path,
+  onRewind,
+}: {
+  path: readonly string[];
+  onRewind: (index: number) => void;
+}) {
+  return path.length > 1 ? (
+    <nav aria-label="依赖下钻路径" className="min-w-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="-ml-2 gap-1.5 px-2 text-muted-foreground"
+        onClick={() => onRewind(path.length - 2)}
+      >
+        <ArrowLeft aria-hidden="true" />
+        <span>返回上一层</span>
+      </Button>
+      <ol className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 text-xs">
+        {path.map((name, index) => (
+          <li key={name} className="flex min-w-0 items-center gap-1">
+            {index > 0 ? (
+              <ChevronRight aria-hidden="true" className="size-3 shrink-0 opacity-50" />
+            ) : null}
+            <Crumb name={name} current={index === path.length - 1} onPick={() => onRewind(index)} />
+          </li>
+        ))}
+      </ol>
+    </nav>
+  ) : null;
+}
+
+/** 外部跳转：整行描边按钮，项目主页与 npm 页面。 */
+function SheetLinks({ dependency }: { dependency: CreditDependency }) {
+  return (
+    <>
+      {/* 跳转用整行描边按钮，不再是一小行文字链：这是抽屉里最常做的外部动作。 */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {dependency.url ? (
+          <Button asChild variant="outline" className="group justify-start">
+            <motion.a href={dependency.url} target="_blank" rel="noreferrer" {...pressable}>
+              <Globe aria-hidden="true" />
+              <span>项目主页</span>
+              <ArrowUpRight
+                aria-hidden="true"
+                className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+              />
+            </motion.a>
+          </Button>
+        ) : null}
+        <Button
+          asChild
+          variant="outline"
+          className={dependency.url ? "group justify-start" : "group justify-start sm:col-span-2"}
+        >
+          <motion.a
+            href={`https://www.npmjs.com/package/${dependency.name}`}
+            target="_blank"
+            rel="noreferrer"
+            {...pressable}
+          >
+            <Package aria-hidden="true" />
+            <span>npm 页面</span>
+            <ArrowUpRight
+              aria-hidden="true"
+              className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+            />
+          </motion.a>
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/** 依赖构成：直接与间接计数，子依赖按运行时与开发分组。 */
+function SheetChildren({
+  total,
+  runtime,
+  development,
+  transitiveCount,
+  onNavigate,
+}: {
+  total: number;
+  runtime: CreditDependency[];
+  development: CreditDependency[];
+  transitiveCount: number;
+  onNavigate: (name: string) => void;
+}) {
+  return (
+    <>
+      <div className="border-t pt-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Stat value={total} label="直接子依赖" />
+          <Stat value={transitiveCount} label="间接依赖（传递闭包）" />
+        </div>
+
+        {total === 0 ? (
+          <p className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-4 text-center text-xs text-muted-foreground">
+            无子依赖
+          </p>
+        ) : (
+          /* 按类型分组：组标题承担「这一堆是什么」，行内就不再重复类型列。 */
+          <div className="mt-3 space-y-3">
+            {[
+              { label: "运行时依赖", entries: runtime },
+              { label: "开发依赖", entries: development },
+            ]
+              .filter((group) => group.entries.length > 0)
+              .map((group) => (
+                <section key={group.label} aria-label={group.label}>
+                  {/* 区块小标题：与全站同一口径（xs 半粗弱化色），不低于上方统计格的说明字。 */}
+                  <h3 className="text-xs font-semibold text-muted-foreground">
+                    {`${group.label} ${group.entries.length} 个`}
+                  </h3>
+                  <div className="mt-1 overflow-hidden rounded-md border bg-card">
+                    <DependencyListHeader compact />
+                    <ul className="divide-y divide-border">
+                      {group.entries.map((child) => (
+                        <li key={child.name}>
+                          <DependencyRow dependency={child} compact onSelect={onNavigate} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+              ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 /**
  * 二级抽屉的内容：下钻路径 → 包身份 → 跳转按钮 → 依赖构成 → 许可证原文。
  *
@@ -99,34 +234,7 @@ export function DependencySheet({
 
   return (
     <div ref={rootRef} className="space-y-4">
-      {path.length > 1 ? (
-        <nav aria-label="依赖下钻路径" className="min-w-0">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="-ml-2 gap-1.5 px-2 text-muted-foreground"
-            onClick={() => onRewind(path.length - 2)}
-          >
-            <ArrowLeft aria-hidden="true" />
-            <span>返回上一层</span>
-          </Button>
-          <ol className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 text-xs">
-            {path.map((name, index) => (
-              <li key={name} className="flex min-w-0 items-center gap-1">
-                {index > 0 ? (
-                  <ChevronRight aria-hidden="true" className="size-3 shrink-0 opacity-50" />
-                ) : null}
-                <Crumb
-                  name={name}
-                  current={index === path.length - 1}
-                  onPick={() => onRewind(index)}
-                />
-              </li>
-            ))}
-          </ol>
-        </nav>
-      ) : null}
+      <SheetBreadcrumb path={path} onRewind={onRewind} />
 
       <div className="flex items-start gap-3">
         <span
@@ -155,80 +263,15 @@ export function DependencySheet({
         <p className="text-sm break-words text-muted-foreground">{dependency.description}</p>
       ) : null}
 
-      {/* 跳转用整行描边按钮，不再是一小行文字链：这是抽屉里最常做的外部动作。 */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {dependency.url ? (
-          <Button asChild variant="outline" className="group justify-start">
-            <motion.a href={dependency.url} target="_blank" rel="noreferrer" {...pressable}>
-              <Globe aria-hidden="true" />
-              <span>项目主页</span>
-              <ArrowUpRight
-                aria-hidden="true"
-                className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
-              />
-            </motion.a>
-          </Button>
-        ) : null}
-        <Button
-          asChild
-          variant="outline"
-          className={dependency.url ? "group justify-start" : "group justify-start sm:col-span-2"}
-        >
-          <motion.a
-            href={`https://www.npmjs.com/package/${dependency.name}`}
-            target="_blank"
-            rel="noreferrer"
-            {...pressable}
-          >
-            <Package aria-hidden="true" />
-            <span>npm 页面</span>
-            <ArrowUpRight
-              aria-hidden="true"
-              className="ml-auto opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
-            />
-          </motion.a>
-        </Button>
-      </div>
+      <SheetLinks dependency={dependency} />
 
-      <div className="border-t pt-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Stat value={children.length} label="直接子依赖" />
-          <Stat value={transitiveCount} label="间接依赖（传递闭包）" />
-        </div>
-
-        {children.length === 0 ? (
-          <p className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-4 text-center text-xs text-muted-foreground">
-            无子依赖
-          </p>
-        ) : (
-          /* 按类型分组：组标题承担「这一堆是什么」，行内就不再重复类型列。 */
-          <div className="mt-3 space-y-3">
-            {[
-              { label: "运行时依赖", entries: runtime },
-              { label: "开发依赖", entries: development },
-            ]
-              .filter((group) => group.entries.length > 0)
-              .map((group) => (
-                <section key={group.label} aria-label={group.label}>
-                  {/* 区块小标题：与全站同一口径（xs 半粗弱化色），不低于上方统计格的说明字。 */}
-                  <h3 className="text-xs font-semibold text-muted-foreground">
-                    {`${group.label} ${group.entries.length} 个`}
-                  </h3>
-                  <div className="mt-1 overflow-hidden rounded-md border bg-card">
-                    <DependencyListHeader compact />
-                    <ul className="divide-y divide-border">
-                      {group.entries.map((child) => (
-                        <li key={child.name}>
-                          <DependencyRow dependency={child} compact onSelect={onNavigate} />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </section>
-              ))}
-          </div>
-        )}
-      </div>
+      <SheetChildren
+        total={children.length}
+        runtime={runtime}
+        development={development}
+        transitiveCount={transitiveCount}
+        onNavigate={onNavigate}
+      />
 
       <div className="border-t pt-3">
         <Collapsible title="许可证原文">
