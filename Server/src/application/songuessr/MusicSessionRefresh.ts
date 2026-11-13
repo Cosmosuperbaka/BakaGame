@@ -1,4 +1,3 @@
-import { publishMusicSession, requireMusicCookie } from "./MusicAuth";
 import { AppError } from "../../domain/Errors";
 import type { MusicLoginSession } from "../../infrastructure/music/MusicProvider";
 import {
@@ -9,6 +8,7 @@ import {
   SonGuessrRoomRecord,
 } from "./Records";
 import type { SonGuessrContext } from "./Context";
+import { publishMusicSession, requireMusicCookie } from "./MusicAuth";
 import { isPoolEntryUsable, markEntryInvalidated, musicPool } from "./MusicPool";
 
 /** 后台续期节流：巡检每 10 秒一次，真正扫凭证的间隔由这里控制。 */

@@ -10,7 +10,7 @@ import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import { resolveAnimeSong, resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
 import { clearMusicSession, refreshMusicSessionAccount } from "./songuessr/MusicAuth";
 import { loadSongWithSources, refreshRoundAudio } from "./songuessr/MusicSongLoading";
-import { scheduleMusicSessionRefresh } from "./songuessr/MusicAccounts";
+import { scheduleMusicSessionRefresh } from "./songuessr/MusicSessionRefresh";
 import {
   hasEnabledPoolAccount,
   musicPool,

@@ -21,7 +21,7 @@ import {
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { publishMusicSession } from "../../src/application/songuessr/MusicAuth";
-import { refreshMusicPoolEntry } from "../../src/application/songuessr/MusicAccounts";
+import { refreshMusicPoolEntry } from "../../src/application/songuessr/MusicSessionRefresh";
 import { releaseMusicAccount } from "../../src/application/songuessr/MusicPool";
 import {
   SongDetails,
