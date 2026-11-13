@@ -174,11 +174,51 @@ export const normalizeSong = (value: unknown): SongSearchResult | undefined => {
   };
 };
 
+interface WikiAccumulator {
+  tags: Set<string>;
+  aliases: Set<string>;
+  summary?: string;
+  language?: string;
+}
+
+const splitWikiList = (content: string): string[] =>
+  content
+    .split(/[、,，/]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+/**
+ * 百科条目按标题关键词归类，先命中的规则生效：语种、别名、曲风标签、简介。
+ * 简介只取第一条（已有简介时后到的简介条目被忽略）。
+ */
+const WIKI_FIELD_RULES: ReadonlyArray<{
+  keywords: readonly string[];
+  apply: (content: string, acc: WikiAccumulator) => void;
+}> = [
+  {
+    keywords: ["语种", "语言", "language"],
+    apply: (content, acc) => {
+      acc.language = content;
+    },
+  },
+  {
+    keywords: ["别名", "alias"],
+    apply: (content, acc) => splitWikiList(content).forEach((item) => acc.aliases.add(item)),
+  },
+  {
+    keywords: ["曲风", "流派", "标签", "genre", "tag"],
+    apply: (content, acc) => splitWikiList(content).forEach((item) => acc.tags.add(item)),
+  },
+  {
+    keywords: ["简介", "介绍", "summary"],
+    apply: (content, acc) => {
+      acc.summary ??= content;
+    },
+  },
+];
+
 export const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
-  const tags = new Set<string>();
-  const aliases = new Set<string>();
-  let summary: string | undefined;
-  let language: string | undefined;
+  const acc: WikiAccumulator = { tags: new Set(), aliases: new Set() };
 
   const visit = (value: unknown) => {
     if (Array.isArray(value)) {
@@ -192,38 +232,16 @@ export const readWiki = (raw: unknown): SongEncyclopedia & { language?: string }
     const title = readString(record.title ?? record.name ?? record.key)?.toLowerCase();
     const content = readString(record.content ?? record.text ?? record.value);
     if (title && content) {
-      if (title.includes("语种") || title.includes("语言") || title.includes("language")) {
-        language = content;
-      } else if (title.includes("别名") || title.includes("alias")) {
-        content
-          .split(/[、,，/]/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .forEach((item) => aliases.add(item));
-      } else if (
-        title.includes("曲风") ||
-        title.includes("流派") ||
-        title.includes("标签") ||
-        title.includes("genre") ||
-        title.includes("tag")
-      ) {
-        content
-          .split(/[、,，/]/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .forEach((item) => tags.add(item));
-      } else if (
-        !summary &&
-        (title.includes("简介") || title.includes("介绍") || title.includes("summary"))
-      ) {
-        summary = content;
-      }
+      WIKI_FIELD_RULES.find((rule) => rule.keywords.some((keyword) => title.includes(keyword)))?.apply(
+        content,
+        acc
+      );
     }
 
     const metaList = asArray(record.wikiSubMetaVos ?? record.tags);
     metaList.forEach((entry) => {
       const text = readString(asRecord(entry).text ?? asRecord(entry).name ?? entry);
-      if (text && !isCreditLyricLine(text)) tags.add(text);
+      if (text && !isCreditLyricLine(text)) acc.tags.add(text);
     });
 
     Object.values(record).forEach(visit);
@@ -231,9 +249,9 @@ export const readWiki = (raw: unknown): SongEncyclopedia & { language?: string }
 
   visit(raw);
   return {
-    summary,
-    aliases: aliases.size ? [...aliases] : undefined,
-    tags: [...tags],
-    language,
+    summary: acc.summary,
+    aliases: acc.aliases.size ? [...acc.aliases] : undefined,
+    tags: [...acc.tags],
+    language: acc.language,
   };
 };
