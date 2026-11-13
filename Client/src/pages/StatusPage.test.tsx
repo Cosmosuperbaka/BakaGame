@@ -357,8 +357,8 @@ describe("公开状态页", () => {
     expect(within(uptime).getByText("—")).toBeInTheDocument();
     const roundTrip = screen.getByText("你的往返延迟").closest("div")!;
     expect(within(roundTrip).getByText("—")).toBeInTheDocument();
-    // 读失败不冒充「近一个月没有事件」。
-    expect(screen.queryByText("近一个月没有记录在案的事件或维护。")).not.toBeInTheDocument();
+    // 读失败不冒充「近期没有事件」。
+    expect(screen.queryByText("近 30 天没有记录在案的事件或维护。")).not.toBeInTheDocument();
   });
 
   it("部分组件没有监测结论时不说「所有系统运行正常」，可用率只算有结论的组件", async () => {

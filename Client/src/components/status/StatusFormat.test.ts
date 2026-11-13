@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRatio } from "./StatusFormat";
+import { beijingDayStart, formatRatio } from "./StatusFormat";
 
 describe("formatRatio", () => {
   it("没有结论读作破折号，满分读作 100.0%", () => {
@@ -18,5 +18,12 @@ describe("formatRatio", () => {
     expect(formatRatio(0.29)).toBe("29.00%");
     expect(formatRatio(0.5)).toBe("50.00%");
     expect(formatRatio(0)).toBe("0.00%");
+  });
+});
+
+describe("beijingDayStart", () => {
+  it("北京自然日零点，换算到 UTC 是前一天 16 点", () => {
+    expect(beijingDayStart("2026-10-21")).toBe(Date.UTC(2026, 9, 20, 16, 0, 0));
+    expect(beijingDayStart("2026-01-01")).toBe(Date.UTC(2025, 11, 31, 16, 0, 0));
   });
 });

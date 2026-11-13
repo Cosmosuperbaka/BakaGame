@@ -1,3 +1,4 @@
+import { PUBLIC_STATUS_HISTORY_DAYS } from "@bakagame/shared/values";
 import type {
   PublicStatusComponentId,
   PublicStatusEvent,
@@ -12,6 +13,15 @@ export const LEVEL_TEXT: Record<PublicStatusLevel, string> = {
 
 /** 状态页的时间一律北京时间：日格的服务端口径就是北京自然日，展示跟着同一时区读。 */
 const BEIJING = "Asia/Shanghai";
+/** 北京时间的固定偏移（无夏令时）：把服务端按北京自然日给出的 `YYYY-MM-DD` 还原成时刻用。 */
+const BEIJING_OFFSET = "+08:00";
+
+/** 北京自然日 `YYYY-MM-DD` 的零点时刻（毫秒）。 */
+export const beijingDayStart = (day: string): number =>
+  Date.parse(`${day}T00:00:00${BEIJING_OFFSET}`);
+
+/** 历史窗口的称呼：切换项、轴标、事件区标题与空状态共用，窗口天数只在共享常量里改一处。 */
+export const HISTORY_WINDOW_LABEL = `近 ${PUBLIC_STATUS_HISTORY_DAYS} 天`;
 export const DAY_FORMAT = new Intl.DateTimeFormat("zh-CN", {
   timeZone: BEIJING,
   month: "long",

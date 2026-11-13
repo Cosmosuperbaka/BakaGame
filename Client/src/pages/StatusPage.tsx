@@ -22,8 +22,10 @@ import {
   CELL_TONE,
   CLOCK_FORMAT,
   DAY_FORMAT,
+  HISTORY_WINDOW_LABEL,
   LEVEL_TEXT,
   TIME_FORMAT,
+  beijingDayStart,
   eventOverlaps,
   formatLatency,
   formatRatio,
@@ -58,7 +60,7 @@ const REALTIME_HOURS = PUBLIC_STATUS_REALTIME_WINDOW_MS / 3_600_000;
 const SAMPLE_MINUTES = PUBLIC_STATUS_SAMPLE_INTERVAL_MS / 60_000;
 const VIEW_LABEL: Record<StatusView, string> = {
   realtime: `近 ${REALTIME_HOURS} 小时`,
-  month: `近 ${PUBLIC_STATUS_HISTORY_DAYS} 天`,
+  month: HISTORY_WINDOW_LABEL,
 };
 const AXIS_LABEL: Record<StatusView, readonly [string, string]> = {
   realtime: [`${REALTIME_HOURS} 小时前`, "现在"],
@@ -69,8 +71,6 @@ const AXIS_LABEL: Record<StatusView, readonly [string, string]> = {
 const ALL_COMPONENTS: readonly PublicStatusComponentId[] = PUBLIC_STATUS_GROUPS.flatMap(
   (group) => group.components
 );
-
-const monthCellStart = (day: string): number => Date.parse(`${day}T00:00:00+08:00`);
 
 /** 全站可用率：各组件窗口可用率的平均，只算有结论的组件；一个都没有时读作「—」。 */
 const meanOf = (values: readonly (number | null)[]): number | null => {
@@ -457,7 +457,7 @@ export default function StatusPage() {
       result.set(
         id,
         source.map((cell) => {
-          const start = monthCellStart(cell.day);
+          const start = beijingDayStart(cell.day);
           const end = start + 86_400_000;
           return {
             key: `d${cell.day}`,

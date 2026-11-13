@@ -93,7 +93,7 @@ export const Month: Story = {
   },
 };
 
-/** 刚上线还没有样本：条带全是矮桩，可用率与延迟读作「—」，事件区写「近一个月没有」。 */
+/** 刚上线还没有样本：条带全是矮桩，可用率与延迟读作「—」，事件区写「近 30 天没有」。 */
 export const NoHistory: Story = {
   name: "暂无历史数据",
   beforeEach: () => installStatusFixture(emptyStatusFixture()),
