@@ -351,13 +351,35 @@ export const isUnusableSongCandidate = (error: unknown): boolean =>
   error instanceof AppError &&
   (error.code === "SONG_UNAVAILABLE" || error.code === "SONG_NOT_FOUND");
 /**
- * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
+ * 单条连接在一分钟内允许的「客户端可触发」音乐类命令额度（一份对应约一次上游请求）。
  *
- * 只卡命令入口，不卡出题解析器内部的上游调用：后者只由房主的
- * `song.game.start` / `nextRound` 间接触发，不是滥用面。
+ * 命令入口的额度只卡客户端能直接触发的命令；出题解析器（开局与下一轮的取歌）由房主间接触发，
+ * 不走这里，但番剧取歌命令（`song.bangumi.songs`）是客户端可以直接触发的出题解析，
+ * 它按 `ANIME_SONGS_QUOTA_COST` 扣多份。
  */
 export const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
 export const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
+/**
+ * 一次番剧取歌占几份音乐额度：它按曲目逐条检索（每条 1~2 次上游搜索，另有少量回源详情），
+ * 典型一部番剧 3~5 条曲目，取下限 4 份。整桶 20 份因此够一名出题人一分钟内翻看 5 部番剧，
+ * 却挡得住循环发这条命令把房内贡献账号打进冷却；单次的最坏上限由 `ANIME_SONG_SEARCH_BUDGET`
+ * 与 `ANIME_SONG_DETAIL_BUDGET` 封顶。
+ */
+export const ANIME_SONGS_QUOTA_COST = 4;
+/**
+ * 番剧封面补图的按连接额度：搜索结果最多 20 部、封面滚进视口才补，一屏补齐不能被限；
+ * 取三屏的量（60 次/分钟），远高于正常翻看，又挡得住脚本循环打封面上游。
+ * 命中回填缓存不回源，但额度只管命令次数，不区分是否命中。
+ */
+export const SUBJECT_IMAGE_RATE_LIMIT_PER_CONNECTION = 60;
+export const SUBJECT_IMAGE_RATE_LIMIT_WINDOW_MS = 60_000;
+/**
+ * 三条音乐登录命令（取二维码、轮询扫码结果、凭据登录）共用的按连接额度。
+ * 客户端扫码每 2 秒轮询一次（每分钟 30 次），再留出换码与凭据登录的余量，取 45 次/分钟；
+ * 上游登录接口要求不高频重复调用，高频循环会把号打进风控。
+ */
+export const MUSIC_AUTH_RATE_LIMIT_PER_CONNECTION = 45;
+export const MUSIC_AUTH_RATE_LIMIT_WINDOW_MS = 60_000;
 
 /**
  * 单号并发上限：同一个贡献账号同时最多几个在途上游请求。

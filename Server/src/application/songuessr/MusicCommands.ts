@@ -1,6 +1,6 @@
 import { AppError } from "../../domain/Errors";
-import type { ConnectionRecord } from "../../shared/Index";
 import { resolveAnimeMatchedSongs } from "./AnimeManualList";
+import { ANIME_SONGS_QUOTA_COST } from "./Records";
 import type { SonGuessrContext } from "./Context";
 import { musicSearchOptions, withAggregatedAccounts, withSongAccount } from "./MusicPool";
 import { parsePlaylistId } from "./PlaylistId";
@@ -16,15 +16,16 @@ import type { SongCommandAt } from "./RoomAccess";
  *
  * 它要扣配额，不是无副作用的纯判定，所以不放进命令表的守卫列表，由各处理函数在开头调用：
  * 被前面守卫拒绝的请求不消耗配额，记账时机与改表之前一致。
+ * `cost` 是占几份额度：检索类一份，番剧取歌按它的上游请求量扣多份。
  */
-export const requireMusicQuota = (ctx: SonGuessrContext, at: SongCommandAt) => {
+export const requireMusicQuota = (ctx: SonGuessrContext, at: SongCommandAt, cost = 1) => {
   const { room, connection, seat: player } = at;
   const maySearchMusic =
     player.membership === "active" || room.pendingSubmitterPlayerId === player.id;
   if (!maySearchMusic) {
     throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能进行音乐操作");
   }
-  if (!ctx.musicLimiter.allow(connection.id, ctx.now())) {
+  if (!ctx.musicLimiter.allow(connection.id, ctx.now(), cost)) {
     throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
   }
 };
@@ -79,21 +80,36 @@ export const searchBangumi = async (ctx: SonGuessrContext, keyword: string) => {
  * 番剧封面补图：只读数据集不含图片，搜索列表缺的封面滚进视口时才来要一次。
  * 命中回填缓存就不回源，所以反复搜索同一部番剧不会再打上游。
  */
-export const getSubjectImage = async (ctx: SonGuessrContext, subjectId: string) => {
-  const provider = ctx.options.bangumiProvider;
-  if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-  return { imageUrl: await provider.resolveSubjectImage(subjectId) };
-};
-
-/** 取回番剧信息后才解析歌曲：解析里会按连接重新确认席位，等待期间离房的人拿不到结果。 */
-export const getAnimeSongs = async (
+export const getSubjectImage = async (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
+  at: SongCommandAt,
   subjectId: string
 ) => {
   const provider = ctx.options.bangumiProvider;
   if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+  // 独立额度：封面请求量大而便宜，旁观者与正式成员一视同仁（只有按连接的次数限制）。
+  if (!ctx.subjectImageLimiter.allow(at.connection.id, ctx.now())) {
+    throw new AppError("RATE_LIMITED", "封面请求过于频繁，请稍后再试");
+  }
+  return { imageUrl: await provider.resolveSubjectImage(subjectId) };
+};
+
+/**
+ * 取回番剧信息后才解析歌曲：解析里会按连接重新确认席位，等待期间离房的人拿不到结果。
+ *
+ * 这是客户端可以直接触发的出题解析，会借房内贡献的账号发起上游检索：与检索同一道音乐闸门
+ * （旁观者拦下，待出题人放行），并按取歌的上游请求量扣多份额度。额度排在接口可用性检查之后、
+ * 任何上游调用之前：没配置接口的部署里这条命令根本不打上游，也就不耗额度。
+ */
+export const getAnimeSongs = async (
+  ctx: SonGuessrContext,
+  at: SongCommandAt,
+  subjectId: string
+) => {
+  const provider = ctx.options.bangumiProvider;
+  if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
+  requireMusicQuota(ctx, at, ANIME_SONGS_QUOTA_COST);
   const anime = await provider.getSubject(subjectId);
-  const results = await resolveAnimeMatchedSongs(ctx, anime, connection);
+  const results = await resolveAnimeMatchedSongs(ctx, anime, at.connection);
   return { results };
 };

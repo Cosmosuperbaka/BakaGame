@@ -1,5 +1,12 @@
 import { SONGUESSR_LOBBY_ROOMS_EVENT, type ConnectionRecord } from "../../shared/Index";
-import { MUSIC_RATE_LIMIT_PER_CONNECTION, MUSIC_RATE_LIMIT_WINDOW_MS } from "./Records";
+import {
+  MUSIC_AUTH_RATE_LIMIT_PER_CONNECTION,
+  MUSIC_AUTH_RATE_LIMIT_WINDOW_MS,
+  MUSIC_RATE_LIMIT_PER_CONNECTION,
+  MUSIC_RATE_LIMIT_WINDOW_MS,
+  SUBJECT_IMAGE_RATE_LIMIT_PER_CONNECTION,
+  SUBJECT_IMAGE_RATE_LIMIT_WINDOW_MS,
+} from "./Records";
 import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../../domain/TestRooms";
 import type { RandomSource } from "../../domain/Rules";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
@@ -35,6 +42,10 @@ export interface SonGuessrContext {
    * 没有按连接的配额时，一个人仍会先把本进程的并发与队列打满，搜歌与出题一起排队。
    */
   readonly musicLimiter: SlidingWindowRateLimiter;
+  /** 番剧封面补图的独立额度：封面请求量大而便宜，不与搜歌、取歌抢同一桶。 */
+  readonly subjectImageLimiter: SlidingWindowRateLimiter;
+  /** 三条音乐登录命令共用的按连接额度：登录上游要求不高频重复调用。 */
+  readonly musicAuthLimiter: SlidingWindowRateLimiter;
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */
   readonly chatLimiter: ChatLimiter;
   /**
@@ -68,6 +79,14 @@ export const createSonGuessrContext = (options: SonGuessrServiceOptions): SonGue
     musicLimiter: new SlidingWindowRateLimiter({
       windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
       maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
+    }),
+    subjectImageLimiter: new SlidingWindowRateLimiter({
+      windowMs: SUBJECT_IMAGE_RATE_LIMIT_WINDOW_MS,
+      maxRequests: SUBJECT_IMAGE_RATE_LIMIT_PER_CONNECTION,
+    }),
+    musicAuthLimiter: new SlidingWindowRateLimiter({
+      windowMs: MUSIC_AUTH_RATE_LIMIT_WINDOW_MS,
+      maxRequests: MUSIC_AUTH_RATE_LIMIT_PER_CONNECTION,
     }),
     chatLimiter: new ChatLimiter({ now: () => now() }),
     musicPoolWaiters: new Map(),

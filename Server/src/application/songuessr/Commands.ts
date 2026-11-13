@@ -218,8 +218,8 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.auth.qr.create": {
     access: "seat",
     phases: "any",
-    run: (deps, _at, m) =>
-      asResult(createMusicQrLogin(deps.ctx, m.payload.platform, m.payload.type)),
+    run: (deps, at, m) =>
+      asResult(createMusicQrLogin(deps.ctx, at, m.payload.platform, m.payload.type)),
   },
   "song.auth.qr.check": {
     access: "seat",
@@ -277,12 +277,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.bangumi.songs": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => getAnimeSongs(deps.ctx, at.connection, m.payload.subjectId),
+    run: (deps, at, m) => getAnimeSongs(deps.ctx, at, m.payload.subjectId),
   },
   "song.subject.image": {
     access: "seat",
     phases: "any",
-    run: (deps, _at, m) => getSubjectImage(deps.ctx, m.payload.subjectId),
+    run: (deps, at, m) => getSubjectImage(deps.ctx, at, m.payload.subjectId),
   },
   "song.game.start": {
     access: "host",

@@ -18,14 +18,26 @@ import type { SongCommandAt } from "./RoomAccess";
 
 /** 猜歌音乐账号的登录、凭据装载与共享开关：写池条目的入口，取号与租约在 MusicPool。 */
 
+/**
+ * 三条登录命令共用的按连接额度，排在本地校验与能力检查之后、任何上游调用之前：
+ * 登录上游要求不高频重复调用，循环发登录命令会把号打进风控。
+ */
+const requireAuthQuota = (ctx: SonGuessrContext, connection: ConnectionRecord): void => {
+  if (!ctx.musicAuthLimiter.allow(connection.id, ctx.now())) {
+    throw new AppError("RATE_LIMITED", "登录请求过于频繁，请稍后再试");
+  }
+};
+
 export const createMusicQrLogin = async (
   ctx: SonGuessrContext,
+  at: SongCommandAt,
   platform: "netease" | "qq" = "netease",
   type?: "qq" | "wx" | "mobile"
 ) => {
   const provider = ctx.options.musicProvider;
   const createQrLogin = provider.createQrLogin?.bind(provider);
   if (!createQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
+  requireAuthQuota(ctx, at.connection);
   return createQrLogin(platform, type);
 };
 
@@ -42,6 +54,7 @@ export const checkMusicQrLogin = async (
   const provider = ctx.options.musicProvider;
   const checkQrLogin = provider.checkQrLogin?.bind(provider);
   if (!checkQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
+  requireAuthQuota(ctx, connection);
   const verify = beginMusicAuthentication(ctx, room, player, connection, platform);
   const result = await checkQrLogin(key, platform, type);
   verify();
@@ -70,6 +83,7 @@ export const useMusicCookie = async (
   const provider = ctx.options.musicProvider;
   const getLoginStatus = provider.getLoginStatus?.bind(provider);
   if (!getLoginStatus) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
+  requireAuthQuota(ctx, connection);
   const verify = beginMusicAuthentication(ctx, room, player, connection, platform);
   let result: Awaited<ReturnType<typeof getLoginStatus>>;
   try {
