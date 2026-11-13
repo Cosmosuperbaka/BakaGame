@@ -28,3 +28,11 @@ export const closeRoom = async (
   });
   publishLobby(ctx);
 };
+
+/**
+ * 空房是否应当自动关闭。测试房间要能在最后一人刷新页面后仍然存在，
+ * 否则每次刷新都会丢掉正在调试的房间状态。
+ */
+export const shouldAutoCloseWhenEmpty = (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  return !ctx.testRooms.isTestRoom(room.id);
+};
