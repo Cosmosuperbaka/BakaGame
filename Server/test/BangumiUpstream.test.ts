@@ -156,6 +156,200 @@ describe("共享上游部件", () => {
   });
 });
 
+/** 睡眠由测试逐个放行：放行时时钟推进相同毫秒，可以精确控制「别处在我等待时收到了限流」。 */
+const manualClock = () => {
+  const clock = {
+    time: 0,
+    pending: [] as Array<{ ms: number; release: () => void }>,
+    now: () => clock.time,
+    sleep: (ms: number) =>
+      new Promise<void>((resolve) => {
+        clock.pending.push({
+          ms,
+          release: () => {
+            clock.time += ms;
+            resolve();
+          },
+        });
+      }),
+  };
+  return clock;
+};
+
+/** 每个地址的响应由测试决定何时、以什么状态返回；记录实际发出的地址。 */
+const deferredUpstream = () => {
+  const sent: string[] = [];
+  const waiting = new Map<string, (response: Response) => void>();
+  const fetcher = ((input: string | URL | Request) => {
+    const url = requestUrlText(input);
+    sent.push(url);
+    return new Promise<Response>((resolve) => waiting.set(url, resolve));
+  }) as unknown as typeof fetch;
+  const answer = (url: string, status: number, headers: Record<string, string> = {}) =>
+    waiting.get(url)!(new Response(null, { status, headers }));
+  return { sent, fetcher, answer };
+};
+
+describe("冷却与时隙的时序", () => {
+  const limited = "https://api.invalid/limited";
+  const next = "https://api.invalid/next";
+
+  test("等时隙期间别处收到限流：玩家请求醒来后不得发出，直接失败并带剩余冷却", async () => {
+    const clock = manualClock();
+    const { sent, fetcher, answer } = deferredUpstream();
+    const upstream = new BangumiUpstream({
+      fetcher,
+      now: clock.now,
+      sleep: clock.sleep,
+      rate: () => 10,
+    });
+    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    // 乙紧接着排到下一个时隙，正在等。
+    const second = upstream.fetch(next, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    await Bun.sleep(0);
+    expect(clock.pending.map((item) => item.ms)).toEqual([100]);
+    answer(limited, 429);
+    expect(await first).toMatchObject({ code: "BANGUMI_RATE_LIMITED" });
+
+    clock.pending[0]!.release();
+    expect(await second).toMatchObject({
+      code: "BANGUMI_RATE_LIMITED",
+      details: { retryAfterMs: 4900 },
+    });
+    expect(sent).toEqual([limited]);
+  });
+
+  test("等时隙期间别处收到限流：后台请求醒来后继续等到冷却结束才发", async () => {
+    const clock = manualClock();
+    const { sent, fetcher, answer } = deferredUpstream();
+    const upstream = new BangumiUpstream({
+      fetcher,
+      now: clock.now,
+      sleep: clock.sleep,
+      rate: () => 10,
+    });
+    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    const second = upstream.fetch(next, { timeoutMs: 1000, priority: "background" });
+    await Bun.sleep(0);
+    answer(limited, 429);
+    await first;
+
+    clock.pending[0]!.release();
+    await Bun.sleep(0);
+    // 时隙到了但冷却还剩 4900ms：先等够，期间一个请求也不发。
+    expect(clock.pending.map((item) => item.ms)).toEqual([100, 4900]);
+    expect(sent).toEqual([limited]);
+    clock.pending[1]!.release();
+    await Bun.sleep(0);
+    expect(sent).toEqual([limited, next]);
+    answer(next, 200);
+    expect((await second).status).toBe(200);
+  });
+
+  test("后台请求睡眠期间冷却被别处延长，醒来后继续等", async () => {
+    const clock = manualClock();
+    const { sent, fetcher, answer } = deferredUpstream();
+    const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
+    const slow = "https://api.invalid/slow";
+    // 慢请求先发出（此时还没有冷却），之后才有人收到限流。
+    const slowRequest = upstream
+      .fetch(slow, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
+    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    await Bun.sleep(0);
+    answer(limited, 429);
+    await first;
+    const waiter = upstream.fetch(next, { timeoutMs: 1000, priority: "background" });
+    await Bun.sleep(0);
+    expect(clock.pending.map((item) => item.ms)).toEqual([5000]);
+
+    // 等待期间慢请求回了更长的限流：冷却被延长到三十秒。
+    answer(slow, 429, { "Retry-After": "30" });
+    await slowRequest;
+    clock.pending[0]!.release();
+    await Bun.sleep(0);
+    expect(clock.pending.map((item) => item.ms)).toEqual([5000, 25_000]);
+    expect(sent).toEqual([slow, limited]);
+    clock.pending[1]!.release();
+    await Bun.sleep(0);
+    answer(next, 200);
+    expect((await waiter).status).toBe(200);
+  });
+
+  test("冷却截止取较晚者：较短的等待时长不会缩短已有冷却", async () => {
+    const clock = manualClock();
+    const { fetcher, answer } = deferredUpstream();
+    const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
+    const slow = "https://api.invalid/slow";
+    const slowRequest = upstream
+      .fetch(slow, { timeoutMs: 1000, priority: "interactive" })
+      .catch((e) => e);
+    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    await Bun.sleep(0);
+    answer(limited, 429);
+    await first;
+    expect(upstream.cooldownRemainingMs()).toBe(5000);
+    answer(slow, 429, { "Retry-After": "1" });
+    await slowRequest;
+    expect(upstream.cooldownRemainingMs()).toBe(5000);
+  });
+
+  test("后台请求睡眠结束后取消信号生效：不再发请求", async () => {
+    const clock = manualClock();
+    const { sent, fetcher, answer } = deferredUpstream();
+    const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
+    const first = upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" }).catch((e) => e);
+    await Bun.sleep(0);
+    answer(limited, 429);
+    await first;
+    const controller = new AbortController();
+    const waiter = upstream
+      .fetch(next, { timeoutMs: 1000, priority: "background", signal: controller.signal })
+      .catch((e) => e);
+    await Bun.sleep(0);
+    controller.abort(new Error("总预算用尽"));
+    clock.pending[0]!.release();
+    expect(await waiter).toMatchObject({ message: "总预算用尽" });
+    expect(sent).toEqual([limited]);
+  });
+
+  test("睡满即视为冷却已过：时钟不动、睡眠为空操作时也不会原地空转", async () => {
+    // 更新器等上游测试把时钟冻住、睡眠写成空操作：醒来后若还按时钟判定冷却，会无限循环。
+    let sleeps = 0;
+    const { calls, fetcher } = fakeUpstream((url) => (url.endsWith("/limited") ? 429 : 200));
+    const upstream = new BangumiUpstream({
+      fetcher,
+      now: () => 0,
+      sleep: async () => {
+        sleeps += 1;
+        if (sleeps > 2) throw new Error("睡眠被反复调用");
+      },
+    });
+    await expect(
+      upstream.fetch(limited, { timeoutMs: 1000, priority: "interactive" })
+    ).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" });
+    const response = await upstream.fetch(next, { timeoutMs: 1000, priority: "background" });
+    expect(response.status).toBe(200);
+    expect(sleeps).toBe(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("速率为零或未给出时一个时隙都不排", async () => {
+    for (const rate of [() => 0, () => undefined]) {
+      const clock = fakeClock();
+      const { calls, fetcher } = fakeUpstream();
+      const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep, rate });
+      await Promise.all(
+        ["a", "b", "c"].map((name) =>
+          upstream.fetch(`https://api.invalid/${name}`, { timeoutMs: 1000, priority: "background" })
+        )
+      );
+      expect(calls).toHaveLength(3);
+      expect(clock.sleeps).toEqual([]);
+    }
+  });
+});
+
 describe("四个调用方共用一个上游部件", () => {
   const datasetPath = () => {
     const path = join(tmpdir(), `bangumi-upstream-${crypto.randomUUID()}.sqlite`);
