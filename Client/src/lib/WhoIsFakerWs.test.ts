@@ -100,6 +100,8 @@ describe("websocket client", () => {
   });
 
   it("notifies status listeners and reconnects with exponential backoff", async () => {
+    // 退避带抖动：随机数取接近 1 时延迟逼近当前档上限（首档 1 秒）。
+    vi.spyOn(Math, "random").mockReturnValue(0.9999);
     const socketApi = await import("./WhoIsFakerWs");
     const statuses: boolean[] = [];
     socketApi.onStatus((connected) => statuses.push(connected));
@@ -109,9 +111,9 @@ describe("websocket client", () => {
     MockWebSocket.instances[0].close();
     expect(statuses).toEqual([true, false]);
 
-    await vi.advanceTimersByTimeAsync(999);
+    await vi.advanceTimersByTimeAsync(998);
     expect(MockWebSocket.instances).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(2);
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
