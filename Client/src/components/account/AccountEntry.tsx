@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 打开登录弹窗与弹窗本体共用同一份入口状态，拆文件会让状态定义漂到别处。 */
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { create } from "zustand";
@@ -9,6 +9,7 @@ import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
 import { FeedbackDialog, type FeedbackDraft } from "@/components/account/FeedbackDialog";
+import { FormAlert } from "@/components/account/FormAlert";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
@@ -92,13 +93,26 @@ export function AccountButton() {
   const navigate = usePageNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  // 与 state 同步的镜像：点击与 Popover 的关闭回调在同一个事件里，state 此时还是旧值。
+  const signingOutRef = useRef(false);
+  // 退出失败要让人看见：公共设备上以为退出了、实际还登录着是隐私风险。下次重试或重开菜单即清除。
+  const [signOutFailed, setSignOutFailed] = useState(false);
   // 菜单项被点时浮层已在关闭，弹窗从菜单按钮处展开。
   const [menuOrigin, setMenuOrigin] = useState<OriginPoint | null>(null);
 
   return (
     <>
       {status === "signedIn" && profile ? (
-        <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Popover.Root
+          open={menuOpen}
+          onOpenChange={(open) => {
+            // 菜单项自带「点了就关」：退出请求在途时不接这次关闭，失败的提示才有地方显示；
+            // 成功后账号状态变为未登录，整个菜单随之卸载。
+            if (!open && signingOutRef.current) return;
+            setMenuOpen(open);
+            setSignOutFailed(false);
+          }}
+        >
           <Popover.Trigger asChild>
             <motion.button
               data-agent-sensitive
@@ -163,12 +177,20 @@ export function AccountButton() {
                         destructive
                         disabled={signingOut}
                         onClick={() => {
+                          signingOutRef.current = true;
                           setSigningOut(true);
+                          setSignOutFailed(false);
                           void signOut()
-                            .catch(() => {})
-                            .finally(() => setSigningOut(false));
+                            .catch(() => setSignOutFailed(true))
+                            .finally(() => {
+                              signingOutRef.current = false;
+                              setSigningOut(false);
+                            });
                         }}
                       />
+                      {signOutFailed ? (
+                        <FormAlert className="px-4 py-2">退出登录失败，请重试</FormAlert>
+                      ) : null}
                     </div>
                   </motion.div>
                 </Popover.Content>
