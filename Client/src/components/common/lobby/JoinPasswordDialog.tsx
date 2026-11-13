@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { RoomPasswordField, type RoomPasswordError } from "@/components/common/room/RoomJoinGate";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 
 export interface JoinPasswordDialogProps {
   /** 待加入的房间名；为 null 时弹窗关闭 */

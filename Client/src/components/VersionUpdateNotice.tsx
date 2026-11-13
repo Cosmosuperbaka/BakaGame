@@ -4,7 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { currentCommit } from "virtual:build-info";
 import { Button } from "@/components/ui/Button";
 import { bakaClientType } from "@/lib/BakaChannel";
-import { bannerRise } from "@/lib/Motion";
+import { bannerRise } from "@/lib/motion/NamedMoves";
 
 export const VERSION_CHECK_INTERVAL_MS = 60_000;
 
@@ -34,12 +34,7 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
   useEffect(() => {
     // 移动壳的页面来自内嵌/热更新资源，拿它和本地 HTML 比永远是同一个构建；
     // 移动端的新资源由 `/api/client/web-bundle` 那条链路负责，这里不做无效轮询。
-    if (
-      !active ||
-      isDevEnvironment() ||
-      bakaClientType() === "mobile" ||
-      currentCommit === "dev"
-    ) {
+    if (!active || isDevEnvironment() || bakaClientType() === "mobile" || currentCommit === "dev") {
       return;
     }
 

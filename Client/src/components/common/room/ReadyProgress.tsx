@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { spring } from "@/lib/Motion";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 /**

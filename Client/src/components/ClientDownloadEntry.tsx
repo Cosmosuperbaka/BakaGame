@@ -18,7 +18,7 @@ import {
   type ClientPackagePlatform,
 } from "@/lib/ClientPackages";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
 const OPTIONS: { value: ClientPackagePlatform; label: string }[] = [

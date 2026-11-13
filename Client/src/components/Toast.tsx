@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { CircleAlert, CircleCheck, Info, type LucideIcon } from "lucide-react";
-import { spring, toastItem } from "@/lib/Motion";
+import { spring } from "@/lib/motion/Transitions";
+import { toastItem } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 export interface ToastItem {

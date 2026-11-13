@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { AtSign } from "lucide-react";
-import { optionTappable, popover } from "@/lib/Motion";
+import { optionTappable } from "@/lib/motion/Feedback";
+import { popover } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import type { ChatMentionPlayer } from "@/components/common/chat/ChatMessage";
 

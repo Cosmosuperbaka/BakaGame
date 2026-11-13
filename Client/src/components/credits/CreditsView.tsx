@@ -18,7 +18,7 @@ import {
   type CreditDependency,
   type CreditLicenseDocument,
 } from "@/lib/Credits";
-import { iconTappable } from "@/lib/Motion";
+import { iconTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 import { PRIVACY_UPDATED_AT, PrivacyBody } from "@/components/legal/PrivacyBody";
 import { TERMS_UPDATED_AT, TermsBody } from "@/components/legal/TermsBody";

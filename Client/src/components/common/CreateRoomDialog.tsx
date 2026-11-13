@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/Dialog";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 
 /**

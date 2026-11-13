@@ -4,7 +4,8 @@ import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Hint } from "@/components/ui/Tooltip";
-import { headerTappable, popover, tappable } from "@/lib/Motion";
+import { headerTappable, tappable } from "@/lib/motion/Feedback";
+import { popover } from "@/lib/motion/Choreography";
 import { loadStickerPacks, type StickerPack } from "@/lib/Stickers";
 import { cn } from "@/lib/Utils";
 

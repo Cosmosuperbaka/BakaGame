@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { playerRelayout, readoutSwap } from "@/lib/Motion";
+import { playerRelayout } from "@/lib/motion/Choreography";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 /**

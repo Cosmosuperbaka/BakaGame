@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { TECH_STACK_CATEGORIES } from "@/data/CreditsContent";
 import type { CoreTechEntry, CreditDependency } from "@/lib/Credits";
-import { pressable } from "@/lib/Motion";
+import { pressable } from "@/lib/motion/Feedback";
 import { CreditBrandMark } from "./CreditsIcons";
 
 /**

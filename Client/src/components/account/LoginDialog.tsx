@@ -17,7 +17,9 @@ import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
-import { listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion";
+import { listItem, phaseSwap } from "@/lib/motion/Choreography";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
+import { type OriginPoint } from "@/lib/motion/Origin";
 import { passkeyErrorMessage, passkeySupported } from "@/lib/Passkey";
 import { useAccountStore } from "@/stores/UseAccountStore";
 

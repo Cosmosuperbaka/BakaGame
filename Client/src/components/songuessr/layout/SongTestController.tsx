@@ -3,7 +3,8 @@ import { motion } from "framer-motion";
 import { Bot, FlaskConical, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { headerTappable, spring } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
+import { spring } from "@/lib/motion/Transitions";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 

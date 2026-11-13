@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
-import { headerTappable, spring } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
+import { spring } from "@/lib/motion/Transitions";
 import type {
   WhoIsFakerCommand,
   WhoIsFakerPayload,

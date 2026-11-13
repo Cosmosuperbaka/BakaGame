@@ -16,7 +16,8 @@ import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/components/cee/CEEDataSource";
 import { isBakaClient } from "@/lib/BakaChannel";
-import { dropIn, phaseSwap, seriesStart } from "@/lib/Motion";
+import { dropIn, seriesStart } from "@/lib/motion/NamedMoves";
+import { phaseSwap } from "@/lib/motion/Choreography";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEERankedStore } from "@/stores/UseCEERankedStore";

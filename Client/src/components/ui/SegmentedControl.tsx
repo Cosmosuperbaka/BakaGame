@@ -2,7 +2,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
 import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
-import { tappable } from "@/lib/Motion";
+import { tappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 export interface SegmentedOption<T extends string> {

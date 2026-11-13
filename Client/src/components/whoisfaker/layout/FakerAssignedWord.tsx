@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { RefObject } from "react";
-import { duration, ease, spring, wordDock } from "@/lib/Motion";
+import { duration, ease, spring } from "@/lib/motion/Transitions";
+import { wordDock } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 /**

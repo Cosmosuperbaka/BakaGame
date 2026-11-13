@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 
 /** 点击目标的中心点：需要同步拿到来源点（写进 store 等）的调用方直接用它，否则用下面的 Hook。 */
 export const originOfEvent = (event: { currentTarget: EventTarget | null }): OriginPoint | null => {

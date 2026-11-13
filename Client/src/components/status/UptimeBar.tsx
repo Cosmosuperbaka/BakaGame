@@ -8,7 +8,8 @@ import {
 } from "react";
 import { AnimatePresence, motion, useSpring } from "framer-motion";
 import { TriangleAlert, Wrench } from "lucide-react";
-import { hoverMarkFade, popover, uptimeGlide, uptimeReveal } from "@/lib/Motion";
+import { hoverMarkFade, uptimeGlide, uptimeReveal } from "@/lib/motion/NamedMoves";
+import { popover } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { LEVEL_TEXT, cellTone, formatLatency, formatRatio, type BarCell } from "./StatusFormat";
 

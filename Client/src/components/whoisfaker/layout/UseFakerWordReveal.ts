@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { wordRevealTiming } from "@/lib/Motion";
+import { wordRevealTiming } from "@/lib/motion/NamedMoves";
 import type { WhoIsFakerPhase } from "@bakagame/shared";
 
 /**

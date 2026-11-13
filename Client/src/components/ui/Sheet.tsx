@@ -2,7 +2,7 @@ import { useRef, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
-import { backdrop, sheetSlide, type SheetSide } from "@/lib/Motion";
+import { backdrop, sheetSlide, type SheetSide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 export interface SheetProps {

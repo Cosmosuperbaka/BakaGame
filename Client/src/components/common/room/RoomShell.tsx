@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
 import { ChatDraftContext, useChatDraftSource } from "@/hooks/UseChatDraft";
 import { useMinWidth } from "@/hooks/UseMinWidth";
-import { roomEntranceMs } from "@/lib/Motion";
+import { roomEntranceMs } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { RoomDrawer } from "./RoomDrawer";
 import { RoomHeader } from "./RoomHeader";

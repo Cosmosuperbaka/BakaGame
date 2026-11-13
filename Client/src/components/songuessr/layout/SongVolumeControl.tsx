@@ -12,7 +12,10 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { duration, ease, iconTappable, popover, readoutSwap } from "@/lib/Motion";
+import { duration, ease } from "@/lib/motion/Transitions";
+import { iconTappable } from "@/lib/motion/Feedback";
+import { popover } from "@/lib/motion/Choreography";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { SongVolumeReadout } from "./SongVolumeReadout";
 

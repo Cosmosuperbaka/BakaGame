@@ -31,7 +31,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useStatusData } from "@/components/status/UseStatusData";
 import { useStatusSnapshot } from "@/components/status/UseStatusSnapshot";
-import { uptimeReveal } from "@/lib/Motion";
+import { uptimeReveal } from "@/lib/motion/NamedMoves";
 import { STATUS_GROUP_LABELS } from "@/lib/SystemStatus";
 import { cn } from "@/lib/Utils";
 

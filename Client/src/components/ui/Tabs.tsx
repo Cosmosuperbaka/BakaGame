@@ -4,7 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
 import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
-import { tabPushSwap, tappable } from "@/lib/Motion";
+import { tabPushSwap } from "@/lib/motion/Throw";
+import { tappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 /** 当前选中值与本次切换的方向（1 往后、-1 往前、0 未知），供底块与内容同向移动。 */

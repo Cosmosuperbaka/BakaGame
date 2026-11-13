@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { rankedSeries } from "@/stories/fixtures/CEERanked";
-import { ratingReveal, revealCard } from "@/lib/Motion";
+import { ratingReveal, revealCard } from "@/lib/motion/NamedMoves";
 import { CEERankedResultCard } from "./CEERankedResultCard";
 
 const renderCard = () =>

@@ -2,7 +2,9 @@ import { useId, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
-import { collapsible, headerTappable, spring } from "@/lib/Motion";
+import { collapsible } from "@/lib/motion/Choreography";
+import { headerTappable } from "@/lib/motion/Feedback";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 // 标题字号跟随所在区域的正文：`sm` 用于 CEE 反馈表这类 text-xs 的密集区域，箭头随字号等比收小。

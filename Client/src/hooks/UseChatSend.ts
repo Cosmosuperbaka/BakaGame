@@ -10,7 +10,7 @@ import {
 } from "react";
 import { animate, useReducedMotion } from "framer-motion";
 import type { SendThrowState, ThrowHandle, ThrowHandoff } from "@/components/common/chat/ChatThrow";
-import { chatThrow, jitterShape, stepJitterAnimation } from "@/lib/Motion";
+import { chatThrow, jitterShape, stepJitterAnimation } from "@/lib/motion/Throw";
 import type { ChatMessage } from "@bakagame/shared";
 
 /**

@@ -3,7 +3,7 @@ import { Crown, Medal } from "lucide-react";
 import type { CEERankedLeaderboard, CEERankedLeaderboardEntry } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
-import { listContainer, listItem, skeletonFade } from "@/lib/Motion";
+import { listContainer, listItem, skeletonFade } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { rankedRecordLabel, rankedWinRate } from "./CEERankedFormat";
 

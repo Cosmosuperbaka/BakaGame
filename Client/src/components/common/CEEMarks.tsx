@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clock, Crown, Flag, Lightbulb, Skull, Star, Trophy, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Hint } from "@/components/ui/Tooltip";
-import { receiptMark } from "@/lib/Motion";
+import { receiptMark } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 /**

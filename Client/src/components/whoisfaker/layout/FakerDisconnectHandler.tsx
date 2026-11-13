@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Clock, UserX } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { dropIn } from "@/lib/Motion";
+import { dropIn } from "@/lib/motion/NamedMoves";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useFakerPhaseAction } from "../phases/UseFakerPhaseAction";
 

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { chatThrow } from "@/lib/Motion";
+import { chatThrow } from "@/lib/motion/Throw";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { STICKER_PREFIX } from "@/lib/Stickers";
 import type { ChatMessage } from "@bakagame/shared";

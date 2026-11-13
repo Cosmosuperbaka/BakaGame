@@ -4,7 +4,7 @@ import type { CEEGuess, CEERankedGameSummary } from "@bakagame/shared";
 import { rankedGameHeadline } from "./CEERankedFormat";
 import { RankedGameMark } from "./CEERankedMarks";
 import { CEEAnswerCard } from "../CEEAnswerCard";
-import { listContainer, listItem } from "@/lib/Motion";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /** 一方的猜测清单：结束后双方完整公开，猜中、命中共同作品、未命中用图标区分。 */

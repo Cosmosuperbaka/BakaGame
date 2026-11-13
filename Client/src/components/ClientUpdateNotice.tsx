@@ -10,7 +10,7 @@ import {
 } from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
 import { useClientPackages, type ClientPackagePlatform } from "@/lib/ClientPackages";
-import { dropIn } from "@/lib/Motion";
+import { dropIn } from "@/lib/motion/NamedMoves";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 /**

@@ -1,6 +1,6 @@
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { LoaderCircle } from "lucide-react";
-import { spinner } from "@/lib/Motion";
+import { spinner } from "@/lib/motion/CssTokens";
 import { cn } from "@/lib/Utils";
 
 type SpinnerProps = Omit<HTMLMotionProps<"span">, "children">;

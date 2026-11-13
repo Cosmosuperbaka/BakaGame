@@ -10,7 +10,7 @@ import {
   type CreditDependency,
   type CreditLicenseDocument,
 } from "@/lib/Credits";
-import { pressable } from "@/lib/Motion";
+import { pressable } from "@/lib/motion/Feedback";
 import { DependencyGlyph } from "./CreditsIcons";
 import { DependencyLicense } from "./DependencyLicense";
 import { DependencyListHeader, DependencyRow } from "./DependencyRow";

@@ -21,7 +21,8 @@ import {
   AnimeAutoFilterSummary,
   SongAutoFilterSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
-import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
+import { readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 import { SongGuessBar } from "./SongGuessBar";

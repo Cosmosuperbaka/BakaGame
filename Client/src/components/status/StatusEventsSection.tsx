@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { PublicStatusEvent } from "@bakagame/shared";
 import { CalendarClock, CircleCheck, CloudOff, TriangleAlert, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { popover } from "@/lib/Motion";
+import { popover } from "@/lib/motion/Choreography";
 import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
 import { cn } from "@/lib/Utils";
 import {

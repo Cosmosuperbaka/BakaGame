@@ -4,7 +4,7 @@ import { Flag, Lightbulb, LogOut } from "lucide-react";
 import type { CEERankedSeriesView } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
-import { bannerRise, dropIn, readoutTick } from "@/lib/Motion";
+import { bannerRise, dropIn, readoutTick } from "@/lib/motion/NamedMoves";
 import { CEEConfirmDialog } from "../CEEConfirmDialog";
 import { CEEFeedbackTable } from "../CEEFeedbackTable";
 import { CEESearch } from "../CEESearch";

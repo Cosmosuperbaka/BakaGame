@@ -26,7 +26,7 @@ import {
   useSoundVolume,
 } from "@/lib/SoundEffects";
 import { setThemePreference, useThemePreference, type ThemePreference } from "@/lib/Theme";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { backdrop } from "@/lib/Motion";
+import { backdrop } from "@/lib/motion/Choreography";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { FakerWaitingPhase } from "../phases/FakerWaitingPhase";
 import { FakerAssignQuestionerPhase } from "../phases/FakerAssignQuestionerPhase";

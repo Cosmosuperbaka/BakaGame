@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { useSecondsLeft, useSecondsSince } from "@/hooks/UseSecondsLeft";
-import { dropIn, readoutTick } from "@/lib/Motion";
+import { dropIn, readoutTick } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { formatRankedClock } from "./CEERankedFormat";
 import { CEERankedHistory } from "./CEERankedHistory";

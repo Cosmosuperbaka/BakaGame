@@ -4,7 +4,7 @@ import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/Pla
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { PlayerStatusIcon } from "@/components/common/PlayerStatusPill";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
-import { tappable } from "@/lib/Motion";
+import { tappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 import { FakerRoleBadge } from "./FakerRoleBadge";
 import { resolveStatus } from "./FakerPlayerPresentation";

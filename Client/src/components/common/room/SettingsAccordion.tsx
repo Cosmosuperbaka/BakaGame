@@ -4,7 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { DotSeparated } from "@/components/ui/DotSeparated";
 import { SettingsReadOnly } from "@/components/common/room/settings/Layout";
-import { headerTappable, readoutSwap } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 
 /**
  * 等待页的折叠设置组：标题行整行可点，箭头与展开状态同步翻转。图标只传组件，尺寸与颜色在这里统一。

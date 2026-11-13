@@ -4,7 +4,7 @@ import { Bot, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { agentActivityText } from "@/lib/AgentActivityLabel";
 import { closePageControl } from "@/lib/SiteWs";
-import { agentPace } from "@/lib/Motion";
+import { agentPace } from "@/lib/motion/NamedMoves";
 import { findControlForFocus } from "@/lib/PageView";
 import {
   clearPageNotice,

@@ -4,7 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
-import { listContainer, listItem, optionTappable, spring } from "@/lib/Motion";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
+import { optionTappable } from "@/lib/motion/Feedback";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 /** 面板里的说明行：`busy` 查询中、`info` 空结果之类的说明、`error` 失败（读屏立即播报）。 */

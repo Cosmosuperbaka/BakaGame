@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
-import { listItem } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import type { SongGuessAttempt, SongGuessDirection } from "@bakagame/shared";
 

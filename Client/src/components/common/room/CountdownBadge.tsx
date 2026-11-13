@@ -3,7 +3,7 @@ import { Clock3 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { useUrgentPulse } from "@/hooks/UseUrgentPulse";
-import { readoutTick } from "@/lib/Motion";
+import { readoutTick } from "@/lib/motion/NamedMoves";
 
 /** 剩余秒数不超过该值时转为警示色，图标开始脉动。 */
 const URGENT_SECONDS = 10;

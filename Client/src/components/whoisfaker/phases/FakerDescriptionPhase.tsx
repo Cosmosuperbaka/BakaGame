@@ -1,6 +1,7 @@
 import { useCallback, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { fadeSwap, listContainer, listItem, speechReveal } from "@/lib/Motion";
+import { fadeSwap, speechReveal } from "@/lib/motion/NamedMoves";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
 import { FastForward, MessageSquarePlus, MessageSquareText, Scale, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";

@@ -1,7 +1,8 @@
 import { useContext } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BubbleRefContext } from "@/components/common/chat/BubbleRef";
-import { receiptMark, iconTappable } from "@/lib/Motion";
+import { receiptMark } from "@/lib/motion/NamedMoves";
+import { iconTappable } from "@/lib/motion/Feedback";
 import { Hint } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/Utils";
 import { STICKER_PREFIX, isValidStickerPath, type StickerLabelIndex } from "@/lib/Stickers";

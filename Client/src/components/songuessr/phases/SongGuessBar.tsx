@@ -5,7 +5,7 @@ import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { Button } from "@/components/ui/Button";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
-import { listItem } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 
 export function SongGuessCountdown({ deadlineAt }: { deadlineAt?: number | null }) {

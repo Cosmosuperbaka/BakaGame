@@ -1,7 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { listItem, playerRelayout } from "@/lib/Motion";
+import { listItem, playerRelayout } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**

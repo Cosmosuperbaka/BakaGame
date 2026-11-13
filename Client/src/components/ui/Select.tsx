@@ -2,7 +2,7 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { motion } from "framer-motion";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
-import { headerTappable } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 const Select = SelectPrimitive.Root;

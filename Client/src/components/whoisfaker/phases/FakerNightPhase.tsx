@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Moon, FastForward } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import { listContainer } from "@/lib/Motion";
+import { listContainer } from "@/lib/motion/Choreography";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { FakerPrivilegedActionPreview } from "../layout/FakerPrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";

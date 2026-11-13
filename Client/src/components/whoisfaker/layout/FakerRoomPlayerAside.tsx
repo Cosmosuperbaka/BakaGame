@@ -2,7 +2,8 @@ import type { ReactNode, RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
-import { iconTappable, spring } from "@/lib/Motion";
+import { iconTappable } from "@/lib/motion/Feedback";
+import { spring } from "@/lib/motion/Transitions";
 
 interface FakerRoomPlayerAsideProps {
   historyAvailable: boolean;

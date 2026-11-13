@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAnimate } from "framer-motion";
-import { spring, urgentPulse } from "@/lib/Motion";
+import { spring } from "@/lib/motion/Transitions";
+import { urgentPulse } from "@/lib/motion/CssTokens";
 import { serverNow } from "@/stores/UseServerClock";
 
 /**

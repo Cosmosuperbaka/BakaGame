@@ -3,7 +3,7 @@ import { ChevronRight, GitFork, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Hint } from "@/components/ui/Tooltip";
 import { creditLicenseLabel, type CreditDependency } from "@/lib/Credits";
-import { optionTappable } from "@/lib/Motion";
+import { optionTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 import { DependencyGlyph } from "./CreditsIcons";
 

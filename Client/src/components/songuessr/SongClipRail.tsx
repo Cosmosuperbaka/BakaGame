@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { SongClipPreview } from "@bakagame/shared";
 import { SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
-import { countdownTickMs } from "@/lib/Motion";
+import { countdownTickMs } from "@/lib/motion/CssTokens";
 import { cn } from "@/lib/Utils";
 import { formatClipTime } from "./SongClipEditing";
 

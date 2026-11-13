@@ -1,6 +1,6 @@
 ﻿import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
-import { phaseTitleRise } from "@/lib/Motion";
+import { phaseTitleRise } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 interface Props {

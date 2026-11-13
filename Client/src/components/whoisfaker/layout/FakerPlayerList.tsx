@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { listContainer, listItem } from "@/lib/Motion";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
 import { DESCRIPTION_HEAD_TONES, descriptionCellShadeForPlayer } from "@/lib/DescriptionColumns";
 import type { PlayerListHistory } from "./FakerSpeechHistory";
 import { CompactNameCell, SpeechCell } from "./FakerSpeechCell";

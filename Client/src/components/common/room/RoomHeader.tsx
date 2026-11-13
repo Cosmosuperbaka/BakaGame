@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { useSharedElementName } from "@/hooks/UsePageTransition";
-import { popover, readoutSwap } from "@/lib/Motion";
+import { popover } from "@/lib/motion/Choreography";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 /** 移动端顶栏入口：各自在对应面板常驻显示的断点以下出现。 */

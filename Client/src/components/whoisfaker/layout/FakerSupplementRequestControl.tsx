@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
-import { receiptMark, tappable } from "@/lib/Motion";
+import { receiptMark } from "@/lib/motion/NamedMoves";
+import { tappable } from "@/lib/motion/Feedback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 

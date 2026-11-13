@@ -1,6 +1,6 @@
 import type { SitePageCommand, SitePageResult } from "@bakagame/shared";
 import { isAgentPagePath } from "@bakagame/shared/values";
-import { agentPace } from "@/lib/Motion";
+import { agentPace } from "@/lib/motion/NamedMoves";
 import {
   controlLabelOf,
   findPageControl,

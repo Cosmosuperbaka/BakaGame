@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageSquare } from "lucide-react";
 import { ChatPanel } from "@/components/common/ChatPanel";
-import { roomEntrance, roomEntranceMs } from "@/lib/Motion";
+import { roomEntrance, roomEntranceMs } from "@/lib/motion/NamedMoves";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { ChatColumn, PlayerColumn, RoomShell } from "./RoomShell";
 

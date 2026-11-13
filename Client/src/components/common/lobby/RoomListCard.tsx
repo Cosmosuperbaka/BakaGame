@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { useSharedElementName } from "@/hooks/UsePageTransition";
-import { listItem, listItemExit, selectable } from "@/lib/Motion";
+import { listItem, listItemExit } from "@/lib/motion/Choreography";
+import { selectable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 /** 大厅卡片的展示模型；各游戏把自己的房间摘要映射到这里。 */

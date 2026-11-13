@@ -4,13 +4,10 @@ import { CheckCircle2, Sword, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { useOriginStyle } from "@/hooks/UseOriginStyle";
-import {
-  listItem,
-  receiptCard,
-  receiptMarkFollow,
-  selectable,
-  type OriginPoint,
-} from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
+import { receiptCard, receiptMarkFollow } from "@/lib/motion/NamedMoves";
+import { selectable } from "@/lib/motion/Feedback";
+import { type OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
 /**

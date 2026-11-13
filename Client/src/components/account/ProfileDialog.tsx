@@ -17,7 +17,7 @@ import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SettingsFields, SettingsSection } from "@/components/common/room/settings/Layout";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { api, apiErrorMessage } from "@/lib/Api";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 import { passkeySupported } from "@/lib/Passkey";
 import { PasskeySection } from "./PasskeySection";
 import { invalidatePublicProfile } from "@/lib/ProfileCache";

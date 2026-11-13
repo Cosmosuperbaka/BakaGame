@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
 import { NO_REQUEST_TIMEOUT, songPickFields } from "@/components/songuessr/SongSubmission";
-import { phaseSwap } from "@/lib/Motion";
+import { phaseSwap } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SongClipPreview, SongSearchResult } from "@bakagame/shared";

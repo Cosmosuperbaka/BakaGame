@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 
 /**
  * CEE 里「不可撤销或影响他人」操作的二次确认：取消在前、确认用危险色在后。

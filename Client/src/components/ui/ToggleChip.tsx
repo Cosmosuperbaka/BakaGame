@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { tappable } from "@/lib/Motion";
+import { tappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 /**

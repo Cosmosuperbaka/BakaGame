@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
+import { listItem, listContainer } from "@/lib/motion/Choreography";
+import { iconTappable, pressable } from "@/lib/motion/Feedback";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
 import { Activity, ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";

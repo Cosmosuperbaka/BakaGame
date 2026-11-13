@@ -3,7 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { backdrop, sheetSlide } from "@/lib/Motion";
+import { backdrop, sheetSlide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**

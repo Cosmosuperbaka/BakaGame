@@ -15,10 +15,8 @@ import {
   clueFlipRow,
   clueHammer,
   clueHammerBar,
-  listContainer,
-  listItem,
-  skeletonFade,
-} from "@/lib/Motion";
+} from "@/lib/motion/NamedMoves";
+import { listContainer, listItem, skeletonFade } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
 import {

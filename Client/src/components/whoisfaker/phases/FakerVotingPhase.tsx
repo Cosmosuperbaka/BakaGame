@@ -4,7 +4,7 @@ import { FastForward, Vote } from "lucide-react";
 import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import { listContainer } from "@/lib/Motion";
+import { listContainer } from "@/lib/motion/Choreography";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { FakerPrivilegedActionPreview } from "../layout/FakerPrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";

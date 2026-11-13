@@ -14,7 +14,8 @@ import {
   usePageTransitionEnds,
   useSharedElementName,
 } from "@/hooks/UsePageTransition";
-import { fadeSwap, listContainer, skeletonFade } from "@/lib/Motion";
+import { fadeSwap } from "@/lib/motion/NamedMoves";
+import { listContainer, skeletonFade } from "@/lib/motion/Choreography";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
 

@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Bot } from "lucide-react";
 import { agentActivityLabel } from "@/lib/AgentActivityLabel";
-import { readoutSwap } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { useSiteAgents } from "@/stores/UseSiteAgents";
 
 /** 同时最多展示两条；更多的折成 `+N`，不在首页堆一长串。 */

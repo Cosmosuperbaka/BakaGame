@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDown, ArrowUp, Music2 } from "lucide-react";
 import type { SongLyricLine } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { readoutSwap } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { SongClipLyricScene, type SelectionPlacement } from "./SongClipLyricScene";
 

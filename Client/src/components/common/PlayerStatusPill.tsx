@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Hint } from "@/components/ui/Tooltip";
-import { playerRelayout } from "@/lib/Motion";
+import { playerRelayout } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 export type PlayerStatusTone = "default" | "success" | "questioner" | "warning" | "danger";

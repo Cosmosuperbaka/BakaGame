@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useValueChange } from "@/hooks/UseValueChange";
-import { digitRoll, gainFloat } from "@/lib/Motion";
+import { digitRoll, gainFloat } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**

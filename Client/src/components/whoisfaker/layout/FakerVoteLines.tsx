@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { listItem } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**

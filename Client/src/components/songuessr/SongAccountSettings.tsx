@@ -15,7 +15,7 @@ import {
   type SongMusicPlatform,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { readoutSwap } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { vipBadge, vipText } from "./SongAccountBadges";
 import { errorMessage } from "./SongErrorMessage";

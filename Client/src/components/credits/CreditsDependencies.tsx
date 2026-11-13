@@ -15,7 +15,7 @@ import {
   filterCreditDependencies,
   type CreditDependency,
 } from "@/lib/Credits";
-import { tappable } from "@/lib/Motion";
+import { tappable } from "@/lib/motion/Feedback";
 import { DependencyListHeader, DependencyRow } from "./DependencyRow";
 
 /** License 筛选里代表「不过滤」的值；Radix Select 的值必须是字符串。 */

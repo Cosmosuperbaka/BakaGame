@@ -1,6 +1,7 @@
 ﻿import { motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
-import { ellipsisDot, receiptMark } from "@/lib/Motion";
+import { ellipsisDot } from "@/lib/motion/Throw";
+import { receiptMark } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 const DOTS = [0, 1, 2];

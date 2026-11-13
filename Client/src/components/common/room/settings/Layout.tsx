@@ -3,7 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Label } from "@/components/ui/Label";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
-import { collapsible } from "@/lib/Motion";
+import { collapsible } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { type LucideIcon } from "lucide-react";

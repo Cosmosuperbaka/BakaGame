@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS, WINNER_TONE } from "@/config/WhoIsFakerPresentation";
-import { headerTappable } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";

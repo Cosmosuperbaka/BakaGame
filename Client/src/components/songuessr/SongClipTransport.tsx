@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Pause, Play } from "lucide-react";
 import type { SongClipPreview } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { iconToggle } from "@/lib/Motion";
+import { iconToggle } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { formatClipLength, formatClipTime } from "./SongClipEditing";
 import { SongClipRail } from "./SongClipRail";

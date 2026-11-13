@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { buildReplaySteps, isCeeReplayEnabled, type ReplayRound } from "@/lib/CeeReplay";
-import { readoutSwap } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEEFeedbackChips } from "./CEEFeedbackTable";
 

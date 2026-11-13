@@ -15,7 +15,9 @@ import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
 import { originOfEvent, useOriginTracker } from "@/hooks/UseOriginTracker";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
-import { headerTappable, popover, type OriginPoint } from "@/lib/Motion";
+import { headerTappable } from "@/lib/motion/Feedback";
+import { popover } from "@/lib/motion/Choreography";
+import { type OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 import { useAccountStore } from "@/stores/UseAccountStore";
 

@@ -2,7 +2,7 @@ import type { Ref } from "react";
 import { motion } from "framer-motion";
 import { DoorOpen } from "lucide-react";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
-import { listItem, listItemExit } from "@/lib/Motion";
+import { listItem, listItemExit } from "@/lib/motion/Choreography";
 
 /**
  * 三游戏共用的大厅空状态：「暂无房间」与一行指引。创建入口只有标题行的「创建房间」一个，空状态不再放第二个按钮。

@@ -2,7 +2,8 @@ import { useImperativeHandle, useLayoutEffect, useRef, type Ref, type RefObject 
 import { createPortal } from "react-dom";
 import { animate, motion, useMotionValue, type MotionValue, type Transition } from "framer-motion";
 import { BubbleRefContext } from "@/components/common/chat/BubbleRef";
-import { byAxes, chatThrow, springWithVelocity, spring } from "@/lib/Motion";
+import { byAxes, chatThrow, springWithVelocity } from "@/lib/motion/Throw";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 /** 掷出中的胶囊：气泡接手时读它此刻的位置与速度。 */

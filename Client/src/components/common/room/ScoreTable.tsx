@@ -8,7 +8,7 @@ import {
   scoreRevealDelay,
   scoreRollDelay,
   scoreRow,
-} from "@/lib/Motion";
+} from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {

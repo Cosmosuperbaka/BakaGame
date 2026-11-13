@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
-import { fadeSwap } from "@/lib/Motion";
+import { fadeSwap } from "@/lib/motion/NamedMoves";
 
 /** 进房弹窗里一次加入失败的文案；`invalid` 只在确属密码错误时标红输入框。 */
 export interface RoomPasswordError {

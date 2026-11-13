@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Eye, UserCheck } from "lucide-react";
-import { listContainer, listItem, selectable } from "@/lib/Motion";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
+import { selectable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 /** 区块小标题。`hint` 是右侧的补充说明，缺省时右侧留空。 */

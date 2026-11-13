@@ -5,7 +5,7 @@ import type { SongClipPreview, SongClipRange } from "@bakagame/shared";
 import { isLyricLineInClip, SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { useClipPreviewAudio } from "@/hooks/UseClipPreviewAudio";
-import { readoutSwap } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import {
   chorusRange,
   clampClipRange,

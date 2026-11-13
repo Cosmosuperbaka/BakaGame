@@ -3,7 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Spinner } from "@/components/ui/Spinner";
-import { iconTappable, pressable, pressableStrong } from "@/lib/Motion";
+import { iconTappable, pressable, pressableStrong } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 const buttonVariants = cva(

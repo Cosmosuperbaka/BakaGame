@@ -4,7 +4,8 @@ import { Check, Copy, Link } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { useMeasuredWidth } from "@/hooks/UseMeasuredHeight";
-import { readoutSwap, spring } from "@/lib/Motion";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 /** 等待页的房间链接：展示完整地址并一键复制，复制失败交给调用方提示。 */

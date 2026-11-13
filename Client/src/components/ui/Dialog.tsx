@@ -3,7 +3,8 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { useOriginStyle } from "@/hooks/UseOriginStyle";
-import { backdrop, emergeFromOrigin, type OriginPoint } from "@/lib/Motion";
+import { backdrop } from "@/lib/motion/Choreography";
+import { emergeFromOrigin, type OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
 const DialogPortal = DialogPrimitive.Portal;

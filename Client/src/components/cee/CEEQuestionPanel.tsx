@@ -17,7 +17,7 @@ import {
   SettingSwitchRow,
 } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import { listItem } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
 import type { Dispatch, SetStateAction } from "react";
 import type { useCEESubjectNames } from "./UseCEESubjectNames";
 import { CEEPresetBar } from "./CEEPresetBar";

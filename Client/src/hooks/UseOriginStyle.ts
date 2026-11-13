@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { CSSProperties } from "react";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 
 /**
  * 把来源点换算成浮层自身的 transform-origin。返回的 `measure` 是回调 ref，挂到浮层根节点上（与其它 ref 合并）。

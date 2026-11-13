@@ -14,7 +14,8 @@ import {
   PlayerStatusIcon,
 } from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
-import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
+import { headerTappable, tappable } from "@/lib/motion/Feedback";
+import { listItem, playerRelayout, popover } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import type { PlayerAccount } from "@bakagame/shared";
 

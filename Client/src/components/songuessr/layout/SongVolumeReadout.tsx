@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
-import { digitRoll, iconTappable } from "@/lib/Motion";
+import { digitRoll } from "@/lib/motion/Choreography";
+import { iconTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
 /**

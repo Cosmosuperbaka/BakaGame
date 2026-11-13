@@ -2,7 +2,7 @@ import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { iconTappable, pressable, pressableStrong } from "@/lib/Motion";
+import { iconTappable, pressable, pressableStrong } from "@/lib/motion/Feedback";
 import { Button } from "./Button";
 
 const { motionButtonProps } = vi.hoisted(() => ({ motionButtonProps: vi.fn() }));

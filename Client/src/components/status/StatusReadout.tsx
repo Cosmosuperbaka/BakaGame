@@ -2,7 +2,7 @@ import { AnimatePresence, motion, type TargetAndTransition, type Variants } from
 import type { PublicStatusLevel } from "@bakagame/shared";
 import { CheckCircle2, CircleHelp, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { readoutSwap, statusGlyphSwap, vanish } from "@/lib/Motion";
+import { readoutSwap, statusGlyphSwap, vanish } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { CELL_TONE, LEVEL_TEXT } from "./StatusFormat";
 

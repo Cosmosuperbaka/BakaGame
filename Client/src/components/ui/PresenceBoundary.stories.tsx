@@ -10,7 +10,8 @@ import { CEERankedHistory } from "@/components/cee/ranked/CEERankedHistory";
 import { CEERankedLeaderboardPanel } from "@/components/cee/ranked/CEERankedLeaderboard";
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { rankedLeaderboard, rankedProfile, rankedSeries } from "@/stories/fixtures/CEERanked";
-import { dropIn, listItem } from "@/lib/Motion";
+import { dropIn } from "@/lib/motion/NamedMoves";
+import { listItem } from "@/lib/motion/Choreography";
 
 /**
  * 「挂载时已有内容、之后再追加」：容器首屏就在（`AnimatePresence initial={false}` 的首个子项），

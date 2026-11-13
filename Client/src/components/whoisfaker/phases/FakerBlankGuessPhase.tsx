@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import { fadeSwap, readoutSwap } from "@/lib/Motion";
+import { fadeSwap, readoutSwap } from "@/lib/motion/NamedMoves";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { FakerPendingSpeech } from "../layout/FakerPendingSpeech";

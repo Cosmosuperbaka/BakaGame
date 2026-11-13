@@ -1,7 +1,7 @@
 import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
-import { lyricOverview } from "@/lib/Motion";
+import { lyricOverview } from "@/lib/motion/CssTokens";
 import { SongLyricSceneBase } from "./SongLyricSceneBase";
 import { isMediaClockRunning, toAMLLLines } from "./SongLyricLines";
 

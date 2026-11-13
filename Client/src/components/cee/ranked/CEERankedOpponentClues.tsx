@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Lightbulb } from "lucide-react";
 import type { CEEComparison, CEERankedMaskedGuess } from "@bakagame/shared";
 import { Hint } from "@/components/ui/Tooltip";
-import { listItem, skeletonFade } from "@/lib/Motion";
+import { listItem, skeletonFade } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { CEE_COMPARISON, CEE_FIELD_LABEL, CEE_TONE_CLASS } from "../CEEComparison";
 

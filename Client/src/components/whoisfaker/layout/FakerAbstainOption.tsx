@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { CircleSlash } from "lucide-react";
-import { listItem, selectable } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
+import { selectable } from "@/lib/motion/Feedback";
 
 /**
  * 放弃本次决定的选项：投票里是「弃票」，夜晚是「不行动」。

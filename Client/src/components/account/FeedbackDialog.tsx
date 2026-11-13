@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { api, apiErrorMessage } from "@/lib/Api";
-import type { OriginPoint } from "@/lib/Motion";
+import type { OriginPoint } from "@/lib/motion/Origin";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { PANEL } from "./FeedbackShared";
 import { AnonymousFeedbackPanel, FeedbackForm, type FeedbackDraft } from "./FeedbackForm";

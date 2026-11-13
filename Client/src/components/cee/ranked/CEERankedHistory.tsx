@@ -5,7 +5,7 @@ import { ceeRankedTier } from "@bakagame/shared/values";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
-import { listContainer, listItem, skeletonFade } from "@/lib/Motion";
+import { listContainer, listItem, skeletonFade } from "@/lib/motion/Choreography";
 import { formatRelativeTime } from "@/lib/Time";
 import { formatRankedPoints } from "./CEERankedFormat";
 import { RankedOutcomeMark, RankedRatingDelta } from "./CEERankedMarks";

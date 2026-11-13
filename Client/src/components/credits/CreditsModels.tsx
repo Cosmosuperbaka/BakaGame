@@ -8,7 +8,7 @@ import {
   type ContributingCompany,
   type ContributingModel,
 } from "@/lib/Credits";
-import { tappable } from "@/lib/Motion";
+import { tappable } from "@/lib/motion/Feedback";
 import { CreditBrandMark } from "./CreditsIcons";
 
 /**

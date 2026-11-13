@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { DisclosureChevron } from "@/components/ui/Collapsible";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
-import { spring } from "@/lib/Motion";
+import { spring } from "@/lib/motion/Transitions";
 import { cn } from "@/lib/Utils";
 
 /** 收起时保留的行数。只列静态类名，Tailwind 才能扫到。 */

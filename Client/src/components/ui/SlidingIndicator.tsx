@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import type { IndicatorRect } from "@/hooks/UseIndicatorRect";
-import { indicatorSlide } from "@/lib/Motion";
+import { indicatorSlide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /** 下划线指示器的粗细（像素），与 `TabsList` 底边的 1px 分隔线叠在同一条基线上。 */

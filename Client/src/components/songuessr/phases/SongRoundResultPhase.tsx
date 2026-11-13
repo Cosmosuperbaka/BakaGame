@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
-import { followDelay, listItem, revealCard } from "@/lib/Motion";
+import { followDelay, listItem } from "@/lib/motion/Choreography";
+import { revealCard } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import {

@@ -3,7 +3,7 @@ import type { CEECharacterView } from "@bakagame/shared";
 import { BangumiRichText } from "@/components/common/BangumiRichText";
 import { Badge } from "@/components/ui/Badge";
 import { ClampedText } from "@/components/ui/ClampedText";
-import { revealCard } from "@/lib/Motion";
+import { revealCard } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEE_GENDER_TEXT, CEE_UNKNOWN_NUMBER } from "./CEEComparison";

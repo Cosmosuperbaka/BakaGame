@@ -29,7 +29,7 @@ import {
 } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
-import { listItem } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@bakagame/shared/values";

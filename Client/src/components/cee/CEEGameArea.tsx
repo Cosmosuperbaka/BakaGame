@@ -21,7 +21,8 @@ import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/Scor
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import type { ReplayRound } from "@/lib/CeeReplay";
-import { listItem, readoutSwap, receiptCard, receiptMarkFollow, skeletonFade } from "@/lib/Motion";
+import { listItem, skeletonFade } from "@/lib/motion/Choreography";
+import { readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/motion/NamedMoves";
 import { CEESearch } from "./CEESearch";
 import { CEEAnswerCard } from "./CEEAnswerCard";
 import { CEECharacterImage } from "./CEECharacterImage";

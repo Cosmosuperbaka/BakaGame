@@ -4,7 +4,7 @@ import type { CEERankedSeatView, CEERankedSeriesView } from "@bakagame/shared";
 import { CEE_RANKED_SERIES_GAMES } from "@bakagame/shared/values";
 import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
-import { pipSettle, readoutTick } from "@/lib/Motion";
+import { pipSettle, readoutTick } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { formatRankedClock, formatRankedPoints } from "./CEERankedFormat";
 import { RankedAttemptMeter } from "./CEERankedMarks";

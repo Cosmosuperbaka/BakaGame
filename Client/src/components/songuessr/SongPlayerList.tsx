@@ -14,7 +14,7 @@ import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
 import { errorMessage } from "@/components/songuessr/SongErrorMessage";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { listContainer } from "@/lib/Motion";
+import { listContainer } from "@/lib/motion/Choreography";
 import { teamGroups } from "@/lib/Teams";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@bakagame/shared";

@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { phaseSwap } from "@/lib/Motion";
+import { phaseSwap } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**

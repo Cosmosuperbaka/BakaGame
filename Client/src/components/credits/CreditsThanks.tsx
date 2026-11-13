@@ -1,12 +1,11 @@
 import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import type { SpecialThanksEntry } from "@/lib/Credits";
-import { pressable } from "@/lib/Motion";
+import { pressable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 import { ThanksGlyph } from "./CreditsIcons";
 
-const CARD_CLASS =
-  "flex h-full min-w-0 items-start gap-3 rounded-md border bg-card p-3 shadow-2xs";
+const CARD_CLASS = "flex h-full min-w-0 items-start gap-3 rounded-md border bg-card p-3 shadow-2xs";
 
 /**
  * 图标收在一枚固定尺寸的方块里：条目多起来时左缘成一条直线。

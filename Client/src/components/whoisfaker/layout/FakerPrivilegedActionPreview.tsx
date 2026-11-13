@@ -2,7 +2,8 @@
 import { ArrowRight, Clock3 } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Hint } from "@/components/ui/Tooltip";
-import { listItem, readoutSwap } from "@/lib/Motion";
+import { listItem } from "@/lib/motion/Choreography";
+import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";

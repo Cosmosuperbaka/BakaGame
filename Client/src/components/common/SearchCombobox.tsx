@@ -9,7 +9,7 @@ import {
   type SearchItem,
   type SearchStatus,
 } from "@/components/common/search/SearchPanel";
-import { popover } from "@/lib/Motion";
+import { popover } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 export interface SearchComboboxProps<T> {
