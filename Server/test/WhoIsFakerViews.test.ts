@@ -9,7 +9,8 @@ import type {
   WhoIsFakerRole,
   StateSyncPayload,
 } from "../src/shared/Index";
-import { preparedStateClone, StateSyncEncoder } from "../src/transport/StateSync";
+import { preparedStateClone } from "../src/transport/StateSync";
+import { DecodingStateSyncEncoder } from "./StateSyncFixtures";
 import { createConnection, createTestContext, execute, type TestConnection } from "./Helpers";
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
@@ -30,7 +31,7 @@ const setupViews = async (connectionCount = 150) => {
   const clients: ViewClient[] = [];
   function connect(index: number): ViewClient {
     const connection = createConnection(service, `view-${index}`);
-    const encoder = new StateSyncEncoder({ now: () => networkNow });
+    const encoder = new DecodingStateSyncEncoder({ now: () => networkNow });
     const raw: EventPacket[] = [],
       wire: EventPacket[] = [];
     const receive = (payload: unknown, calibration = false) => {
@@ -231,7 +232,8 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
     expect(sync.mode).toBe("full");
     return sync.mode === "full" ? sync.state : undefined;
   });
-  expect(new Set(fullStates).size).toBe(2);
+  // 线上是文本帧，复用以序列化后的内容区分：公开视图只有两份（克隆次数由上面的计数断言守着）。
+  expect(new Set(fullStates.map((state) => JSON.stringify(state))).size).toBe(2);
   const firstViews = f.clients.map(snapshot);
   const nextClones = await measureClones(() =>
     f.command(f.active[1], { type: "chat.send", payload: { text: "公开消息" } })
@@ -243,9 +245,9 @@ test("150连接按ghost权限复用公开对象和编码准备，私有状态仍
   const patches = f.clients.map((client) => {
     const sync = syncPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot");
     expect(sync.mode).toBe("patch");
-    return sync.mode === "patch" ? sync.operations : undefined;
+    return sync.mode === "patch" ? JSON.stringify(sync.operations) : undefined;
   });
-  // 相同当前视图和相同基线只生成一份操作数组；两组权限分别复用。
+  // 相同当前视图和相同基线只生成一份操作内容；两组权限分别复用（线上是文本帧，以内容区分）。
   expect(new Set(patches).size).toBe(2);
   console.info(
     "Faker 150连接准备计数:",
@@ -305,7 +307,8 @@ test("150连接无变化校准复用权限视图且全量修复丢失补丁，�
     expect(sync.state.chat.some((message) => message.text === "遗漏的更新")).toBe(true);
     return sync.state;
   });
-  expect(new Set(fullStates).size).toBe(2);
+  // 线上是文本帧，复用以序列化后的内容区分：公开视图只有两份（克隆次数由上面的计数断言守着）。
+  expect(new Set(fullStates.map((state) => JSON.stringify(state))).size).toBe(2);
   console.info("Faker 150连接校准准备计数:", JSON.stringify(clones));
 });
 

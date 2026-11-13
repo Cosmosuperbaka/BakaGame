@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { applyPatch } from "fast-json-patch";
 
 import { createEvent } from "../src/transport/Packets";
@@ -9,6 +9,7 @@ import {
   STATE_BACKLOG_SHED_BYTES,
   StateSyncEncoder,
 } from "../src/transport/StateSync";
+import { DecodingStateSyncEncoder, decodeFrame } from "./StateSyncFixtures";
 
 test("状态补丁只编码变化路径与数组追加项", () => {
   expect(
@@ -60,7 +61,7 @@ test("聊天窗口挤掉最旧一条时只发两条操作", () => {
 });
 
 test("窗口挤动不再退化成整份重发", () => {
-  const encoder = new StateSyncEncoder();
+  const encoder = new DecodingStateSyncEncoder();
   const message = (index: number) => ({ id: `c${index}`, text: "x".repeat(60), at: index });
   const window = (end: number) => ({
     chat: Array.from({ length: 20 }, (_, index) => message(end - 19 + index)),
@@ -74,7 +75,7 @@ test("窗口挤动不再退化成整份重发", () => {
 });
 
 test("编码器发送首个全量、连续补丁并省略无变化私有状态", () => {
-  const encoder = new StateSyncEncoder();
+  const encoder = new DecodingStateSyncEncoder();
   const filler = "x".repeat(1_000);
   const first = encoder.encode(createEvent("room.snapshot", { value: 1, filler }));
   const unchanged = encoder.encode(createEvent("room.snapshot", { value: 1, filler }));
@@ -94,7 +95,7 @@ test("编码器发送首个全量、连续补丁并省略无变化私有状态",
 
 test("编码器每分钟用全量状态校准补丁链", () => {
   let now = 0;
-  const encoder = new StateSyncEncoder({ now: () => now });
+  const encoder = new DecodingStateSyncEncoder({ now: () => now });
   encoder.encode(createEvent("room.snapshot", { value: 1, filler: "x".repeat(1_000) }));
   now = 60_000;
 
@@ -110,7 +111,7 @@ test("编码器每分钟用全量状态校准补丁链", () => {
 
 test("校准调用会在无业务变化时按周期重发全量状态", () => {
   let now = 0;
-  const encoder = new StateSyncEncoder({ now: () => now });
+  const encoder = new DecodingStateSyncEncoder({ now: () => now });
   const state = createEvent("room.snapshot", { value: 1 });
   encoder.encode(state);
 
@@ -124,7 +125,7 @@ test("校准调用会在无业务变化时按周期重发全量状态", () => {
 });
 
 test("快照内嵌活动领域对象时，补丁基线仍是准备时刻的值", () => {
-  const encoder = new StateSyncEncoder();
+  const encoder = new DecodingStateSyncEncoder();
   // 视图构建器可能把领域对象直接挂进快照；准备时必须留下当时值的副本，
   // 否则下一次发布拿到的基线已经被原地改写，客户端永远收不到这处变化。
   const settings = { rounds: 5, anonymous: true };
@@ -148,7 +149,7 @@ test("快照内嵌活动领域对象时，补丁基线仍是准备时刻的值",
 });
 
 test("补丁规模接近全量时改发全量，小改动仍走补丁", () => {
-  const encoder = new StateSyncEncoder();
+  const encoder = new DecodingStateSyncEncoder();
   const fields = (suffix: string) =>
     Object.fromEntries(
       Array.from({ length: 60 }, (_, index) => [`field${index}`, `value-${index}${suffix}`])
@@ -172,7 +173,7 @@ test("出站积压越过水位时只丢状态帧，回落后以全量恢复", ()
   let backlog = 0;
   const sent: unknown[] = [];
   const sender = createStateSyncSender(
-    (payload) => sent.push(payload),
+    (payload) => sent.push(decodeFrame(payload)),
     () => backlog
   );
 
@@ -197,7 +198,7 @@ test("积压时大厅列表帧与状态帧各走一条闸门：丢列表不把�
   let backlog = 0;
   const sent: unknown[] = [];
   const sender = createStateSyncSender(
-    (payload) => sent.push(payload),
+    (payload) => sent.push(decodeFrame(payload)),
     () => backlog
   );
   const filler = "x".repeat(1_000);
@@ -222,4 +223,65 @@ test("积压时大厅列表帧与状态帧各走一条闸门：丢列表不把�
   // 断的是列表不是快照：恢复后的第一份仍是补丁，不必重发整张房间视图。
   sender.send(snapshot(3));
   expect(sent.at(-1)).toMatchObject({ payload: { mode: "patch", revision: 3 } });
+});
+
+test("同一帧发给多条连接时字节相同：全量帧与补丁帧各自逐字节一致，且与对象序列化等价", () => {
+  const filler = "x".repeat(1_000);
+  const first = createEvent("room.snapshot", { value: 1, players: ["a", "b"], filler });
+  const second = createEvent("room.snapshot", { value: 2, players: ["a", "b", "c"], filler });
+  const encoders = Array.from({ length: 20 }, () => new StateSyncEncoder());
+  const fulls = encoders.map((encoder) => encoder.encode(first));
+  const patches = encoders.map((encoder) => encoder.encode(second));
+  for (const group of [fulls, patches]) {
+    expect(new Set(group.map((frames) => frames[0])).size).toBe(1);
+    const frame = group[0][0] as string;
+    expect(typeof frame).toBe("string");
+    // 与逐连接 JSON.stringify(对象) 的产物逐字节一致：键序与格式没有被拼接改变。
+    expect(frame).toBe(JSON.stringify(JSON.parse(frame)));
+  }
+  expect(JSON.parse(fulls[0][0] as string)).toEqual({
+    type: "event",
+    event: "room.snapshot",
+    payload: { mode: "full", revision: 1, state: { value: 1, players: ["a", "b"], filler } },
+  });
+  expect(JSON.parse(patches[0][0] as string)).toMatchObject({
+    payload: { mode: "patch", baseRevision: 1, revision: 2 },
+  });
+});
+
+test("每条连接的版本号独立计数，共享的只有状态子树与补丁文本", () => {
+  const late = new StateSyncEncoder();
+  const early = new StateSyncEncoder();
+  const filler = "x".repeat(1_000);
+  const one = createEvent("room.snapshot", { value: 1, filler });
+  const two = createEvent("room.snapshot", { value: 2, filler });
+  early.encode(one);
+  early.encode(two);
+  const next = createEvent("room.snapshot", { value: 3, filler });
+  const [lateFrame] = late.encode(next);
+  const [earlyFrame] = early.encode(next);
+  expect(JSON.parse(lateFrame as string).payload).toMatchObject({ mode: "full", revision: 1 });
+  expect(JSON.parse(earlyFrame as string).payload).toMatchObject({
+    mode: "patch",
+    baseRevision: 2,
+    revision: 3,
+  });
+});
+
+test("状态子树与补丁对整个房间只序列化一次，不随连接数线性增长", () => {
+  const stringify = spyOn(JSON, "stringify");
+  try {
+    const first = createEvent("room.snapshot", { value: 1, filler: "x".repeat(2_000) });
+    const second = createEvent("room.snapshot", { value: 2, filler: "x".repeat(2_000) });
+    const encoders = Array.from({ length: 150 }, () => new StateSyncEncoder());
+    for (const encoder of encoders) encoder.encode(first);
+    const afterFull = stringify.mock.calls.length;
+    for (const encoder of encoders) encoder.encode(second);
+    const afterPatch = stringify.mock.calls.length - afterFull;
+    // 全量帧：信封与状态各一次；补丁帧：信封与操作各一次（常数，与 150 条连接无关）。
+    expect(afterFull).toBeLessThanOrEqual(6);
+    expect(afterPatch).toBeLessThanOrEqual(6);
+  } finally {
+    stringify.mockRestore();
+  }
 });

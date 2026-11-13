@@ -2,6 +2,9 @@ import type { ConnectionRecord, ClientChannelProof, PlayerAccount } from "../../
 import type { ServerMessage } from "../../shared/Protocol";
 import { createStateSyncSender } from "../StateSync";
 
+/** 状态帧在编码时已序列化成文本，其余帧是对象：运行时两者都直接交给 `send`。 */
+type OutboundFrame = ServerMessage | string;
+
 export const sendPacket = (
   ws: { send: (data: ServerMessage) => unknown },
   payload: ServerMessage
@@ -12,7 +15,7 @@ export const sendPacket = (
 /** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
 export interface GameSocketLike {
   data: unknown;
-  send: (data: ServerMessage) => unknown;
+  send: (data: OutboundFrame) => unknown;
   close: (code?: number, reason?: string) => unknown;
   raw?: unknown;
 }
@@ -61,7 +64,7 @@ export const createConnectionRecord = (
   };
   const stateSync = createStateSyncSender(
     (payload) => {
-      sendPacket(ws, payload as ServerMessage);
+      ws.send(payload as OutboundFrame);
     },
     () => socketBacklog(ws)
   );

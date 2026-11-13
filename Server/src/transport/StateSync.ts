@@ -206,7 +206,42 @@ interface PreparedState {
   state: unknown;
   stateLength: number;
   patchesByPrevious: WeakMap<object, StatePatchOperation[]>;
+  /** 全量帧里的状态子树文本：同一份快照发给房内所有连接，只序列化一次。 */
+  stateJson?: string;
 }
+
+// 同一组补丁操作发给所有基线相同的连接：序列化文本按操作数组的引用共享。
+const operationsJsonCache = new WeakMap<StatePatchOperation[], string>();
+
+const operationsJson = (operations: StatePatchOperation[]): string => {
+  let json = operationsJsonCache.get(operations);
+  if (json === undefined) {
+    json = JSON.stringify(operations);
+    operationsJsonCache.set(operations, json);
+  }
+  return json;
+};
+
+const stateJsonOf = (prepared: PreparedState): string =>
+  (prepared.stateJson ??= JSON.stringify(prepared.state));
+
+/** 事件信封里除 `payload` 之外的部分：同一个事件对象发给多条连接时只序列化一次。 */
+const ENVELOPE_MARK = "state";
+const envelopeCache = new WeakMap<object, { head: string; tail: string }>();
+
+const envelopeOf = (packet: EventPacket): { head: string; tail: string } => {
+  let envelope = envelopeCache.get(packet);
+  if (!envelope) {
+    const text = JSON.stringify({ ...packet, payload: ENVELOPE_MARK });
+    const at = text.lastIndexOf(JSON.stringify(ENVELOPE_MARK));
+    envelope = {
+      head: text.slice(0, at),
+      tail: text.slice(at + JSON.stringify(ENVELOPE_MARK).length),
+    };
+    envelopeCache.set(packet, envelope);
+  }
+  return envelope;
+};
 
 // 同一次公共快照会传给房内所有连接；克隆与深比较只做一次。
 const preparedStates = new WeakMap<object, PreparedState>();
@@ -281,6 +316,15 @@ export interface StateSyncEncodeOptions {
   calibration?: boolean;
 }
 
+type EncodeStep =
+  | { kind: "raw"; packet: unknown }
+  | {
+      kind: "state";
+      packet: EventPacket;
+      sync: StateSyncPayload<unknown>;
+      prepared: PreparedState;
+    };
+
 export class StateSyncEncoder {
   private readonly channels = new Map<string, ChannelState>();
   private readonly now: () => number;
@@ -295,8 +339,27 @@ export class StateSyncEncoder {
     this.channels.clear();
   }
 
+  /**
+   * 状态帧直接产出文本。`revision` / `baseRevision` 按连接独立计数，整帧不能共享，
+   * 但状态子树与补丁操作是同一份，序列化一次后按连接拼接，字节与逐连接序列化相同。
+   * 其余事件原样透传，由发送方各自序列化。
+   */
   encode(payload: unknown, options: StateSyncEncodeOptions = {}): unknown[] {
-    if (!isEventPacket(payload) || !STATE_EVENTS.has(payload.event)) return [payload];
+    return this.plan(payload, options).map((step) => {
+      if (step.kind === "raw") return step.packet;
+      const { head, tail } = envelopeOf(step.packet);
+      const { sync, prepared } = step;
+      const body =
+        sync.mode === "full"
+          ? `{"mode":"full","revision":${sync.revision},"state":${stateJsonOf(prepared)}}`
+          : `{"mode":"patch","baseRevision":${sync.baseRevision},"revision":${sync.revision},"operations":${operationsJson(sync.operations)}}`;
+      return head + body + tail;
+    });
+  }
+
+  private plan(payload: unknown, options: StateSyncEncodeOptions): EncodeStep[] {
+    if (!isEventPacket(payload) || !STATE_EVENTS.has(payload.event))
+      return [{ kind: "raw", packet: payload }];
 
     const previous = this.channels.get(payload.event);
     const prepared = prepareState(payload.payload);
@@ -314,7 +377,7 @@ export class StateSyncEncoder {
         lastFullAt: now,
         state: nextState,
       });
-      return [{ ...payload, payload: sync }];
+      return [{ kind: "state", packet: payload, sync, prepared }];
     }
 
     let operations: StatePatchOperation[] | undefined;
@@ -339,12 +402,14 @@ export class StateSyncEncoder {
       });
       return [
         {
-          ...payload,
-          payload: {
+          kind: "state",
+          packet: payload,
+          sync: {
             mode: "full",
             revision: previous.revision,
             state: nextState,
           } satisfies StateSyncPayload<unknown>,
+          prepared,
         },
       ];
     }
@@ -373,7 +438,7 @@ export class StateSyncEncoder {
       state: nextState,
     });
 
-    return [{ ...payload, payload: shouldSendFull ? full : patch }];
+    return [{ kind: "state", packet: payload, sync: shouldSendFull ? full : patch, prepared }];
   }
 }
 

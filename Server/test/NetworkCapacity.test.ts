@@ -11,6 +11,7 @@ import {
 import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
+import { decodeFrame, wireBytes } from "./StateSyncFixtures";
 import { ceeTestHarness, character } from "./CEENativeFixtures";
 
 const TARGET_PLAYERS = 150;
@@ -37,13 +38,13 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => 
       lobbySubscribed: false,
       send(payload) {
         for (const packet of encoder.encode(payload)) {
-          measuredBytes += websocketFrameBytes(utf8Bytes(packet));
+          measuredBytes += websocketFrameBytes(wireBytes(packet));
         }
       },
       resetStateSync: () => encoder.reset(),
       sendStateSyncCalibration(payload) {
         for (const packet of encoder.encode(payload, { calibration: true })) {
-          measuredBytes += websocketFrameBytes(utf8Bytes(packet));
+          measuredBytes += websocketFrameBytes(wireBytes(packet));
         }
       },
       close: () => {},
@@ -127,8 +128,8 @@ test("6Mbps 可以承载 150 人 CEE 的高频状态与私有猜测同步", asyn
     const encoder = new StateSyncEncoder({ now: () => networkNow });
     const count = (payload: unknown, calibration = false) => {
       for (const packet of encoder.encode(payload, { calibration })) {
-        measuredBytes += websocketFrameBytes(utf8Bytes(packet));
-        const sync = (packet as { payload?: { mode?: string } }).payload;
+        measuredBytes += websocketFrameBytes(wireBytes(packet));
+        const sync = (decodeFrame(packet) as { payload?: { mode?: string } }).payload;
         if (sync?.mode === "patch") patchCount++;
         if (sync?.mode === "full") fullCount++;
       }
