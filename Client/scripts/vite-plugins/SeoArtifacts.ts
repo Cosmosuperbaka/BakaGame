@@ -93,10 +93,8 @@ export function seoArtifactsPlugin() {
           [
             "  <url>",
             `    <loc>${SITE_ORIGIN}${page.path}</loc>`,
+            // 只写 loc 与 lastmod：changefreq、priority 已被主流搜索引擎忽略，写了只是噪声。
             ...(page.lastmod ? [`    <lastmod>${page.lastmod}</lastmod>`] : []),
-            "    <changefreq>weekly</changefreq>",
-            // priority 已被主流搜索引擎忽略，保留只是与既有的手写站点地图保持同构。
-            `    <priority>${page.path === "/" ? "1.0" : "0.9"}</priority>`,
             "  </url>",
           ].join("\n")
         ),
