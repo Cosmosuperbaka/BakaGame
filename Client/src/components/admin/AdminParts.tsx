@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useState, type ComponentProps, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
@@ -12,6 +12,8 @@ import {
 import { Spinner } from "@/components/ui/Spinner";
 import { FormAlert } from "@/components/account/FormAlert";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import type { AdminQuery } from "@/hooks/UseAdminQuery";
 import { apiErrorMessage } from "@/lib/Api";
 import { formatNumber } from "@/lib/AdminFormat";
 import { cn } from "@/lib/Utils";
@@ -132,6 +134,96 @@ export function AdminNotice({
       <CircleCheck aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0">{children}</span>
     </p>
+  );
+}
+
+/** 详情读取（弹窗里的单条数据）的占位：加载、失败与重试，没有空态。 */
+export function QueryStatus({
+  query,
+  hasData = Boolean(query.data),
+}: {
+  query: AdminQuery<unknown>;
+  /** 数据来自读取之外的覆盖层（如回复后直接返回的新数据）时自行给出。 */
+  hasData?: boolean;
+}) {
+  return (
+    <QueryState
+      loading={query.loading}
+      error={query.error}
+      empty={false}
+      hasData={hasData}
+      onRetry={query.reload}
+      emptyText=""
+    />
+  );
+}
+
+/** 分页列表的占位：首次加载、失败与空列表；有旧数据时不遮挡。 */
+export function ListState({
+  list,
+  emptyText,
+}: {
+  list: { query: AdminQuery<unknown>; items: unknown[] };
+  emptyText: string;
+}) {
+  const { query, items } = list;
+  return (
+    <QueryState
+      loading={query.loading}
+      error={query.error}
+      empty={Boolean(query.data) && !items.length}
+      hasData={Boolean(query.data)}
+      onRetry={query.reload}
+      emptyText={emptyText}
+    />
+  );
+}
+
+/** 标题行里的下拉筛选：定宽包一层，选项与行为同 `SettingSelect`。 */
+export function AdminFilterSelect({
+  width,
+  ...props
+}: { width: string } & ComponentProps<typeof SettingSelect>) {
+  return (
+    <div className={width}>
+      <SettingSelect {...props} />
+    </div>
+  );
+}
+
+/** 列表行点开的详情弹窗：关闭时只通知调用方清掉选中项。 */
+export function AdminDetailDialog({
+  open,
+  onClose,
+  title,
+  titleClassName,
+  description,
+  contentClassName = "sm:max-w-2xl",
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: ReactNode;
+  titleClassName?: string;
+  description: string;
+  contentClassName?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className={contentClassName}>
+        <DialogHeader>
+          <DialogTitle className={titleClassName}>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -1,20 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { AdminUser } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { BadgeList } from "@/components/common/BadgeList";
-import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import {
+  AdminFilterSelect,
   AdminTable,
   AdminToolbar,
+  ListState,
   Pager,
-  QueryState,
   RowButton,
   UserCell,
 } from "@/components/admin/AdminParts";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
-import { useAdminQuery } from "@/hooks/UseAdminQuery";
-import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
+import { useAdminList, useDebouncedValue } from "@/hooks/UseAdminList";
 import { api } from "@/lib/Api";
 import { ROLE_LABELS, formatShortDateTime } from "@/lib/AdminFormat";
 
@@ -46,43 +45,28 @@ export function UserStatusBadge({ user }: { user: AdminUser }) {
 
 export function UsersPanel() {
   const [keyword, setKeyword] = useState("");
-  const [query, setQuery] = useState("");
   const [role, setRole] = useState("");
   const [ban, setBan] = useState("");
-  const [offset, setOffset] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
-
   // 停止输入后再查，连续敲字不逐字请求。
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery(keyword.trim());
-      setOffset(0);
-    }, IDLE_SEARCH_MS);
-    return () => window.clearTimeout(timer);
-  }, [keyword]);
+  const query = useDebouncedValue(keyword.trim());
 
-  const input = {
-    ...(query ? { query } : {}),
-    ...(role ? { role: role as AdminUser["role"] } : {}),
-    ...(ban ? { banned: ban === "banned" } : {}),
+  const users = useAdminList({
+    name: "users",
+    filters: {
+      ...(query ? { query } : {}),
+      ...(role ? { role: role as AdminUser["role"] } : {}),
+      ...(ban ? { banned: ban === "banned" } : {}),
+    },
     limit: LIMIT,
-    offset,
-  };
-  const users = useAdminQuery(
-    `users:${JSON.stringify(input)}`,
-    () => api.admin.users.list(input),
-    "用户列表加载失败"
-  );
-  const items = users.data?.items ?? [];
+    fallback: "用户列表加载失败",
+    fetch: (input) => api.admin.users.list(input),
+  });
+  const { items } = users;
 
   return (
     <div>
-      <AdminToolbar
-        title="用户"
-        count={users.data?.total ?? null}
-        onReload={users.reload}
-        loading={users.loading && Boolean(users.data)}
-      >
+      <AdminToolbar title="用户" {...users.toolbar}>
         <div className="w-56">
           <SettingTextField
             label="搜索"
@@ -91,37 +75,22 @@ export function UsersPanel() {
             placeholder="QQ 号前缀或昵称"
           />
         </div>
-        <div className="w-32">
-          <SettingSelect
-            label="角色"
-            value={role}
-            options={ROLE_FILTER}
-            onChange={(value) => {
-              setRole(value);
-              setOffset(0);
-            }}
-          />
-        </div>
-        <div className="w-32">
-          <SettingSelect
-            label="状态"
-            value={ban}
-            options={BAN_FILTER}
-            onChange={(value) => {
-              setBan(value);
-              setOffset(0);
-            }}
-          />
-        </div>
+        <AdminFilterSelect
+          width="w-32"
+          label="角色"
+          value={role}
+          options={ROLE_FILTER}
+          onChange={setRole}
+        />
+        <AdminFilterSelect
+          width="w-32"
+          label="状态"
+          value={ban}
+          options={BAN_FILTER}
+          onChange={setBan}
+        />
       </AdminToolbar>
-      <QueryState
-        loading={users.loading}
-        error={users.error}
-        empty={Boolean(users.data) && !items.length}
-        hasData={Boolean(users.data)}
-        onRetry={users.reload}
-        emptyText="没有符合条件的用户"
-      />
+      <ListState list={users} emptyText="没有符合条件的用户" />
       {items.length ? (
         <AdminTable label="用户列表">
           <thead>
@@ -171,13 +140,13 @@ export function UsersPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={LIMIT} total={users.data?.total ?? 0} onChange={setOffset} />
+      <Pager {...users.pager} />
       <UserDetailDialog
         userId={openId}
         onOpenChange={(open) => {
           if (!open) setOpenId(null);
         }}
-        onChanged={users.reload}
+        onChanged={users.query.reload}
       />
     </div>
   );
