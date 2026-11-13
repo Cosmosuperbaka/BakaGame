@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { errorMessage } from "@/components/songuessr/SongErrorMessage";
-import { useWaitingSettingsSave } from "./UseWaitingSettingsSave";
+import { useSongWaitingSettingsSave } from "./UseSongWaitingSettingsSave";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { SearchCombobox } from "@/components/common/SearchCombobox";
@@ -106,7 +106,7 @@ export function SongQuestionSettings({
   const editAnime = (patch: Partial<AnimeAutoFilters>) =>
     setDraft((current) => ({ ...current, animeFilters: { ...current.animeFilters, ...patch } }));
 
-  useWaitingSettingsSave(
+  useSongWaitingSettingsSave(
     snapshot,
     {
       questionType: draft.questionType,
@@ -516,7 +516,7 @@ export function SongGameSettings({
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useWaitingSettingsSave(snapshot, draft, {
+  useSongWaitingSettingsSave(snapshot, draft, {
     // 与题目设置分开记，各存各的；同样只在多人房间里记忆。
     remember: (payload) => {
       if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, game: payload }));
@@ -593,7 +593,7 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useWaitingSettingsSave(
+  useSongWaitingSettingsSave(
     snapshot,
     {
       name: draft.name || undefined,

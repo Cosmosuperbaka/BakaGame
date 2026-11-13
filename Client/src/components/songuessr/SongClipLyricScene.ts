@@ -3,7 +3,7 @@ import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
 import { isLyricLineInClip } from "@bakagame/shared/values";
 import { formatClipTime } from "./SongClipEditing";
-import { AmllSceneBase } from "./lyrics/AmllSceneBase";
+import { SongLyricSceneBase } from "./lyrics/SongLyricSceneBase";
 import { isMediaClockRunning, toAMLLLines } from "./lyrics/SongLyricLines";
 
 interface SelectorRow {
@@ -41,7 +41,7 @@ const rangeMark = (index: number, first?: number, last?: number) => {
   return index === last ? "止" : "";
 };
 
-export class SongClipLyricScene extends AmllSceneBase {
+export class SongClipLyricScene extends SongLyricSceneBase {
   private readonly rows = new Map<number, SelectorRow>();
   private playing = false;
   private range: readonly [number, number] = [0, 0];

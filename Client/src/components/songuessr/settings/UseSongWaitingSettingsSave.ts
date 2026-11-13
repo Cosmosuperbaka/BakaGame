@@ -24,7 +24,7 @@ async function saveWaitingSettings(
  * remember 在服务端接受之后才调用：被拒的值与被丢弃的草稿都不该留进下次建房的记忆。
  * enabled 是面板自己的附加门槛（例如私密房间还没有密码）。
  */
-export function useWaitingSettingsSave<T extends Record<string, unknown>>(
+export function useSongWaitingSettingsSave<T extends Record<string, unknown>>(
   snapshot: SonGuessrRoomSnapshot,
   payload: T,
   { enabled = true, remember }: { enabled?: boolean; remember?: (payload: T) => void } = {}

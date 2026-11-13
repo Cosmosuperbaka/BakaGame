@@ -21,7 +21,7 @@ import { vipBadge, vipText } from "./SongAccountBadges";
 import { errorMessage } from "./SongErrorMessage";
 import { SONG_PLATFORM_NAME, type QqScanMode, type QrCreateResponse } from "./SongQrLogin";
 import { useSongQrLogin } from "./UseSongQrLogin";
-import { useStoredSongMusicSession } from "./UseStoredSongMusicSession";
+import { useSongStoredMusicSession } from "./UseSongStoredMusicSession";
 import { AccountAvatar, VipStatus } from "./SongAccountIdentity";
 import type {
   SonGuessrMusicAccount,
@@ -313,8 +313,8 @@ function RoomAccountSettings({
   const [activePlatform, setActivePlatform] = useState<SongMusicPlatform>("netease");
   const [qqScanType, setQqScanType] = useState<QqScanMode>("qq");
 
-  const storedNetease = useStoredSongMusicSession("netease");
-  const storedQq = useStoredSongMusicSession("qq");
+  const storedNetease = useSongStoredMusicSession("netease");
+  const storedQq = useSongStoredMusicSession("qq");
   const [remember, setRemember] = useState<Record<SongMusicPlatform, boolean>>(() => ({
     netease: storedNetease?.persistent ?? true,
     qq: storedQq?.persistent ?? true,

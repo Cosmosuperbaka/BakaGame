@@ -2,14 +2,14 @@ import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
 import { lyricOverview } from "@/lib/Motion";
-import { AmllSceneBase } from "./AmllSceneBase";
+import { SongLyricSceneBase } from "./SongLyricSceneBase";
 import { isMediaClockRunning, toAMLLLines } from "./SongLyricLines";
 
 type Playback = "idle" | "playing" | "paused" | "completed";
 type AudioStatus = "loading" | "ready" | "error";
 
 /** 原生生命周期：https://amll.dev/guides/component/sequence */
-export class SongLyricScene extends AmllSceneBase {
+export class SongLyricScene extends SongLyricSceneBase {
   private readonly reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   private clipStartTime: number | undefined;
   private playback: Playback = "idle";

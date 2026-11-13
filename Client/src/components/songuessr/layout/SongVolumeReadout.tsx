@@ -107,7 +107,7 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
  * 常态下居中显示自然宽度的连续弹簧滚动数值（不带多余前导占位与 %）；
  * 点击原地切换为同尺寸同圆角的圆形输入框，居中直接键入 0–100 的数值：回车或失焦提交，Esc 放弃。
  */
-export function VolumeReadout({
+export function SongVolumeReadout({
   percentage,
   muted,
   onCommit,

@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
 import { duration, ease, iconTappable, popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { VolumeReadout } from "./VolumeReadout";
+import { SongVolumeReadout } from "./SongVolumeReadout";
 
 export interface VolumeControlProps {
   volume: number;
@@ -247,7 +247,7 @@ function VolumeCapsule({
         }}
         aria-label="播放音量"
       />
-      <VolumeReadout
+      <SongVolumeReadout
         percentage={percentage}
         muted={muted}
         onCommit={(value) => onVolumeChange(value / 100)}

@@ -9,7 +9,7 @@ import { MEDIA_CLOCK_EVENTS } from "./SongLyricLines";
  * 子类的 measure 与 syncMedia 都写成方法：基类的观察器与监听器在回调里才读它们，
  * 所以子类字段初始化先后不影响。
  */
-export abstract class AmllSceneBase {
+export abstract class SongLyricSceneBase {
   protected readonly player: LyricPlayer;
   protected readonly element: HTMLElement;
   protected readonly host: HTMLElement;

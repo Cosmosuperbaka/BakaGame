@@ -24,7 +24,7 @@ function readStable(platform: SongMusicPlatform): StoredSongMusicSession | null 
 }
 
 /** 本机保存的某个平台的音乐账号凭据；本机保存或清除时重新读取。 */
-export function useStoredSongMusicSession(
+export function useSongStoredMusicSession(
   platform: SongMusicPlatform
 ): StoredSongMusicSession | null {
   return useSyncExternalStore(
