@@ -249,6 +249,32 @@ test("同一帧发给多条连接时字节相同：全量帧与补丁帧各自�
   });
 });
 
+test("不同状态事件各用各的信封：事件名不会串到别的事件的帧上", () => {
+  const encoder = new StateSyncEncoder();
+  const packets = [
+    createEvent("room.snapshot", { value: 1 }),
+    createEvent("game.privateState", { role: "x" }),
+    createEvent("song.room.snapshot", { value: 2 }),
+  ];
+  const frames = packets.map(
+    (packet) =>
+      JSON.parse(encoder.encode(packet)[0] as string) as {
+        event: string;
+        payload: { state: unknown };
+      }
+  );
+  expect(frames.map((frame) => frame.event)).toEqual([
+    "room.snapshot",
+    "game.privateState",
+    "song.room.snapshot",
+  ]);
+  expect(frames.map((frame) => frame.payload.state)).toEqual([
+    { value: 1 },
+    { role: "x" },
+    { value: 2 },
+  ]);
+});
+
 test("每条连接的版本号独立计数，共享的只有状态子树与补丁文本", () => {
   const late = new StateSyncEncoder();
   const early = new StateSyncEncoder();
