@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
-import { AttemptList } from "@/components/songuessr/SongAttemptList";
+import { SongAttemptList } from "@/components/songuessr/SongAttemptList";
 import {
   AnimeAutoFilterSummary,
   SongAutoFilterSummary,
@@ -24,7 +24,7 @@ import {
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
-import { GuessBar } from "./SongGuessBar";
+import { SongGuessBar } from "./SongGuessBar";
 import type {
   SonGuessrPlayerView,
   SonGuessrPrivateState,
@@ -287,7 +287,7 @@ function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessS
     // 作答的几种状态在同一处交叉：旧的抽出文档流淡去，新的同时落位
     <AnimatePresence initial={false} mode="popLayout">
       {stage === "guessing" ? (
-        <GuessBar key="guessing" {...props} guessedIds={myGuessedIds(privateState)} />
+        <SongGuessBar key="guessing" {...props} guessedIds={myGuessedIds(privateState)} />
       ) : stage === "preparing" ? (
         <motion.p
           key="preparing"
@@ -358,7 +358,7 @@ export function SongPlayingPhase(props: PlayingPhaseProps) {
         <RoundAnswerNotice anime={anime} privateState={privateState} />
       </section>
       <AttemptArea props={props} stage={stage} />
-      <AttemptList
+      <SongAttemptList
         attempts={privateState.visibleAttempts}
         title={attemptListTitle(canObserveAllAttempts, teamAttempts)}
         showPlayerName={canObserveAllAttempts || teamAttempts}

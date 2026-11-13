@@ -28,7 +28,7 @@ import {
   waitForLyrics,
 } from "@/stories/fixtures/SonGuessr";
 import { ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
-import { AttemptList } from "../SongAttemptList";
+import { SongAttemptList } from "../SongAttemptList";
 import { GameStage, SongGameArea } from "./SongGameStage";
 
 const { host, me, peach, azumi, kanade, long } = SONG_PEOPLE;
@@ -359,12 +359,12 @@ export const AttemptResults: Story = {
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   render: () => (
     <div className="space-y-5">
-      <AttemptList
+      <SongAttemptList
         attempts={[...SONG_ROOM_ATTEMPTS, SONG_ATTEMPTS.meGaveUp]}
         title="全房猜测"
         showPlayerName
       />
-      <AttemptList
+      <SongAttemptList
         attempts={[ANIME_ATTEMPTS.meWrong, ANIME_ATTEMPTS.hostCorrect]}
         title="全房猜测"
         showPlayerName

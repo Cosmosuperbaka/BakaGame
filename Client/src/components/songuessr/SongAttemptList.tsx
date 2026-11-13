@@ -119,7 +119,7 @@ function AttemptFeedback({ feedback }: { feedback: NonNullable<SongGuessAttempt[
  * 猜测记录。名字在上、反馈徽章在下，名字不和徽章抢宽度，窄屏不会被挤成逐字竖排。
  * 从无到有时整块按 collapsible 撑开；之后新提交的一行以 listItem 推入，其余行按位置让开。
  */
-export function AttemptList({
+export function SongAttemptList({
   attempts,
   title,
   showPlayerName = false,

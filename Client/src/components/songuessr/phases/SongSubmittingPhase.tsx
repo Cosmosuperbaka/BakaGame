@@ -26,7 +26,7 @@ const submitPrompt = (anime: boolean, customClip: boolean) => {
  *
  * 猜番仍是一步提交：番剧与关联曲由服务端匹配，没有「选歌词片段」这一层。
  */
-export function SubmittingSongPhase({
+export function SongSubmittingPhase({
   snapshot,
   privateState,
   volume,

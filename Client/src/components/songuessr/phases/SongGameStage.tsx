@@ -3,9 +3,9 @@ import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
-import { ChoosingSubmitterPhase } from "./SongChoosingSubmitterPhase";
+import { SongChoosingSubmitterPhase } from "./SongChoosingSubmitterPhase";
 import { SongPlayingPhase } from "./SongPlayingPhase";
-import { SubmittingSongPhase } from "./SongSubmittingPhase";
+import { SongSubmittingPhase } from "./SongSubmittingPhase";
 
 export function GameStage(props: SongGameAreaProps) {
   const { snapshot, privateState, me, isHost, run, isPending } = props;
@@ -25,7 +25,7 @@ export function GameStage(props: SongGameAreaProps) {
 
   if (snapshot.phase === "choosingSubmitter") {
     return (
-      <ChoosingSubmitterPhase
+      <SongChoosingSubmitterPhase
         snapshot={snapshot}
         privateState={privateState}
         isHost={isHost}
@@ -36,7 +36,7 @@ export function GameStage(props: SongGameAreaProps) {
   }
 
   if (snapshot.phase === "submittingSong") {
-    return <SubmittingSongPhase {...props} />;
+    return <SongSubmittingPhase {...props} />;
   }
 
   if (snapshot.phase === "playing" && snapshot.currentRound) {

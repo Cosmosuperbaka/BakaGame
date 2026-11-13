@@ -19,7 +19,7 @@ export function SongGuessCountdown({ deadlineAt }: { deadlineAt?: number | null 
  * md 以下歌词卡就占满首屏，猜测栏贴在游戏区滚动视口的底边（区内遮罩档 `bg-panel/90 backdrop-blur-sm`），
  * 左右以负外边距铺满游戏区内边距；滚到它的原位后随内容回到流内。
  */
-export function GuessBar({
+export function SongGuessBar({
   ref,
   snapshot,
   privateState,

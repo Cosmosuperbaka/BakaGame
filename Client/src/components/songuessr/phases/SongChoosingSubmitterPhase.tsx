@@ -8,7 +8,7 @@ import type { SongGameAreaProps } from "./SongGameAreaProps";
  * 房主指定出题人：候选取服务端下发的 `submitterCandidateIds`（在线真人，且他出题、队友一起观战后仍留得下猜歌的人）。
  * 组队时候选名后带上队伍，并提示指定后其队友本局一起观战。
  */
-export function ChoosingSubmitterPhase({
+export function SongChoosingSubmitterPhase({
   snapshot,
   privateState,
   isHost,
