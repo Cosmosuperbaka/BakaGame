@@ -11,6 +11,8 @@ export const createAck = <TMessage extends { id: string; type: string; traceId?:
   traceId: message.traceId,
   requestType: message.type,
   payload,
+  // 服务端时刻只随确认帧下发：事件与快照帧走公共封包，不能为时间戳破坏一次封包多处复用。
+  serverNow: Date.now(),
 });
 
 export const createErrorPacket = (

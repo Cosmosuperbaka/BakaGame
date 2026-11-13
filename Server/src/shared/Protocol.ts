@@ -29,6 +29,8 @@ export interface AckPacket {
   traceId?: string;
   requestType: string;
   payload?: unknown;
+  /** 服务端写出确认帧时的时刻（epoch 毫秒）。客户端据此估算本机时钟与服务端的偏差；旧客户端忽略即可。 */
+  serverNow?: number;
 }
 
 export interface ErrorPacket {

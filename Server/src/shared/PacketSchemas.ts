@@ -10,6 +10,7 @@ export const ServerMessageSchema = t.Union([
       traceId,
       requestType: t.String(),
       payload: t.Optional(t.Unknown()),
+      serverNow: t.Optional(t.Number()),
     },
     strict
   ),
