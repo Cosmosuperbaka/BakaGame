@@ -13,6 +13,7 @@ import type {
   SonGuessrRoundSummary,
   SonGuessrScore,
 } from "../../shared/Index";
+import { canSeeRoundSecrets } from "../../domain/Visibility";
 import { audioTicketUrl } from "./AudioTicket";
 import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicPool";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
@@ -228,8 +229,19 @@ export const buildPrivateState = (
   const teamObserver = room.phase === "playing" && Boolean(round?.observerIds.includes(player.id));
   const canParticipateAsGuesser =
     (!isSubmitter || canTestSubmitterGuess(ctx, room, player.id)) && !teamObserver;
-  const canObserveAllAttempts = isSubmitter || teamObserver || player.membership === "spectator";
-  const seesAnswer = isSubmitter || teamObserver || player.membership === "spectator";
+  const isSpectator = player.membership === "spectator";
+  // 出题人与出题队友是「出题一方」；旁观者局中是否可见由房间开关决定，揭晓后恒可见。
+  // 普通玩家不在这一组里：他们任何阶段都不从私有态拿答案（揭晓后看公开的结算摘要）。
+  const inSecretGroup = isSubmitter || teamObserver || isSpectator;
+  const seesAnswer =
+    inSecretGroup &&
+    canSeeRoundSecrets(
+      { setsRound: isSubmitter || teamObserver, spectator: isSpectator },
+      room.phase === "playing",
+      room.settings.spectatorsSeeAnswers ?? false
+    );
+  // 他人的猜测带着判定反馈，猜中的那条本身就是答案：与答案同一道门。
+  const canObserveAllAttempts = seesAnswer;
   // 候选名单逐人重算观战队友是 O(n²)，私有状态又按连接逐个生成：只给房主、只在手动出题的等待与选人阶段算。
   const needsCandidates =
     player.id === room.hostPlayerId &&

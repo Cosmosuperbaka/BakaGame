@@ -164,6 +164,12 @@ export interface SonGuessrSettings {
   showGuessTimer: boolean;
   /** 是否允许 Agent（MCP）加入；缺省 false。 */
   allowAgents?: boolean;
+  /**
+   * 旁观者能否在回合进行中看到本题答案与全部猜测；缺省关闭。
+   * 「允许旁观」只决定能不能进场，不决定进场后看到多少：旁观身份零门槛可得，
+   * 与玩家是同一个人的小号一旦能看答案，猜题就失去意义。揭晓后答案随结算公开，这个开关只管局中。
+   */
+  spectatorsSeeAnswers?: boolean;
 }
 
 export interface SonGuessrMusicAccount {
@@ -641,6 +647,7 @@ export const SonGuessrPayloadSchemas = {
       bloodMode: t.Optional(t.Boolean()),
       showGuessTimer: t.Optional(t.Boolean()),
       allowAgents: t.Optional(t.Boolean()),
+      spectatorsSeeAnswers: t.Optional(t.Boolean()),
     },
     strict
   ),

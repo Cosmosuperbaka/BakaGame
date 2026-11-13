@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: SonGuessrSettings = {
   guessDurationSeconds: 60,
   showGuessTimer: true,
   allowAgents: false,
+  spectatorsSeeAnswers: false,
 };
 
 /**

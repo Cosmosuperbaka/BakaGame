@@ -714,6 +714,9 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     if (payload.showGuessTimer !== undefined) settings.showGuessTimer = payload.showGuessTimer;
     if (payload.bloodMode !== undefined) settings.bloodMode = payload.bloodMode;
     if (payload.allowAgents !== undefined) settings.allowAgents = payload.allowAgents;
+    if (payload.spectatorsSeeAnswers !== undefined) {
+      settings.spectatorsSeeAnswers = payload.spectatorsSeeAnswers;
+    }
   }
 
   kick(at: SongCommandAt, targetPlayerId: string) {
