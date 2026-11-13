@@ -15,6 +15,8 @@ import { publishRoom } from "./RoomPublish";
 import { finishRound } from "./RoundSettlement";
 import {
   appendSpeech,
+  getPendingActorIds,
+  getPendingNightActors,
   getAliveAssignedPlayerIds,
   isTwoPlayerUndercoverEndgame,
 } from "./RoundRules";
@@ -130,13 +132,8 @@ const timeoutVotingPhase = async (
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
-  const aliveIds = getAliveAssignedPlayerIds(ctx, room).filter(
-    (id) => id !== round.questionerPlayerId
-  );
-  for (const voterId of aliveIds) {
-    if (!round.votes.some((v) => v.voterId === voterId)) {
-      round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
-    }
+  for (const voterId of getPendingActorIds(round).filter((id) => id !== round.questionerPlayerId)) {
+    round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
   }
   await resolveVoting(ctx, room, false);
   ctx.touch(room);
@@ -202,16 +199,8 @@ const timeoutNightPhase = async (
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
-  for (const [playerId, state] of Object.entries(round.assignments)) {
-    if (state.alive && (state.role === "civilian" || state.role === "undercover")) {
-      if (!round.nightActions.some((a) => a.actorId === playerId)) {
-        round.nightActions.push({
-          actorId: playerId,
-          actorRole: state.role,
-          targetId: undefined,
-        });
-      }
-    }
+  for (const { playerId, role } of getPendingNightActors(round)) {
+    round.nightActions.push({ actorId: playerId, actorRole: role, targetId: undefined });
   }
   await resolveNight(ctx, room);
   ctx.touch(room);

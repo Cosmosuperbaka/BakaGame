@@ -11,6 +11,8 @@ import { publishRoom } from "../RoomPublish";
 import {
   appendSpeech,
   getAliveAssignedPlayerIds,
+  getPendingActorIds,
+  getPendingNightActors,
   replaceNightAction,
   replaceVote,
 } from "../RoundRules";
@@ -143,9 +145,8 @@ const castBotVote = (
   const tieBreak = round.phase === "tieBreak";
   const votes = tieBreak ? round.tieBreak!.votes : round.votes;
 
-  // 平票 PK 中候选人本人不参与投票，与 ensureCanVote 一致。
-  if (tieBreak && round.tieBreak!.candidateIds.includes(bot.id)) return false;
-  if (votes.some((vote) => vote.voterId === bot.id)) return false;
+  // 平票 PK 中候选人本人不参与投票、已投的不再投：都在「还在等谁」里排除。
+  if (!getPendingActorIds(round).includes(bot.id)) return false;
 
   const targetId = pickBotVoteTarget(ctx, room, round, bot.id, tieBreak);
   if (tieBreak) {
@@ -163,21 +164,17 @@ const actBotNight = (
   round: GameRound,
   bot: WhoIsFakerPlayerRecord
 ): boolean => {
-  if (round.phase !== "night") return false;
-
-  const state = round.assignments[bot.id];
-
-  // 只有平民和卧底有夜晚行动，天使/白板不参与也不被等待。
-  if (state.role !== "civilian" && state.role !== "undercover") return false;
-  if (round.nightActions.some((action) => action.actorId === bot.id)) return false;
+  // 非夜晚、天使与白板、已行动的机器人都不在夜晚还没行动的名单里。
+  const actor = getPendingNightActors(round).find((item) => item.playerId === bot.id);
+  if (!actor) return false;
 
   // 平民刀人会刀死自己，所以机器人平民一律不行动；
   // 卧底才去刀一个非自己的存活目标。
-  const targetId = state.role === "undercover" ? pickBotNightTarget(ctx, room, bot.id) : undefined;
+  const targetId = actor.role === "undercover" ? pickBotNightTarget(ctx, room, bot.id) : undefined;
 
   round.nightActions = replaceNightAction(round.nightActions, bot.id, {
     actorId: bot.id,
-    actorRole: state.role,
+    actorRole: actor.role,
     targetId,
   });
   return true;

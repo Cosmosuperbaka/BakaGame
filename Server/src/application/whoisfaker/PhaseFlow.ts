@@ -15,11 +15,9 @@ import {
   ensureAllReady,
   ensureMinimumPlayers,
   ensurePhaseNotBlocked,
+  getPendingActorIds,
   isDescriptionComplete,
-  isNightActionComplete,
-  isTieBreakDescriptionComplete,
   isTwoPlayerUndercoverEndgame,
-  isVotingComplete,
 } from "./RoundRules";
 import { ensureHost, ensureQuestioner, requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
@@ -117,7 +115,7 @@ const advanceFromDescription = async (
 };
 
 const advanceFromVoting = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
-  if (!isVotingComplete(ctx, room, false)) {
+  if (getPendingActorIds(requireRound(room)).length > 0) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
   }
   clearPhaseTimer(ctx, room);
@@ -137,7 +135,7 @@ const advanceFromTieBreak = async (
   }
 
   if (round.tieBreak.stage === "description") {
-    if (!isTieBreakDescriptionComplete(ctx, room)) {
+    if (getPendingActorIds(round).length > 0) {
       throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
     }
 
@@ -148,7 +146,7 @@ const advanceFromTieBreak = async (
     return;
   }
 
-  if (!isVotingComplete(ctx, room, true)) {
+  if (getPendingActorIds(round).length > 0) {
     throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
   }
 
@@ -157,7 +155,7 @@ const advanceFromTieBreak = async (
 };
 
 const advanceFromNight = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
-  if (!isNightActionComplete(ctx, room)) {
+  if (getPendingActorIds(requireRound(room)).length > 0) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
   }
   clearPhaseTimer(ctx, room);

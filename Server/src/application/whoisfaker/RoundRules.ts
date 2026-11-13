@@ -176,56 +176,6 @@ export const isDescriptionComplete = (round: GameRound): boolean => {
   return aliveIds.every((playerId) => round.descriptionSubmittedBy.includes(playerId));
 };
 
-/** 平票 PK 的描述段是否完成：候选人里还活着的都要补过一句。 */
-export const isTieBreakDescriptionComplete = (
-  ctx: WhoIsFakerContext,
-  room: WhoIsFakerRoomRecord
-): boolean => {
-  const round = requireRound(room);
-  const candidates = round.tieBreak?.candidateIds ?? [];
-
-  return candidates.every(
-    (playerId) =>
-      !round.assignments[playerId]?.alive || round.tieBreak?.descriptionsDone.includes(playerId)
-  );
-};
-
-/** 投票阶段是否完成：该投的人都投了；平票第二轮里候选人自己不投。 */
-export const isVotingComplete = (
-  ctx: WhoIsFakerContext,
-  room: WhoIsFakerRoomRecord,
-  tieBreak: boolean
-): boolean => {
-  const round = requireRound(room);
-  const aliveIds = getAliveAssignedPlayerIds(ctx, room);
-
-  if (tieBreak) {
-    const candidates = round.tieBreak?.candidateIds ?? [];
-    const voterIds = aliveIds.filter((playerId) => !candidates.includes(playerId));
-    const votes = round.tieBreak?.votes ?? [];
-    return voterIds.every((playerId) => votes.some((vote) => vote.voterId === playerId));
-  }
-
-  return aliveIds.every((playerId) => round.votes.some((vote) => vote.voterId === playerId));
-};
-
-/** 夜晚阶段是否完成：只有平民与卧底需要行动，其余角色不参与也不被等待。 */
-export const isNightActionComplete = (
-  ctx: WhoIsFakerContext,
-  room: WhoIsFakerRoomRecord
-): boolean => {
-  const round = requireRound(room);
-  const actorIds = Object.entries(round.assignments)
-    .filter(
-      ([, state]) => state.alive && (state.role === "civilian" || state.role === "undercover")
-    )
-    .map(([playerId]) => playerId);
-
-  return actorIds.every((playerId) =>
-    round.nightActions.some((action) => action.actorId === playerId)
-  );
-};
-
 /** 本局已分配身份且仍存活的玩家 id。 */
 export const getAliveAssignedPlayerIds = (
   ctx: WhoIsFakerContext,
@@ -400,4 +350,58 @@ export const getCurrentSpeechState = (activeRound: GameRound) => {
   }
 
   return undefined;
+};
+
+/** 夜晚还没行动的人：存活的平民与卧底，天使与白板不参与也不被等待；非夜晚阶段没有。 */
+export const getPendingNightActors = (
+  round: GameRound
+): Array<{ playerId: string; role: NightActionRecord["actorRole"] }> => {
+  if (round.phase !== "night") return [];
+  return Object.entries(round.assignments).flatMap(([playerId, state]) =>
+    state.alive &&
+    (state.role === "civilian" || state.role === "undercover") &&
+    !round.nightActions.some((action) => action.actorId === playerId)
+      ? [{ playerId, role: state.role }]
+      : []
+  );
+};
+
+/**
+ * 当前阶段还在等谁：本阶段要操作而尚未操作的存活参与者。
+ * 描述、补充发言、平票发言按当前发言状态；投票与平票投票按选票（平票投票时候选人不投）；
+ * 夜晚只等平民与卧底。其余阶段没有要等的人。推进判定、掉线队列、超时补位与机器人共用这一份。
+ */
+export const getPendingActorIds = (round: GameRound): string[] => {
+  const aliveIds = Object.entries(round.assignments)
+    .filter(([, state]) => state.alive)
+    .map(([playerId]) => playerId);
+
+  switch (round.phase) {
+    case "description":
+      return getPendingSpeakerIds(round);
+    case "voting":
+      return aliveIds.filter((playerId) => !round.votes.some((vote) => vote.voterId === playerId));
+    case "tieBreak": {
+      if (round.tieBreak?.stage === "description") return getPendingSpeakerIds(round);
+      const candidates = round.tieBreak?.candidateIds ?? [];
+      const votes = round.tieBreak?.votes ?? [];
+      return aliveIds.filter(
+        (playerId) =>
+          !candidates.includes(playerId) && !votes.some((vote) => vote.voterId === playerId)
+      );
+    }
+    case "night":
+      return getPendingNightActors(round).map((actor) => actor.playerId);
+    default:
+      return [];
+  }
+};
+
+const getPendingSpeakerIds = (round: GameRound): string[] => {
+  const speech = getCurrentSpeechState(round);
+  if (!speech) return [];
+  return speech.order.filter(
+    (playerId) =>
+      Boolean(round.assignments[playerId]?.alive) && !speech.submittedPlayerIds.includes(playerId)
+  );
 };
