@@ -21,6 +21,7 @@ import type { CEEDataProvider } from "../infrastructure/CEEData";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
 import type { CEEAntiCheatReviewQueue, CEESearchProvenance } from "./CEEAntiCheatSignals";
 import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
+import { runCEEDataCommand } from "./CEEDataCommands";
 import { CEERooms } from "./CEERooms";
 import type { TimerSeam } from "./room/RoomTimers";
 
@@ -179,29 +180,23 @@ export class CEENativeService {
           this.state.sendChat(room, player, message.payload.text);
           break;
         case "cee.character.search":
-          return { results: await this.data.searchCharacters(message.payload.keyword) };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.subject.search":
           this.requireSubjectSearch(room, player);
-          return { results: await this.data.searchSubjects(message.payload.keyword) };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.subject.characters":
           this.requireSubjectSearch(room, player);
-          return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.subject.lookup":
-          return { results: await this.data.getSubjects(message.payload.subjectIds) };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.directory.import":
           this.state.requireHost(room, player);
           this.state.requireWaiting(room);
-          return this.data.importDirectory(message.payload.indexId);
-        // 列表是方形缩略图，尺寸缺省即方格图；大图用途走服务端内部调用，不带这条命令。
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.character.image":
-          return {
-            imageUrl: await this.data.resolveCharacterImage(
-              message.payload.characterId,
-              message.payload.size ?? "grid"
-            ),
-          };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.subject.image":
-          return { imageUrl: await this.data.resolveSubjectImage(message.payload.subjectId) };
+          return runCEEDataCommand(this.data, message.type, message.payload);
         case "cee.game.start":
           await this.start(room, player);
           break;

@@ -86,6 +86,7 @@ import {
   type CEERankedQueueEntry,
 } from "./CEERankedQueue";
 import type { CEERankedPool, CEERankedPoolProvider } from "./CEERankedPool";
+import { runCEEDataCommand } from "./CEEDataCommands";
 import {
   ceeRankedSeriesView,
   type CEERankedSeatMeta,
@@ -410,25 +411,20 @@ export class CEERankedService {
         return this.handleLeaderboard(userId);
       case "cee.ranked.characterSearch": {
         this.requireInSeries(userId);
-        return { results: await this.data.searchCharacters(message.payload.keyword) };
+        return runCEEDataCommand(this.data, "cee.character.search", message.payload);
       }
       case "cee.ranked.subjectSearch": {
         this.requireInSeries(userId);
-        return { results: await this.data.searchSubjects(message.payload.keyword) };
+        return runCEEDataCommand(this.data, "cee.subject.search", message.payload);
       }
       case "cee.ranked.subjectCharacters": {
         this.requireInSeries(userId);
-        return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
+        return runCEEDataCommand(this.data, "cee.subject.characters", message.payload);
       }
       case "cee.ranked.characterImage": {
         // 结果页逐局回看答案与双方猜测也要取图：结算后的那场仍算在内，检索命令则不放行。
         this.requireSeriesView(userId);
-        return {
-          imageUrl: await this.data.resolveCharacterImage(
-            message.payload.characterId,
-            message.payload.size ?? "grid"
-          ),
-        };
+        return runCEEDataCommand(this.data, "cee.character.image", message.payload);
       }
       default: {
         const unhandled: never = message;

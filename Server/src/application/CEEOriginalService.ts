@@ -53,6 +53,7 @@ import type {
 import type { CEEOriginalTarget } from "./CEERoomDirectory";
 import { originalPrivateState, originalSnapshot } from "./CEEOriginalView";
 import { CEEOriginalRoundData } from "./CEEOriginalRoundData";
+import { runCEEDataCommand } from "./CEEDataCommands";
 
 interface CEEOriginalOptions {
   data: CEEDataProvider;
@@ -309,26 +310,21 @@ export class CEEOriginalService {
         this.publish(session);
         return this.enterResult(session);
       case "cee.character.search":
-        return { results: await data.searchCharacters(message.payload.keyword) };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.subject.search":
         this.requireSubjectSearch(session);
-        return { results: await data.searchSubjects(message.payload.keyword) };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.subject.characters":
         this.requireSubjectSearch(session);
-        return { results: await data.getSubjectCharacters(message.payload.subjectId) };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.subject.lookup":
-        return { results: await data.getSubjects(message.payload.subjectIds) };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.directory.import":
-        return data.importDirectory(message.payload.indexId);
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.character.image":
-        return {
-          imageUrl: await data.resolveCharacterImage(
-            message.payload.characterId,
-            message.payload.size ?? "grid"
-          ),
-        };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.subject.image":
-        return { imageUrl: await data.resolveSubjectImage(message.payload.subjectId) };
+        return runCEEDataCommand(data, message.type, message.payload);
       case "cee.game.imageHint":
         return this.imageHint(session);
       case "cee.chat.send":
