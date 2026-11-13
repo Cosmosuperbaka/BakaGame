@@ -62,6 +62,20 @@ describe("changelog helpers", () => {
     ]);
   });
 
+  it("链接白名单拒绝协议相对地址与反斜杠绕过，保留 http(s) 与站内路径", () => {
+    const links = (href: string) =>
+      parseChangelogContent([`[文字](${href})`]).flatMap((block) =>
+        block.kind === "paragraph" ? block.content : []
+      );
+    for (const unsafe of ["//evil.example/x", "/\\evil.example/x", "javascript:alert"]) {
+      expect(links(unsafe)).toEqual([{ kind: "text", text: "文字" }]);
+    }
+    expect(links("/changelog")).toEqual([{ kind: "link", text: "文字", href: "/changelog" }]);
+    expect(links("https://example.com/a")).toEqual([
+      { kind: "link", text: "文字", href: "https://example.com/a" },
+    ]);
+  });
+
   it("parses structured changelog entries and filters out absent or empty categories", () => {
     const sections = parseChangelogEntry({
       fix: ["修复断线重连问题"],

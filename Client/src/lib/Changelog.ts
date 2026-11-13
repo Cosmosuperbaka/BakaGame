@@ -22,7 +22,7 @@ export type InlineNode =
 export type BlockNode =
   { kind: "list"; items: InlineNode[][] } | { kind: "paragraph"; content: InlineNode[] };
 
-/** 行内标记：加粗、等宽、链接。链接只接受 http(s) 与站内相对路径。 */
+/** 行内标记：加粗、等宽、链接。链接只接受 http(s) 与站内相对路径；以 `//` 或 `/` 加反斜杠开头的地址浏览器会当成外站，不算站内。 */
 const INLINE_PATTERN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/g;
 
 function parseInline(source: string): InlineNode[] {
@@ -39,7 +39,7 @@ function parseInline(source: string): InlineNode[] {
     } else if (code !== undefined) {
       nodes.push({ kind: "code", text: code });
     } else if (linkText !== undefined && linkHref !== undefined) {
-      const safe = /^(https?:\/\/|\/)/.test(linkHref);
+      const safe = /^(https?:\/\/|\/(?![/\\]))/.test(linkHref);
       nodes.push(
         safe ? { kind: "link", text: linkText, href: linkHref } : { kind: "text", text: linkText }
       );
