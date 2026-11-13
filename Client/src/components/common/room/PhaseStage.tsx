@@ -53,7 +53,6 @@ export function PhaseStage({
                 if (phaseRef.current) phaseRef.current.style.transform = "";
                 onPhaseSettled?.();
               }}
-              style={{ willChange: "transform, opacity" }}
             >
               {children}
             </motion.div>
