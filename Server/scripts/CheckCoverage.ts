@@ -95,7 +95,10 @@ const describeGateFailure = (
     .join(", ")}`;
 
 if (import.meta.main) {
-  const coveragePath = resolve(import.meta.dir, "../coverage/lcov.info");
+  // 允许传入报告路径，让「低于门槛必须以非零退出」可以用夹具报告直接验证。
+  const coveragePath = Bun.argv[2]
+    ? resolve(Bun.argv[2])
+    : resolve(import.meta.dir, "../coverage/lcov.info");
   const lcov = Bun.file(coveragePath);
   if (!(await lcov.exists())) {
     throw new Error(`未找到覆盖率报告: ${coveragePath}`);
