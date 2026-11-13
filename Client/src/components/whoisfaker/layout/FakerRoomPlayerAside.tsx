@@ -11,6 +11,8 @@ interface FakerRoomPlayerAsideProps {
   /** 侧栏自身的 id：展开按钮用 aria-controls 指向它 */
   panelId: string;
   toggleRef: RefObject<HTMLButtonElement | null>;
+  /** 宽度动画结束：收起时据此才不再带着发言列渲染 */
+  onSettled: () => void;
   list: ReactNode;
 }
 
@@ -21,6 +23,7 @@ export function FakerRoomPlayerAside({
   onToggleHistory,
   panelId,
   toggleRef,
+  onSettled,
   list,
 }: FakerRoomPlayerAsideProps) {
   return (
@@ -43,6 +46,7 @@ export function FakerRoomPlayerAside({
         initial={false}
         animate={{ width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH }}
         transition={{ width: spring.settle }}
+        onAnimationComplete={onSettled}
       >
         {/* 展开/收起按钮：仅在游戏开始后显示。
           收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，

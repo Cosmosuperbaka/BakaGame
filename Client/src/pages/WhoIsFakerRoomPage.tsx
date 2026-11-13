@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { History, Menu, MessageSquare } from "lucide-react";
 import { getSavedUsername, normalizeRoomId, saveUsername } from "@/lib/Storage";
@@ -6,7 +6,7 @@ import { useMinWidth } from "@/hooks/UseMinWidth";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
-import { spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
+import { wordRevealTiming } from "@/lib/Motion";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
   FakerPlayerList,
@@ -15,6 +15,7 @@ import {
 } from "@/components/whoisfaker/layout/FakerPlayerList";
 import { buildSpeechHistory } from "@/components/whoisfaker/layout/FakerSpeechHistory";
 import { FakerRoomHeaderCenter } from "@/components/whoisfaker/layout/FakerRoomHeaderCenter";
+import { useFakerHistoryPanel } from "@/components/whoisfaker/layout/UseFakerHistoryPanel";
 import { FakerRoomPlayerAside } from "@/components/whoisfaker/layout/FakerRoomPlayerAside";
 import { FakerAssignedWord } from "@/components/whoisfaker/layout/FakerAssignedWord";
 import { FakerGameArea } from "@/components/whoisfaker/layout/FakerGameArea";
@@ -41,12 +42,6 @@ const resolveAssignedWordText = (
   if (isSpectator || privateState?.isQuestioner) return undefined;
   return privateState?.word ?? angelOrBlankWordText(privateState);
 };
-
-const pickOpenDrawer = (
-  historyDrawerOpen: boolean,
-  mobilePanel: "none" | "players" | "chat"
-): "history" | "players" | "chat" | null =>
-  historyDrawerOpen ? "history" : mobilePanel === "none" ? null : mobilePanel;
 
 export default function WhoIsFakerRoomPage() {
   const { roomId: routeRoomId } = useParams<{ roomId: string }>();
@@ -92,13 +87,6 @@ export default function WhoIsFakerRoomPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState("");
   const [pendingJoinName, setPendingJoinName] = useState("");
-  const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
-  // 发言历史的展开状态记下展开时的局次，而不是一个布尔值：回到等待阶段、换局后自然收起，
-  // 不会在切换按钮已隐藏时仍盖住游戏区，也不会在下一局一进描述阶段就自己弹开。
-  const [historyRoundKey, setHistoryRoundKey] = useState<string | null>(null);
-  const [historyDrawerRoundKey, setHistoryDrawerRoundKey] = useState<string | null>(null);
-  // 延迟清除：宽度动画收回期间保持 history prop，避免 FakerPlayerList 瞬间膨胀
-  const [historyRendered, setHistoryRendered] = useState(false);
   // 身份预测推理笔记按局次 (roundId) 隔离，换局自动读取新局空映射，杜绝渲染期 setState 截断
   const [playerMarksByRound, setPlayerMarksByRound] = useState<Record<string, PlayerMarks>>({});
   // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
@@ -345,50 +333,19 @@ export default function WhoIsFakerRoomPage() {
 
   // 身份分配与出词阶段还没有发言，历史入口从描述阶段起才提供。
   const historyAvailable = !["waiting", "assigningQuestioner", "wordSubmission"].includes(phase);
-  const roundKey = roundId ?? "";
-  const historyOpen = historyAvailable && historyRoundKey === roundKey;
-  const historyDrawerOpen = historyAvailable && historyDrawerRoundKey === roundKey;
-  const openDrawer = pickOpenDrawer(historyDrawerOpen, mobilePanel);
-
-  // 展开：立即渲染；收起：等宽度动画（spring.settle）静止后再移除列，避免 FakerPlayerList 瞬间膨胀
-  useEffect(() => {
-    const t = window.setTimeout(
-      () => setHistoryRendered(historyOpen),
-      historyOpen ? 0 : springSettleMs(spring.settle)
-    );
-    return () => window.clearTimeout(t);
-  }, [historyOpen]);
-
-  // 桌面侧栏向右扩张时盖住游戏区：被盖住的控件不能再停留在 Tab 序与可访问树里。
-  // 窄屏没有这块侧栏（历史走抽屉），不能因为桌面留下的展开状态把游戏区锁死。
-  const historyPanelId = useId();
-  const historyToggleRef = useRef<HTMLButtonElement>(null);
   const desktopSidebar = useMinWidth("md");
-  const gameInert = historyOpen && desktopSidebar;
-
-  const toggleHistory = () => {
-    setHistoryRoundKey(historyOpen ? null : roundKey);
-    // 原来在游戏区的焦点会随游戏区一起失效（浏览器丢到页面根；Safari 点按钮本就不取焦点）：
-    // 展开后焦点留在收起按钮上，收起后留在展开按钮上
-    historyToggleRef.current?.focus({ preventScroll: true });
-  };
-
-  // Escape 收起历史；只在焦点已丢失或本来就在侧栏里时把焦点还给切换按钮，不抢聊天输入框等别处的焦点
-  useEffect(() => {
-    if (!historyOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const active = document.activeElement;
-      const focusLost =
-        !active ||
-        active === document.body ||
-        document.getElementById(historyPanelId)?.contains(active);
-      setHistoryRoundKey(null);
-      if (focusLost) historyToggleRef.current?.focus({ preventScroll: true });
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [historyOpen, historyPanelId]);
+  const {
+    historyOpen,
+    historyDrawerOpen,
+    historyRendered,
+    openDrawer,
+    gameInert,
+    panelId,
+    toggleRef,
+    toggleHistory,
+    onSidebarSettled,
+    onDrawerChange,
+  } = useFakerHistoryPanel({ roundId, historyAvailable, desktopSidebar });
 
   // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
@@ -478,8 +435,9 @@ export default function WhoIsFakerRoomPage() {
             historyAvailable={historyAvailable}
             historyOpen={historyOpen}
             onToggleHistory={toggleHistory}
-            panelId={historyPanelId}
-            toggleRef={historyToggleRef}
+            panelId={panelId}
+            toggleRef={toggleRef}
+            onSettled={onSidebarSettled}
             list={playerList(historyRendered)}
           />
         }
@@ -502,10 +460,7 @@ export default function WhoIsFakerRoomPage() {
           </ChatColumn>
         }
         openDrawer={openDrawer}
-        onDrawerChange={(key) => {
-          setHistoryDrawerRoundKey(key === "history" ? roundKey : null);
-          setMobilePanel(key === "players" || key === "chat" ? key : "none");
-        }}
+        onDrawerChange={onDrawerChange}
         drawers={[
           {
             key: "players",
