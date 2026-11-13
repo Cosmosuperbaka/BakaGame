@@ -21,15 +21,7 @@ import {
   WS_ACK_REPLAY_TTL_MS,
   WS_IN_FLIGHT_MAX_ENTRIES,
 } from "../config/Constants";
-import { createAck, createErrorPacket, createEvent } from "./Packets";
-import {
-  connectionIdFor,
-  connectionIdOf,
-  createConnectionRecord,
-  openGameConnection,
-  sendPacket,
-  type GameSocketLike,
-} from "./ws/ConnectionRecord";
+import { connectionIdOf, openGameConnection, type GameSocketLike } from "./ws/ConnectionRecord";
 import {
   applyHandshakeGates,
   confirmHandshakeLease,
@@ -38,48 +30,21 @@ import {
   type GameUpgradeContext,
 } from "./ws/Handshake";
 import { createCommandDeduplicator, type CommandDeduplicator } from "./ws/Dedup";
+import { handleGameMessage } from "./ws/GameMessage";
+import { createSiteChannel } from "./ws/SiteChannel";
+import { createUnifiedSocketHandlers } from "./ws/UnifiedChannel";
 import { httpError, traceIdOf } from "./HttpErrorEnvelope";
 import { WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
 import { CEEClientMessageSchema } from "./CEEProtocol";
-import {
-  createGameEndpoints,
-  gameOfMessage,
-  type GameEndpoint,
-  type GameMessage,
-} from "./GameEndpoints";
+import { createGameEndpoints, type GameEndpoint, type GameMessage } from "./GameEndpoints";
 import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
-import type { GameId } from "../shared/Protocol";
-import { isRecord } from "../shared/Json";
 import type { SiteFeatures } from "../shared/SiteFeatures";
 import { assertModeOpen } from "./ModeGate";
-import {
-  SITE_FOCUS_COMMAND,
-  SITE_LEAVE_COMMAND,
-  SITE_PAGE_CLOSE_COMMAND,
-  SITE_PAGE_COMMAND_SET,
-  SITE_PAGE_OPEN_COMMAND,
-  SITE_PAGE_RESULT_COMMAND,
-  SITE_SUBSCRIBE_COMMAND,
-  SITE_SUBSCRIBE_COMMAND_SET,
-  SiteFocusPayloadSchema,
-  SitePageResultSchema,
-  type SitePageResult,
-} from "../shared/AgentActivity";
-import {
-  SITE_SESSION_ALIVE_COMMAND,
-  SITE_SESSION_ATTACH_COMMAND,
-  SITE_SESSION_CLAIM_COMMAND,
-  SITE_SESSION_PROBE_EVENT,
-  TabSessionAliveSchema,
-  TabSessionAttachSchema,
-  TabSessionClaimSchema,
-} from "../shared/TabSession";
-import { Value } from "@sinclair/typebox/value";
 import { SitePresence } from "./SitePresence";
 import { SitePages } from "./SitePages";
-import { tabKeyOf, TabSessions } from "./TabSessions";
+import { TabSessions } from "./TabSessions";
 import { UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { warnMissingDeploymentMarker } from "./DeploymentMarkerWarning";
 import { isAllowedOrigin } from "./Origin";
@@ -89,12 +54,7 @@ import {
   UNROUTED_HTTP_ACTION,
   type RouteTemplate,
 } from "./HttpOperation";
-import {
-  decodeGameFrame,
-  describeRawMessage,
-  gameSocketError,
-  salvageMessageIdentity,
-} from "./ws/FrameDiagnostics";
+import { decodeGameFrame, gameSocketError } from "./ws/FrameDiagnostics";
 import { shutdownRejection, systemRoutes } from "./routes/System";
 import { createStatusAggregator, startStatusSampler, statusRoutes } from "./routes/Status";
 import { siteConfigRoutes } from "./routes/SiteConfig";
@@ -168,37 +128,6 @@ export interface AppDependencies {
    */
   siteFeatures?: () => SiteFeatures;
 }
-
-interface GameSocketHandlers<TMessage extends GameMessage> {
-  /** 只用于错误日志前缀，便于把异常定位到具体游戏。 */
-  serviceName: string;
-  execute: (connectionId: string, message: TMessage) => Promise<unknown>;
-}
-
-/**
- * 三个游戏共用的消息处理：解析 → 幂等执行 → ACK/错误封包。
- *
- * 只在「解析器、服务、日志前缀」上不同（Agents/Spec.md「平台与多游戏平等架构 · 传输对称」要求
- * 网关对称消费各游戏解析器），其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
- */
-/** 成功帧已通过 Elysia body 校验，业务层不重复枚举 Value.Errors。 */
-const handleGameMessage = async <TMessage extends GameMessage>(
-  ws: GameSocketLike,
-  parsed: TMessage,
-  dedup: CommandDeduplicator,
-  { serviceName, execute }: GameSocketHandlers<TMessage>
-): Promise<void> => {
-  const connectionId = connectionIdOf(ws);
-  if (!connectionId) return;
-  await dedup.run({
-    ws,
-    connectionId,
-    parsed,
-    startTime: performance.now(),
-    execute: () => execute(connectionId, parsed),
-    serviceName,
-  });
-};
 
 const closeGameConnection = async (
   ws: GameSocketLike,
@@ -313,242 +242,6 @@ export const createApp = ({
     inFlightMax: WS_IN_FLIGHT_MAX_ENTRIES,
     logger,
   });
-  /**
-   * 统一入口按需把连接登记进对应游戏的服务。
-   *
-   * 一条物理连接可能先后用到三款游戏（MCP 就是这样），但绝不能一次性登记进三个服务：
-   * 在线连接数按服务各自统计，全部登记会让一条连接被数三次，而且没碰过的游戏里会留下
-   * 一条永远不订阅、不进房的影子记录。登记只发生在该游戏的第一条命令到来时。
-   */
-  const ensureGameConnection = (ws: GameSocketLike, game: GameId): void => {
-    const data = ws.data as { registeredGames?: Set<GameId> };
-    const registered = (data.registeredGames ??= new Set<GameId>());
-    if (registered.has(game)) return;
-    registered.add(game);
-    const record = createConnectionRecord(ws, connectionIdFor(ws), (tabKey) =>
-      sitePages.isTabControlled(tabKey)
-    );
-    endpoints[game].service.registerConnection(record);
-  };
-
-  /**
-   * 解析、幂等执行并回执一条游戏命令。三款的命令类型不同，所以经泛型函数落到单个端点上，
-   * 而不是把三个端点放进同一个数组丢掉各自的类型。
-   */
-  const runOn = <TMessage extends GameMessage>(
-    ws: GameSocketLike,
-    endpoint: GameEndpoint<TMessage>,
-    incoming: unknown
-  ): Promise<void> =>
-    handleGameMessage(ws, endpoint.parse(incoming), dedup, {
-      serviceName: endpoint.serviceName,
-      execute: async (connectionId, message) => {
-        assertModeOpen(endpoint, message, siteFeatures);
-        return endpoint.service.execute(connectionId, message);
-      },
-    });
-
-  /**
-   * 标签页接管的人类侧命令：开/关租约、回报指令结果。
-   *
-   * 谁都能开自己的页面，但只有拿到一次性配对码的 Agent 能驱动它 —— 配对码只在这里换发，
-   * 租约按站点连接领到的标签页身份记账，结果只认持有这份身份的连接，这些命令都不进任何游戏服务。
-   * 未绑定身份的旧页面退回按连接记账，刷新后不续接。
-   */
-  const handleSitePageCommand = (
-    ws: GameSocketLike,
-    type: string,
-    message: Record<string, unknown>,
-    connectionId: string,
-    envelope: { id: string; type: string; traceId?: string }
-  ): void => {
-    const data = ws.data as { isAgent?: boolean; tabKey?: string };
-    if (data.isAgent === true) throw new AppError("PAGE_FORBIDDEN", "Agent 连接不能开启接管");
-    if (type === SITE_PAGE_OPEN_COMMAND) {
-      sendPacket(
-        ws,
-        createAck(
-          envelope,
-          sitePages.open(data.tabKey ?? `connection:${connectionId}`, connectionId, (payload) =>
-            sendPacket(ws, payload)
-          )
-        )
-      );
-      return;
-    }
-    if (type === SITE_PAGE_CLOSE_COMMAND) {
-      sendPacket(ws, createAck(envelope, { closed: sitePages.close(connectionId) }));
-      return;
-    }
-    if (!isRecord(message.payload))
-      throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
-    if (type !== SITE_PAGE_RESULT_COMMAND)
-      throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知的页面命令：${type}`);
-    if (!Value.Check(SitePageResultSchema, message.payload))
-      throw new AppError("INVALID_MESSAGE", "指令结果不合法");
-    sitePages.recordResult(connectionId, message.payload as SitePageResult);
-    sendPacket(ws, createAck(envelope, { ok: true }));
-  };
-
-  /**
-   * 标签页身份命令：站点连接领取、游戏连接挂上、持有者应答探测。
-   *
-   * 身份在首帧确定，之后这条连接上的席位都归它，所以一条连接只绑定一次：连接中途改绑，
-   * 等于让已入座的连接换了主人。Agent 不持有标签页身份：放它绑定等于让它
-   * 直接拿到人类的座位，绕开页面配对。
-   */
-  const handleTabSessionCommand = async (
-    ws: GameSocketLike,
-    message: Record<string, unknown>
-  ): Promise<boolean> => {
-    const type = message.type as string;
-    if (
-      type !== SITE_SESSION_CLAIM_COMMAND &&
-      type !== SITE_SESSION_ATTACH_COMMAND &&
-      type !== SITE_SESSION_ALIVE_COMMAND
-    )
-      return false;
-    const data = ws.data as { isAgent?: boolean; tabKey?: string; socketClosed?: boolean };
-    if (data.isAgent === true)
-      throw new AppError("TAB_SESSION_FORBIDDEN", "Agent 连接不持有标签页身份");
-    const envelope = message as { id: string; type: string; traceId?: string };
-    const connectionId = connectionIdFor(ws);
-    if (type === SITE_SESSION_ALIVE_COMMAND) {
-      if (!Value.Check(TabSessionAliveSchema, message.payload))
-        throw new AppError("INVALID_MESSAGE", "探测应答不合法");
-      tabSessions.confirmAlive(connectionId, message.payload.nonce);
-      sendPacket(ws, createAck(envelope, { ok: true }));
-      return true;
-    }
-    if (data.tabKey) throw new AppError("TAB_SESSION_BOUND", "本连接已绑定标签页身份");
-    if (type === SITE_SESSION_ATTACH_COMMAND) {
-      if (!Value.Check(TabSessionAttachSchema, message.payload))
-        throw new AppError("INVALID_MESSAGE", "标签页身份不合法");
-      data.tabKey = tabKeyOf(message.payload.token);
-      sendPacket(ws, createAck(envelope, { attached: true, serverEpoch: tabSessions.serverEpoch }));
-      return true;
-    }
-    if (!Value.Check(TabSessionClaimSchema, message.payload))
-      throw new AppError("INVALID_MESSAGE", "标签页身份不合法");
-    const { key, ...claim } = await tabSessions.claim(
-      connectionId,
-      message.payload.token,
-      (nonce) => {
-        sendPacket(ws, createEvent(SITE_SESSION_PROBE_EVENT, { nonce }));
-      }
-    );
-    // 探测要跨一次等待：这期间连接可能已断，不能把死连接登记成持有者。
-    if (data.socketClosed) {
-      tabSessions.release(connectionId);
-      return true;
-    }
-    data.tabKey = key;
-    sendPacket(ws, createAck(envelope, claim));
-    return true;
-  };
-
-  /** 站点通道：订阅、标签页接管、焦点上报、离开。这些命令由统一入口直接处理，不进任何游戏服务。 */
-  const handleSiteCommand = (ws: GameSocketLike, message: Record<string, unknown>): boolean => {
-    const type = message.type as string;
-    const isPageCommand = SITE_PAGE_COMMAND_SET.has(type);
-    if (!SITE_SUBSCRIBE_COMMAND_SET.has(type) && !isPageCommand) return false;
-    const connectionId = connectionIdFor(ws);
-    const envelope = message as { id: string; type: string; traceId?: string };
-    if (isPageCommand) {
-      handleSitePageCommand(ws, type, message, connectionId, envelope);
-      return true;
-    }
-    if (type === SITE_SUBSCRIBE_COMMAND) {
-      sitePresence.subscribe(connectionId, (payload) => sendPacket(ws, payload));
-      // 订阅是页面连上后的第一条业务命令：身份已经绑定，刷新前的接管在这里续上。
-      // 回执带上结果：页面据此判断断线期间接管是否已经结束，不必等到超时。
-      const { tabKey } = ws.data as { tabKey?: string };
-      const controlled =
-        tabKey !== undefined &&
-        sitePages.attach(tabKey, connectionId, (payload) => sendPacket(ws, payload));
-      sendPacket(ws, createAck(envelope, { subscribed: true, controlled }));
-      return true;
-    }
-    if ((ws.data as { isAgent?: boolean }).isAgent !== true)
-      throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报站点活动");
-    if (!isRecord(message.payload))
-      throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
-    // 封闭 schema：房间内的控件焦点与逐字输入进度带不进来，首页广播只含界面位置。
-    if (!Value.Check(SiteFocusPayloadSchema, message.payload))
-      throw new AppError("INVALID_MESSAGE", "站点活动参数不合法");
-    if (type === SITE_FOCUS_COMMAND)
-      sitePresence.publish(connectionId, message.payload as Parameters<SitePresence["publish"]>[1]);
-    else if (type === SITE_LEAVE_COMMAND) sitePresence.leave(connectionId);
-    sendPacket(ws, createAck(envelope, { ok: true }));
-    return true;
-  };
-
-  /**
-   * 统一入口的消息分发：站点命令 → 判定游戏 → 该游戏的严格解析 → 交给对应服务执行。
-   *
-   * 解析必须在分发之后做：三张命令表的信封都拒绝未知字段，先统一校验会把 `game`
-   * 与另外两款游戏的字段判成非法。错误回包沿用旧入口的形状（同上，带 traceId）。
-   */
-  const handleUnifiedMessage = async (ws: GameSocketLike, incoming: unknown): Promise<void> => {
-    const identity = salvageMessageIdentity(incoming);
-    const respondError = (code: string, text: string) =>
-      sendPacket(
-        ws,
-        createErrorPacket(identity?.id ?? "unknown", code, text, undefined, identity?.traceId)
-      );
-    try {
-      if (!isRecord(incoming) || typeof incoming.type !== "string")
-        throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
-      if (await handleTabSessionCommand(ws, incoming)) return;
-      if (handleSiteCommand(ws, incoming)) return;
-      const game = gameOfMessage(incoming);
-      ensureGameConnection(ws, game);
-      // 按共有形状放宽：同一个端点的解析与执行仍成对使用，只是不在联合类型上重新推断。
-      const endpoint: GameEndpoint<GameMessage> = endpoints[game];
-      await runOn(ws, endpoint, incoming);
-    } catch (error) {
-      if (isAppError(error)) {
-        // 只在解析类失败上补原始帧的形状诊断：业务拒绝已经有 code 与消息。
-        if (error.code === "INVALID_MESSAGE" || error.code === "UNKNOWN_MESSAGE_TYPE")
-          logger.warn("统一 WS 消息解析失败", {
-            ...describeRawMessage(incoming),
-            message: error.message,
-          });
-        respondError(error.code, error.message);
-        return;
-      }
-      logger.error("统一 WS 内部异常", describeError(error));
-      respondError("INTERNAL_ERROR", "服务器内部错误");
-    }
-  };
-
-  const unifiedSocketHandlers = {
-    upgrade: (context: GameUpgradeContext) =>
-      applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
-    open: (ws: GameSocketLike) => {
-      confirmHandshakeLease(ws);
-      connectionIdFor(ws);
-    },
-    message: (ws: GameSocketLike, incoming: unknown) => handleUnifiedMessage(ws, incoming),
-    close: async (ws: GameSocketLike) => {
-      releaseHandshakeLease(ws);
-      (ws.data as { socketClosed?: boolean }).socketClosed = true;
-      const connectionId = connectionIdOf(ws);
-      if (!connectionId) return;
-      tabSessions.release(connectionId);
-      sitePresence.unsubscribe(connectionId);
-      // 配对码随连接作废；已接管的租约按身份记账，等同一身份回来，超时才结束。
-      sitePages.dropConnection(connectionId);
-      const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
-      for (const game of registered ?? []) {
-        try {
-          await endpoints[game].service.unregisterConnection(connectionId);
-        } catch (error) {
-          logger.error("统一 WS 连接注销失败", { ...describeError(error), game, connectionId });
-        }
-      }
-    },
-  };
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   // 路由表在 createApp 装配完成时定形，模板索引到首个请求才惰性编译一次。
   let routeTemplates: readonly RouteTemplate[] | undefined;
@@ -567,6 +260,20 @@ export const createApp = ({
     ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
     globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
     ipMaxConnections: STATUS_WS_IP_MAX_CONNECTIONS,
+  });
+  const unifiedSocketHandlers = createUnifiedSocketHandlers({
+    env,
+    logger,
+    endpoints,
+    account,
+    handshakeQuota,
+    clientChannel,
+    siteFeatures,
+    dedup,
+    sitePresence,
+    sitePages,
+    tabSessions,
+    siteChannel: createSiteChannel({ sitePresence, sitePages, tabSessions }),
   });
   // 状态聚合器只建一份：HTTP 快照、历史接口与 WS 实时通道读同一份缓存、记同一本账，
   // 各建一套会让页面在轮询与推送之间看到两种口径。
