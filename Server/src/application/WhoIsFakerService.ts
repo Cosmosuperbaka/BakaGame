@@ -1,5 +1,4 @@
-import { ADMIN_CLOSE_REASON, type AdminRoomView } from "../domain/AdminRoom";
-import { AppError } from "../domain/Errors";
+import { type AdminRoomView } from "../domain/AdminRoom";
 import {
   type ConnectionRecord,
   type WhoIsFakerPlayerRecord,
@@ -17,7 +16,6 @@ import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
 } from "../config/Constants";
-import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { assertTabAgentsAllowed, roomsOfTab, type TabSeatContext } from "./room/SeatBinding";
 import { whoIsFakerShape } from "./whoisfaker/RoomShape";
 import {
@@ -29,11 +27,15 @@ import { CommandQuota, dispatchCommand } from "./room/CommandTable";
 import { createWhoIsFakerContext, type WhoIsFakerContext } from "./whoisfaker/Context";
 import type { WhoIsFakerServiceOptions } from "./whoisfaker/Options";
 import { handlePlayerOffline } from "./whoisfaker/OfflineSettlement";
-import { kickPlayer } from "./whoisfaker/RoomLifecycle";
+import {
+  adminCloseRoom,
+  adminKickPlayer,
+  adminListRooms,
+  getHealthSnapshot,
+} from "./whoisfaker/AdminView";
 import { runHousekeeping } from "./whoisfaker/Housekeeping";
 import { exportSnapshots, restoreSnapshots } from "./whoisfaker/SnapshotPersistence";
 import { handlePhaseTimeout } from "./whoisfaker/PhaseTimeouts";
-import { closeRoom } from "./whoisfaker/RoomClosure";
 import { publishRoom } from "./whoisfaker/RoomPublish";
 import { listRoomSummaries } from "./whoisfaker/RoomViews";
 
@@ -134,14 +136,7 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   }
 
   getHealthSnapshot() {
-    return {
-      roomCount: this.ctx.rooms.size,
-      connectionCount: this.ctx.connectionRegistry.stats.totalConnections,
-      onlinePlayerCount: [...this.ctx.rooms.values()].reduce(
-        (sum, room) => sum + countOnline(Object.values(room.players)),
-        0
-      ),
-    };
+    return getHealthSnapshot(this.ctx);
   }
 
   getRoomSummaries(): WhoIsFakerRoomSummary[] {
@@ -149,28 +144,15 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   }
 
   adminListRooms(): AdminRoomView[] {
-    return [...this.ctx.rooms.values()].map((room) =>
-      adminRoomView(room, Object.values(room.players), {
-        game: "faker",
-        name: room.settings.name,
-        phase: room.round?.phase ?? "waiting",
-        visibility: room.settings.visibility,
-        hidden: this.ctx.testRooms.isTestRoom(room.id),
-        roundNumber: room.roundCount ?? 0,
-      })
-    );
+    return adminListRooms(this.ctx);
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {
-    await closeRoom(this.ctx, requireAdminRoom(this.ctx.rooms, roomId), ADMIN_CLOSE_REASON);
+    await adminCloseRoom(this.ctx, roomId);
   }
 
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
-    const room = requireAdminRoom(this.ctx.rooms, roomId);
-    const target = room.players[playerId];
-    if (!target || target.membership === "kicked")
-      throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
-    await kickPlayer(this.ctx, room, target, "管理员");
+    await adminKickPlayer(this.ctx, roomId, playerId);
   }
 
   /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
