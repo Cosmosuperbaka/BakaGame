@@ -191,6 +191,15 @@ export interface SonGuessrMusicAccount {
 export type SonGuessrVipTier = "svip" | "vip" | "musicPackage";
 
 /**
+ * 账号池里公开展示的账号投影：只够认出这是谁的号、什么档位，不含第三方账号标识
+ * （`userId`）、会员类型与到期时刻这类能关联到真实账号的字段。完整资料只在号主本人的私有态里。
+ */
+export type SonGuessrMusicPoolAccount = Omit<
+  SonGuessrMusicAccount,
+  "userId" | "vipType" | "vipExpireTime"
+>;
+
+/**
  * 房间音乐账号池里的一号：某个玩家自愿贡献给本房使用的账号。
  *
  * 下发给全房（房主面板要列出每号的归属玩家、档位、在途与成功率），所以**不带 cookie**；
@@ -202,7 +211,7 @@ export interface SonGuessrMusicPoolView {
   /** 贡献者昵称：快照里已经带名字，前端不必再按 id 反查。 */
   playerName: string;
   platform: "netease" | "qq";
-  account: SonGuessrMusicAccount;
+  account: SonGuessrMusicPoolAccount;
   /** 共享开关：号主关掉、或凭据被判死时代服务端关闭，此时不参与取号。 */
   enabled: boolean;
   /**
@@ -518,13 +527,9 @@ export interface SonGuessrRoomSnapshot {
   testMode: boolean;
   musicAccountReady: boolean;
   qqMusicAccountReady?: boolean;
-  musicAccounts?: {
-    netease?: SonGuessrMusicAccount;
-    qq?: SonGuessrMusicAccount;
-  };
   /**
    * 房间音乐账号池（每个玩家贡献的账号各一条）。等待阶段由贡献者自己开关；
-   * 池内有号就能取号、池空即降级。只下发归属与统计，不含凭据。
+   * 池内有号就能取号、池空即降级。只下发归属、统计与账号的展示投影，不含凭据与第三方账号标识。
    */
   musicPool?: SonGuessrMusicPoolView[];
   settings: SonGuessrSettings;
@@ -567,6 +572,11 @@ export interface SonGuessrPrivateState {
   submittedSong?: SongSearchResult;
   submittedAnime?: BangumiSubjectSearchResult;
   visibleAttempts: SongGuessAttempt[];
+  /** 本人贡献到房间账号池的账号完整资料（含第三方账号标识）：只下发给号主本人，没有就缺席。 */
+  musicAccounts?: {
+    netease?: SonGuessrMusicAccount;
+    qq?: SonGuessrMusicAccount;
+  };
 }
 
 // ==================== 猜歌客户端指令契约（单一真相源） ====================

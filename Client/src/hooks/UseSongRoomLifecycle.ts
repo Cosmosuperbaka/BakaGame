@@ -443,15 +443,9 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
       if (active?.key === mountKey && (active.settled || !active.cancelled)) continue;
 
-      // 只看我自己那条池记录：池里排在前面的往往是别人的号，拿它判「已在房」会永远跳过自己的装载。
-      const mine = snapshot.musicPool?.find(
-        (entry) => entry.playerId === privateState.playerId && entry.platform === platform
-      );
-      const myAccount = mine
-        ? mine.account
-        : snapshot.musicPool === undefined
-          ? snapshot.musicAccounts?.[platform]
-          : undefined;
+      // 只看我自己的号（私有态）：池里排在前面的往往是别人的号，拿它判「已在房」会永远跳过自己的装载；
+      // 公开的号池只有展示投影，也没有判断「同一个账号」所需的账号标识。
+      const myAccount = privateState.musicAccounts?.[platform];
       // 池里已经是我这一份凭据（同一个账号）就不用再传：服务端已经有了，重传只会多跑一次上游校验。
       // 服务端对「同一份凭据」不改共享开关，所以这里也读不出开或关，开关状态仍以服务端快照为准。
       if (

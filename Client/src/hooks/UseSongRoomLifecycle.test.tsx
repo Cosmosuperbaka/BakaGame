@@ -2,7 +2,11 @@ import { StrictMode, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SonGuessrMusicPoolView, SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type {
+  SonGuessrMusicPoolView,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+} from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import {
   getSongSoloRoomId,
@@ -287,12 +291,14 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
   const receiptFor = (
     phase: SonGuessrRoomSnapshot["phase"],
     pool?: SonGuessrMusicPoolView[],
-    playerId = HOST_ID
+    playerId = HOST_ID,
+    /** 号主本人的完整资料：只在私有态里，公开的号池没有账号标识。 */
+    musicAccounts?: SonGuessrPrivateState["musicAccounts"]
   ) => ({
     roomId: "1234",
     sessionToken: "fixture-token",
     snapshot: songSnapshot({ roomId: "1234", hostPlayerId: HOST_ID, phase, musicPool: pool }),
-    privateState: songPrivate({ playerId, sessionToken: "fixture-token" }),
+    privateState: songPrivate({ playerId, sessionToken: "fixture-token", musicAccounts }),
   });
   const myPoolEntry = (
     overrides: Partial<SonGuessrMusicPoolView> = {}
@@ -468,7 +474,8 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
   it("池里已有本人这份凭据时不再重传，换了账号才重新装载", async () => {
     let uploads = 0;
     send.mockImplementation(async (type: string) => {
-      if (type === "song.room.join") return receiptFor("waiting", [myPoolEntry()]);
+      if (type === "song.room.join")
+        return receiptFor("waiting", [myPoolEntry()], HOST_ID, { netease: SONG_ACCOUNTS.vip });
       if (type === "song.auth.useCookie") {
         uploads += 1;
         return { account: SONG_ACCOUNTS.vip };
@@ -483,8 +490,17 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
 
     // 换了一个账号（池里我这条还是旧账号）才算新凭据，需要重新装载。
     act(() => {
+      const changed = receiptFor(
+        "waiting",
+        [myPoolEntry({ account: SONG_ACCOUNTS.nonVip })],
+        HOST_ID,
+        {
+          netease: SONG_ACCOUNTS.nonVip,
+        }
+      );
       useSonGuessrStore.setState({
-        snapshot: receiptFor("waiting", [myPoolEntry({ account: SONG_ACCOUNTS.nonVip })]).snapshot,
+        snapshot: changed.snapshot,
+        privateState: changed.privateState,
       });
     });
     await flush();

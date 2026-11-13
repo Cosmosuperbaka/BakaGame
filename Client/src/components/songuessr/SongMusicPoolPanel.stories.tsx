@@ -16,7 +16,6 @@ const POOL: SonGuessrMusicPoolView[] = [
     platform: "qq",
     account: {
       platform: "qq",
-      userId: "20001",
       nickname: "夜航绿钻",
       avatarUrl: placeholderImage("绿", 150, 80, 80),
       vipStatus: "vip",
@@ -33,7 +32,7 @@ const POOL: SonGuessrMusicPoolView[] = [
     playerId: me.id,
     playerName: me.name,
     platform: "qq",
-    account: { platform: "qq", userId: "20002", nickname: "白噪音收藏家", vipStatus: "nonVip" },
+    account: { platform: "qq", nickname: "白噪音收藏家", vipStatus: "nonVip" },
     enabled: false,
     cooldownUntil: STORY_EPOCH + 86_400_000,
     inFlight: 0,

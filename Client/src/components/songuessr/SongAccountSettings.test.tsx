@@ -6,7 +6,11 @@ import {
   getStoredSongMusicSession,
   saveSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type {
+  SonGuessrPlayerView,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+} from "@bakagame/shared";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 
@@ -157,6 +161,56 @@ describe("SongAccountSettings", () => {
     );
     expect(panel().getByText("2027/4/1 到期")).toBeInTheDocument();
     expect(panel().queryByRole("button", { name: "更换账号" })).not.toBeInTheDocument();
+  });
+
+  it("账号池下只显示我自己的号，完整资料（含到期日）取自私有态而不是公开的号池投影", () => {
+    const projection = {
+      platform: "netease" as const,
+      nickname: "池里的我",
+      vipStatus: "vip" as const,
+      vipTier: "svip" as const,
+      vipLevel: 5,
+    };
+    const poolEntry = (playerId: string, nickname: string) => ({
+      playerId,
+      playerName: nickname,
+      platform: "netease" as const,
+      account: { ...projection, nickname },
+      enabled: true,
+      inFlight: 0,
+      recentOk: 0,
+      recentTotal: 0,
+    });
+    const pooled = {
+      ...snapshot(true),
+      musicPool: [poolEntry("other", "别人的号"), poolEntry("me", "池里的我")],
+    } as SonGuessrRoomSnapshot;
+    const me = { id: "me" } as SonGuessrPlayerView;
+    const privateState = {
+      playerId: "me",
+      musicAccounts: {
+        netease: {
+          ...projection,
+          nickname: "我的完整资料",
+          userId: "10001",
+          vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+        },
+      },
+    } as SonGuessrPrivateState;
+
+    act(() => useSonGuessrStore.setState({ privateState }));
+    render(<SongAccountSettings snapshot={pooled} me={me} />);
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getByText("我的完整资料")).toBeInTheDocument();
+    expect(within(toggle).getByText("2027/4/1 到期")).toBeInTheDocument();
+    expect(screen.queryByText("别人的号")).not.toBeInTheDocument();
+
+    // 私有态里没有我的号时不会拿池里别人的号顶替。
+    act(() =>
+      useSonGuessrStore.setState({ privateState: { ...privateState, musicAccounts: undefined } })
+    );
+    expect(screen.queryByText("别人的号")).not.toBeInTheDocument();
+    expect(screen.queryByText("我的完整资料")).not.toBeInTheDocument();
   });
 
   // 标题行收起时是账号行，展开后要让位给普通的组标题：展开卡里已有同一份账号信息，

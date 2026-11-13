@@ -3,6 +3,8 @@ import type {
   BangumiSubjectSearchResult,
   SongDetails,
   SongSearchResult,
+  SonGuessrMusicAccount,
+  SonGuessrMusicPoolAccount,
   SonGuessrMusicPoolView,
   SonGuessrPlayerView,
   SonGuessrPrivateState,
@@ -12,7 +14,7 @@ import type {
   SonGuessrScore,
 } from "../../shared/Index";
 import { audioTicketUrl } from "./AudioTicket";
-import { hasEnabledPoolAccount, isCoolingDown, musicPool, primaryPoolEntry } from "./MusicAccounts";
+import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicAccounts";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import type { SonGuessrContext } from "./Context";
 import { canTestSubmitterGuess, activePlayers, isTestRoom } from "./RoomAccess";
@@ -50,6 +52,20 @@ export const buildRoomSummary = (
  * 只带 `account` 这份可公开展示的资料，**不带 `cookie`**：池里的凭据只留在服务端内存，
  * 快照要发给房里的每个人，凭据进快照就等于把玩家登录态广播出去（见 `Server/docs/`账号约束）。
  */
+/**
+ * 账号的公开投影：逐字段点名，而不是「去掉几个字段」——上游资料以后多出新字段时，
+ * 默认不会跟着下发给全房。
+ */
+const poolAccountView = (account: SonGuessrMusicAccount): SonGuessrMusicPoolAccount => ({
+  platform: account.platform,
+  nickname: account.nickname,
+  avatarUrl: account.avatarUrl,
+  vipStatus: account.vipStatus,
+  vipTier: account.vipTier,
+  vipLevel: account.vipLevel,
+  vipYear: account.vipYear,
+});
+
 export const buildMusicPoolView = (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
@@ -66,7 +82,7 @@ export const buildMusicPoolView = (
       playerId: entry.playerId,
       playerName: room.players[entry.playerId]?.name ?? "已离开的玩家",
       platform: entry.platform,
-      account: entry.account,
+      account: poolAccountView(entry.account),
       enabled: entry.enabled,
       // 只下发还在生效的冷却：过期时间发给客户端只会让面板永远显示「冷却中」。
       ...(isCoolingDown(entry, now) ? { cooldownUntil: entry.cooldownUntil } : {}),
@@ -95,10 +111,6 @@ export const buildRoomSnapshot = (
     testMode: isTestRoom(ctx, room),
     musicAccountReady: hasEnabledPoolAccount(ctx, room, "netease"),
     qqMusicAccountReady: hasEnabledPoolAccount(ctx, room, "qq"),
-    musicAccounts: {
-      netease: primaryPoolEntry(ctx, room, "netease")?.account,
-      qq: primaryPoolEntry(ctx, room, "qq")?.account,
-    },
     musicPool: buildMusicPoolView(ctx, room),
     settings: room.settings,
     phase: room.phase,
@@ -191,6 +203,18 @@ export const buildPlayerView = (
   };
 };
 
+/** 玩家自己贡献的账号，按平台取完整资料；一个也没有时缺席。 */
+const ownMusicAccounts = (
+  room: SonGuessrRoomRecord,
+  playerId: string
+): SonGuessrPrivateState["musicAccounts"] => {
+  const own = musicPool(room).filter((entry) => entry.playerId === playerId);
+  if (own.length === 0) return undefined;
+  const netease = own.find((entry) => entry.platform === "netease")?.account;
+  const qq = own.find((entry) => entry.platform === "qq")?.account;
+  return { ...(netease ? { netease } : {}), ...(qq ? { qq } : {}) };
+};
+
 export const buildPrivateState = (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
@@ -258,6 +282,8 @@ export const buildPrivateState = (
             Boolean(state?.memberIds.includes(attempt.playerId))
         )
       : [],
+    // 本人贡献的账号完整资料只在本人的私有态里；公开快照的号池只有展示投影。
+    musicAccounts: ownMusicAccounts(room, player.id),
   };
 };
 

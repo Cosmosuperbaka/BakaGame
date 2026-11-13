@@ -7,6 +7,7 @@ import { dropFocus } from "@/stories/PlayHelpers";
 import {
   pending,
   seedMusicSession,
+  seedOwnMusicAccounts,
   SONG_ACCOUNTS,
   SONG_PEOPLE,
   SONG_QR,
@@ -80,12 +81,14 @@ const expandUntilLogout = async (canvasElement: HTMLElement) => {
 export const PoolSharing: Story = {
   name: "账号池 · 共享开关",
   args: { snapshot: songSnapshot({ musicPool: [myPoolEntry()] }), me: poolMe },
+  beforeEach: () => seedOwnMusicAccounts({ netease: SONG_ACCOUNTS.vip }),
   play: async ({ canvasElement }) => expandUntilLogout(canvasElement),
 };
 
 export const PoolLocked: Story = {
   name: "账号池 · 开局后锁定共享",
   args: { snapshot: songSnapshot({ phase: "playing", musicPool: [myPoolEntry()] }), me: poolMe },
+  beforeEach: () => seedOwnMusicAccounts({ netease: SONG_ACCOUNTS.vip }),
   play: async ({ canvasElement }) => expandUntilLogout(canvasElement),
 };
 
@@ -103,6 +106,7 @@ export const PoolPaused: Story = {
     }),
     me: poolMe,
   },
+  beforeEach: () => seedOwnMusicAccounts({ netease: SONG_ACCOUNTS.vip }),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
     await canvas.findByRole("button", { name: "重新登录" });

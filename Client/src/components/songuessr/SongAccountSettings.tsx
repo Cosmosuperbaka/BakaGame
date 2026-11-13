@@ -27,6 +27,7 @@ import type {
   SonGuessrMusicAccount,
   SonGuessrMusicPoolView,
   SonGuessrPlayerView,
+  SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
 
@@ -199,20 +200,19 @@ function myPoolEntry(
  * 本行要展示的账号。
  *
  * 快照带了账号池就**只看我自己的号**：池里排在前面的可能是别人的号，拿它当「我的账号」
- * 会让玩家看到别人的昵称、点退出登录还清不掉（B4：谁的号谁做主）。
- * 老快照没有池字段时退回房间级账号，故事夹具与旧用例的展示保持不变。
+ * 会让玩家看到别人的昵称、点退出登录还清不掉（B4：谁的号谁做主）。我自己的完整资料来自
+ * 私有态，公开的号池里只有展示投影，没有会员到期时刻这类字段。
+ * 没有池字段时退回本机保存的账号，故事夹具与旧用例的展示保持不变。
  */
 function displayAccountFor(
   snapshot: SonGuessrRoomSnapshot,
-  me: SonGuessrPlayerView | undefined,
+  ownAccounts: SonGuessrPrivateState["musicAccounts"],
   platform: SongMusicPlatform,
   stored: StoredSongMusicSession | null
 ): SonGuessrMusicAccount | undefined {
-  if (snapshot.musicPool !== undefined) {
-    return myPoolEntry(snapshot, me, platform)?.account;
-  }
+  if (snapshot.musicPool !== undefined) return ownAccounts?.[platform];
   const roomReady = platform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
-  return snapshot.musicAccounts?.[platform] ?? (roomReady ? stored?.account : undefined);
+  return roomReady ? stored?.account : undefined;
 }
 
 /** 服务端暂停了号主的号：必须说出来，否则号主只看到开关自己变灰，会以为是谁动了设置。 */
@@ -338,6 +338,7 @@ function RoomAccountSettings({
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;
   const poolAware = snapshot.musicPool !== undefined;
+  const ownAccounts = useSonGuessrStore((state) => state.privateState?.musicAccounts);
   const currentEntry = myPoolEntry(snapshot, me, activePlatform);
   /**
    * 被服务端暂停的号：冷却期内不参与取号。风控与限流到点自动恢复（凭据被判死时服务端会顺手
@@ -346,7 +347,7 @@ function RoomAccountSettings({
   const cooldownEntry = currentEntry?.cooldownUntil !== undefined ? currentEntry : undefined;
   /** 共享开关只在等待阶段可改，与 `song.room.updateSettings` 同一道门槛（服务端也会再拦一次）。 */
   const sharingLocked = snapshot.phase !== "waiting";
-  const currentAccount = displayAccountFor(snapshot, me, activePlatform, currentStored);
+  const currentAccount = displayAccountFor(snapshot, ownAccounts, activePlatform, currentStored);
   // 只在「我这端既没进池、本机也没凭据」时才摆二维码；本机有凭据就等自动装载，先显示正在连接。
   const showQr = poolAware ? currentAccount === undefined && !currentStored : !currentStored;
 
@@ -395,8 +396,8 @@ function RoomAccountSettings({
     if (open) void login.start(platform, qqScanType);
   };
 
-  const neteaseAccount = displayAccountFor(snapshot, me, "netease", storedNetease);
-  const qqAccount = displayAccountFor(snapshot, me, "qq", storedQq);
+  const neteaseAccount = displayAccountFor(snapshot, ownAccounts, "netease", storedNetease);
+  const qqAccount = displayAccountFor(snapshot, ownAccounts, "qq", storedQq);
   const neteaseConnecting = Boolean(storedNetease) && neteaseAccount === undefined;
   const qqConnecting = Boolean(storedQq) && qqAccount === undefined;
 

@@ -1080,6 +1080,13 @@ export const SONG_ACCOUNTS = {
   unknown: { userId: "10003", nickname: "小布丁", vipStatus: "unknown" },
 } satisfies Record<string, SonGuessrMusicAccount>;
 
+/** 本人贡献到房间账号池的号：完整资料只在私有态里，故事里账号池的「我的号」据此显示。 */
+export function seedOwnMusicAccounts(
+  accounts: NonNullable<SonGuessrPrivateState["musicAccounts"]>
+) {
+  useSonGuessrStore.setState({ privateState: songPrivate({ musicAccounts: accounts }) });
+}
+
 /** 本机登录状态只存在浏览器存储里；Cookie 为占位值，不会发往任何服务。 */
 export function seedMusicSession(account: SonGuessrMusicAccount) {
   saveSongMusicSession({ cookie: "MUSIC_U=story-placeholder", account }, true);

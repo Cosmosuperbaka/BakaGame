@@ -707,7 +707,7 @@ describe("SonGuessrService", () => {
     expect(hostEntry?.cooldownUntil).toBeUndefined();
     expect(hostEntry?.lastFailureReason).toBeUndefined();
     expect(relogged.musicAccountReady).toBe(true);
-    expect(relogged.musicAccounts?.netease?.nickname).toBe("测试账号");
+    expect(hostEntry?.account.nickname).toBe("测试账号");
     expect(guestState.playerId).toBeDefined();
   });
 

@@ -333,8 +333,14 @@ describe("SonGuessr service 音乐认证意图", () => {
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.musicAccountReady).toBe(true);
     expect(snapshot.qqMusicAccountReady).toBe(true);
-    expect(snapshot.musicAccounts?.netease?.nickname).toBe("网易云用户");
-    expect(snapshot.musicAccounts?.qq?.nickname).toBe("QQ用户");
+    // 本人资料在私有态里，公开快照没有房间级账号列表。
+    const ownAccounts = lastEvent<SonGuessrPrivateState>(
+      host,
+      "song.game.privateState"
+    ).musicAccounts;
+    expect(ownAccounts?.netease?.nickname).toBe("网易云用户");
+    expect(ownAccounts?.qq?.nickname).toBe("QQ用户");
+    expect(snapshot).not.toHaveProperty("musicAccounts");
 
     await execute(service, host, {
       id: "search",
@@ -356,7 +362,12 @@ describe("SonGuessr service 音乐认证意图", () => {
     const snapshotAfterClear = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshotAfterClear.musicAccountReady).toBe(false);
     expect(snapshotAfterClear.qqMusicAccountReady).toBe(true);
-    expect(snapshotAfterClear.musicAccounts?.qq?.nickname).toBe("QQ用户");
+    const accountsAfterClear = lastEvent<SonGuessrPrivateState>(
+      host,
+      "song.game.privateState"
+    ).musicAccounts;
+    expect(accountsAfterClear?.netease).toBeUndefined();
+    expect(accountsAfterClear?.qq?.nickname).toBe("QQ用户");
   });
 
   test("配置双平台账号后单人自动模式开局正常，不触发 cookie?.trim 崩溃且凭据正确解构", async () => {
@@ -539,7 +550,13 @@ describe("SonGuessr service 音乐认证意图", () => {
 
     snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.qqMusicAccountReady).toBe(false);
-    expect(snapshot.musicAccounts?.qq).toBeUndefined();
+    // 失效的号留在池里（关闭并标记需要重登），号主在私有态里仍能看到自己的号。
+    expect(snapshot.musicPool?.find((entry) => entry.platform === "qq")).toMatchObject({
+      enabled: false,
+    });
+    expect(
+      lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").musicAccounts?.qq
+    ).toBeDefined();
   });
 
   test("开局复核发现凭据失效时，账号留在面板里关闭并标记需要重登", async () => {
