@@ -99,11 +99,60 @@ describe("first-screen-budget", () => {
 
   it("点名每一项越界的预算，不误报未越界的", () => {
     const { metrics, violations } = analyze(build({ faces: 400, logoBytes: 900_000 }));
-    expect(violations.map((v) => v.key).sort()).toEqual(["entryFontFaceRules", "logoBytes"]);
+    // 入口样式表里的 400 条声明同时也计入「全部样式表」口径，所以两条条数预算一起越界。
+    expect(violations.map((v) => v.key).sort()).toEqual([
+      "emittedFontFaceRules",
+      "entryFontFaceRules",
+      "logoBytes",
+    ]);
     // 400 条结构重复的 @font-face 只让「条数」越界，字节仍在上限内：
     // 条数与字节是两条独立口径，这条就是它们没被写混的证据。
     expect(metrics.entryCssGzBytes).toBeLessThan(BUDGETS.entryCssGzBytes);
     expect(metrics.faviconBytes).toBeLessThanOrEqual(BUDGETS.faviconBytes);
+  });
+
+  it("扩展口径：原始体积、单个字体文件、图片、重复文件与整体体积各按自己的口径量", () => {
+    const { htmlText, files } = build();
+    files.set("big.woff2", Buffer.alloc(5000, 3));
+    files.set("a.webp", Buffer.alloc(300, 9));
+    files.set("b.webp", Buffer.alloc(300, 9)); // 与 a.webp 逐字节相同：算一份重复
+    const { metrics } = analyze({ htmlText, files });
+    expect(metrics.maxFontFileBytes).toBe(5000);
+    expect(metrics.emittedFontFaceRules).toBe(1);
+    expect(metrics.entryCssRawBytes).toBe(Buffer.byteLength(build().css));
+    expect(metrics.entryJsGraphRawBytes).toBe(
+      Buffer.byteLength("console.log(1)".repeat(64)) +
+        Buffer.byteLength("console.log(2)".repeat(256))
+    );
+    // 夹具里 logo 与 favicon 恰好同为 1024 个 1，也算一份重复。
+    expect(metrics.duplicateAssetBytes).toBe(300 + 1024);
+    expect(metrics.emittedImageBytes).toBe(1024 + 1024 + 300 + 300);
+    const total = [...files.values()].reduce((sum, bytes) => sum + bytes.length, 0);
+    expect(metrics.distTotalBytes).toBe(total);
+  });
+
+  it("整个 dist 的口径来自递归遍历：assets 之外的图片与重复拷贝也算", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "first-screen-budget-"));
+    try {
+      const { htmlText, files } = build();
+      await mkdir(join(dir, "assets"), { recursive: true });
+      await mkdir(join(dir, "stickers"), { recursive: true });
+      await mkdir(join(dir, "emojis"), { recursive: true });
+      await writeFile(join(dir, "index.html"), htmlText);
+      for (const [name, bytes] of files) await writeFile(join(dir, "assets", name), bytes);
+      const picture = Buffer.alloc(2048, 5);
+      await writeFile(join(dir, "stickers", "x.webp"), picture);
+      await writeFile(join(dir, "emojis", "x.webp"), picture);
+      const { readDist } = await import("../../scripts/first-screen-budget.mjs");
+      const { dist } = await readDist(dir);
+      // 另有夹具里 logo 与 favicon 同为 1024 个 1 的一份重复。
+      expect(dist.duplicateBytes).toBe(2048 + 1024);
+      expect(dist.imageBytes).toBeGreaterThanOrEqual(2048 * 2);
+      const written = [...files.values()].reduce((sum, bytes) => sum + bytes.length, 0);
+      expect(dist.totalBytes).toBe(Buffer.byteLength(htmlText) + written + 2048 * 2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("命令行只在越界时退出码 1，并把那一项点名到 stderr", async () => {

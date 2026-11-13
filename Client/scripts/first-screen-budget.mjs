@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
@@ -12,23 +13,38 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  * 有意识地做小某项时连同数字一起改小，做大了就在提交说明里写清理由与实测幅度。
  */
 export const BUDGETS = {
-  /** 渲染阻塞样式表：实测 129,518B gz；全量 cmap 分片带来 214 条 @font-face，未命中分片只影响 CSS 规则、不下载字体。 */
-  entryCssGzBytes: 135_000,
-  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 311.3KB gz（展示版本号改构建期注入后 −5KB）。 */
-  entryJsGraphGzBytes: 321_000,
-  /** 单个路由分片：实测最大 SonGuessrRoomPage 约 135.1KB gz。 */
+  /** 渲染阻塞样式表：实测 23.1KB gz。中文字体声明（占原先 82%）已移到非阻塞的 fonts.css，不要再把它们放回主样式表。 */
+  entryCssGzBytes: 24_500,
+  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 215.5KB gz（Sentry SDK 改空闲时加载后 −90KB）。 */
+  entryJsGraphGzBytes: 226_000,
+  /** 单个路由分片：实测最大 SonGuessrRoomPage 约 136.9KB gz。 */
   largestChunkGzBytes: 139_000,
-  /** 入口样式表里的 @font-face 条数：实测 214 条（全量 sans 93、mono 9、衬线 101、其余拉丁 11）。 */
-  entryFontFaceRules: 224,
-  /** 产物里的 woff2 个数与总字节：实测 217 个 / 38,413,228B；全量字符集分片，未命中分片不会加载。 */
+  /** 渲染阻塞样式表里的 @font-face 条数：中文字体声明已移到非阻塞的 fonts.css，这里只剩拉丁字体的少数几条。 */
+  entryFontFaceRules: 14,
+  /** 全部样式表里的 @font-face 条数：文楷两字重各 48 片加等宽 3 片、Noto Serif 101、拉丁 11，实测 214。 */
+  emittedFontFaceRules: 222,
+  /** 产物里的 woff2 个数与总字节：实测 217 个 / 27.45MB；全量字符集分片，未命中分片不会加载。 */
   emittedFontFiles: 220,
-  emittedFontBytes: 42_000_000,
+  emittedFontBytes: 28_800_000,
+  /**
+   * 单个字体文件的字节：它就是「页面里冒出一个冷僻字要多下多少」的上限。
+   * 实测最大约 0.76MB（最稀有、按码位切的大片，笔画最繁的字）；常用与次常用层都在 0.12MB 以内。
+   */
+  maxFontFileBytes: 800_000,
+  /** 入口 HTML 直取与 modulepreload 的 JS 图、渲染阻塞样式表的原始（未压缩）体积：gzip 之外再守解析与执行成本。 */
+  entryJsGraphRawBytes: 685_000,
+  entryCssRawBytes: 140_000,
+  /** 整个 dist 的总字节、图片总字节、内容逐字节相同的重复文件所占字节（表情图公共路径与哈希路径各存一份）。 */
+  distTotalBytes: 39_500_000,
+  emittedImageBytes: 6_100_000,
+  duplicateAssetBytes: 2_650_000,
   /** 按显示尺寸出档的资源（见 prepare-public-webp 的 DISPLAY_MAX_HEIGHT_PX）。 */
   logoBytes: 220_000,
   faviconBytes: 4_000,
 };
 
 const ASSET_PATTERN = /\.(?:css|js|woff2?|webp)$/;
+const IMAGE_PATTERN = /\.(?:webp|png|jpe?g|gif|svg|avif)$/i;
 const assetName = (href) => (href ?? "").split("?")[0].replace(/^\/assets\//, "");
 const hrefOf = (tag) => (tag.match(/(?:href|src)=["']([^"']+)["']/i) || [])[1];
 
@@ -43,7 +59,24 @@ const blockingStylesheets = (tags) =>
  * 纯函数：吃 index.html 文本与 `assets/` 下的文件字节，吐出口径一致的度量。
  * 与构建解耦是为了让「超限必须报错」这条能被确定性地测到，不必每次真构建。
  */
-export function analyze({ htmlText, files, budgets = BUDGETS }) {
+/** 没有整个 dist 的信息时（只给了 assets 下的文件），退而用这些文件自己估算整体口径。 */
+function summarizeFiles(files) {
+  let totalBytes = 0;
+  let imageBytes = 0;
+  const seen = new Map();
+  let duplicateBytes = 0;
+  for (const [name, bytes] of files) {
+    totalBytes += bytes.length;
+    if (IMAGE_PATTERN.test(name)) imageBytes += bytes.length;
+    const digest = createHash("sha1").update(bytes).digest("hex");
+    if (seen.has(digest)) duplicateBytes += bytes.length;
+    else seen.set(digest, name);
+  }
+  return { totalBytes, imageBytes, duplicateBytes };
+}
+
+export function analyze({ htmlText, files, dist, budgets = BUDGETS }) {
+  const overall = dist ?? summarizeFiles(files);
   const gzOf = (name) => {
     const bytes = files.get(name);
     if (!bytes) throw new Error(`入口 HTML 引用的产物不存在：assets/${name}`);
@@ -60,6 +93,12 @@ export function analyze({ htmlText, files, budgets = BUDGETS }) {
     .map((name) => ({ name, gz: gzOf(name) }))
     .sort((a, b) => b.gz - a.gz);
   const fonts = [...files.entries()].filter(([name]) => /\.woff2?$/.test(name));
+  const rawOf = (name) => {
+    const bytes = files.get(name);
+    if (!bytes) throw new Error(`入口 HTML 引用的产物不存在：assets/${name}`);
+    return bytes.length;
+  };
+  const fontFaceCount = (bytes) => (bytes.toString("utf8").match(/@font-face\s*\{/g) || []).length;
 
   const metrics = {
     entryCssGzBytes: css.reduce((total, name) => total + gzOf(name), 0),
@@ -77,7 +116,16 @@ export function analyze({ htmlText, files, budgets = BUDGETS }) {
         ).length,
       0
     ),
+    emittedFontFaceRules: [...files.entries()]
+      .filter(([name]) => name.endsWith(".css"))
+      .reduce((total, [, bytes]) => total + fontFaceCount(bytes), 0),
     emittedFontFiles: fonts.length,
+    maxFontFileBytes: fonts.reduce((max, [, bytes]) => Math.max(max, bytes.length), 0),
+    entryJsGraphRawBytes: js.reduce((total, name) => total + rawOf(name), 0),
+    entryCssRawBytes: css.reduce((total, name) => total + rawOf(name), 0),
+    distTotalBytes: overall.totalBytes,
+    emittedImageBytes: overall.imageBytes,
+    duplicateAssetBytes: overall.duplicateBytes,
     emittedFontBytes: fonts.reduce((total, [, bytes]) => total + bytes.length, 0),
     logoBytes: files.get("logo.webp")?.length ?? 0,
     faviconBytes: files.get("favicon.webp")?.length ?? 0,
@@ -103,7 +151,33 @@ export async function readDist(distDir) {
   const names = (await readdir(assetDir)).filter((name) => ASSET_PATTERN.test(name));
   const files = new Map();
   for (const name of names) files.set(name, await readFile(path.join(assetDir, name)));
-  return { htmlText, files };
+  return { htmlText, files, dist: await summarizeDist(distDir) };
+}
+
+/** 整个 dist 的体积口径：总字节、图片总字节、内容相同的重复文件所占字节。 */
+async function summarizeDist(distDir) {
+  const all = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) all.push(full);
+    }
+  };
+  await walk(distDir);
+  let totalBytes = 0;
+  let imageBytes = 0;
+  let duplicateBytes = 0;
+  const seen = new Set();
+  for (const file of all) {
+    const bytes = await readFile(file);
+    totalBytes += bytes.length;
+    if (IMAGE_PATTERN.test(file)) imageBytes += bytes.length;
+    const digest = createHash("sha1").update(bytes).digest("hex");
+    if (seen.has(digest)) duplicateBytes += bytes.length;
+    else seen.add(digest);
+  }
+  return { totalBytes, imageBytes, duplicateBytes };
 }
 
 const format = (n) => n.toLocaleString("en-US");
@@ -114,8 +188,10 @@ export async function checkFirstScreenBudget(distDir = path.join(clientDir, "dis
     `入口阻塞 CSS  ${format(metrics.entryCssGzBytes)} B gz · 上限 ${format(BUDGETS.entryCssGzBytes)}`,
     `入口 JS 图    ${format(metrics.entryJsGraphGzBytes)} B gz · 上限 ${format(BUDGETS.entryJsGraphGzBytes)}`,
     `最大分片      ${format(metrics.largestChunkGzBytes)} B gz（${metrics.largestChunkName}）· 上限 ${format(BUDGETS.largestChunkGzBytes)}`,
-    `@font-face    ${metrics.entryFontFaceRules} 条 · 上限 ${BUDGETS.entryFontFaceRules}`,
-    `woff2         ${metrics.emittedFontFiles} 个 / ${format(metrics.emittedFontBytes)} B · 上限 ${BUDGETS.emittedFontFiles} 个 / ${format(BUDGETS.emittedFontBytes)}`,
+    `@font-face    阻塞样式表 ${metrics.entryFontFaceRules} 条 · 上限 ${BUDGETS.entryFontFaceRules}；全部样式表 ${metrics.emittedFontFaceRules} 条 · 上限 ${BUDGETS.emittedFontFaceRules}`,
+    `woff2         ${metrics.emittedFontFiles} 个 / ${format(metrics.emittedFontBytes)} B · 上限 ${BUDGETS.emittedFontFiles} 个 / ${format(BUDGETS.emittedFontBytes)}；最大单文件 ${format(metrics.maxFontFileBytes)} B · 上限 ${format(BUDGETS.maxFontFileBytes)}`,
+    `原始体积      入口 JS 图 ${format(metrics.entryJsGraphRawBytes)} B · 上限 ${format(BUDGETS.entryJsGraphRawBytes)}；阻塞 CSS ${format(metrics.entryCssRawBytes)} B · 上限 ${format(BUDGETS.entryCssRawBytes)}`,
+    `整体          dist ${format(metrics.distTotalBytes)} B · 上限 ${format(BUDGETS.distTotalBytes)}；图片 ${format(metrics.emittedImageBytes)} B · 上限 ${format(BUDGETS.emittedImageBytes)}；重复文件 ${format(metrics.duplicateAssetBytes)} B · 上限 ${format(BUDGETS.duplicateAssetBytes)}`,
     `出档资源      logo ${format(metrics.logoBytes)} B · 上限 ${format(BUDGETS.logoBytes)}；favicon ${format(metrics.faviconBytes)} B · 上限 ${format(BUDGETS.faviconBytes)}`,
   ];
   return { metrics, violations, lines };
