@@ -96,7 +96,7 @@ export function SendThrow({
     <motion.div
       ref={nodeRef}
       aria-hidden="true"
-      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
+      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-bubble-self px-3 text-sm text-bubble-self-foreground shadow-2xs"
       style={{
         left: anchor.left,
         top: anchor.top,

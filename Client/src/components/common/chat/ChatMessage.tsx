@@ -38,7 +38,7 @@ function MessageText({
             className={cn(
               "rounded-md px-1 font-medium",
               isMe && !isGhost
-                ? "bg-primary-foreground/20"
+                ? "bg-bubble-self-foreground/20"
                 : // 他人气泡上主色作文字对比度不足（DesignGuide §3），浅底标出提及，文字保持正文色。
                   "bg-primary/10 text-foreground"
             )}
@@ -136,7 +136,7 @@ export function MessageBubble({
           isMe
             ? isGhost
               ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
-              : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
+              : "rounded-br-sm bg-bubble-self text-bubble-self-foreground shadow-2xs selection:bg-bubble-self-foreground selection:text-bubble-self"
             : isGhost
               ? // 半透明底上再叠透明度会把对比度压到线下，降档用语义色而不是 alpha。
                 "rounded-bl-sm bg-muted/40 border border-dashed border-border text-muted-foreground"

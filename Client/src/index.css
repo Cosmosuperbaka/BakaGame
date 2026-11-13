@@ -50,6 +50,8 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --color-panel: var(--panel);
+  --color-bubble-self: var(--bubble-self);
+  --color-bubble-self-foreground: var(--bubble-self-foreground);
 
   /* 状态语义色。裁剪变体（`bg-success/10` 等）由 Tailwind 的透明度修饰符派生，
      不再逐个手写底色与边框，避免同一含义出现两套深浅。 */
@@ -167,6 +169,9 @@
   /* 房间页三个工作面板的表面色：比页面底色略暗，避免大面积高亮；
      同时与 muted 保持可辨差值，使面板内的小块控件仍能浮起。 */
   --panel: oklch(0.943 0.0168 87);
+  /* 聊天里本人发出的气泡（含发送时飞出的那枚影子）。亮色就是主色实底；暗色见 .dark。 */
+  --bubble-self: var(--primary);
+  --bubble-self-foreground: var(--primary-foreground);
   /* 状态语义色。见 DesignGuide §3：绿=成功/完成，琥珀=提示/测试，
      天蓝=补充发言与平民、好人阵营，红=危险/断线/淘汰（复用 destructive），紫=出题人。
      底色与边框由透明度修饰符派生（`bg-success/10`、`border-success/40`），
@@ -264,6 +269,11 @@
   --sidebar-border: oklch(0.3795 0.0181 57.128);
   --sidebar-ring: oklch(0.745 0.0581 66.6967);
   --panel: oklch(0.308 0.0148 58);
+  /* 暗色主色为了作文字读得清抬到很亮，整块铺成本人气泡就成了房间页最亮的大块，抢走游戏区的焦点。
+     本人气泡改取主色在面板上的一层不透明暖底，配正文色：仍与他人气泡（凹陷档）一眼分得开，
+     飞出的影子与落定的气泡同一种颜色，交接处不跳色。 */
+  --bubble-self: color-mix(in oklab, var(--primary) 30%, var(--panel));
+  --bubble-self-foreground: var(--foreground);
   /* 状态语义色在暗色下抬高明度，与亮色同一口径标定：在 background、card、panel、secondary、muted
      上，以及叠在 background、card、panel、muted 上的自身 `/10` 浅底上，文字均不低于 4.5:1（含纸纹理）。
      暗色主题向玩家开放，悬停行与浮层高亮（secondary）里同样会出现状态文字，因此这一档也纳入标定；
