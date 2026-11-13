@@ -167,7 +167,7 @@ try {
     if (!sitemapXml.includes(`<loc>${loc}</loc>`)) throw new Error(`sitemap.xml 缺少 ${loc}`);
   }
 
-  const ogImages = ["/og/logo.jpg", "/og/Faker.jpg", "/og/SongGuessr.jpg", "/og/CEE.jpg"];
+  const ogImages = ["/og/og-home.jpg", "/og/og-faker.jpg", "/og/og-song.jpg", "/og/og-cee.jpg"];
   for (const og of ogImages) await assertAsset(og, "image/jpeg");
 
   const htmlFiles = files.filter((file) => file.endsWith(".html"));

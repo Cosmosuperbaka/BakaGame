@@ -83,7 +83,7 @@ describe("Seo", () => {
       ).toBe("BakaGame");
       expect(
         document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")
-      ).toBe("https://game.baka.website/og/SongGuessr.jpg");
+      ).toBe("https://game.baka.website/og/og-song.jpg");
       expect(
         document.head.querySelector('meta[name="twitter:card"]')?.getAttribute("content")
       ).toBe("summary_large_image");

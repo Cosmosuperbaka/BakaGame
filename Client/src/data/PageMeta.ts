@@ -27,6 +27,17 @@ export const SITE_TAGLINE = `${SITE_SLOGAN}。`;
  * 公开代码仓库。页脚外链、提交历史的取数接口与提交页跳转都从这里取，
  * 免得同一串地址在三个地方各写一份、改一处漏两处。
  */
+/**
+ * 分享卡片尺寸：大图卡片的通行规格。源图由 `scripts/og-cards.mjs` 按这个尺寸出图，
+ * 构建期逐张校验，尺寸不对直接失败；head 里的 og:image:width / height 也取这里。
+ */
+export const OG_IMAGE_WIDTH = 1200;
+export const OG_IMAGE_HEIGHT = 630;
+
+/** 未登记页面（房间、运行时页）的分享图：站点卡片。 */
+const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/og/og-home.jpg`;
+const DEFAULT_OG_IMAGE_ALT = "BakaGame 分享卡片：站名与谁是卧底、听歌猜歌、猜动漫角色三款游戏";
+
 export const REPOSITORY_URL = "https://github.com/Cosmosuperbaka/BakaGame";
 
 /** 静态外壳：不执行 JS 的爬虫（百度为主）能读到的正文。 */
@@ -60,6 +71,11 @@ export interface PageMeta {
   /** 短名：面包屑与站内链接文字用，不带站名后缀 */
   shortTitle: string;
   /**
+   * 一句话简介：首页游戏卡片下的那一行与分享卡片上的那一行，只写事实，不写口号。
+   * 只有首页与三款游戏有。
+   */
+  oneLiner?: string;
+  /**
    * 站点地图的 lastmod（YYYY-MM-DD）。只在页面文案或结构有显著变更时更新：
    * 每次构建都刷新会让搜索引擎判定该字段不可信，进而整体忽略它（不写比写错好）。
    */
@@ -69,10 +85,12 @@ export interface PageMeta {
   /**
    * 社交媒体分享图（og:image）。本站图统一用 `${SITE_ORIGIN}/og/<名>.jpg`：
    * 全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图；
-   * 构建期 `seo-artifacts` 插件会从 `public/assets/<名>.*` 的同名源图转出 jpg。
-   * 也接受外链绝对地址（原样使用，不转制）。
+   * 构建期 `seo-artifacts` 插件从 `src/assets/og/<名>.png`（`scripts/og-cards.mjs` 出的卡片）
+   * 转出 jpg，并校验尺寸为 OG_IMAGE_WIDTH × OG_IMAGE_HEIGHT。
    */
   image?: string;
+  /** 分享图的替代文字（og:image:alt）：写图上画了什么 */
+  imageAlt?: string;
   /** 供爬虫索引与归类的关键词列表（用户不可见） */
   keywords?: string[];
   /**
@@ -122,9 +140,11 @@ export const PAGE_META: PageMeta[] = [
     path: "/",
     title: `${SITE_NAME} - ${SITE_SLOGAN}`,
     shortTitle: SITE_NAME,
+    oneLiner: "谁是卧底、听歌猜歌、猜动漫角色",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、听歌猜歌、猜动漫角色。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
-    image: `${SITE_ORIGIN}/og/logo.jpg`,
+    image: `${SITE_ORIGIN}/og/og-home.jpg`,
+    imageAlt: DEFAULT_OG_IMAGE_ALT,
     keywords: [
       "BakaGame",
       "二次元小游戏",
@@ -234,9 +254,11 @@ export const PAGE_META: PageMeta[] = [
     path: "/whoisfaker",
     title: `谁是卧底 Who is Faker - ${SITE_NAME}`,
     shortTitle: "谁是卧底 Who is Faker",
+    oneLiner: "出题人现场写词的谁是卧底",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Who is Faker 是出题人现场写词的谁是卧底，5 人起。投票后入夜：平民动刀，倒下的是自己。满 8 人可加白板和天使。`,
-    image: `${SITE_ORIGIN}/og/Faker.jpg`,
+    image: `${SITE_ORIGIN}/og/og-faker.jpg`,
+    imageAlt: "Who is Faker 分享卡片：游戏图标与谁是卧底字样",
     keywords: [
       "谁是卧底",
       "谁是卧底怎么玩",
@@ -335,9 +357,11 @@ export const PAGE_META: PageMeta[] = [
     path: "/songuessr",
     title: `听歌猜歌 Songuessr：听歌识曲与听歌识番 - ${SITE_NAME}`,
     shortTitle: "听歌猜歌 Songuessr",
+    oneLiner: "听歌识曲，也听歌识番",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Songuessr 听歌猜歌：听一段音乐猜歌名，或猜 OP、ED 出自哪部番。能和朋友比，也能一个人练，还能用自己的歌单出题。`,
-    image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
+    image: `${SITE_ORIGIN}/og/og-song.jpg`,
+    imageAlt: "Songuessr 分享卡片：游戏图标与听歌猜歌字样",
     keywords: [
       "Songuessr",
       "听歌猜歌",
@@ -438,9 +462,11 @@ export const PAGE_META: PageMeta[] = [
     path: "/cee",
     title: `猜动漫角色 CEE（猜猜呗增强版） - ${SITE_NAME}`,
     shortTitle: "猜动漫角色 CEE",
+    oneLiner: "二刺猿笑传之猜猜呗增强版",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房猜同一个动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
-    image: `${SITE_ORIGIN}/og/CEE.jpg`,
+    image: `${SITE_ORIGIN}/og/og-cee.jpg`,
+    imageAlt: "CEE 分享卡片：游戏图标与猜动漫角色字样",
     keywords: [
       "CEE",
       "二刺猿笑传之猜猜呗",
@@ -548,7 +574,8 @@ export const PAGE_META: PageMeta[] = [
     shortTitle: `关于 ${SITE_NAME}`,
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 的更新日志、提交历史、开源致谢、隐私说明与用户条款都在这一页，每个前端依赖的许可证原文都能按包查看。`,
-    image: `${SITE_ORIGIN}/og/logo.jpg`,
+    image: `${SITE_ORIGIN}/og/og-home.jpg`,
+    imageAlt: DEFAULT_OG_IMAGE_ALT,
     keywords: [
       "BakaGame 开源",
       "BakaGame 更新日志",
@@ -620,6 +647,7 @@ export interface HeadTagInput {
   title: string;
   description: string;
   image?: string;
+  imageAlt?: string;
   keywords?: string[];
   indexable: boolean;
 }
@@ -630,7 +658,10 @@ export interface HeadTagInput {
  */
 export function buildHeadTags(input: HeadTagInput): HeadTag[] {
   const canonical = `${SITE_ORIGIN}${input.path}`;
-  const image = input.image ?? `${SITE_ORIGIN}/og/logo.jpg`;
+  const image = input.image ?? DEFAULT_OG_IMAGE;
+  const imageAlt = input.image ? input.imageAlt : DEFAULT_OG_IMAGE_ALT;
+  // 站内分享卡片都按同一尺寸出图（构建期校验），宽高可以直接写；外链图尺寸未知，不写。
+  const isSiteCard = image.startsWith(`${SITE_ORIGIN}/og/`);
   const meta = (attrs: Record<string, string>): HeadTag => ({ kind: "meta", attrs });
   return [
     meta({ name: "description", content: input.description }),
@@ -644,11 +675,19 @@ export function buildHeadTags(input: HeadTagInput): HeadTag[] {
     meta({ property: "og:title", content: input.title }),
     meta({ property: "og:description", content: input.description }),
     meta({ property: "og:image", content: image }),
+    ...(isSiteCard
+      ? [
+          meta({ property: "og:image:width", content: String(OG_IMAGE_WIDTH) }),
+          meta({ property: "og:image:height", content: String(OG_IMAGE_HEIGHT) }),
+        ]
+      : []),
+    ...(imageAlt ? [meta({ property: "og:image:alt", content: imageAlt })] : []),
     meta({ property: "og:url", content: canonical }),
     meta({ name: "twitter:card", content: "summary_large_image" }),
     meta({ name: "twitter:title", content: input.title }),
     meta({ name: "twitter:description", content: input.description }),
     meta({ name: "twitter:image", content: image }),
+    ...(imageAlt ? [meta({ name: "twitter:image:alt", content: imageAlt })] : []),
   ];
 }
 

@@ -1,63 +1,68 @@
-/** 输出 OG 分享图等 SEO 构建产物。 */
-// ==================== Vite 插件：SEO 产物生成（站点地图与分享图） ====================
-// 两个产物、同一个来源：PageMeta。
-//
-// 站点地图曾手写在 public/sitemap.xml：新增可收录页面靠人记得同步，漏改没有任何报错，
-// 而缺页只会让搜索引擎更晚发现新内容——静默漂移。改为构建末尾按 PAGE_META 生成，
-// URL 集合回到单一真相源；lastmod 由各页在文案显著变更时手动维护，不随构建刷新
-// （每次构建都变的 lastmod 会被搜索引擎判定不可信，进而整体忽略）。
-//
-// 分享图：全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图。
-// 这里为 PageMeta.image 指向的每张站内分享图转制一份 jpg（/og/<名>.jpg，源图为
-// public/assets 下的同名文件，png / jpg / gif / webp 均可；gif 取第一帧）。
-// 外链分享图原样放行，不转制。
+/**
+ * SEO 构建产物：站点地图与分享图。两个产物、同一个来源：PageMeta。
+ *
+ * 站点地图曾手写在 public/sitemap.xml：新增可收录页面靠人记得同步，漏改没有任何报错，
+ * 而缺页只会让搜索引擎更晚发现新内容——静默漂移。改为构建末尾按 PAGE_META 生成，
+ * URL 集合回到单一真相源；lastmod 由各页在文案显著变更时手动维护，不随构建刷新
+ * （每次构建都变的 lastmod 会被搜索引擎判定不可信，进而整体忽略）。
+ *
+ * 分享图：源图是 `scripts/og-cards.mjs` 出的 1200×630 卡片（src/assets/og/<名>.png，提交进仓库，
+ * 构建环境不需要浏览器）。全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，
+ * 所以这里为 PageMeta.image 指向的每张卡片转一份 jpg（/og/<名>.jpg），并逐张校验尺寸：
+ * 尺寸不对的卡片在大图卡片里会被裁切或退化成小缩略图，坏了没有任何报错，只能在构建时拦下。
+ */
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
-import { PAGE_META, SITE_ORIGIN } from "../../src/data/PageMeta.ts";
+import {
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  PAGE_META,
+  SITE_ORIGIN,
+} from "../../src/data/PageMeta.ts";
 
 const OG_IMAGE_ROUTE = "/og/";
-const OG_SOURCE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+const OG_SOURCE_DIR = path.resolve(import.meta.dirname, "../../src/assets/og");
 
 /**
- * 收集「目标名 → 源文件」。
+ * 收集要转制的卡片名。
  *
- * 多个页面可以共用同一张分享图（首页与 /abouts 都用 logo.jpg），所以这里按名字去重：
- * 同一个目标路径不能交给两路 sharp 并发写 —— 写完的那路与截断的那路重叠，
- * 紧接着的 size 检查会读到 0 字节，报「分享图是空文件」，而源图与产物本身都没问题。
- * 校验仍然对每个页面各做一次，只有落盘按唯一目标执行。
+ * 多个页面可以共用同一张分享图（首页与 /abouts 都用 og-home.jpg），所以这里按名字去重：
+ * 同一个目标路径不能交给两路 sharp 并发写——写完的那路与截断的那路重叠，紧接着的校验会读到坏文件。
  */
-function collectOgTargets(sourceDir: string): Map<string, string> {
-  const sourceFiles = fs.readdirSync(sourceDir);
+function collectOgTargets(): Set<string> {
   const ogPrefix = `${SITE_ORIGIN}${OG_IMAGE_ROUTE}`;
-  const targets = new Map<string, string>();
-
+  const targets = new Set<string>();
   for (const page of PAGE_META) {
     const image = page.image;
-    if (!image || !image.startsWith(SITE_ORIGIN)) continue; // 未配置或外链分享图原样使用
-
-    if (!image.startsWith(ogPrefix) || !image.endsWith(".jpg")) {
-      console.warn(
-        `SEO 产物：${page.path} 的分享图不在 /og/*.jpg 约定下（${image}），未转制——` +
-          "部分分享抓取器（如 QQ）可能因格式不受支持而显示不出图。"
+    if (!image || !image.startsWith(ogPrefix) || !image.endsWith(".jpg")) {
+      throw new Error(
+        `SEO 产物：${page.path} 的分享图必须是站内 /og/<名>.jpg（${image ?? "未配置"}）`
       );
-      continue;
     }
-
     const name = image.slice(ogPrefix.length, -".jpg".length);
-    if (targets.has(name)) continue;
-    const sourceFile = sourceFiles.find(
-      (file) =>
-        path.parse(file).name === name &&
-        OG_SOURCE_EXTENSIONS.includes(path.extname(file).toLowerCase())
-    );
-    if (!sourceFile) {
-      throw new Error(`SEO 产物：${page.path} 的分享图找不到同名源图（public/assets/${name}.*）`);
+    if (!fs.existsSync(path.join(OG_SOURCE_DIR, `${name}.png`))) {
+      throw new Error(`SEO 产物：${page.path} 的分享图找不到源图（src/assets/og/${name}.png）`);
     }
-    targets.set(name, sourceFile);
+    targets.add(name);
   }
-
   return targets;
+}
+
+/** 转制一张卡片并回读校验：尺寸必须正好是分享卡片规格。 */
+async function produceOgImage(distDir: string, name: string): Promise<string> {
+  const target = path.join(distDir, "og", `${name}.jpg`);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  await sharp(path.join(OG_SOURCE_DIR, `${name}.png`))
+    .jpeg({ quality: 88 })
+    .toFile(target);
+  const { width, height } = await sharp(target).metadata();
+  if (width !== OG_IMAGE_WIDTH || height !== OG_IMAGE_HEIGHT) {
+    throw new Error(
+      `SEO 产物：分享图 ${name}.jpg 是 ${width}×${height}，必须是 ${OG_IMAGE_WIDTH}×${OG_IMAGE_HEIGHT}`
+    );
+  }
+  return `${OG_IMAGE_ROUTE}${name}.jpg`;
 }
 
 export function seoArtifactsPlugin() {
@@ -115,21 +120,8 @@ export function seoArtifactsPlugin() {
       }
 
       // ---- 分享图 ----
-      const sourceDir = path.resolve(import.meta.dirname, "../../public/assets");
-      const targets = collectOgTargets(sourceDir);
-
       const producedImages = await Promise.all(
-        [...targets].map(async ([name, sourceFile]) => {
-          const target = path.join(distDir, "og", `${name}.jpg`);
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          // 分享卡片本来就是静态图：gif 源只取第一帧（sharp 默认行为）。
-          await sharp(path.join(sourceDir, sourceFile)).jpeg({ quality: 88 }).toFile(target);
-
-          if (fs.statSync(target).size === 0) {
-            throw new Error(`SEO 产物：分享图 ${name}.jpg 是空文件`);
-          }
-          return `${OG_IMAGE_ROUTE}${name}.jpg`;
-        })
+        [...collectOgTargets()].map((name) => produceOgImage(distDir, name))
       );
 
       console.log(

@@ -92,6 +92,7 @@ export function Seo({
     title: resolvedTitle,
     description: resolvedDescription,
     image: image ?? meta?.image,
+    imageAlt: image ? undefined : meta?.imageAlt,
     keywords: keywords ?? meta?.keywords,
     indexable,
   });

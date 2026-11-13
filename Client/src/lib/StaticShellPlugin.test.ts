@@ -81,6 +81,20 @@ describe("登记页的静态外壳", () => {
   });
 });
 
+describe("分享卡片字段", () => {
+  it("写出分享图的宽高与替代文字", () => {
+    for (const meta of PAGE_META) {
+      const file = meta.path === "/" ? "index.html" : `${meta.path.slice(1)}.html`;
+      const head = parse(readDist(file)).head;
+      const content = (selector: string) => head.querySelector(selector)?.getAttribute("content");
+      expect(content('meta[property="og:image:width"]'), meta.path).toBe("1200");
+      expect(content('meta[property="og:image:height"]'), meta.path).toBe("630");
+      expect(content('meta[property="og:image:alt"]'), meta.path).toBe(meta.imageAlt);
+      expect(content('meta[name="twitter:image:alt"]'), meta.path).toBe(meta.imageAlt);
+    }
+  });
+});
+
 const jsonLd = (file: string, id: string) => {
   const script = parse(readDist(file)).getElementById(id);
   return script ? JSON.parse(script.textContent ?? "") : null;
