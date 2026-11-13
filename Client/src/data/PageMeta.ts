@@ -10,8 +10,11 @@
  * 在构建期（Node 环境）也要读它。结构化数据用纯字面量表达，避免把组件层的类型带进来。
  */
 
+import { SITE_NAME, SITE_PAGE_ENTRIES } from "../../../Server/src/shared/SitePages.ts";
+
 export const SITE_ORIGIN = "https://game.baka.website";
-export const SITE_NAME = "BakaGame";
+// 站名与公开页的路径、短标题是服务端 Agent 地图共用的登记，只在共享契约里写一份。
+export { SITE_NAME };
 
 /** 站点标语本体：首页标题用它，不带句号。 */
 export const SITE_SLOGAN = "1000万以内最好玩的小游戏网站";
@@ -137,9 +140,8 @@ const GAME_ENTITY = {
 
 export const PAGE_META: PageMeta[] = [
   {
-    path: "/",
+    ...SITE_PAGE_ENTRIES.home,
     title: `${SITE_NAME} - ${SITE_SLOGAN}`,
-    shortTitle: SITE_NAME,
     oneLiner: "谁是卧底、听歌猜歌、猜动漫角色",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、听歌猜歌、猜动漫角色。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
@@ -251,9 +253,8 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/whoisfaker",
+    ...SITE_PAGE_ENTRIES.faker,
     title: `谁是卧底 Who is Faker - ${SITE_NAME}`,
-    shortTitle: "谁是卧底 Who is Faker",
     oneLiner: "出题人现场写词的谁是卧底",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Who is Faker 是出题人现场写词的谁是卧底，5 人起。投票后入夜：平民动刀，倒下的是自己。满 8 人可加白板和天使。`,
@@ -354,9 +355,8 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/songuessr",
+    ...SITE_PAGE_ENTRIES.song,
     title: `听歌猜歌 Songuessr：听歌识曲与听歌识番 - ${SITE_NAME}`,
-    shortTitle: "听歌猜歌 Songuessr",
     oneLiner: "听歌识曲，也听歌识番",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}Songuessr 听歌猜歌：听一段音乐猜歌名，或猜 OP、ED 出自哪部番。能和朋友比，也能一个人练，还能用自己的歌单出题。`,
@@ -459,9 +459,8 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/cee",
+    ...SITE_PAGE_ENTRIES.cee,
     title: `猜动漫角色 CEE（猜猜呗增强版） - ${SITE_NAME}`,
-    shortTitle: "猜动漫角色 CEE",
     oneLiner: "二刺猿笑传之猜猜呗增强版",
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房一起猜动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
@@ -569,9 +568,8 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/abouts",
+    ...SITE_PAGE_ENTRIES.abouts,
     title: `关于 ${SITE_NAME}：更新日志、开源致谢与隐私条款`,
-    shortTitle: `关于 ${SITE_NAME}`,
     lastmod: "2026-11-14",
     description: `${SITE_TAGLINE}BakaGame 的更新日志、提交历史、开源致谢、隐私说明与用户条款都在这一页，每个前端依赖的许可证原文都能按包查看。`,
     image: `${SITE_ORIGIN}/og/og-home.jpg`,

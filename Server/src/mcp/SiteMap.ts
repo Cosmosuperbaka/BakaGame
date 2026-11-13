@@ -1,9 +1,11 @@
 import type { GameId } from "../shared/Protocol";
+import { SITE_NAME, SITE_PAGE_ENTRIES, lobbyTitleOf } from "../shared/SitePages";
 /**
  * 人类可达的站点位置表：给 Agent 的「地图」。
  *
  * 这里只登记**导航事实**（路径、用途、可达条件），不复制页面内容——页面文案的真相源在
- * `Client/src`，服务端抄一份会立刻漂移。`visit_page` 返回的是简短说明加真实链接，
+ * `Client/src`，服务端抄一份会立刻漂移。公开页的路径与短标题取自共享的站点页登记，
+ * 与客户端页面元信息是同一份。`visit_page` 返回的是简短说明加真实链接，
  * Agent 据此决定下一步（进哪款游戏的大厅、去关于页的哪个 tab），而不是把页面抓下来解析。
  */
 export interface SitePage {
@@ -18,21 +20,21 @@ export interface SitePage {
 
 export const SITE_PAGES: readonly SitePage[] = [
   {
-    path: "/",
-    title: "BakaGame 首页",
+    path: SITE_PAGE_ENTRIES.home.path,
+    title: `${SITE_NAME} 首页`,
     description: "三款游戏入口、客户端下载、友情链接与版本信息。",
     access: "public",
   },
   {
-    path: "/whoisfaker",
-    title: "WhoisFaker 谁是卧底大厅",
+    path: SITE_PAGE_ENTRIES.faker.path,
+    title: lobbyTitleOf(SITE_PAGE_ENTRIES.faker.shortTitle),
     description:
       "语言推理游戏（至少 4 名参战玩家加 1 名出题人）的大厅：查看公开房间、创建房间、加入房间；房内可出题、发言、投票与夜间行动。",
     access: "public",
   },
   {
-    path: "/songuessr",
-    title: "Songuessr 猜歌大厅",
+    path: SITE_PAGE_ENTRIES.song.path,
+    title: lobbyTitleOf(SITE_PAGE_ENTRIES.song.shortTitle),
     description:
       "听歌识曲 / 听歌识番的大厅：查看公开房间、创建房间或加入房间；也可进入 /songuessr/solo 单人练习。",
     access: "public",
@@ -44,14 +46,14 @@ export const SITE_PAGES: readonly SitePage[] = [
     access: "public",
   },
   {
-    path: "/cee",
-    title: "CEE 猜角色大厅",
+    path: SITE_PAGE_ENTRIES.cee.path,
+    title: lobbyTitleOf(SITE_PAGE_ENTRIES.cee.shortTitle),
     description:
       "动漫角色线索推理的大厅：查看公开房间、创建原生房间或加入房间；支持组队、全局 BP 与渐进提示。",
     access: "public",
   },
   {
-    path: "/abouts",
+    path: SITE_PAGE_ENTRIES.abouts.path,
     title: "关于项目",
     description: "开源致谢、更新日志、提交历史、隐私说明与用户条款。",
     access: "public",
@@ -67,9 +69,9 @@ export const SITE_PAGES: readonly SitePage[] = [
 
 /** 游戏标识 → 人类页面路径：两者拼写不同（faker ↔ /whoisfaker），只在映射表里对齐一次。 */
 export const GAME_PATHS = {
-  faker: "/whoisfaker",
-  song: "/songuessr",
-  cee: "/cee",
+  faker: SITE_PAGE_ENTRIES.faker.path,
+  song: SITE_PAGE_ENTRIES.song.path,
+  cee: SITE_PAGE_ENTRIES.cee.path,
 } as const;
 
 export const gamePathOf = (game: GameId): string => GAME_PATHS[game];
