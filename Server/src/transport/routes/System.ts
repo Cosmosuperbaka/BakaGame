@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { safeEqualToken } from "../../domain/Rules";
 
-import type { GameServices } from "../../application/GameRegistry";
+import { eachGame, type GameServices } from "../../application/GameRegistry";
 import { resolveDeploymentEnvironment } from "../../config/env/Observability";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
@@ -165,27 +165,17 @@ export const systemRoutes = ({
           return httpError("RATE_LIMITED", "状态查询过于频繁，请稍后重试", traceIdOf(set.headers));
         }
 
-        const fakerHealth = games?.faker.getHealthSnapshot() ?? {
-          roomCount: 0,
-          connectionCount: 0,
-          onlinePlayerCount: 0,
-        };
-        const sonHealth = games?.song.getHealthSnapshot() ?? {
-          roomCount: 0,
-          connectionCount: 0,
-          onlinePlayerCount: 0,
-        };
-
-        const ceeHealth = games?.cee.getHealthSnapshot() ?? {
-          roomCount: 0,
-          connectionCount: 0,
-          onlinePlayerCount: 0,
-        };
-        const roomCount = fakerHealth.roomCount + sonHealth.roomCount + ceeHealth.roomCount;
-        const connectionCount =
-          fakerHealth.connectionCount + sonHealth.connectionCount + ceeHealth.connectionCount;
-        const onlinePlayerCount =
-          fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ceeHealth.onlinePlayerCount;
+        // 各款的快照逐项求和；没有装配服务时（独立挂载本组路由）三项全为零。
+        let roomCount = 0;
+        let connectionCount = 0;
+        let onlinePlayerCount = 0;
+        if (games)
+          eachGame(games, (_, service) => {
+            const snapshot = service.getHealthSnapshot();
+            roomCount += snapshot.roomCount;
+            connectionCount += snapshot.connectionCount;
+            onlinePlayerCount += snapshot.onlinePlayerCount;
+          });
         // 精确在线数是可被无限轮询的实时经营指标：匿名调用只给一位有效数字的量级，
         // 足够看趋势与「有没有人在玩」，但不构成随时可读的精确计数器。
         // 带维护凭据的调用（运维与探针脚本）拿精确值，口径与 notify-shutdown 一致。
@@ -234,9 +224,7 @@ export const systemRoutes = ({
           return httpError("FORBIDDEN", "运维接口需要维护凭据", traceIdOf(set.headers));
         }
 
-        games?.faker.notifyShutdown();
-        games?.song.notifyShutdown();
-        games?.cee.notifyShutdown();
+        if (games) eachGame(games, (_, service) => service.notifyShutdown());
 
         if (onTriggerShutdown) {
           await onTriggerShutdown();
