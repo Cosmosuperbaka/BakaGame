@@ -2,6 +2,10 @@ import { AggregatedMusicProvider } from "../../src/infrastructure/music/Aggregat
 import {
   MUSIC_POOL_COOLDOWN_MS,
   MUSIC_POOL_MAX_COOLDOWN_MS,
+  MUSIC_POOL_MAX_IN_FLIGHT,
+  MUSIC_POOL_QUEUE_TIMEOUT_MS,
+  musicAuthOperationKey,
+  roomRuntime,
 } from "../../src/application/songuessr/Records";
 import { AppError } from "../../src/domain/Errors";
 import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/MusicProvider";
@@ -20,9 +24,20 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { publishMusicSession } from "../../src/application/songuessr/MusicAuth";
-import { refreshMusicPoolEntry } from "../../src/application/songuessr/MusicSessionRefresh";
-import { releaseMusicAccount } from "../../src/application/songuessr/MusicPool";
+import {
+  beginMusicAuthentication,
+  publishMusicSession,
+  refreshMusicSessionAccount,
+} from "../../src/application/songuessr/MusicAuth";
+import {
+  refreshDueMusicSessions,
+  refreshMusicPoolEntry,
+} from "../../src/application/songuessr/MusicSessionRefresh";
+import {
+  acquireMusicAccount,
+  releaseMusicAccount,
+  wakeMusicPoolWaiters,
+} from "../../src/application/songuessr/MusicPool";
 import {
   SongDetails,
   SongSearchResult,
@@ -1622,6 +1637,302 @@ describe("账号池凭据与开关的竞态边界", () => {
       account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
     });
     await pending;
+    expect(entry.cookie).toBe("MUSIC_U=relogin");
+  });
+
+  test("开局前复核等待期间号主重登，旧凭据的复核结果不覆盖新凭据也不下发", async () => {
+    const service = ownerService();
+    const host = connection(service, "revalidate-race-host");
+    const { room, entry } = await hostEntry(service, host);
+    const refreshedAt = entry.cookieRefreshedAt;
+    type Session = Awaited<ReturnType<MusicProvider["getLoginStatus"] & {}>>;
+    let settle!: (session: Session) => void;
+    const pending = refreshMusicSessionAccount(service.ctx, {
+      room,
+      platform: "netease",
+      entry,
+      label: "网易云",
+      verifySession: () => undefined,
+      getLoginStatus: () => new Promise<Session>((resolve) => (settle = resolve)),
+    });
+    // 重登原地替换同一条目：条目仍在池里，凭据与账号资料都是新的。
+    const reloginAccount = { userId: "u-1", nickname: "重登后", vipStatus: "vip" as const };
+    entry.cookie = "MUSIC_U=relogin";
+    entry.account = { platform: "netease", ...reloginAccount };
+    host.sent.length = 0;
+    settle({
+      cookie: "MUSIC_U=renewed-old",
+      account: { userId: "u-1", nickname: "旧查询带回", vipStatus: "vip" },
+    });
+    await pending;
+    expect(entry.cookie).toBe("MUSIC_U=relogin");
+    expect(entry.account.nickname).toBe("重登后");
+    expect(entry.cookieRefreshedAt).toBe(refreshedAt);
+    expect(
+      host.sent.some((item) => item.type === "event" && item.event === "song.auth.session")
+    ).toBe(false);
+  });
+
+  describe("开局前复核的作废条件", () => {
+    type Session = Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>;
+    /** 复核开始时在途令牌与本次复核一致，各用例再逐条改掉某一个条件。 */
+    const revalidation = async (verifySession: () => void = () => undefined) => {
+      const service = ownerService();
+      const host = connection(service, "revalidate-host");
+      const { room, entry } = await hostEntry(service, host);
+      const operation = Symbol("op");
+      (roomRuntime(room).musicAuthOperations ??= {})[
+        musicAuthOperationKey(entry.playerId, "netease")
+      ] = operation;
+      let settle!: (session: Session) => void;
+      let fail!: (error: unknown) => void;
+      const pending = refreshMusicSessionAccount(service.ctx, {
+        room,
+        platform: "netease",
+        entry,
+        operation,
+        label: "网易云",
+        verifySession,
+        getLoginStatus: () =>
+          new Promise<Session>((resolve, reject) => {
+            settle = resolve;
+            fail = reject;
+          }),
+      });
+      return { service, room, entry, pending, settle, fail };
+    };
+    const renewed: Session = {
+      cookie: "MUSIC_U=renewed",
+      account: { userId: "u-1", nickname: "续期后", vipStatus: "vip" },
+    };
+    const invalid = () => new AppError("MUSIC_SESSION_INVALID", "登录状态已失效");
+
+    test("查询返回后会话校验失败，复核结果一律不写入", async () => {
+      const stale = new AppError("INVALID_PHASE", "开局已作废");
+      const { entry, pending, settle } = await revalidation(() => {
+        throw stale;
+      });
+      const before = { cookie: entry.cookie, account: entry.account };
+      settle(renewed);
+      await expect(pending).rejects.toBe(stale);
+      expect(entry.cookie).toBe(before.cookie);
+      expect(entry.account).toBe(before.account);
+    });
+
+    test("凭据被判死且条目、凭据、登录令牌都没变时，才关开关并标记失效", async () => {
+      const { entry, pending, fail } = await revalidation();
+      fail(invalid());
+      await expect(pending).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+      expect(entry.invalidated).toBe(true);
+      expect(entry.enabled).toBe(false);
+    });
+
+    test("判死结果回来时条目已被摘出池，不再标记", async () => {
+      const { room, entry, pending, fail } = await revalidation();
+      room.musicPool = room.musicPool!.filter((item) => item !== entry);
+      fail(invalid());
+      await expect(pending).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+      expect(entry.invalidated).toBeUndefined();
+      expect(entry.enabled).toBe(true);
+    });
+
+    test("判死结果回来时号主已重登换了凭据，不标记新凭据", async () => {
+      const { entry, pending, fail } = await revalidation();
+      entry.cookie = "MUSIC_U=relogin";
+      fail(invalid());
+      await expect(pending).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+      expect(entry.invalidated).toBeUndefined();
+      expect(entry.enabled).toBe(true);
+    });
+
+    test("判死结果回来时登录令牌已被别的操作取代，不标记", async () => {
+      const { room, entry, pending, fail } = await revalidation();
+      const key = musicAuthOperationKey(entry.playerId, "netease");
+      (roomRuntime(room).musicAuthOperations ??= {})[key] = Symbol("newer");
+      fail(invalid());
+      await expect(pending).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+      expect(entry.invalidated).toBeUndefined();
+      expect(entry.enabled).toBe(true);
+    });
+  });
+
+  describe("登录校验闭包的六条失效条件", () => {
+    const begun = async () => {
+      const service = ownerService();
+      const host = connection(service, "verify-host");
+      const { room } = await hostEntry(service, host);
+      const player = room.players[host.record.playerId!]!;
+      const verify = beginMusicAuthentication(service.ctx, room, player, host.record, "netease");
+      return { service, host, room, player, verify };
+    };
+
+    test("什么都没变时校验通过", async () => {
+      const { verify } = await begun();
+      expect(verify).not.toThrow();
+    });
+
+    test("房间已不在房间表里", async () => {
+      const { service, room, verify } = await begun();
+      service.rooms.set(room.id, { ...room });
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+
+    test("在途登录令牌被后一次登录取代", async () => {
+      const { room, player, verify } = await begun();
+      const key = musicAuthOperationKey(player.id, "netease");
+      roomRuntime(room).musicAuthOperations![key] = Symbol("newer");
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+
+    test("座位已被换成另一个玩家对象", async () => {
+      const { room, player, verify } = await begun();
+      room.players[player.id] = { ...player };
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+
+    test("玩家已离线", async () => {
+      const { player, verify } = await begun();
+      player.online = false;
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+
+    test("连接已不在这个房间", async () => {
+      const { host, verify } = await begun();
+      host.record.roomId = "9999";
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+
+    test("连接已不是这个座位", async () => {
+      const { host, verify } = await begun();
+      host.record.playerId = "someone-else";
+      expect(verify).toThrow(expect.objectContaining({ code: "MUSIC_SESSION_INVALID" }));
+    });
+  });
+
+  describe("取号等待的边界", () => {
+    const saturated = async () => {
+      let now = 1_000;
+      const service = new SonGuessrService({
+        now: () => now,
+        musicProvider: {
+          ...provider,
+          getLoginStatus: async (cookie) => ({
+            cookie,
+            account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
+          }),
+        },
+      });
+      const host = connection(service, "acquire-host");
+      const { room, entry } = await hostEntry(service, host);
+      entry.inFlight = MUSIC_POOL_MAX_IN_FLIGHT;
+      return { service, room, entry, advance: (ms: number) => (now += ms) };
+    };
+
+    test("等号期间房间被关掉，被叫醒后返回无租约而不是继续租用", async () => {
+      const { service, room, advance } = await saturated();
+      const pending = acquireMusicAccount(service.ctx, room, "netease");
+      service.rooms.delete(room.id);
+      advance(MUSIC_POOL_QUEUE_TIMEOUT_MS + 1);
+      wakeMusicPoolWaiters(service.ctx, room.id);
+      expect(await pending).toBeUndefined();
+    });
+
+    test("等号超过排队时限后不降级，租用在途最少的可用号", async () => {
+      const { service, room, entry, advance } = await saturated();
+      const pending = acquireMusicAccount(service.ctx, room, "netease");
+      advance(MUSIC_POOL_QUEUE_TIMEOUT_MS + 1);
+      wakeMusicPoolWaiters(service.ctx, room.id);
+      const lease = await pending;
+      expect(lease?.cookie).toBe(entry.cookie);
+      expect(entry.inFlight).toBe(MUSIC_POOL_MAX_IN_FLIGHT + 1);
+    }, 1_000);
+  });
+
+  test("后台续期遍历到一半，后面的房间被关掉就不再续它", async () => {
+    const calls: string[] = [];
+    // 建房时的登录校验也走这个 provider，进入遍历之前不记录也不挂起。
+    let armed = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const service = new SonGuessrService({
+      musicSessionRefreshIntervalMs: 0,
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie) => {
+          if (armed) calls.push(cookie);
+          if (armed && calls.length === 1) await gate;
+          return { cookie, account: { userId: "u-1", nickname: "号主", vipStatus: "vip" } };
+        },
+      },
+    });
+    const host = connection(service, "sweep-host");
+    const { room } = await hostEntry(service, host);
+    const qqEntry = (cookie: string) => ({
+      playerId: "p-qq",
+      platform: "qq" as const,
+      cookie,
+      account: {
+        platform: "qq" as const,
+        userId: "u-qq",
+        nickname: "QQ",
+        vipStatus: "vip" as const,
+      },
+      enabled: true,
+      addedAt: 0,
+      inFlight: 0,
+      recentOk: 0,
+      recentTotal: 0,
+    });
+    room.musicPool = [qqEntry("qm=first")];
+    service.rooms.set("5678", { ...room, id: "5678", musicPool: [qqEntry("qm=second")] });
+    armed = true;
+    const sweep = refreshDueMusicSessions(service.ctx);
+    // 第一间房的续期挂起期间，第二间房被关掉。
+    service.rooms.delete("5678");
+    release();
+    await sweep;
+    expect(calls).toEqual(["qm=first"]);
+  });
+
+  test("续期等待期间条目被摘出池，旧凭据的续期结果不写回", async () => {
+    const service = ownerService();
+    const host = connection(service, "renew-removed-host");
+    const { room, entry } = await hostEntry(service, host);
+    let settle!: (
+      session: Awaited<ReturnType<Parameters<typeof refreshMusicPoolEntry>[3]>>
+    ) => void;
+    const pending = refreshMusicPoolEntry(
+      service.ctx,
+      room,
+      entry,
+      () => new Promise((resolve) => (settle = resolve))
+    );
+    const before = entry.cookie;
+    room.musicPool = room.musicPool!.filter((item) => item !== entry);
+    settle({
+      cookie: "MUSIC_U=renewed-after-removal",
+      account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
+    });
+    await pending;
+    expect(entry.cookie).toBe(before);
+  });
+
+  test("续期失败回来时号主已重登，旧凭据的失败不判死新凭据", async () => {
+    const service = ownerService();
+    const host = connection(service, "renew-fail-host");
+    const { room, entry } = await hostEntry(service, host);
+    let fail!: (error: unknown) => void;
+    const pending = refreshMusicPoolEntry(
+      service.ctx,
+      room,
+      entry,
+      () => new Promise((_resolve, reject) => (fail = reject))
+    );
+    entry.cookie = "MUSIC_U=relogin";
+    fail(new AppError("MUSIC_SESSION_INVALID", "登录状态已失效"));
+    await pending;
+    expect(entry.invalidated).toBeUndefined();
+    expect(entry.enabled).toBe(true);
     expect(entry.cookie).toBe("MUSIC_U=relogin");
   });
 
