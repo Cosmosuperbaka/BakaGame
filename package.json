@@ -23,7 +23,6 @@
     "test:server": "pnpm --filter server test",
     "test:client": "pnpm --filter client test",
     "lint": "pnpm -r lint",
-    "lint:prune": "pnpm -r lint:prune",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "coverage": "pnpm --filter server test:coverage && pnpm --filter client test:coverage",

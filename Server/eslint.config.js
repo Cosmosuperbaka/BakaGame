@@ -32,8 +32,7 @@ export default defineConfig([
       sonarjs,
     },
     rules: {
-      // 与客户端同一阈值；存量由 eslint-suppressions.json 记录，
-      // 重构后跑 `bun run lint:prune` 递减基线。
+      // 与客户端同一阈值，新增违规直接失败，没有存量豁免。
       "sonarjs/cognitive-complexity": ["error", 20],
       // 解构剩余与显式 _ 前缀是既定写法，不是未使用变量。
       "@typescript-eslint/no-unused-vars": [
@@ -74,6 +73,24 @@ export default defineConfig([
     rules: {
       "@typescript-eslint/await-thenable": "off",
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
+    // Node 直接运行的 .mjs（CI 门禁与导出脚本）也要有基础规则；没有 globals 包可用，
+    // 只列脚本里实际用到的 Node 全局，用到新的再补。
+    files: ["**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        URL: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        fetch: "readonly",
+      },
     },
   },
 ]);

@@ -50,8 +50,7 @@ export default defineConfig([
       sonarjs,
     },
     rules: {
-      // 认知复杂度阈值 20。存量由 eslint-suppressions.json 记录，新增违规直接失败；
-      // 重构使复杂度下降后跑 `npm run lint:prune` 递减基线，避免基线腐烂。
+      // 认知复杂度阈值 20，新增违规直接失败，没有存量豁免。
       "sonarjs/cognitive-complexity": ["error", 20],
       // 共享契约入口携带 TypeBox：非 type 导入会把校验库整体打进浏览器包。
       // 运行时值一律走纯值入口，类型仍可用 import type 从原入口取。
@@ -97,5 +96,20 @@ export default defineConfig([
       },
     },
     rules: TYPE_AWARE_RULES,
+  },
+  {
+    // 构建与门禁脚本（.mjs，由 Node 直接运行）也要有基础规则：未用变量、未声明引用这类
+    // 低级错误在脚本里同样会让构建或门禁静默失效。不做类型感知，脚本不在任何 tsconfig 工程内。
+    files: ["**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: globals.node,
+    },
+  },
+  {
+    // Playwright 脚本把函数交给 page.evaluate 在浏览器里执行，函数体里用的是浏览器全局。
+    files: ["scripts/first-screen-perf.mjs", "scripts/storybook-shots.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 ]);

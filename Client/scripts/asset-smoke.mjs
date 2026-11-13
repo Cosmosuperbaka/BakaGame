@@ -160,13 +160,13 @@ try {
 
   const htmlFiles = files.filter((file) => file.endsWith(".html"));
   const html = (await Promise.all(htmlFiles.map((file) => readFile(file, "utf8")))).join("\n");
-  if (/\/assets\/(?:[^\"']+\.(?:png|jpe?g|gif))/.test(html)) {
+  if (/\/assets\/(?:[^"']+\.(?:png|jpe?g|gif))/.test(html)) {
     throw new Error("HTML 仍引用未转换的图片资源");
   }
 
   const jsFiles = files.filter((file) => file.endsWith(".js"));
   const js = (await Promise.all(jsFiles.map((file) => readFile(file, "utf8")))).join("\n");
-  if (/\/assets\/(?:[^\"']+\.(?:png|jpe?g|gif))/.test(js)) {
+  if (/\/assets\/(?:[^"']+\.(?:png|jpe?g|gif))/.test(js)) {
     throw new Error("JavaScript bundle 仍引用未转换的图片资源");
   }
 

@@ -9,7 +9,6 @@
     "mcp": "bun run src/mcp/Index.ts",
     "check": "tsc --noEmit",
     "lint": "eslint .",
-    "lint:prune": "eslint . --prune-suppressions",
     "db:push": "drizzle-kit push",
     "db:oneoff": "bun run scripts/RunOneOffSql.ts",
     "db:import-word-bank": "bun run scripts/ImportWordBank.ts",
