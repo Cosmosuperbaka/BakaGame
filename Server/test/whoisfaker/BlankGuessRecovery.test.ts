@@ -161,21 +161,77 @@ const snapshotStatus = (h: Awaited<ReturnType<typeof setupRoom>>) =>
   getLastEventPayload<WhoIsFakerRoomSnapshot>(h.human.connection, "room.snapshot")!.status;
 
 describe("猜词期间他人被移除使残局成立", () => {
-  test("现状：只写了草稿时，猜词上下文被残局上下文整体替换，草稿丢失", async () => {
+  const questionerAdvance = (h: Awaited<ReturnType<typeof setupRoom>>, id: string) =>
+    execute(h.service, h.human.connection, { id, type: "game.advancePhase", payload: {} });
+
+  test("只写了草稿：猜词上下文原样保留（草稿还在），只补写预定胜者", async () => {
     const { h, round } = await setupEndgameDuringGuess("draft");
     expect(round.phase).toBe("blankGuess");
+    expect(round.blankGuessUsed).toBe(false);
     expect(round.blankGuessContext).toEqual({
       playerId: h.idOf("机5"),
-      reason: "finale",
-      resumePhase: "gameOver",
+      reason: "active",
+      resumePhase: "voting",
+      interruptedRemainingTimerMs: 30_000,
+      draft: ["苹果", "香蕉"],
       deferredWinner: "good",
     });
+    expect(snapshotStatus(h).blankGuessDraft).toEqual(["苹果", "香蕉"]);
   });
 
-  test("现状：已提交待裁定时，残局直接结算，待裁定的猜词被丢掉", async () => {
+  test("只写了草稿：草稿猜中白板胜，猜错按预定胜者结算，都不回被打断的投票", async () => {
+    for (const [draft, winner] of [
+      [["苹果", "香蕉"], "blank"],
+      [["橙子", "梨"], "good"],
+    ] as const) {
+      const { h, round } = await setupEndgameDuringGuess("draft");
+      round.blankGuessContext!.draft = [draft[0], draft[1]];
+      await timeoutBlankGuessPhase(h.service.ctx, h.room, round);
+      await questionerAdvance(h, "continue");
+      const phase = round.phase as GameRound["phase"];
+      expect(phase).toBe("gameOver");
+      expect(round.summary?.winner).toBe(winner);
+    }
+  });
+
+  test("已提交待裁定：待裁定标记与猜词都不丢，不直接结算，只补写预定胜者", async () => {
     const { h, round } = await setupEndgameDuringGuess("pending");
-    expect(round.phase).toBe("gameOver");
+    expect(round.phase).toBe("blankGuess");
+    expect(round.blankGuessUsed).toBe(true);
+    expect(round.blankGuessContext).toMatchObject({
+      reason: "active",
+      pendingReview: { words: ["苹果", "梨"] },
+      deferredWinner: "good",
+    });
+    expect(round.blankGuessRecords).toHaveLength(1);
+    const status = snapshotStatus(h);
+    expect(status.phase).toBe("blankGuess");
+    expect(status.blankGuessPendingReview).toBe(true);
+  });
+
+  test("已提交待裁定：裁定通过白板胜，裁定不通过预定胜者胜，白板都不用重新猜", async () => {
+    for (const [approve, winner] of [
+      [true, "blank"],
+      [false, "good"],
+    ] as const) {
+      const { h, round } = await setupEndgameDuringGuess("pending");
+      await execute(h.service, h.human.connection, {
+        id: "review",
+        type: "game.reviewBlankGuess",
+        payload: { approve },
+      });
+      await questionerAdvance(h, "continue");
+      const phase = round.phase as GameRound["phase"];
+      expect(phase).toBe("gameOver");
+      expect(round.summary?.winner).toBe(winner);
+      expect(round.blankGuessRecords).toHaveLength(1);
+    }
+  });
+
+  test("已提交待裁定：裁定超时按猜错处理，预定胜者胜", async () => {
+    const { h, round } = await setupEndgameDuringGuess("pending");
+    await timeoutBlankGuessPhase(h.service.ctx, h.room, round);
+    await questionerAdvance(h, "continue");
     expect(round.summary?.winner).toBe("good");
-    expect(snapshotStatus(h).phase).toBe("gameOver");
   });
 });

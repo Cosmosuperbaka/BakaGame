@@ -1,5 +1,9 @@
 import { createEvent } from "../../transport/Packets";
-import { isRoleConfigSatisfied, recordEliminations } from "../../domain/Rules";
+import {
+  getWinnerAfterBlankFailure,
+  isRoleConfigSatisfied,
+  recordEliminations,
+} from "../../domain/Rules";
 import {
   type GameRound,
   type RoundHistoryEntry,
@@ -258,8 +262,19 @@ const eliminateAndSettle = async (
   recordEliminations(round.assignments, [flow.player.id], flow.reason, ctx.now());
   publishRoom(ctx, flow.room);
 
-  // 已经结算则到此为止；进了残局猜词，或本来就停在猜词：白板猜词优先，阶段不动，被它打断的补充发言、平票加赛、
-  // 投票与夜晚行动原样留着，等猜词收束后走恢复路径回去；发言模式也不写成被打断阶段的模式。
+  // 白板猜词未决（含已提交待裁定）：已有的猜词上下文原样保留，草稿与待裁定标记都不丢；
+  // 残局成立就只在它上面补写预定胜者，猜完无论对错都按预定胜者结算，不回被打断的阶段，
+  // 白板也不必重新猜。
+  const guessing = round.phase === "blankGuess" ? round.blankGuessContext : undefined;
+  if (guessing) {
+    const winner = getWinnerAfterBlankFailure(round.assignments);
+    if (winner) guessing.deferredWinner = winner;
+    return;
+  }
+
+  // 已经结算则到此为止；进了残局猜词（只可能从没有猜词的阶段进入）：白板猜词优先，阶段不动，
+  // 被它打断的补充发言、平票加赛、投票与夜晚行动原样留着，等猜词收束后走恢复路径回去，
+  // 发言模式也不写成被打断阶段的模式。
   if ((await settleOutcome(ctx, flow.room)) !== "open") return;
 
   round.phase = resumePhase;
@@ -273,11 +288,9 @@ const eliminateAndSettle = async (
           ? "tieBreak"
           : undefined
         : undefined;
-  // 白板猜词阶段不拥有任何一个容器，三样都得留给它被打断前的阶段。
-  const interrupted = resumePhase === "blankGuess";
-  if (!(resumePhase === "voting" || interrupted || flow.supplementActive)) round.votes = [];
-  if (!(resumePhase === "night" || interrupted)) round.nightActions = [];
-  if (!(resumePhase === "tieBreak" || interrupted)) round.tieBreak = undefined;
+  if (!(resumePhase === "voting" || flow.supplementActive)) round.votes = [];
+  if (resumePhase !== "night") round.nightActions = [];
+  if (resumePhase !== "tieBreak") round.tieBreak = undefined;
 };
 
 /** 名册变动后，开局前的两个阶段若人数已不够，系统取消本局。 */
