@@ -3,7 +3,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { SearchCombobox, SearchOptionContent, type SearchStatus } from "./SearchCombobox";
+import { SearchCombobox } from "@/components/common/SearchCombobox";
+import { SearchOptionContent, type SearchStatus } from "@/components/common/search/SearchPanel";
 
 interface DemoItem {
   id: string;

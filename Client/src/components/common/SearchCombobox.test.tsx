@@ -2,12 +2,12 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SearchCombobox } from "@/components/common/SearchCombobox";
 import {
-  SearchCombobox,
   SearchOptionContent,
   type SearchBack,
   type SearchStatus,
-} from "./SearchCombobox";
+} from "@/components/common/search/SearchPanel";
 
 interface Item {
   id: string;

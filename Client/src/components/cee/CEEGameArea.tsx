@@ -14,7 +14,7 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { SearchOptionContent } from "@/components/common/SearchCombobox";
+import { SearchOptionContent } from "@/components/common/search/SearchPanel";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";

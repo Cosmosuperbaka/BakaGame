@@ -7,11 +7,8 @@ import type {
   BangumiSubjectSearchResult,
   SongSearchResult,
 } from "@bakagame/shared";
-import {
-  SearchCombobox,
-  SearchOptionContent,
-  type SearchStatus,
-} from "@/components/common/SearchCombobox";
+import { SearchCombobox } from "@/components/common/SearchCombobox";
+import { SearchOptionContent, type SearchStatus } from "@/components/common/search/SearchPanel";
 import { LazyImage } from "@/components/common/LazyImage";
 import { Badge } from "@/components/ui/Badge";
 import { Hint } from "@/components/ui/Tooltip";

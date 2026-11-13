@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Clapperboard, Disc3, Gamepad2, Tv, type LucideIcon } from "lucide-react";
 import type { CEECharacterSummary, CEESubjectSummary } from "@bakagame/shared";
-import {
-  SearchCombobox,
-  SearchOptionContent,
-  type SearchStatus,
-} from "@/components/common/SearchCombobox";
+import { SearchCombobox } from "@/components/common/SearchCombobox";
+import { SearchOptionContent, type SearchStatus } from "@/components/common/search/SearchPanel";
 import { Button } from "@/components/ui/Button";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { useCEEDataSource } from "./CEEDataSource";

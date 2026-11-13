@@ -6,11 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
-import {
-  SearchCombobox,
-  SearchOptionContent,
-  type SearchStatus,
-} from "@/components/common/SearchCombobox";
+import { SearchCombobox } from "@/components/common/SearchCombobox";
+import { SearchOptionContent, type SearchStatus } from "@/components/common/search/SearchPanel";
 import {
   SettingReveal,
   SettingValue,
