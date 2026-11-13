@@ -258,6 +258,10 @@ export const buildAutomaticCandidateTiers = (
 
 const songPlatformOf = (id: string): "qq" | "netease" => (id.startsWith("qq:") ? "qq" : "netease");
 
+/** 没有热度来源的候选：QQ 且结果里也没带热度；带了热度的照常比较。 */
+const hasNoPopularitySource = (song: SongSearchResult): boolean =>
+  songPlatformOf(song.id) === "qq" && song.popularity === undefined;
+
 /** 取不到音频的候选记进房间：过期项顺手清掉，总量封顶。 */
 const rememberUnavailableSong = (room: SonGuessrRoomRecord, id: string, now: number): void => {
   const records = room.unavailableSongIds ?? {};
@@ -536,20 +540,24 @@ export const collectAutomaticCandidates = async (
   const candidates = [...first.values()];
   assertAutomaticFilterMatch(filters, candidates.length);
   if (filters.minPopularity === 0) return candidates;
-  const knownMatches = candidates.filter(
+  // QQ 已没有热度来源，聚合层对它直接回空；缺热度不是「不热门」，不能判成零而落选，
+  // 也不必为它回源。
+  const exempt = candidates.filter(hasNoPopularitySource);
+  const lookupCandidates = candidates.filter((song) => !hasNoPopularitySource(song));
+  const knownMatches = lookupCandidates.filter(
     (song) => song.popularity !== undefined && song.popularity >= filters.minPopularity
   );
-  if (knownMatches.length > 0) return knownMatches;
+  if (knownMatches.length > 0) return [...knownMatches, ...exempt];
 
   const provider = service.options.musicProvider;
   const getPopularity = provider.getSongPopularity?.bind(provider);
   if (!getPopularity) {
-    return [];
+    return exempt;
   }
 
   // 大歌单不能逐首回源查询热度。随机抽取有限候选，缓存命中仍可复用，
   // 冷缓存下单轮最多发起固定数量的上游请求，避免限流恢复后继续堆积。
-  const lookupPool = [...candidates];
+  const lookupPool = [...lookupCandidates];
   const sampled: SongSearchResult[] = [];
   while (lookupPool.length > 0 && sampled.length < AUTO_POPULARITY_LOOKUP_LIMIT) {
     sampled.push(lookupPool.splice(service.random.nextInt(lookupPool.length), 1)[0]);
@@ -568,5 +576,5 @@ export const collectAutomaticCandidates = async (
     );
     enriched.push(...values);
   }
-  return enriched.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
+  return [...enriched.filter((song) => (song.popularity ?? 0) >= filters.minPopularity), ...exempt];
 };

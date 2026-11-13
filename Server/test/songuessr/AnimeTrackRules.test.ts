@@ -1,4 +1,5 @@
 import { AppError } from "../../src/domain/Errors";
+import { isBelowMinPopularity } from "../../src/application/songuessr/AnimeSongEvidence";
 import {
   ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
@@ -1519,5 +1520,24 @@ describe("SonGuessr 曲目类型细化：主题曲桶不得吞掉原声带与特
     // 英文形态的广播剧 / 电台盘同样要分出来（CHAOS;CHILD 整条关联都是这类盘）。
     expect(detectTrackKindFromText("CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1")).toBe("drama");
     expect(detectTrackKindFromText("○○ RADIO DIGEST Vol.2")).toBe("radio");
+  });
+});
+
+describe("猜番歌曲的热度门槛", () => {
+  const withPopularity = (id: string, popularity?: number) => {
+    const song = makeSong(id, "歌", 2020);
+    return { ...song, popularity };
+  };
+
+  test("网易云热度缺失或低于门槛都不达标，达标放行，门槛为零不筛", () => {
+    expect(isBelowMinPopularity(withPopularity("netease:1"), 1_000)).toBe(true);
+    expect(isBelowMinPopularity(withPopularity("netease:1", 500), 1_000)).toBe(true);
+    expect(isBelowMinPopularity(withPopularity("netease:1", 5_000), 1_000)).toBe(false);
+    expect(isBelowMinPopularity(withPopularity("netease:1"), 0)).toBe(false);
+  });
+
+  test("QQ 没有热度来源：缺热度不因此否决，带了热度的照常比较", () => {
+    expect(isBelowMinPopularity(withPopularity("qq:1"), 1_000)).toBe(false);
+    expect(isBelowMinPopularity(withPopularity("qq:1", 500), 1_000)).toBe(true);
   });
 });

@@ -206,6 +206,12 @@ export const fallbackKindOfSong = (
   return undefined;
 };
 
-/** 详情已带热度时再过一道门槛：热度缺失按不达标处理。 */
-export const isBelowMinPopularity = (song: SongDetails, minPopularity: number): boolean =>
-  minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity);
+/**
+ * 详情再过一道热度门槛：网易云热度缺失按不达标处理；QQ 已没有热度来源，
+ * 缺热度不代表冷门，不因此否决。
+ */
+export const isBelowMinPopularity = (song: SongDetails, minPopularity: number): boolean => {
+  if (minPopularity <= 0) return false;
+  if (song.popularity === undefined) return !song.id.startsWith("qq:");
+  return song.popularity < minPopularity;
+};

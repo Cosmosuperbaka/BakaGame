@@ -3,6 +3,7 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   buildAutomaticCandidateTiers,
   collapseSameWorks,
+  collectAutomaticCandidates,
 } from "../../src/application/songuessr/AutomaticRounds";
 import { AppError } from "../../src/domain/Errors";
 import type { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
@@ -408,5 +409,78 @@ describe("近期窗口的写入", () => {
     );
     expect(room.recentSongIds?.slice(0, 2)).toEqual(["netease:candidate", "qq:played"]);
     expect(room.recentSongIds).toHaveLength(302);
+  });
+});
+
+describe("热度筛选与 QQ 候选", () => {
+  /** 聚合层对 QQ 没有热度来源，直接回空；网易云按表给值。 */
+  const prepare = async (songs: SongSearchResult[], neteasePopularity: Record<string, number>) => {
+    const lookups: string[] = [];
+    const musicProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "歌单", songCount: songs.length },
+        songs,
+      }),
+      getSongPopularity: async (songId) => {
+        lookups.push(songId);
+        return songId.startsWith("qq:") ? undefined : neteasePopularity[songId];
+      },
+    };
+    const service = new SonGuessrService({ musicProvider, random: seeded(1) });
+    const solo = connection(service, "heat-solo");
+    await createRoom(service, solo, { roomId: "7401", name: "热度", solo: true });
+    await execute(service, solo, {
+      id: "heat-settings",
+      type: "song.room.updateSettings",
+      roomId: "7401",
+      payload: {
+        autoFilters: {
+          playlist: { id: "42", name: "歌单", songCount: songs.length },
+          artists: [],
+          minPopularity: 1_000,
+        },
+      },
+    });
+    return { service, room: service.rooms.get("7401")!, lookups };
+  };
+  const song = (id: string, popularity?: number): SongSearchResult => ({
+    id,
+    title: id,
+    artist: "歌手",
+    ...(popularity === undefined ? {} : { popularity }),
+  });
+
+  test("开启热度筛选时 QQ 候选不因缺热度落选，也不回源查热度；网易云照常按热度筛", async () => {
+    const { service, room, lookups } = await prepare(
+      [song("netease:hot"), song("netease:cold"), song("qq:any")],
+      { "netease:hot": 5_000, "netease:cold": 500 }
+    );
+    const result = await collectAutomaticCandidates(service, room, undefined);
+    expect(result.map((item) => item.id).sort()).toEqual(["netease:hot", "qq:any"]);
+    expect(lookups.some((id) => id.startsWith("qq:"))).toBe(false);
+  });
+
+  test("网易云候选已带热度时 QQ 候选照样保留", async () => {
+    const { service, room, lookups } = await prepare(
+      [song("netease:hot", 5_000), song("netease:cold", 10), song("qq:any")],
+      {}
+    );
+    const result = await collectAutomaticCandidates(service, room, undefined);
+    expect(result.map((item) => item.id).sort()).toEqual(["netease:hot", "qq:any"]);
+    expect(lookups).toEqual([]);
+  });
+
+  test("音乐接口不支持查热度时，只剩没有热度来源的 QQ 候选", async () => {
+    const { service, room } = await prepare([song("netease:any"), song("qq:any")], {});
+    const musicProvider = service.options.musicProvider as { getSongPopularity?: unknown };
+    delete musicProvider.getSongPopularity;
+    const result = await collectAutomaticCandidates(service, room, undefined);
+    expect(result.map((item) => item.id)).toEqual(["qq:any"]);
+  });
+
+  test("只有网易云候选且都不达标时仍然没有候选", async () => {
+    const { service, room } = await prepare([song("netease:cold")], { "netease:cold": 500 });
+    expect(await collectAutomaticCandidates(service, room, undefined)).toEqual([]);
   });
 });
