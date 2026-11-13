@@ -30,8 +30,6 @@ import {
   tickCEERankedSeries,
 } from "../domain/CEERankedSeries";
 import {
-  ceeRankedGameSeatFinished,
-  type CEERankedGame,
   type CEERankedSeatIndex,
 } from "../domain/CEERankedGame";
 import {
@@ -42,15 +40,7 @@ import {
   pickCEERankedPersona,
   type CEERankedPersonaId,
 } from "../domain/CEERankedBotProfile";
-import { ceeRankedBotThinkMs } from "../domain/CEERankedBotTiming";
-import {
-  ceeRankedBotEligible,
-  createCEERankedBot,
-  nextCEERankedBotGuess,
-  recordCEERankedBotFeedback,
-  type CEERankedBotBrain,
-} from "../domain/CEERankedBot";
-import { filterCEECandidates, type CEERankedCandidate } from "../domain/CEERankedSolver";
+import { type CEERankedCandidate } from "../domain/CEERankedSolver";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { createEvent } from "../transport/Packets";
@@ -68,6 +58,7 @@ import {
 } from "./CEERankedQueue";
 import type { CEERankedPool, CEERankedPoolProvider } from "./CEERankedPool";
 import { runCEEDataCommand } from "./CEEDataCommands";
+import { driveBot } from "./CEERankedBotDriver";
 import { CEERankedProfileQueries } from "./CEERankedProfileQueries";
 import {
   ceeRankedSeriesView,
@@ -118,8 +109,6 @@ type CEERankedMessage = {
   [K in CEERankedCommand]: ClientEnvelope<K, CEERankedPayload<K>>;
 }[CEERankedCommand];
 
-/** 人机席位固定在 1 号席：真人对局里 0 号是发起者，人机对局里真人也排在 0 号。 */
-const BOT_SEAT: CEERankedSeatIndex = 1;
 /** 匹配跳周期：1 秒一跳，只在队列非空时运行。 */
 const MATCH_TICK_MS = 1_000;
 /** 唤醒抛错后的重排退避：同一异常不会让计时器贴着 1ms 空转。 */
@@ -871,7 +860,7 @@ export class CEERankedService {
   private async afterChange(runtime: CEERankedSeriesRuntime): Promise<void> {
     const now = this.ctx.now();
     tickCEERankedSeries(runtime.series, now);
-    if (runtime.bot) this.driveBot(runtime, now);
+    if (runtime.bot) driveBot(this.ctx, runtime, now);
     // 写库可能带重试，不能压住命令 ACK：结算自己会先推「结算中」再推结果。
     if (runtime.series.phase === "settled" && !runtime.settlementDone)
       void this.settle(runtime).catch((error: unknown) => {
@@ -951,114 +940,6 @@ export class CEERankedService {
     const runtime = this.ctx.seriesByUser.get(userId);
     if (runtime && runtime.series.phase !== "settled") return runtime;
     throw new AppError("INVALID_PHASE", "当前没有进行中的对局");
-  }
-
-  // ==================== 人机驱动 ====================
-
-  /** 到点就出手；取不到视图的固定首猜只跳过、不占次数。 */
-  private driveBot(runtime: CEERankedSeriesRuntime, now: number): void {
-    const game = runtime.series.current;
-    if (!game || game.phase === "settled") {
-      runtime.botNextGuessAt = null;
-      runtime.brain = null;
-      return;
-    }
-    if (game.phase === "countdown") return;
-    const brain = this.ensureBrain(runtime, game, now);
-    // 加时或补回次数后重新排一手。
-    if (runtime.botNextGuessAt === null && !ceeRankedGameSeatFinished(game.seats[BOT_SEAT]))
-      runtime.botNextGuessAt = now + this.thinkMs(runtime, brain);
-    for (let guard = 0; guard < 64; guard += 1) {
-      const at = runtime.botNextGuessAt;
-      if (at === null || at > now) return;
-      this.botMove(runtime, brain, game, now);
-    }
-  }
-
-  private ensureBrain(
-    runtime: CEERankedSeriesRuntime,
-    game: CEERankedGame,
-    now: number
-  ): CEERankedBotBrain {
-    const existing = runtime.brain;
-    if (existing && existing.gameNumber === game.number) return existing.brain;
-    const spec = runtime.botSpec;
-    if (spec === null) throw new AppError("RANKED_UNAVAILABLE", "排位人机状态不完整");
-    const brain = createCEERankedBot({
-      persona: spec.persona,
-      strength: spec.strength,
-      // 爱噶的思考节奏按开赛时定下的强度分（已扣校准偏差），整场不变，与审计记录一致。
-      opponentRating: spec.strengthRating,
-      pool: runtime.pool.candidates,
-      random: this.ctx.random,
-    });
-    runtime.brain = { brain, gameNumber: game.number };
-    runtime.botNextGuessAt = Math.max(game.startsAt, now) + this.thinkMs(runtime, brain);
-    return brain;
-  }
-
-  private thinkMs(runtime: CEERankedSeriesRuntime, brain: CEERankedBotBrain): number {
-    return ceeRankedBotThinkMs(brain, this.consistentCount(runtime, brain), this.ctx.random);
-  }
-
-  /** 一致候选数：人机「知道自己还没排除掉多少个」，影响它的犹豫程度。 */
-  private consistentCount(runtime: CEERankedSeriesRuntime, brain: CEERankedBotBrain): number {
-    const eligible = ceeRankedBotEligible(brain, runtime.pool.candidates);
-    return filterCEECandidates(
-      eligible,
-      brain.observations,
-      brain.strength.dims,
-      runtime.series.settings
-    ).length;
-  }
-
-  private botMove(
-    runtime: CEERankedSeriesRuntime,
-    brain: CEERankedBotBrain,
-    game: CEERankedGame,
-    now: number
-  ): void {
-    const settings = runtime.series.settings;
-    let id: number;
-    try {
-      id = nextCEERankedBotGuess(
-        brain,
-        runtime.pool.candidates,
-        runtime.pool.openings,
-        settings,
-        this.ctx.random
-      );
-    } catch (error) {
-      // 没有可猜的已知角色：本局不再出手，交给截止与加时规则收口。
-      if (error instanceof AppError && error.code === "RANKED_NO_CANDIDATE") {
-        runtime.botNextGuessAt = null;
-        return;
-      }
-      throw error;
-    }
-    const view = this.botView(runtime, id);
-    if (view === null) {
-      // 数据集里没有这个角色的视图：记进已猜、推进步数，立刻再要下一手，不占对局次数。
-      brain.guessed.add(id);
-      brain.step += 1;
-      return;
-    }
-    const guess = applyCEERankedSeriesGuess(runtime.series, BOT_SEAT, view, now);
-    recordCEERankedBotFeedback(brain, view, guess.feedback);
-    const current = runtime.series.current;
-    if (current !== game || current === null) {
-      runtime.botNextGuessAt = null;
-      return;
-    }
-    runtime.botNextGuessAt = ceeRankedGameSeatFinished(current.seats[BOT_SEAT])
-      ? null
-      : now + this.thinkMs(runtime, brain);
-  }
-
-  private botView(runtime: CEERankedSeriesRuntime, id: number): CEECharacterView | null {
-    const candidate = runtime.pool.candidates.find((item) => item.character.id === id);
-    if (candidate) return candidate.character;
-    return runtime.pool.extras.find((item) => item.id === id) ?? null;
   }
 
   // ==================== 结算 ====================
