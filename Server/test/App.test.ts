@@ -939,7 +939,7 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
 
   try {
     const socket = await openSocket(port);
-    const messages: Array<{ type?: string; id?: string }> = [];
+    const messages: Array<{ type?: string; id?: string; serverNow?: number }> = [];
     socket.onmessage = (event) => {
       messages.push(JSON.parse(event.data as string));
     };
@@ -966,7 +966,13 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
     const acks = messages.filter((m) => m.type === "ack" && m.id === "req-dedup-concurrency");
     // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
     expect(acks).toHaveLength(2);
-    expect(acks[0]).toEqual(acks[1]);
+    // 回放的是同一份结果；确认帧上的服务端时刻是发出那一刻现取的（客户端靠它对时），
+    // 两帧跨毫秒时会不同，比较时剔除它，其余字段必须逐一相同。
+    const [first, replayed] = acks.map(({ serverNow, ...rest }) => {
+      expect(typeof serverNow).toBe("number");
+      return rest;
+    });
+    expect(first).toEqual(replayed);
 
     socket.close();
   } finally {
