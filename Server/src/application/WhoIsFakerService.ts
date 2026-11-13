@@ -50,7 +50,6 @@ import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 import {
   ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
-  HOST_RECONNECT_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
@@ -71,6 +70,12 @@ import {
   type SeatBindingContext,
   type TabSeatContext,
 } from "./room/SeatBinding";
+import {
+  adoptRoomCore,
+  exportRoomJson,
+  hasSnapshotShape,
+  restoreRooms,
+} from "./room/RoomSnapshotCodec";
 import { whoIsFakerShape } from "./whoisfaker/RoomShape";
 import type { CommandHandler } from "./whoisfaker/CommandHandler";
 import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
@@ -488,14 +493,14 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   /**
    * 导出全部房间以供停机保存。
    *
-   * 走一次 JSON 往返而不是浅拷贝：房间记录将来若混进函数或句柄，浅拷贝会让序列化在
+   * 走内核的 JSON 往返出口而不是浅拷贝：房间记录将来若混进函数或句柄，浅拷贝会让序列化在
    * 停机路径上抛错，而那段恰恰最不能失败；往返顺带剔除 undefined，落盘内容与线上视图一致。
    */
   exportSnapshots(): SnapshottedRoom[] {
     const snapshots: SnapshottedRoom[] = [];
     for (const room of this.rooms.values()) {
       try {
-        snapshots.push(JSON.parse(JSON.stringify(room)) as SnapshottedRoom);
+        snapshots.push(exportRoomJson(room));
       } catch (error) {
         this.options.eventLogger?.warn("房间快照导出失败，已跳过该房间", {
           roomId: room.id,
@@ -515,20 +520,24 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
    * 所以下面每个时间字段都要按自己的语义单独处理，不能统一 +pausedMs 了事。
    */
   restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
-    const now = this.now();
-    // 时钟回拨时按 0 处理：等价于不补偿，好过把截止时间推到更远的未来。
-    const pausedMs = Math.max(0, now - savedAt);
-    let restored = 0;
-    for (const raw of rooms) {
-      const room = this.adoptSnapshot(raw, now, pausedMs);
-      if (!room || this.rooms.has(room.id)) continue;
-      this.rooms.set(room.id, room);
-      // 对局记录的开局时间没有进快照：用快照写入时刻当下界，比按恢复时刻起算更接近真实。
-      if (room.round) this.roundStartedAtById.set(room.round.id, savedAt);
-      this.absorbSnapshotIds(room);
-      restored += 1;
-    }
-    return restored;
+    return restoreRooms(
+      this.rooms,
+      rooms,
+      { savedAt, now: this.now() },
+      {
+        adopt: (raw, now, pausedMs) => this.adoptSnapshot(raw, now, pausedMs),
+        onRestored: (room) => {
+          // 对局记录的开局时间没有进快照：用快照写入时刻当下界，比按恢复时刻起算更接近真实。
+          if (room.round) this.roundStartedAtById.set(room.round.id, savedAt);
+          this.absorbSnapshotIds(room);
+        },
+        onError: (raw, error) =>
+          this.options.eventLogger?.warn("房间快照恢复失败，已跳过该房间", {
+            roomId: raw.id,
+            ...describeError(error),
+          }),
+      }
+    );
   }
 
   /** 单间恢复：形状校验 + 时间字段重算 + 重建倒计时。任何一步不合预期就整间丢弃。 */
@@ -537,24 +546,14 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     now: number,
     pausedMs: number
   ): WhoIsFakerRoomRecord | undefined {
-    if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
-    if (!raw.players || typeof raw.players !== "object") return undefined;
+    if (!hasSnapshotShape(raw)) return undefined;
     const room = raw as unknown as WhoIsFakerRoomRecord;
 
-    for (const player of Object.values(room.players)) {
-      // 重启后没有任何连接存活：座位保留，在线态与连接句柄必须归零。
-      player.online = false;
-      player.connectionId = undefined;
-      // lastSeenAt 决定掉线清理的起点。留着停机前的值，重启超过 3 分钟就会
-      // 在第一次巡检时把全员踢掉 —— 玩家还没机会重连。
-      player.lastSeenAt = now;
-    }
-
-    room.emptySinceAt = undefined;
+    // 全员离线、掉线与空房计时从恢复时刻起算：lastSeenAt 留着停机前的值，重启超过 3 分钟
+    // 就会在第一次巡检时把全员踢掉，玩家还没机会重连。房主此刻必然离线，一律带一段完整的
+    // 重连宽限，否则第一个回来的人会因为「离线房主没有截止」而抢走房主。
+    adoptRoomCore(room, Object.values(room.players), now);
     room.updatedAt = now;
-    room.lastActivityAt = now;
-    // 恢复后所有人都离线，房主必然也是：一律给完整的重连宽限，而不是等第一个回来的人抢走房主。
-    room.hostReconnectDeadlineAt = room.hostPlayerId ? now + HOST_RECONNECT_TIMEOUT_MS : undefined;
 
     const round = room.round;
     if (round) {

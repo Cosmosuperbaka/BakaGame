@@ -4,6 +4,8 @@ import {
   HOST_RECONNECT_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
 } from "../src/config/Constants";
+import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
+import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { SnapshottedRoom } from "../src/shared/RoomSnapshot";
 import { createConnection, createTestContext, execute } from "./Helpers";
 
@@ -197,5 +199,63 @@ describe("WhoIsFaker 房间快照", () => {
     );
     expect(restored).toBe(0);
     expect(restarted.service.getHealthSnapshot().roomCount).toBe(0);
+  });
+
+  test("单间恢复抛错只丢这一间并记告警，其余房间照常恢复", async () => {
+    const source = createTestContext();
+    await createRoom(source.service, "1001");
+    await createRoom(source.service, "1002");
+    const snapshots = source.service.exportSnapshots();
+    // 座位记录坏成 null：逐座位重置在线态时抛错。
+    (roomOf(snapshots, 0).players as Record<string, unknown>).broken = null;
+
+    const warnings: string[] = [];
+    class RecordingLogger extends EventLogger {
+      override warn(message: string, context?: Record<string, unknown>) {
+        warnings.push(`${message}:${String(context?.roomId)}`);
+        super.warn(message, context);
+      }
+    }
+    const restoredAt = Date.UTC(2026, 3, 10, 0, 0, 30);
+    const restarted = new WhoIsFakerService({
+      now: () => restoredAt,
+      eventLogger: new RecordingLogger(),
+    });
+    expect(restarted.restoreSnapshots(snapshots, Date.UTC(2026, 3, 10, 0, 0, 0))).toBe(1);
+    expect([...restarted.rooms.keys()]).toEqual(["1002"]);
+    expect(warnings).toEqual(["房间快照恢复失败，已跳过该房间:1001"]);
+  });
+
+  test("恢复后活动时刻与更新时刻取恢复时刻，对局的开局时间记为快照写入时刻", async () => {
+    const source = createTestContext();
+    const { host } = await createRoom(source.service, "Oblivionis");
+    await execute(source.service, host, {
+      id: "bots",
+      type: "test.addBot",
+      payload: { count: 4 },
+    });
+    await execute(source.service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(source.service, host, {
+      id: "words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+    const snapshots = source.service.exportSnapshots();
+    const roundId = (roomOf(snapshots).round as { id: string }).id;
+
+    const savedAt = Date.UTC(2026, 3, 10, 0, 0, 0);
+    const restoredAt = Date.UTC(2026, 3, 10, 0, 0, 45);
+    const restarted = createTestContext();
+    restarted.setTime(restoredAt);
+    expect(restarted.service.restoreSnapshots(snapshots, savedAt)).toBe(1);
+
+    const room = restarted.service.rooms.get("Oblivionis");
+    expect(room?.updatedAt).toBe(restoredAt);
+    expect(room?.lastActivityAt).toBe(restoredAt);
+    expect(restarted.service.roundStartedAtById.get(roundId)).toBe(savedAt);
   });
 });
