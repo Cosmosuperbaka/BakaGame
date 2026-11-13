@@ -10,14 +10,16 @@ import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import {
-  usePageNavigate,
+  usePageLinkClick,
   usePageTransitionEnds,
   useSharedElementName,
 } from "@/hooks/UsePageTransition";
 import { fadeSwap } from "@/lib/motion/NamedMoves";
+import { pressable } from "@/lib/motion/Feedback";
 import { listContainer, skeletonFade } from "@/lib/motion/Choreography";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
+import { LobbyGuide } from "./LobbyGuide";
 
 export interface LobbyPageProps {
   /** 页面 SEO 路径，例如 `/cee`。 */
@@ -28,7 +30,7 @@ export interface LobbyPageProps {
   logo?: { src: string; alt: string };
   /** 标题与图标拼成的完整游戏名，供读屏与按名查找；只写文字标题时省略。 */
   titleLabel?: string;
-  /** 标题后的弱化副标题（如 CEE 的「Enhanced Edition」），不参与跨页共享元素。 */
+  /** 标题后的弱化副标题（如 CEE 的原版名），不参与跨页共享元素。 */
   subtitle?: string;
   rooms: LobbyRoomView[];
   /** 首次握手尚未完成：显示骨架屏而不是「暂无房间」。 */
@@ -72,7 +74,7 @@ export function LobbyPage({
   disabled = false,
   pendingRoomId = null,
 }: LobbyPageProps) {
-  const navigate = usePageNavigate();
+  const linkClick = usePageLinkClick();
   // 经页面过渡到达时整页的显影已由过渡快照完成，再淡入一遍会让新页晚到、发虚；直接打开链接时才自己显影。
   const arriving = usePageTransitionEnds() !== null;
   // 游戏名与主页卡片标题是同一个跨页共享元素，只在与主页互相过渡时命名。
@@ -103,13 +105,15 @@ export function LobbyPage({
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
           <Button
+            asChild
             variant="ghost"
             size="sm"
             className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
-            onClick={() => void navigate("/")}
           >
-            <ArrowLeft className="h-4 w-4" />
-            <span>返回主页</span>
+            <motion.a href="/" onClick={linkClick("/")} {...pressable}>
+              <ArrowLeft className="h-4 w-4" />
+              <span>返回主页</span>
+            </motion.a>
           </Button>
           <div className="h-4 w-px shrink-0 bg-border" />
           {/* 窄屏收一档字号并允许截断：长游戏名不折成两行，三个大厅的顶栏同高。 */}
@@ -227,6 +231,8 @@ export function LobbyPage({
             </AnimatePresence>
           </motion.div>
         </div>
+
+        <LobbyGuide path={path} />
       </main>
 
       {dialogs}

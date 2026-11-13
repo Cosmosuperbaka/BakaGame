@@ -58,3 +58,14 @@ type Story = StoryObj<typeof meta>;
 
 /** 正在进入第二间房：转圈挂在那张卡片的房名行末，其余卡片变淡，列表不被推动。 */
 export const Entering: Story = { name: "进房中", args: { disabled: true, pendingRoomId: "3141" } };
+
+/** 房间列表之后的玩法说明展开：滚到说明处，看它与列表的层级关系。 */
+export const GuideExpanded: Story = {
+  name: "玩法说明展开",
+  play: async ({ canvas, userEvent }) => {
+    const toggle = canvas.getByRole("button", { name: "玩法说明" });
+    await userEvent.click(toggle);
+    await canvas.findByText("怎么算赢");
+    toggle.scrollIntoView({ block: "start" });
+  },
+};
