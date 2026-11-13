@@ -1,7 +1,7 @@
 import { LegalSection } from "@/components/common/LegalPage";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
-export const PRIVACY_UPDATED_AT = "2026-11-13";
+export const PRIVACY_UPDATED_AT = "2026-11-14";
 
 /** 一条信息项：来源、用途（与可选的说明）固定三段样板，标签与样式只在这里写一份。 */
 function DataItem({
@@ -55,8 +55,26 @@ export function PrivacyBody() {
 
           <DataItem
             title="对局记录"
-            source="你在房间内的结算结果与关键对局事件。"
+            source="你在房间内的结算结果与关键对局事件。记录里有你当局的昵称；登录后游玩的，还有你的账号 ID。"
             purpose="后台复盘、对局统计、反作弊与问题排查。对局记录长期保留，不包含房间聊天内容。"
+          />
+
+          <DataItem
+            title="站内反馈"
+            source="你通过站内反馈提交的标题与内容，以及提交时所在的页面地址与浏览器标识（User-Agent）。登录后提交的反馈关联你的账号。"
+            purpose="处理你反馈的问题，并在站内回复你。反馈会同步到错误监控服务（Sentry），附带页面地址；登录后提交的还附带账号 ID 与昵称，便于把问题和报错对上。"
+          />
+
+          <DataItem
+            title="客户端设备登记（仅在使用 BakaGame 桌面或安卓客户端时）"
+            source="客户端首次启动时随机生成的设备公钥，以及客户端类型、平台、登记时间与最近使用时间。"
+            purpose="识别官方客户端，供开启 BakaAntiCheat 的房间做入场校验。设备公钥由客户端随机生成，不含你的身份信息。"
+          />
+
+          <DataItem
+            title="反作弊复核记录（仅在开启 BakaAntiCheat 的房间）"
+            source="触发复核的回合记录：玩家名、账号 ID、客户端类型，以及判定所依据的操作特征与评分。"
+            purpose="供管理员人工复核疑似作弊。"
           />
 
           <DataItem
@@ -132,7 +150,7 @@ export function PrivacyBody() {
       <LegalSection title="四、你的权利">
         <ul className="list-disc space-y-2 pl-5">
           <li>
-            你可以通过站内反馈或页脚列出的社区入口联系我们，查询、更正或删除与你账号相关的信息；法律法规要求保留的记录除外。
+            目前没有自助导出或注销入口。你可以通过站内反馈或页脚列出的社区入口联系我们，申请查询、导出、更正或删除与你账号相关的信息，我们核实账号归属后处理；法律法规要求保留的记录除外。
           </li>
           <li>
             你可以随时退出登录。清除浏览器本地存储会删除本机偏好与匿名访客标识，同时也可能失去房间设置记忆。
