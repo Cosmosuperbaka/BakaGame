@@ -352,3 +352,52 @@ export const isTwoPlayerUndercoverEndgame = (round: GameRound): boolean => {
     aliveStates.filter((state) => state.role === "civilian").length === 1
   );
 };
+
+/**
+ * 统一描述、补充发言与平票 PK 的当前发言状态。
+ * 提交状态可以公开，但内容只会按顺序公开连续完成的前缀。
+ */
+export const getCurrentSpeechState = (activeRound: GameRound) => {
+  // 白板猜词只是打断：发言的公开前缀规则按被打断的阶段算，否则猜词一开始，
+  // 还没轮到的人的发言就会全部公开。
+  const resumePhase =
+    activeRound.phase === "blankGuess" ? activeRound.blankGuessContext?.resumePhase : undefined;
+  const round: GameRound = resumePhase
+    ? {
+        ...activeRound,
+        phase: resumePhase,
+        speechMode:
+          resumePhase === "description" && activeRound.supplement ? "supplement" : undefined,
+      }
+    : activeRound;
+
+  if (round.phase === "description" && round.speechMode === "supplement" && round.supplement) {
+    return {
+      order: round.supplement.requestedPlayerIds,
+      submittedPlayerIds: round.supplement.donePlayers,
+      matches: (description: DescriptionRecord) =>
+        description.kind === "supplement" &&
+        description.supplementIndex === round.supplement?.index,
+    };
+  }
+
+  if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
+    return {
+      order: round.tieBreak.candidateIds,
+      submittedPlayerIds: round.tieBreak.descriptionsDone,
+      matches: (description: DescriptionRecord) =>
+        description.kind === "tieBreak" && description.tieBreakIndex === round.tieBreakCount,
+    };
+  }
+
+  if (round.phase === "description") {
+    return {
+      order: round.descriptionOrder,
+      submittedPlayerIds: round.descriptionSubmittedBy,
+      matches: (description: DescriptionRecord) =>
+        description.kind === "description" && description.cycle === round.descriptionCycle,
+    };
+  }
+
+  return undefined;
+};

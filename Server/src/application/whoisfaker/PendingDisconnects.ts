@@ -1,6 +1,6 @@
 import type { GameRound, WhoIsFakerPlayerRecord, WhoIsFakerRoomRecord } from "../../shared/Index";
 import { broadcastRoomEvent, publishRoom } from "./RoomPublish";
-import { getCurrentSpeechState } from "./RoomViews";
+import { getCurrentSpeechState } from "./RoundRules";
 import type { WhoIsFakerContext } from "./Context";
 
 /**
