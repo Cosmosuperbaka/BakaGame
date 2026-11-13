@@ -1,4 +1,11 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { AnimatePresence, motion, useSpring } from "framer-motion";
 import { TriangleAlert, Wrench } from "lucide-react";
 import { hoverMarkFade, popover, uptimeGlide, uptimeReveal } from "@/lib/Motion";
@@ -13,6 +20,19 @@ const describeCell = (cell: BarCell): string => {
   if (cell.level === "unknown" || cell.ratio === null) return "未知 · 探测没有得出结论";
   return `${LEVEL_TEXT[cell.level]} · 可用率 ${formatRatio(cell.ratio)}`;
 };
+
+/** 方向键与 Home / End 对应的目标格；不是这几个键返回 null。 */
+const keyTarget = (key: string, current: number, total: number): number | null => {
+  if (key === "ArrowLeft") return current - 1;
+  if (key === "ArrowRight") return current + 1;
+  if (key === "Home") return 0;
+  if (key === "End") return total - 1;
+  return null;
+};
+
+/** 读屏播报用的一句话：与悬停说明同一份信息，只是写成连贯的文字。 */
+const announceCell = (cell: BarCell): string =>
+  [cell.when, describeCell(cell), ...cell.events.map((event) => event.title)].join("，");
 
 function CellTooltip({ cell }: { cell: BarCell }) {
   return (
@@ -77,7 +97,10 @@ interface UptimeBarProps {
  *
  * 悬停说明与选中框各只有一份 DOM，顺着指针在格子之间滑动（`uptimeGlide`），
  * 120 格也不产生 120 份浮层，同一个对象移动时始终是同一个元素。
- * 整条带作为一张图像读给读屏，逐格细节悬停可见；每行右侧另有文字状态与可用率，颜色不是唯一线索。
+ * 整条带作为一张图像读给读屏；逐格细节除悬停外还有两条入口：键盘聚焦条带后用方向键逐格查看
+ * （同一个浮层，同时由播报区读出），触屏点按一格后说明固定显示、点条带之外收起
+ * （手指抬起时浏览器会补发 pointerleave，触屏必须忽略它，否则说明只在按下期间可见）。
+ * 每行右侧另有文字状态与可用率，颜色不是唯一线索。
  */
 export function UptimeBar({
   cells,
@@ -87,17 +110,21 @@ export function UptimeBar({
   revealDelay,
   className,
 }: UptimeBarProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoveringRef = useRef(false);
-  const [hover, setHover] = useState<{ index: number; width: number } | null>(null);
+  const [hover, setHover] = useState<{
+    index: number;
+    width: number;
+    source: "pointer" | "touch" | "keyboard";
+  } | null>(null);
   const tipX = useSpring(0, uptimeGlide);
   const markX = useSpring(0, uptimeGlide);
 
   const dense = (cells?.length ?? placeholderCount) > 60;
   const hovered = hover && cells ? cells[hover.index] : undefined;
 
-  const onEnter = (index: number) => (event: ReactPointerEvent<HTMLSpanElement>) => {
-    const cell = event.currentTarget;
+  const showCell = (index: number, cell: HTMLElement, source: "pointer" | "touch" | "keyboard") => {
     const container = containerRef.current;
     if (!container) return;
     const center = cell.offsetLeft + cell.offsetWidth / 2;
@@ -114,16 +141,73 @@ export function UptimeBar({
       markX.jump(cell.offsetLeft);
     }
     hoveringRef.current = true;
-    setHover({ index, width: cell.offsetWidth });
+    setHover({ index, width: cell.offsetWidth, source });
   };
 
-  const onLeave = () => {
+  const onEnter = (index: number) => (event: ReactPointerEvent<HTMLSpanElement>) =>
+    showCell(index, event.currentTarget, event.pointerType === "touch" ? "touch" : "pointer");
+
+  const dismiss = () => {
     hoveringRef.current = false;
     setHover(null);
   };
 
+  const onLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") return;
+    dismiss();
+  };
+
+  /** 键盘定位到第 `index` 格（夹在有效范围内）。 */
+  const focusCell = (index: number) => {
+    const total = cells?.length ?? 0;
+    const element =
+      containerRef.current?.querySelectorAll<HTMLElement>("[data-cell]")[
+        Math.min(Math.max(index, 0), total - 1)
+      ];
+    if (element) showCell(Math.min(Math.max(index, 0), total - 1), element, "keyboard");
+  };
+
+  const onFocus = (event: ReactFocusEvent<HTMLDivElement>) => {
+    // 鼠标点击聚焦不弹说明（悬停已经在管）；只有键盘聚焦才从最新一格开始。
+    let keyboard = true;
+    try {
+      keyboard = event.currentTarget.matches(":focus-visible");
+    } catch {
+      // 不认识 :focus-visible 的环境一律按键盘处理。
+    }
+    if (keyboard && !hoveringRef.current && cells?.length) focusCell(cells.length - 1);
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const total = cells?.length ?? 0;
+    if (total === 0) return;
+    const current = hover?.index ?? total - 1;
+    const target = keyTarget(event.key, current, total);
+    if (event.key === "Escape") {
+      dismiss();
+      return;
+    }
+    if (target === null) return;
+    event.preventDefault();
+    focusCell(target);
+  };
+
+  // 触屏固定显示的说明没有「移开」这回事：点到条带之外才收起。
+  const touchPinned = hover?.source === "touch";
+  useEffect(() => {
+    if (!touchPinned) return;
+    const onDocumentPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        hoveringRef.current = false;
+        setHover(null);
+      }
+    };
+    document.addEventListener("pointerdown", onDocumentPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocumentPointerDown);
+  }, [touchPinned]);
+
   return (
-    <div className={cn("relative", className)} onPointerLeave={onLeave}>
+    <div ref={rootRef} className={cn("relative", className)} onPointerLeave={onLeave}>
       <motion.div
         style={{ x: tipX }}
         className="pointer-events-none absolute bottom-full left-0 z-popover mb-2"
@@ -148,6 +232,10 @@ export function UptimeBar({
         ref={containerRef}
         role="img"
         aria-label={cells ? summarize(cells) : "这段时间还没有探测样本"}
+        tabIndex={cells && cells.length > 0 ? 0 : undefined}
+        onFocus={onFocus}
+        onBlur={dismiss}
+        onKeyDown={onKeyDown}
         className={cn(
           "relative flex h-6 items-end",
           // 格缝随宽度放开：窄屏 120 格只够留一像素，宽屏留出呼吸，条带读作一排刻度而不是一整块色带。
@@ -211,6 +299,10 @@ export function UptimeBar({
           />
         ) : null}
       </div>
+      {/* 键盘逐格查看时的播报：浮层本身是 aria-hidden 的纯视觉层。 */}
+      <span aria-live="polite" className="sr-only">
+        {hovered && hover?.source === "keyboard" ? announceCell(hovered) : ""}
+      </span>
     </div>
   );
 }
