@@ -27,7 +27,7 @@ import {
   tryTransitionToFinaleBlankGuess,
   timeoutBlankGuessPhase,
 } from "./BlankGuess";
-import { runBots } from "./BotActors";
+import { runBots } from "./dev/BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
 import { publishLobby, publishRoom } from "./RoomPublish";
 import {

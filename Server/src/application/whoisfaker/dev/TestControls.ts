@@ -1,5 +1,5 @@
-import { AppError, unsupportedCommand } from "../../domain/Errors";
-import { assignRoles, getBlankPlayerId } from "../../domain/Rules";
+import { AppError, unsupportedCommand } from "../../../domain/Errors";
+import { assignRoles, getBlankPlayerId } from "../../../domain/Rules";
 import {
   type ConnectionRecord,
   type GameRound,
@@ -8,26 +8,26 @@ import {
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRole,
   type WhoIsFakerRoomRecord,
-} from "../../shared/Index";
-import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../config/Constants";
+} from "../../../shared/Index";
+import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../../config/Constants";
 import { pickBotName, runBots } from "./BotActors";
-import { forceRemovePlayer } from "./OfflineSettlement";
+import { forceRemovePlayer } from "../OfflineSettlement";
 import {
   broadcastPhaseAndPublish,
   clearPhaseTimer,
   finishRound,
   returnRoomToWaiting,
   startRound,
-} from "./PhaseFlow";
-import { publishRoom } from "./RoomPublish";
+} from "../PhaseFlow";
+import { publishRoom } from "../RoomPublish";
 import {
   clampRoleConfig,
   createDescriptionOrder,
   getActivePlayerIds,
   normalizeRoomRoleConfig,
-} from "./RoundRules";
-import { requireRoomPlayer, requireRound, ensureHost, isRoundActive } from "./RoomAccess";
-import type { WhoIsFakerContext } from "./Context";
+} from "../RoundRules";
+import { requireRoomPlayer, requireRound, ensureHost, isRoundActive } from "../RoomAccess";
+import type { WhoIsFakerContext } from "../Context";
 
 /**
  * 测试跳转回「指定出题人」时逐字段重置 round 的默认值表。

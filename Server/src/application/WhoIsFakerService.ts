@@ -87,7 +87,7 @@ import {
   startPhaseTimer,
   stopPhaseTimer,
 } from "./whoisfaker/PhaseFlow";
-import { runBots } from "./whoisfaker/BotActors";
+import { runBots } from "./whoisfaker/dev/BotActors";
 import {
   clampRoleConfig,
   createDescription,
@@ -105,7 +105,7 @@ import {
   testJumpToPhase,
   testRemoveBot,
   testSetMyRole,
-} from "./whoisfaker/TestControls";
+} from "./whoisfaker/dev/TestControls";
 import { attachConnection } from "./whoisfaker/RoomAttach";
 import { closeRoom } from "./whoisfaker/RoomClosure";
 import {

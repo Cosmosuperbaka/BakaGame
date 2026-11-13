@@ -18,7 +18,7 @@ import type {
   WhoIsFakerPhase,
   WhoIsFakerRoomRecord,
 } from "../../shared/Index";
-import { runBots } from "./BotActors";
+import { runBots } from "./dev/BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
 import {
   broadcastPhaseAndPublish,

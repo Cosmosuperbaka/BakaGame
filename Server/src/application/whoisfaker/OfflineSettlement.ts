@@ -18,7 +18,7 @@ import {
 } from "./BlankGuess";
 import { reassignHost } from "../room/HostPolicy";
 import { markSeatOffline } from "../room/SeatBinding";
-import { runBots } from "./BotActors";
+import { runBots } from "./dev/BotActors";
 import { countOnline } from "../room/RoomSummaries";
 import { clearPhaseTimer, completeSupplementIfReady, finishRound } from "./PhaseFlow";
 import { broadcastRoomEvent, publishLobby, publishRoom } from "./RoomPublish";
