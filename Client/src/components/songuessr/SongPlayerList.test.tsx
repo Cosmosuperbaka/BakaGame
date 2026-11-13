@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SonGuessrPlayerView } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -193,6 +193,95 @@ describe("SonGuessr PlayerList", () => {
     } finally {
       useSonGuessrStore.setState({ sendCommand: originalSendCommand });
     }
+  });
+
+  describe("房主与旁观操作的在途锁", () => {
+    const originalSendCommand = useSonGuessrStore.getState().sendCommand;
+    const originalShowToast = useSonGuessrStore.getState().showToast;
+    afterEach(() => {
+      useSonGuessrStore.setState({
+        sendCommand: originalSendCommand,
+        showToast: originalShowToast,
+      });
+    });
+
+    const renderAsHost = () =>
+      render(
+        <SongPlayerList
+          players={[
+            createMockPlayer({ id: "host-1", name: "房主小艾", isHost: true }),
+            createMockPlayer({ id: "player-2", name: "玩家甲" }),
+            createMockPlayer({ id: "player-3", name: "玩家乙" }),
+          ]}
+          myPlayerId="host-1"
+          isHost
+          phase="waiting"
+          allowSpectators
+        />
+      );
+
+    it("命令还没返回时，同一帧里连点只发一条", async () => {
+      let finish!: () => void;
+      const sendCommand = vi.fn(
+        () =>
+          new Promise<object>((resolve) => {
+            finish = () => resolve({});
+          })
+      );
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      const toggle = screen.getByRole("button", { name: "加入旁观" });
+      // 同一批事件里连点：重渲染之前按钮还没来得及禁用，只有锁挡得住第二下。
+      act(() => {
+        toggle.click();
+        toggle.click();
+      });
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+      expect(sendCommand).toHaveBeenCalledWith("song.player.setSpectator", { spectator: true });
+      await act(async () => finish());
+    });
+
+    it("转让房主在途时，另一个目标的踢出也被挡住，返回后恢复可用", async () => {
+      const user = userEvent.setup();
+      let finish!: () => void;
+      const sendCommand = vi.fn(
+        () =>
+          new Promise<object>((resolve) => {
+            finish = () => resolve({});
+          })
+      );
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      await user.click(screen.getByRole("button", { name: "玩家甲 操作" }));
+      await user.click(await screen.findByRole("button", { name: "转移房主" }));
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: "玩家乙 操作" }));
+      expect(await screen.findByRole("button", { name: "踢出玩家" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "加入旁观" })).toBeDisabled();
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+
+      await act(async () => finish());
+      expect(screen.getByRole("button", { name: "加入旁观" })).toBeEnabled();
+    });
+
+    it("命令失败时提示原因并释放锁", async () => {
+      const showToast = vi.fn();
+      const sendCommand = vi
+        .fn()
+        .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以操作" })
+        .mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never, showToast });
+      renderAsHost();
+
+      await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+      expect(showToast).toHaveBeenCalledWith("只有房主可以操作", "error");
+
+      await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+      expect(sendCommand).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("组队时按队伍分块：标题给合计分与共享次数，观战与队伍猜中各有状态", () => {

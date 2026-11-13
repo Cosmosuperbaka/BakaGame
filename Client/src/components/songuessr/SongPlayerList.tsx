@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode, type Ref } from "react";
+import { useRef, useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
@@ -36,6 +36,40 @@ export interface PlayerListProps {
   maxGuesses?: number;
 }
 
+/**
+ * 房主操作（踢人、转让、切换旁观）共用一把在途锁：一条命令返回之前，别的操作不发。
+ * 同一批事件里的连点在重渲染之前拿不到禁用态，所以锁放在 ref 里同步占位。
+ */
+function useHostCommands() {
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const showToast = useSonGuessrStore((state) => state.showToast);
+  const [pending, setPending] = useState(false);
+  const lockRef = useRef(false);
+
+  const guarded = async (action: () => Promise<unknown>) => {
+    if (lockRef.current) return;
+    lockRef.current = true;
+    setPending(true);
+    try {
+      await action();
+    } catch (error) {
+      showToast(errorMessage(error, "操作失败，请重试"), "error");
+    } finally {
+      lockRef.current = false;
+      setPending(false);
+    }
+  };
+
+  return {
+    pending,
+    kick: (playerId: string) => void guarded(() => sendCommand("song.room.kick", { playerId })),
+    transferHost: (playerId: string) =>
+      void guarded(() => sendCommand("song.room.transferHost", { playerId })),
+    setSpectator: (spectator: boolean) =>
+      void guarded(() => sendCommand("song.player.setSpectator", { spectator })),
+  };
+}
+
 export function SongPlayerList({
   players,
   myPlayerId,
@@ -45,8 +79,6 @@ export function SongPlayerList({
   questionType = "song",
   maxGuesses,
 }: PlayerListProps) {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const showToast = useSonGuessrStore((state) => state.showToast);
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
   const groups = teamGroups(activePlayers);
@@ -63,38 +95,7 @@ export function SongPlayerList({
   const canJoinSpectators = Boolean(me) && allowSpectators && me?.membership === "active";
   const canJoinPlayers = me?.membership === "spectator";
 
-  const handleKick = useCallback(
-    async (playerId: string) => {
-      try {
-        await sendCommand("song.room.kick", { playerId });
-      } catch (error) {
-        showToast(errorMessage(error, "操作失败，请重试"), "error");
-      }
-    },
-    [sendCommand, showToast]
-  );
-
-  const handleTransferHost = useCallback(
-    async (playerId: string) => {
-      try {
-        await sendCommand("song.room.transferHost", { playerId });
-      } catch (error) {
-        showToast(errorMessage(error, "操作失败，请重试"), "error");
-      }
-    },
-    [sendCommand, showToast]
-  );
-
-  const handleSetSpectator = useCallback(
-    async (spectator: boolean) => {
-      try {
-        await sendCommand("song.player.setSpectator", { spectator });
-      } catch (error) {
-        showToast(errorMessage(error, "操作失败，请重试"), "error");
-      }
-    },
-    [sendCommand, showToast]
-  );
+  const { pending, kick, transferHost, setSpectator } = useHostCommands();
 
   const renderRow = (player: SonGuessrPlayerView, hideSpectatorStatus: boolean) => (
     <SongPlayerRow
@@ -105,8 +106,9 @@ export function SongPlayerList({
       phase={phase}
       questionType={questionType}
       hideSpectatorStatus={hideSpectatorStatus}
-      onKick={(playerId) => void handleKick(playerId)}
-      onTransferHost={(playerId) => void handleTransferHost(playerId)}
+      actionsPending={pending}
+      onKick={kick}
+      onTransferHost={transferHost}
     />
   );
 
@@ -155,7 +157,8 @@ export function SongPlayerList({
                 spectator={false}
                 queued={!waitingPhase}
                 selected={me?.nextRoundMembership === "active"}
-                onToggle={(spectator) => void handleSetSpectator(spectator)}
+                disabled={pending}
+                onToggle={setSpectator}
               />
             ) : null}
 
@@ -177,7 +180,8 @@ export function SongPlayerList({
                     spectator
                     queued={!waitingPhase}
                     selected={me?.nextRoundMembership === "spectator"}
-                    onToggle={(spectator) => void handleSetSpectator(spectator)}
+                    disabled={pending}
+                    onToggle={setSpectator}
                   />
                 ) : null}
               </>
@@ -241,6 +245,8 @@ interface SongPlayerRowProps {
   phase: SonGuessrPhase;
   questionType: SongQuestionType;
   hideSpectatorStatus: boolean;
+  /** 有房主命令在途：管理动作保留在浮层里但不可点 */
+  actionsPending: boolean;
   onKick: (playerId: string) => void;
   onTransferHost: (playerId: string) => void;
 }
@@ -253,6 +259,7 @@ function SongPlayerRow({
   phase,
   questionType,
   hideSpectatorStatus,
+  actionsPending,
   onKick,
   onTransferHost,
 }: SongPlayerRowProps) {
@@ -264,6 +271,8 @@ function SongPlayerRow({
     ? hostActions({
         ...(canTransfer ? { onTransferHost: () => onTransferHost(player.id) } : {}),
         onKick: () => onKick(player.id),
+        transferDisabled: actionsPending,
+        kickDisabled: actionsPending,
       })
     : undefined;
 
