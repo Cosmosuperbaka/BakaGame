@@ -1,4 +1,5 @@
 import { useState, type ComponentProps } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
@@ -12,7 +13,6 @@ const meta = {
     activeTab: 0,
     onTabChange: fn(),
     onSelect: fn(),
-    onClose: fn(),
   },
   // 清单在打开后异步载入：等标签栏出现再截图，避免拍到载入中的占位。
   play: async ({ canvas }) => {
@@ -25,7 +25,7 @@ type Story = StoryObj<typeof meta>;
 
 /**
  * activeTab 只作初始值，之后由内部状态接管，点击标签可以切换。
- * 选择器以 bottom-full 向上展开，这里留出上方空间，让整块浮层落在截图范围内。
+ * 选择器以锚点上沿向上展开，这里留出上方空间，让整块浮层落在截图范围内。
  */
 function PickerDemo({
   activeTab: initialTab,
@@ -35,16 +35,20 @@ function PickerDemo({
   const [activeTab, setActiveTab] = useState(initialTab);
   return (
     <div className="w-80 pt-[17rem]">
-      <div className="relative">
-        <EmojiPicker
-          {...props}
-          activeTab={activeTab}
-          onTabChange={(index) => {
-            setActiveTab(index);
-            onTabChange(index);
-          }}
-        />
-      </div>
+      <Popover.Root open={props.open}>
+        <Popover.Anchor asChild>
+          <div className="relative">
+            <EmojiPicker
+              {...props}
+              activeTab={activeTab}
+              onTabChange={(index) => {
+                setActiveTab(index);
+                onTabChange(index);
+              }}
+            />
+          </div>
+        </Popover.Anchor>
+      </Popover.Root>
     </div>
   );
 }

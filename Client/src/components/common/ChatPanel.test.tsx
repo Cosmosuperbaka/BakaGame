@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { chatThrow } from "@/lib/Motion";
 import { stubMatchMedia } from "@/test/MatchMedia";
@@ -29,6 +30,13 @@ vi.mock("virtual:sticker-manifest", () => ({
             animated: false,
           },
         ],
+      },
+      {
+        name: "日常",
+        dir: "daily",
+        preview: "/emojis/daily/hello.png",
+        animated: false,
+        items: [{ key: "hello", label: "你好", path: "/emojis/daily/hello.png", animated: false }],
       },
     ],
   },
@@ -223,9 +231,9 @@ describe("ChatPanel (Common)", () => {
       />
     );
 
-    const clap = await screen.findByRole("img", { name: "鼓掌" });
+    const clap = await screen.findByRole("img", { name: /鼓掌/ });
     expect(clap).toHaveAttribute("src", "/emojis/nightwish/audience_clap.gif");
-    expect(screen.getByRole("img", { name: "冷笑" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: /冷笑/ })).toHaveAttribute(
       "src",
       "/emojis/nightwish/ghost_laugh.png"
     );
@@ -694,5 +702,85 @@ describe("ChatPanel (Common)", () => {
     fireEvent.click(button);
     expect(onRepeatMessage).toHaveBeenCalledTimes(1);
     release();
+  });
+});
+
+describe("ChatPanel 表情选择器", () => {
+  const players = [
+    { id: "p-me", name: "我" },
+    { id: "p-other", name: "对手" },
+  ];
+  const renderPanel = (onSendMessage = vi.fn().mockResolvedValue(undefined)) =>
+    render(
+      <ChatPanel messages={[]} players={players} myPlayerId="p-me" onSendMessage={onSendMessage} />
+    );
+
+  it("再点一次笑脸按钮就收起，不会立刻又展开", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const smile = screen.getByRole("button", { name: "发送表情" });
+    await user.click(smile);
+    expect(smile).toHaveAttribute("aria-expanded", "true");
+    await screen.findByRole("tablist", { name: "表情包分类" });
+    await user.click(smile);
+    expect(smile).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(screen.queryByRole("tablist")).not.toBeInTheDocument());
+  });
+
+  it("打开时焦点进入面板，Esc 关闭并把焦点还给笑脸按钮", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const smile = screen.getByRole("button", { name: "发送表情" });
+    await user.click(smile);
+    const panel = await screen.findByRole("dialog", { name: "表情包" });
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    expect(smile).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(smile).toHaveFocus());
+  });
+
+  it("Tab 能走到每个表情，方向键在格子里移动焦点", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole("button", { name: "发送表情" }));
+    await screen.findByRole("tablist", { name: "表情包分类" });
+    await user.tab();
+    const first = screen.getByRole("button", { name: /鼓掌/ });
+    expect(first).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: /冷笑/ })).toHaveFocus();
+    await user.keyboard("{ArrowLeft}");
+    expect(first).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(screen.getByRole("button", { name: /冷笑/ })).toHaveFocus();
+  });
+
+  it("页签是完整的页签语义：方向键切换，选中页签与面板互相关联", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole("button", { name: "发送表情" }));
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    const panel = screen.getByRole("tabpanel");
+    expect(panel).toHaveAttribute("aria-labelledby", tabs[0].id);
+    expect(tabs[0]).toHaveAttribute("aria-controls", panel.id);
+    tabs[0].focus();
+    await user.keyboard("{ArrowRight}");
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: /你好/ })).toBeInTheDocument();
+  });
+
+  it("选中表情后发送并收起面板", async () => {
+    const user = userEvent.setup();
+    const send = vi.fn().mockResolvedValue(undefined);
+    renderPanel(send);
+    await user.click(screen.getByRole("button", { name: "发送表情" }));
+    await user.click(await screen.findByRole("button", { name: /鼓掌/ }));
+    expect(send).toHaveBeenCalledWith(`${STICKER_PREFIX}/emojis/nightwish/audience_clap.gif`);
+    expect(screen.getByRole("button", { name: "发送表情" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
   });
 });

@@ -11,6 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import * as Popover from "@radix-ui/react-popover";
 import {
   AnimatePresence,
   animate,
@@ -769,134 +770,141 @@ export function ChatPanel({
         </div>
       </ScrollArea>
 
-      {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框 */}
-      <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background">
-        <EmojiPicker
-          open={pickerOpen}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onSelect={(path) => void handleSendSticker(path)}
-          onClose={() => setPickerOpen(false)}
-        />
+      {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框；选择器以这一行为锚点展开 */}
+      <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
+        <Popover.Anchor asChild>
+          <div className="relative p-3 border-t flex gap-2 shrink-0 bg-background">
+            <EmojiPicker
+              open={pickerOpen}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onSelect={(path) => {
+                void handleSendSticker(path);
+                setPickerOpen(false);
+              }}
+            />
 
-        {/* 候选自输入框上缘展开 */}
-        <AnimatePresence>
-          {candidates.length > 0 && (
-            <motion.div
-              variants={popover}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              style={{ originY: 1 }}
-              id={mentionListId}
-              role="listbox"
-              aria-label="提及玩家"
-              className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
-            >
-              {candidates.map((player, index) => (
-                <motion.button
-                  key={player.id}
-                  id={mentionOptionId(index)}
-                  type="button"
-                  role="option"
-                  aria-selected={index === mentionIndex}
-                  // 焦点留在输入框里，候选只经 aria-activedescendant 指向，不进 Tab 序列。
-                  tabIndex={-1}
-                  {...optionTappable}
-                  onMouseEnter={() => setMentionIndex(index)}
-                  onClick={() => pickMention(player.name)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                    "border-t first:border-t-0",
-                    index === mentionIndex
-                      ? "bg-accent text-accent-foreground"
-                      : "text-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
+            {/* 候选自输入框上缘展开 */}
+            <AnimatePresence>
+              {candidates.length > 0 && (
+                <motion.div
+                  variants={popover}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ originY: 1 }}
+                  id={mentionListId}
+                  role="listbox"
+                  aria-label="提及玩家"
+                  className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
                 >
-                  <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
-                </motion.button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  {candidates.map((player, index) => (
+                    <motion.button
+                      key={player.id}
+                      id={mentionOptionId(index)}
+                      type="button"
+                      role="option"
+                      aria-selected={index === mentionIndex}
+                      // 焦点留在输入框里，候选只经 aria-activedescendant 指向，不进 Tab 序列。
+                      tabIndex={-1}
+                      {...optionTappable}
+                      onMouseEnter={() => setMentionIndex(index)}
+                      onClick={() => pickMention(player.name)}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                        "border-t first:border-t-0",
+                        index === mentionIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                      )}
+                    >
+                      <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className="shrink-0 text-muted-foreground"
-          onClick={() => setPickerOpen((open) => !open)}
-          aria-label="发送表情"
-          aria-expanded={pickerOpen}
-        >
-          <Smile className="h-5 w-5" />
-        </Button>
-        <Input
-          ref={inputRef}
-          value={text}
-          onChange={handleChange}
-          placeholder={placeholder}
-          className="flex-1"
-          data-agent-control="chat.input"
-          role="combobox"
-          aria-label="聊天消息"
-          aria-autocomplete="list"
-          aria-expanded={candidates.length > 0}
-          aria-controls={candidates.length > 0 ? mentionListId : undefined}
-          aria-activedescendant={candidates.length > 0 ? mentionOptionId(mentionIndex) : undefined}
-          onKeyDown={(event) => {
-            // 输入法选词的回车只确认候选字，不发送、不选提及。
-            if (event.nativeEvent.isComposing) return;
-            if (candidates.length > 0) {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setMentionIndex((cur) => (cur + 1) % candidates.length);
-                return;
+            <Popover.Trigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="shrink-0 text-muted-foreground"
+                aria-label="发送表情"
+              >
+                <Smile className="h-5 w-5" />
+              </Button>
+            </Popover.Trigger>
+            <Input
+              ref={inputRef}
+              value={text}
+              onChange={handleChange}
+              placeholder={placeholder}
+              className="flex-1"
+              data-agent-control="chat.input"
+              role="combobox"
+              aria-label="聊天消息"
+              aria-autocomplete="list"
+              aria-expanded={candidates.length > 0}
+              aria-controls={candidates.length > 0 ? mentionListId : undefined}
+              aria-activedescendant={
+                candidates.length > 0 ? mentionOptionId(mentionIndex) : undefined
               }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setMentionIndex((cur) => (cur - 1 + candidates.length) % candidates.length);
-                return;
-              }
-              if (event.key === "Enter" || event.key === "Tab") {
-                event.preventDefault();
-                pickMention(candidates[mentionIndex].name);
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeMention();
-                return;
-              }
-            }
-            if (event.key === "Enter") void handleSend();
-            if (event.key === "Escape") setPickerOpen(false);
-          }}
-          maxLength={maxLength}
-        />
-        {thrown ? (
-          <SendThrow
-            key={thrown.key}
-            ref={capsuleRef}
-            text={thrown.text}
-            anchor={thrown.anchor}
-            phase={thrown.phase}
-            onRecalled={finishRecall}
-          />
-        ) : null}
-        <Button
-          size="icon"
-          className="shrink-0"
-          onClick={() => void handleSend()}
-          disabled={!text.trim()}
-          aria-label="发送消息"
-          data-agent-control="chat.send"
-        >
-          <span ref={sendIconRef} className="inline-flex">
-            <Send className="h-4 w-4" />
-          </span>
-        </Button>
-      </div>
+              onKeyDown={(event) => {
+                // 输入法选词的回车只确认候选字，不发送、不选提及。
+                if (event.nativeEvent.isComposing) return;
+                if (candidates.length > 0) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionIndex((cur) => (cur + 1) % candidates.length);
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionIndex((cur) => (cur - 1 + candidates.length) % candidates.length);
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    pickMention(candidates[mentionIndex].name);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeMention();
+                    return;
+                  }
+                }
+                if (event.key === "Enter") void handleSend();
+              }}
+              maxLength={maxLength}
+            />
+            {thrown ? (
+              <SendThrow
+                key={thrown.key}
+                ref={capsuleRef}
+                text={thrown.text}
+                anchor={thrown.anchor}
+                phase={thrown.phase}
+                onRecalled={finishRecall}
+              />
+            ) : null}
+            <Button
+              size="icon"
+              className="shrink-0"
+              onClick={() => void handleSend()}
+              disabled={!text.trim()}
+              aria-label="发送消息"
+              data-agent-control="chat.send"
+            >
+              <span ref={sendIconRef} className="inline-flex">
+                <Send className="h-4 w-4" />
+              </span>
+            </Button>
+          </div>
+        </Popover.Anchor>
+      </Popover.Root>
     </div>
   );
 }
