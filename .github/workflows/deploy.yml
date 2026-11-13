@@ -25,13 +25,9 @@ permissions:
   actions: read
   contents: read
 
-# 第三方 Action 按 commit SHA 固定，注释标出该 SHA 对应的版本（与 ci.yml 同一口径）。
-# 两处例外仍按 tag 引入：actions/github-script@v7 与 appleboy/ssh-action@v1.2.0。
-# 原因不是「不想钉」，而是修这条的工作机没有到 api.github.com 的出口、gh 也没有有效凭据：
-# SHA 只能凭记忆写，猜错会让部署作业在拉取 Action 那一步硬失败，比留在 tag 上更糟。
-# 到有网的环境执行下面两条，把返回的 object.sha 换进那两处 uses，注释写对应 tag：
-#   gh api repos/actions/github-script/git/matching-refs/tags/v7
-#   gh api repos/appleboy/ssh-action/git/matching-refs/tags/v1.2.0
+# 第三方 Action 一律按 commit SHA 固定，注释标出该 SHA 对应的版本（与 ci.yml 同一口径）。
+# SHA 用 `git ls-remote <仓库> refs/tags/<版本>` 实查（带注释标签取 ^{} 解引用后的提交），不凭记忆写；
+# 升级时同批改 SHA 与注释。
 
 jobs:
   # 部署门禁：CI 失败（含 E2E 失败）不部署；本次推送未改服务端（Server CI 被跳过）不部署。
@@ -52,7 +48,7 @@ jobs:
           persist-credentials: false
       - name: Decide whether to deploy
         id: decide
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           SELECTED_RUN_ID: ${{ github.event.workflow_run.id || inputs.ci_run_id }}
         with:
@@ -184,7 +180,7 @@ jobs:
           fi
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
           DEPLOY_REV: ${{ needs.gate.outputs.revision }}
           VERIFIED_RUN_ID: ${{ needs.gate.outputs.run_id }}
