@@ -3,9 +3,7 @@ import type { BrowserContext, ElementHandle, Page } from "@playwright/test";
 import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
 async function expectActionAreaScrollable(page: Page) {
-  const viewport = page
-    .getByTestId("game-area-scroll")
-    .locator("[data-radix-scroll-area-viewport]");
+  const viewport = page.getByTestId("game-area-scroll");
 
   await expect(viewport).toBeVisible();
   await expect

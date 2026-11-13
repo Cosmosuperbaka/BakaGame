@@ -352,7 +352,7 @@ export const primaryScroller = (): HTMLElement => {
   const fallback = (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
   if (fallback.scrollHeight > fallback.clientHeight + 1) return fallback;
   const candidates = [
-    ...document.querySelectorAll<HTMLElement>("main,[data-radix-scroll-area-viewport]"),
+    ...document.querySelectorAll<HTMLElement>("main,[data-scroll-region]"),
   ].filter((element) => element.scrollHeight > element.clientHeight + 1);
   candidates.sort(
     (left, right) =>

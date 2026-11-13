@@ -692,93 +692,100 @@ export function ChatPanel({
 
   return (
     <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
-      <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
-        {/* 消息流按 log 播报：只报新到的那几条，不每次把整段历史重读一遍 */}
-        <div
-          ref={messagesRef}
-          role="log"
-          aria-live="polite"
-          aria-relevant="additions"
-          // 复读台阶的错开与放大会把整宽的外壳推出右缘：横向裁掉这截空白，不让滚动区长出横向滚动条
-          className="min-w-0 space-y-2 overflow-x-clip"
-        >
-          {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
-          <AnimatePresence initial={false}>
-            {messages.map((message) => {
-              const isMe = message.playerId === myPlayerId;
-              const isGhost = message.channel === "ghost";
+      {/* 内边距留在滚动区之外：滚动内容在内边距处被裁切，与滚动区自己带内边距时不同 */}
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden px-3 py-3">
+        <ScrollArea className="h-full min-w-0">
+          {/* 消息流按 log 播报：只报新到的那几条，不每次把整段历史重读一遍 */}
+          <div
+            ref={messagesRef}
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            // 复读台阶的错开与放大会把整宽的外壳推出右缘：横向裁掉这截空白，不让滚动区长出横向滚动条
+            className="min-w-0 space-y-2 overflow-x-clip"
+          >
+            {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
+            <AnimatePresence initial={false}>
+              {messages.map((message) => {
+                const isMe = message.playerId === myPlayerId;
+                const isGhost = message.channel === "ghost";
 
-              // 阶段提醒与系统提示：统一定义为通透无背景居中文本样式
-              if (message.system) {
+                // 阶段提醒与系统提示：统一定义为通透无背景居中文本样式
+                if (message.system) {
+                  return (
+                    <motion.div
+                      key={message.id}
+                      variants={systemNotice}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className={SYSTEM_TEXT}
+                    >
+                      {message.text}
+                    </motion.div>
+                  );
+                }
+
+                const takesThrow = handoffId === message.id;
+                // 复读链台阶：第几级就向内错开、放大几级；链断了 step 回到 0，按同一条弹簧收回。
+                const chainOrder = repeatChain.get(message.id);
+                const step = Math.min(chainOrder ?? 0, repeatStair.maxSteps);
+                const isChainFront =
+                  chainOrder !== undefined && chainOrder === repeatChain.size - 1;
+
                 return (
                   <motion.div
                     key={message.id}
-                    variants={systemNotice}
-                    initial="initial"
+                    layout="position"
+                    variants={chatMessageLaunch}
+                    // 自己刚发出的那条由 MessageShell 从胶囊手里接过去，外层不再叠一次弹入
+                    initial={takesThrow ? false : "initial"}
                     animate="animate"
                     exit="exit"
-                    className={SYSTEM_TEXT}
-                  >
-                    {message.text}
-                  </motion.div>
-                );
-              }
-
-              const takesThrow = handoffId === message.id;
-              // 复读链台阶：第几级就向内错开、放大几级；链断了 step 回到 0，按同一条弹簧收回。
-              const chainOrder = repeatChain.get(message.id);
-              const step = Math.min(chainOrder ?? 0, repeatStair.maxSteps);
-              const isChainFront = chainOrder !== undefined && chainOrder === repeatChain.size - 1;
-
-              return (
-                <motion.div
-                  key={message.id}
-                  layout="position"
-                  variants={chatMessageLaunch}
-                  // 自己刚发出的那条由 MessageShell 从胶囊手里接过去，外层不再叠一次弹入
-                  initial={takesThrow ? false : "initial"}
-                  animate="animate"
-                  exit="exit"
-                  style={{ originX: isMe ? 1 : 0, originY: 1 }}
-                  className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
-                >
-                  {/* 台阶单独占一层：外层管弹入与重排，MessageShell 管接手胶囊，三者的 transform 互不覆盖 */}
-                  <motion.div
-                    initial={false}
-                    animate={{
-                      x: (isMe ? -1 : 1) * step * repeatStair.shift,
-                      scale: 1 + step * repeatStair.grow,
-                    }}
-                    transition={repeatStair.transition}
                     style={{ originX: isMe ? 1 : 0, originY: 1 }}
                     className={cn(
                       "flex w-full min-w-0 flex-col",
                       isMe ? "items-end" : "items-start"
                     )}
                   >
-                    <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
-                      <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
-                        {message.playerName}
-                      </span>
-                      <MessageBubble
-                        message={message}
-                        isMe={isMe}
-                        isGhost={isGhost}
-                        stickerLabels={stickerLabels}
-                        players={players}
-                        myPlayerId={myPlayerId}
-                        showRepeat={Boolean(onRepeatMessage) && message.id === latestMessageId}
-                        repeatCount={isChainFront ? repeatChain.size : 0}
-                        onRepeatMessage={handleRepeatMessage}
-                      />
-                    </MessageShell>
+                    {/* 台阶单独占一层：外层管弹入与重排，MessageShell 管接手胶囊，三者的 transform 互不覆盖 */}
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        x: (isMe ? -1 : 1) * step * repeatStair.shift,
+                        scale: 1 + step * repeatStair.grow,
+                      }}
+                      transition={repeatStair.transition}
+                      style={{ originX: isMe ? 1 : 0, originY: 1 }}
+                      className={cn(
+                        "flex w-full min-w-0 flex-col",
+                        isMe ? "items-end" : "items-start"
+                      )}
+                    >
+                      <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
+                        <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
+                          {message.playerName}
+                        </span>
+                        <MessageBubble
+                          message={message}
+                          isMe={isMe}
+                          isGhost={isGhost}
+                          stickerLabels={stickerLabels}
+                          players={players}
+                          myPlayerId={myPlayerId}
+                          showRepeat={Boolean(onRepeatMessage) && message.id === latestMessageId}
+                          repeatCount={isChainFront ? repeatChain.size : 0}
+                          onRepeatMessage={handleRepeatMessage}
+                        />
+                      </MessageShell>
+                    </motion.div>
                   </motion.div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      </ScrollArea>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </ScrollArea>
+      </div>
 
       {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框；选择器以这一行为锚点展开 */}
       <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>

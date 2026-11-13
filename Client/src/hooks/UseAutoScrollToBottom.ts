@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 
-/** 内容新增或动画改变高度时，将所属 Radix 滚动区稳定地贴到底部。 */
+/** 内容新增或动画改变高度时，将所属滚动区稳定地贴到底部。 */
 export function useAutoScrollToBottom(changeKey: unknown) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const content = contentRef.current;
-    const viewport = content?.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+    const viewport = content?.closest("[data-scroll-region]") as HTMLElement | null;
     if (!content || !viewport) return;
 
     let frame = 0;
