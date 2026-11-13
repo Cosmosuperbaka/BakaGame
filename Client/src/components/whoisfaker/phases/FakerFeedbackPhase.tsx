@@ -10,18 +10,7 @@ import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import type { RoundFeedback, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { GuessReadout } from "./FakerBlankGuessPhase";
-
-/** 出局名单的一句话结论：没人出局时给出各自的说法。 */
-function EliminationLine({ names, empty }: { names: string[]; empty: string }) {
-  if (!names.length)
-    return <p className="text-center text-base font-medium text-muted-foreground">{empty}</p>;
-  return (
-    <p className="text-center text-base">
-      <span className="font-semibold text-destructive">{names.join("、")}</span>
-      <span className="text-muted-foreground"> 出局</span>
-    </p>
-  );
-}
+import { OutcomeLine, VoteRow } from "../layout/FakerVoteLines";
 
 /** 投票反馈：每个人投给了谁、各自得票，以及最终谁出局或进入平票 PK。 */
 function VoteFeedback({
@@ -49,17 +38,12 @@ function VoteFeedback({
         iconClassName={feedback.tieBreak ? "text-warning" : undefined}
       />
 
-      {candidates.length ? (
-        <p className="text-center text-base">
-          <span className="font-semibold text-warning">{candidates.join("、")}</span>
-          <span className="text-muted-foreground"> 平票，进入 PK</span>
-        </p>
-      ) : (
-        <EliminationLine
-          names={eliminated}
-          empty={votes.length ? "无人出局" : "无人投票，无人出局"}
-        />
-      )}
+      <OutcomeLine
+        size="base"
+        names={eliminated}
+        empty={votes.length ? "无人出局" : "无人投票，无人出局"}
+        tieBreak={candidates}
+      />
 
       {tally.length ? (
         <section className="space-y-2 rounded-md bg-muted p-4">
@@ -101,26 +85,14 @@ function VoteFeedback({
             {votes.map((vote) => {
               const abstained = vote.targetId === ABSTAIN_TARGET_ID;
               return (
-                <motion.li
+                <VoteRow
                   key={vote.voterId}
-                  variants={listItem}
-                  className="flex min-w-0 items-center gap-2 rounded-md bg-background px-3 py-1.5 text-sm"
-                >
-                  <span className="min-w-0 truncate font-medium">{nameOf(vote.voterId)}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {abstained ? "选择" : "投给"}
-                  </span>
-                  {/* 被投对象是这一行的结论：不随投票人一起被压缩，最多占半行，超出才截断 */}
-                  <span
-                    className={
-                      abstained
-                        ? "shrink-0 text-muted-foreground"
-                        : "min-w-0 max-w-1/2 shrink-0 truncate font-medium"
-                    }
-                  >
-                    {abstained ? "弃票" : nameOf(vote.targetId)}
-                  </span>
-                </motion.li>
+                  animated
+                  actor={nameOf(vote.voterId)}
+                  verb={abstained ? "选择" : "投给"}
+                  target={abstained ? "弃票" : nameOf(vote.targetId)}
+                  muted={abstained}
+                />
               );
             })}
           </motion.ul>
@@ -153,7 +125,7 @@ function NightFeedback({
       </div>
       <div className="space-y-1 rounded-md bg-muted px-4 py-5">
         <p className="text-center text-xs text-muted-foreground">第 {feedback.day} 天夜里</p>
-        <EliminationLine names={eliminated} empty="平安夜，无人出局" />
+        <OutcomeLine size="base" names={eliminated} empty="平安夜，无人出局" />
       </div>
     </div>
   );

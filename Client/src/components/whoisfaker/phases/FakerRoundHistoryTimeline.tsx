@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import {
@@ -7,65 +6,9 @@ import {
   historyEntryTitle,
   playerNameOf,
 } from "@/lib/WhoIsFakerHistory";
-import { cn } from "@/lib/Utils";
+import { OutcomeLine, VoteRow } from "../layout/FakerVoteLines";
 import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import type { PublicPlayerView, RoundHistoryEntry } from "@bakagame/shared";
-
-/** 一条行为：谁、做了什么、对谁。 */
-function ActionRow({
-  actor,
-  verb,
-  target,
-  muted,
-}: {
-  actor: string;
-  verb: string;
-  target: ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <li className="flex min-w-0 items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs">
-      <span className="min-w-0 truncate font-medium">{actor}</span>
-      <span className="shrink-0 text-muted-foreground">{verb}</span>
-      {/* 对象是这一行的结论，与投票反馈的票型同一口径：不随行动者一起压缩，最多占半行 */}
-      <span
-        className={cn(
-          "min-w-0 max-w-1/2 shrink-0 truncate",
-          muted ? "text-muted-foreground" : "font-medium"
-        )}
-      >
-        {target}
-      </span>
-    </li>
-  );
-}
-
-/** 每个结算阶段的结论行：出局、平票或无事发生。 */
-function Outcome({
-  names,
-  empty,
-  tieBreak,
-}: {
-  names: string[];
-  empty: string;
-  tieBreak?: string[];
-}) {
-  if (tieBreak?.length) {
-    return (
-      <p className="text-xs">
-        <span className="font-medium text-warning">{tieBreak.join("、")}</span>
-        <span className="text-muted-foreground"> 平票，进入 PK</span>
-      </p>
-    );
-  }
-  if (!names.length) return <p className="text-xs text-muted-foreground">{empty}</p>;
-  return (
-    <p className="text-xs">
-      <span className="font-medium text-destructive">{names.join("、")}</span>
-      <span className="text-muted-foreground"> 出局</span>
-    </p>
-  );
-}
 
 function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: PublicPlayerView[] }) {
   const nameOf = (id: string) => playerNameOf(players, id);
@@ -78,7 +21,8 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
               {entry.votes.map((vote) => {
                 const abstained = vote.targetId === ABSTAIN_TARGET_ID;
                 return (
-                  <ActionRow
+                  <VoteRow
+                    dense
                     key={vote.voterId}
                     actor={nameOf(vote.voterId)}
                     verb={abstained ? "选择" : "投给"}
@@ -89,7 +33,7 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
               })}
             </ul>
           ) : null}
-          <Outcome
+          <OutcomeLine
             names={entry.eliminatedPlayerIds.map(nameOf)}
             empty={entry.votes.length ? "无人出局" : "无人投票，无人出局"}
             tieBreak={entry.tieBreakCandidateIds?.map(nameOf)}
@@ -103,7 +47,8 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
           {entry.actions.length ? (
             <ul className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
               {entry.actions.map((action) => (
-                <ActionRow
+                <VoteRow
+                  dense
                   key={action.actorId}
                   actor={`${nameOf(action.actorId)}（${ROLE_LABELS[action.actorRole]}）`}
                   verb={action.targetId ? "刀了" : "选择"}
@@ -113,7 +58,7 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
               ))}
             </ul>
           ) : null}
-          <Outcome names={entry.eliminatedPlayerIds.map(nameOf)} empty="平安夜，无人出局" />
+          <OutcomeLine names={entry.eliminatedPlayerIds.map(nameOf)} empty="平安夜，无人出局" />
         </>
       );
     case "blankGuess":
