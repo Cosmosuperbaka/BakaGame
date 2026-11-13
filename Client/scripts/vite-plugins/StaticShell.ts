@@ -32,9 +32,10 @@ import fs from "fs";
 import {
   PAGE_META,
   SITE_NAME,
-  SITE_ORIGIN,
   SITE_TAGLINE,
   buildFaqStructuredData,
+  buildHeadTags,
+  type HeadTag,
   type PageMeta,
 } from "../../src/data/PageMeta.ts";
 
@@ -50,6 +51,14 @@ function escapeHtml(value: string) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/** 静态标签统一带 data-static-seo，应用启动时据此整体摘掉，再由 Helmet 写当前路由的真值。 */
+function serializeHeadTag(tag: HeadTag): string {
+  const attrs = Object.entries(tag.attrs)
+    .map(([name, value]) => `${name}="${escapeHtml(value)}"`)
+    .join(" ");
+  return `<${tag.kind} ${attrs} ${STATIC_SEO_ATTRIBUTE}="1" />`;
 }
 
 // FAQ 是每页的必备内容：缺问答、空条目或重复问题，直接让构建失败——
@@ -90,30 +99,10 @@ function buildShellPage(
   original: string,
   meta: PageMeta
 ): { path: string; title: string; html: string; outputs: string[] } {
-  const canonical = `${SITE_ORIGIN}${meta.path}`;
   const title = escapeHtml(meta.title);
-  const description = escapeHtml(meta.description);
-  const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`);
   const faqStructuredData = buildFaqStructuredData(meta.faq);
   const head = [
-    `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    ...(meta.keywords && meta.keywords.length > 0
-      ? [
-          `<meta name="keywords" content="${escapeHtml(meta.keywords.join(", "))}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-        ]
-      : []),
-    `<link rel="canonical" href="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:title" content="${title}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="twitter:card" content="summary_large_image" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="twitter:title" content="${title}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    ...buildHeadTags({ ...meta, indexable: true }).map(serializeHeadTag),
     `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
     ...(faqStructuredData
       ? [

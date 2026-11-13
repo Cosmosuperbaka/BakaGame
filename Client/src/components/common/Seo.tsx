@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import { Helmet } from "react-helmet-async";
-import { SITE_NAME, SITE_ORIGIN, buildFaqStructuredData, findPageMeta } from "@/data/PageMeta";
+import {
+  SITE_NAME,
+  SITE_ORIGIN,
+  buildFaqStructuredData,
+  buildHeadTags,
+  findPageMeta,
+} from "@/data/PageMeta";
 
 /** 结构化数据脚本在 <head> 中的固定 id，用于跨页面切换时先移除旧数据再写入新数据。 */
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
@@ -77,10 +83,15 @@ export function Seo({
     throw new Error(`Seo：路径 ${path} 未登记在 PageMeta，且未显式传入 description`);
   }
 
-  const canonical = `${SITE_ORIGIN}${path}`;
   const resolvedTitle = title ?? meta?.title ?? SITE_NAME;
-  const resolvedImage = image ?? meta?.image ?? `${SITE_ORIGIN}/og/logo.jpg`;
-  const resolvedKeywords = keywords ?? meta?.keywords;
+  const headTags = buildHeadTags({
+    path,
+    title: resolvedTitle,
+    description: resolvedDescription,
+    image: image ?? meta?.image,
+    keywords: keywords ?? meta?.keywords,
+    indexable,
+  });
   const resolvedStructuredData = structuredData ?? meta?.structuredData;
   const structuredDataJson = resolvedStructuredData ? JSON.stringify(resolvedStructuredData) : null;
   const faqStructuredData = buildFaqStructuredData(meta?.faq);
@@ -92,24 +103,14 @@ export function Seo({
   return (
     <Helmet prioritizeSeoTags>
       <title>{resolvedTitle}</title>
-      <meta name="description" content={resolvedDescription} />
-      {resolvedKeywords && resolvedKeywords.length > 0 ? (
-        <meta name="keywords" content={resolvedKeywords.join(", ")} />
-      ) : null}
-      <link rel="canonical" href={canonical} />
-      <meta name="robots" content={indexable ? "index,follow" : "noindex,follow"} />
-
-      <meta property="og:type" content="website" />
-      <meta property="og:site_name" content={SITE_NAME} />
-      <meta property="og:title" content={resolvedTitle} />
-      <meta property="og:description" content={resolvedDescription} />
-      <meta property="og:image" content={resolvedImage} />
-      <meta property="og:url" content={canonical} />
-
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={resolvedTitle} />
-      <meta name="twitter:description" content={resolvedDescription} />
-      <meta name="twitter:image" content={resolvedImage} />
+      {headTags.map((tag) => {
+        const key = Object.values(tag.attrs)[0];
+        return tag.kind === "meta" ? (
+          <meta key={key} {...tag.attrs} />
+        ) : (
+          <link key={key} {...tag.attrs} />
+        );
+      })}
     </Helmet>
   );
 }

@@ -591,6 +591,51 @@ export const PAGE_META: PageMeta[] = [
   },
 ];
 
+/** 一条 head 标签：构建期序列化成字符串，运行时渲染成 React 元素，两处从同一份列表出发。 */
+export interface HeadTag {
+  kind: "meta" | "link";
+  /** 属性按书写顺序输出 */
+  attrs: Record<string, string>;
+}
+
+export interface HeadTagInput {
+  /** 站内路径（以 / 开头），用于 canonical 与 og:url */
+  path: string;
+  title: string;
+  description: string;
+  image?: string;
+  keywords?: string[];
+  indexable: boolean;
+}
+
+/**
+ * 页面的 head 标签集合（不含 `<title>` 与 JSON-LD）。
+ * 静态外壳与运行时 `Seo` 共用：加一个标签只改这里，两边不会一边有一边没有。
+ */
+export function buildHeadTags(input: HeadTagInput): HeadTag[] {
+  const canonical = `${SITE_ORIGIN}${input.path}`;
+  const image = input.image ?? `${SITE_ORIGIN}/og/logo.jpg`;
+  const meta = (attrs: Record<string, string>): HeadTag => ({ kind: "meta", attrs });
+  return [
+    meta({ name: "description", content: input.description }),
+    ...(input.keywords && input.keywords.length > 0
+      ? [meta({ name: "keywords", content: input.keywords.join(", ") })]
+      : []),
+    { kind: "link", attrs: { rel: "canonical", href: canonical } },
+    meta({ name: "robots", content: input.indexable ? "index,follow" : "noindex,follow" }),
+    meta({ property: "og:type", content: "website" }),
+    meta({ property: "og:site_name", content: SITE_NAME }),
+    meta({ property: "og:title", content: input.title }),
+    meta({ property: "og:description", content: input.description }),
+    meta({ property: "og:image", content: image }),
+    meta({ property: "og:url", content: canonical }),
+    meta({ name: "twitter:card", content: "summary_large_image" }),
+    meta({ name: "twitter:title", content: input.title }),
+    meta({ name: "twitter:description", content: input.description }),
+    meta({ name: "twitter:image", content: image }),
+  ];
+}
+
 /**
  * 按路径取页面元信息。未登记的路径（房间页、单人页等运行时页面）返回 undefined，
  * 由调用方显式提供 description——这些页面已标 noindex，不进静态外壳。
