@@ -181,12 +181,12 @@ describe("CEE 原生完整玩法", () => {
     expect(h.snapshot(host).roundSummary!.winners.map((item) => item.rank)).toEqual([1, 1, 1]);
   });
 
-  test("实时标签禁选遮住后发现者，观察者保留完整标签、公共房态不含猜测与答案", async () => {
+  test("实时标签禁选遮住后发现者，开着旁观可见答案时观察者保留完整标签、公共房态不含猜测与答案", async () => {
     const h = harness();
     const host = await h.create();
     const guest = await h.join("玩家");
     const spectator = await h.join("旁观者");
-    await h.configure(host, { nonstopMode: true, tagBan: true });
+    await h.configure(host, { nonstopMode: true, tagBan: true, spectatorsSeeAnswers: true });
     await h.send(spectator, "cee.player.spectate", { spectator: true });
     await h.ready(guest);
     await h.send(host, "cee.game.start", {});

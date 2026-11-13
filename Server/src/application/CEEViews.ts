@@ -13,8 +13,10 @@ import {
 } from "../domain/CEEModel";
 import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
 import type { TestRoomPolicy } from "../domain/TestRooms";
+import { canSeeRoundSecrets } from "../domain/Visibility";
 import {
   canStartCEERound,
+  ceeSetsRound,
   ceeImageHintAvailability,
   ceeRemainingAttempts,
   ceeSetterCandidates,
@@ -149,6 +151,18 @@ export function ceePrivateState(
   if (spectatePending) return emptyCEEPrivateState(player, true);
   const unit = getCEEUnit(room, player);
   const observing = room.phase === "settled" || player.status !== "playing";
+  // 答完的正式玩家（猜中、用尽、认输）与出题一方照旧看得到答案；本局不在参与名单里的人
+  // （旁观者、中途加入者、开局时不在线者）是旁观位：局中是否可见由房间开关决定，揭晓后恒可见。
+  const bystander =
+    Boolean(round) && !ceeSetsRound(room, player) && !round!.participants.includes(player.id);
+  const seesSecrets =
+    observing &&
+    (!bystander ||
+      canSeeRoundSecrets(
+        { setsRound: false, spectator: true },
+        room.phase === "guessing",
+        room.settings.spectatorsSeeAnswers ?? false
+      ));
   const remaining = ceeRemainingAttempts(round, unit);
   const inGame = room.phase === "guessing" && Boolean(unit) && player.status === "playing";
   const canGuess = inGame && Boolean(round && unit && canSubmitCEEGuess(round, unit));
@@ -167,8 +181,8 @@ export function ceePrivateState(
       room.phase === "choosingSetter" && isHost
         ? ceeSetterCandidates(room).map((candidate) => candidate.id)
         : [],
-    guesses: visibleGuesses(room, player, observing),
-    answer: round && observing ? round.answer : null,
+    guesses: visibleGuesses(room, player, seesSecrets),
+    answer: round && seesSecrets ? round.answer : null,
     hints:
       round && inGame
         ? round.hints.filter(
@@ -179,7 +193,8 @@ export function ceePrivateState(
     imageHintAvailable: imageHint.available,
     imageHintLevel: imageHint.level,
     deadlineAt: canGuess ? unit!.deadlineAt : null,
-    bannedCharacterIds: bannedIdsOf(round, player),
+    // 旁观位不能猜测，禁选名单对他只会泄漏他人猜过什么。
+    bannedCharacterIds: bystander && !seesSecrets ? [] : bannedIdsOf(round, player),
     spectatePending: false,
   };
 }

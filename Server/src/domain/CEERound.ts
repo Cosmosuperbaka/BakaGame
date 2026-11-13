@@ -32,6 +32,16 @@ export function ceeParticipants(room: CEERoom, setterId = room.setterPlayerId): 
       !(setter?.team !== null && setter?.team !== undefined && player.team === setter.team)
   );
 }
+/**
+ * 本局的出题一方：指定出题人本人，以及与他同队、一起临时观战的队友。
+ * 他们的秘密本来就是自己给的，局中恒可见答案；随机出题没有出题人。
+ */
+export function ceeSetsRound(room: CEERoom, player: CEEPlayerRecord): boolean {
+  const setter = room.setterPlayerId ? room.players.get(room.setterPlayerId) : undefined;
+  if (!setter) return false;
+  if (player.id === setter.id) return true;
+  return setter.team !== null && player.team === setter.team && player.membership === "active";
+}
 /** 能当出题人的：在线、且他出题后（连同队友一起观战）还留得下猜题者。逐人重算参与者是 O(n²)，只在需要时算。 */
 export function ceeSetterCandidates(room: CEERoom): CEEPlayerRecord[] {
   return [...room.players.values()].filter(

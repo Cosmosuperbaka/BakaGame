@@ -209,8 +209,10 @@ describe("CEE 会话与异步边界", () => {
     await h.send(host, "cee.game.start", {});
     const late = await h.join("迟到");
     expect(h.privateState(late).canGuess).toBe(false);
-    expect(h.privateState(late).answer?.id).toBe(1);
+    // 中途加入是零门槛的旁观位：局中不给答案，揭晓后才公开。
+    expect(h.privateState(late).answer).toBeNull();
     await h.guess(host, 1);
+    expect(h.privateState(late).answer?.id).toBe(1);
     await h.send(host, "cee.game.next", {});
     await h.ready(late);
     await h.send(host, "cee.game.start", {});

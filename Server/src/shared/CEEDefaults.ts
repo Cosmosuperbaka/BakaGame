@@ -28,6 +28,7 @@ export const createDefaultCEESettings = (year = new Date().getFullYear()): CEESe
   answerMode: "random",
   bakaAntiCheat: false,
   allowAgents: false,
+  spectatorsSeeAnswers: false,
 });
 
 /** 房间是否按反作弊口径收口：只有显式 `true` 才算开启，缺省与 `false` 同义。 */

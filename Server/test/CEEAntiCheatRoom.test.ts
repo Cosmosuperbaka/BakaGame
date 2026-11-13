@@ -135,10 +135,29 @@ describe("CEE 反作弊房旁观审批", () => {
     expect(h.snapshot(host).spectateRequests).toHaveLength(1);
     expect(h.privateState(viewer).spectatePending).toBe(true);
   });
-  test("开局后批准，旁观者拿到出题人视角", async () => {
+  test("开局后批准：缺省不给答案，揭晓后才公开；房主打开旁观可见答案则局中就有出题人视角", async () => {
+    const closed = await antiCheatRoom();
+    const mate = await closed.h.join("玩家二", trusted("u-two"));
+    const viewer = await closed.h.join("观众三", trusted("u-view"));
+    await closed.h.send(viewer, "cee.player.spectate", { spectator: true });
+    await closed.h.ready(mate);
+    await closed.h.send(closed.host, "cee.game.start", {});
+    await closed.h.send(closed.host, "cee.player.approveSpectate", {
+      playerId: viewer.id as string,
+      approved: true,
+    });
+    // 批准是房主的信任，但答案可见性由房间开关单独决定，缺省关闭。
+    expect(closed.h.privateState(viewer).spectatePending).toBe(false);
+    expect(closed.h.privateState(viewer).answer).toBeNull();
+    expect(closed.h.privateState(viewer).guesses).toEqual([]);
+    await closed.h.guess(closed.host, 1);
+    expect(closed.h.privateState(viewer).answer?.id).toBe(1);
+  });
+  test("开局后批准，开着旁观可见答案时旁观者拿到出题人视角", async () => {
     const { h, host } = await antiCheatRoom();
     const mate = await h.join("玩家二", trusted("u-two"));
     const viewer = await h.join("观众三", trusted("u-view"));
+    await h.configure(host, { spectatorsSeeAnswers: true });
     await h.send(viewer, "cee.player.spectate", { spectator: true });
     await h.ready(mate);
     await h.send(host, "cee.game.start", {});

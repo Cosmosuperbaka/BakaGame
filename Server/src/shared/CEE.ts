@@ -46,6 +46,12 @@ export const CEESettingsSchema = t.Object(
     bakaAntiCheat: t.Optional(t.Boolean()),
     /** 是否允许 Agent（MCP）加入；缺省 false，旧客户端不传即为关闭。 */
     allowAgents: t.Optional(t.Boolean()),
+    /**
+     * 旁观者（含中途加入、本局不参与的人）局中能否看到答案与全场猜测；缺省关闭。
+     * 旁观与中途加入都零门槛可得，与玩家是同一个人的小号一旦能看答案，猜题就失去意义；
+     * 揭晓后答案随结算公开，这个开关只管局中。晚于设置格式加入，所以只能 optional。
+     */
+    spectatorsSeeAnswers: t.Optional(t.Boolean()),
   },
   strict
 );
@@ -64,6 +70,7 @@ export function parseCEESettings(value: unknown): CEESettings {
     if (!("answerMode" in normalized)) normalized.answerMode = "random";
     if (!("bakaAntiCheat" in normalized)) normalized.bakaAntiCheat = false;
     if (!("allowAgents" in normalized)) normalized.allowAgents = false;
+    if (!("spectatorsSeeAnswers" in normalized)) normalized.spectatorsSeeAnswers = false;
     filled = normalized;
   }
   if (!Value.Check(CEESettingsSchema, filled)) throw new Error("设置文件格式不正确");
