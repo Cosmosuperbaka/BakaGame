@@ -66,10 +66,6 @@ export interface CreateRoomDialogProps {
     password?: string;
     allowSpectators: boolean;
   }) => Promise<void>;
-  /**
-   * @deprecated 校验与建房失败都写在弹窗里（缺密码标在密码框上，服务端失败写在表单末尾），不再回调；保留只为兼容旧调用。
-   */
-  onValidationError?: (message: string) => void;
 }
 
 export function CreateRoomDialog({
@@ -121,6 +117,20 @@ type CreateRoomFormProps = Pick<
   | "defaults"
   | "onCreate"
 >;
+
+/** 房间类型与反作弊两处开关行同形：不可用时开关禁用，说明换成原因。 */
+function RoomModeSwitchRow({ item }: { item: RoomModeSwitch }) {
+  return (
+    <SettingSwitchRow
+      label={item.label}
+      icon={item.icon}
+      description={item.disabledReason ?? item.description}
+      checked={item.checked}
+      onCheckedChange={item.onCheckedChange}
+      disabled={Boolean(item.disabledReason)}
+    />
+  );
+}
 
 function CreateRoomForm({
   defaultName,
@@ -186,26 +196,8 @@ function CreateRoomForm({
       }}
     >
       <div className="space-y-5">
-        {roomMode ? (
-          <SettingSwitchRow
-            label={roomMode.label}
-            icon={roomMode.icon}
-            description={roomMode.disabledReason ?? roomMode.description}
-            checked={roomMode.checked}
-            onCheckedChange={roomMode.onCheckedChange}
-            disabled={Boolean(roomMode.disabledReason)}
-          />
-        ) : null}
-        {antiCheat ? (
-          <SettingSwitchRow
-            label={antiCheat.label}
-            icon={antiCheat.icon}
-            description={antiCheat.disabledReason ?? antiCheat.description}
-            checked={antiCheat.checked}
-            onCheckedChange={antiCheat.onCheckedChange}
-            disabled={Boolean(antiCheat.disabledReason)}
-          />
-        ) : null}
+        {roomMode ? <RoomModeSwitchRow item={roomMode} /> : null}
+        {antiCheat ? <RoomModeSwitchRow item={antiCheat} /> : null}
         <SettingTextField
           label="房间名称"
           value={roomName}

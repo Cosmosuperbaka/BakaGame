@@ -37,7 +37,6 @@ const meta = {
     defaultName: "海豹的房间",
     onOpenChange: fn(),
     onCreate: fn(async () => {}),
-    onValidationError: fn(),
   },
   render: (args) => <CreateRoomDemo {...args} />,
 } satisfies Meta<typeof CreateRoomDialog>;
