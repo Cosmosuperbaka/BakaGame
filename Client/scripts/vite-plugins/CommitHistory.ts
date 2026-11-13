@@ -1,5 +1,4 @@
 /** 构建期把提交历史注入为虚拟模块，随 JS 产物带 hash。 */
-import { execSync } from "child_process";
 import { REPOSITORY_URL } from "../../src/data/PageMeta.ts";
 import {
   COMMIT_HISTORY_LIMIT,
@@ -8,6 +7,8 @@ import {
   normalizeCommitEntries,
 } from "../../src/lib/CommitHistory.ts";
 import { type CommitEntry, type CommitHistory } from "../../src/lib/CommitHistory.ts";
+import { shortCommit } from "../../src/lib/ReleaseName.ts";
+import { gitRevision, runGit } from "./GitRevision.ts";
 
 // ==================== Vite 插件：构建时注入提交历史 ====================
 // 以虚拟模块提供数据，随 JS 产物一同带 hash：
@@ -42,25 +43,13 @@ export function commitHistoryPlugin(options: {
   // load 与 transformIndexHtml 都要用，同一次构建里跑一次就够。
   let collected: Promise<CommitHistory> | undefined;
 
-  function runGit(args: string) {
-    if (options.execGit) return options.execGit(args);
-    return execSync(`git ${args}`, { encoding: "utf-8" }).trim();
-  }
-
-  function revision() {
-    try {
-      return runGit("rev-parse HEAD");
-    } catch {
-      return "";
-    }
-  }
+  const git = options.execGit ?? runGit;
+  const revision = () => gitRevision(git);
 
   function shortRevision() {
-    // 固定截 7 位，与服务端 `Release.ts` 的 release 口径一致：`--short` 在前缀有歧义时会自动加长，
-    // 两端就会给同一次构建报出两个不同的 Sentry release。
     // 空串等同取不到：版本提示与 Sentry release 都靠它判断，不能留空值；
     // 非 git 工作区（平台直接给源码包）时退化为占位值，前端据此跳过版本提示。
-    return revision().slice(0, 7) || "dev";
+    return shortCommit(revision()) || "dev";
   }
 
   /**
@@ -70,7 +59,7 @@ export function commitHistoryPlugin(options: {
   function collectFromGit(): CommitEntry[] {
     try {
       // 日期取 iso-strict 带时区：--date=short 只到天，相对时间会全部退化成「今天」。
-      const raw = runGit("log -n 30 --date=iso-strict --format=%H%x00%s%x00%ad%x00%an%x1F");
+      const raw = git("log -n 30 --date=iso-strict --format=%H%x00%s%x00%ad%x00%an%x1F");
 
       // 用 \x00 分隔字段、\x1F 分隔记录，避开提交信息里的空格与换行。
       const records = raw

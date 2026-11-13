@@ -5,6 +5,7 @@ import { currentCommit } from "virtual:build-info";
 import appVersion from "virtual:app-version";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 import { bakaChannel, bakaClientType } from "@/lib/BakaChannel";
+import { formatReleaseName } from "@/lib/ReleaseName";
 
 export type ClientLogLevel = "info" | "warning" | "error";
 
@@ -207,7 +208,7 @@ const buildInitOptions = (
     dsn,
     tunnel,
     environment: import.meta.env.MODE,
-    release: currentCommit !== "dev" ? `V${appVersion || "0.0.0"}（${currentCommit}）` : undefined,
+    release: currentCommit !== "dev" ? formatReleaseName(appVersion, currentCommit) : undefined,
     // 壳版本与网页发布号是两套命名空间，混进 release 会互相污染；壳身份版本放 dist。
     dist: channel ? `${channel.clientType}@${channel.clientVersion}` : undefined,
     initialScope: {

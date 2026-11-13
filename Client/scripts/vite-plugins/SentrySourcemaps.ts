@@ -9,9 +9,10 @@
  * （`V<版本>（<7 位提交>）`）创建，问题页才能按版本归并。
  */
 import fs from "node:fs";
-import { execSync } from "node:child_process";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { latestVersionOf } from "../../src/lib/Changelog.ts";
+import { formatReleaseName } from "../../src/lib/ReleaseName.ts";
+import { gitRevision } from "./GitRevision.ts";
 
 export interface SentrySourcemapEnv {
   SENTRY_AUTH_TOKEN?: string;
@@ -26,16 +27,7 @@ export const sourcemapUploadEnabled = (env: SentrySourcemapEnv): boolean =>
 /** 与 `src/lib/Sentry.ts` 的运行时 release 同一口径；取不到提交时不建 release。 */
 export const sentryReleaseName = (changelogPath: string, revision: string): string | undefined => {
   if (!revision) return undefined;
-  const version = latestVersionOf(fs.readFileSync(changelogPath, "utf8")) || "0.0.0";
-  return `V${version}（${revision.slice(0, 7)}）`;
-};
-
-const gitRevision = (): string => {
-  try {
-    return execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
-  } catch {
-    return "";
-  }
+  return formatReleaseName(latestVersionOf(fs.readFileSync(changelogPath, "utf8")) ?? "", revision);
 };
 
 export function sentrySourcemapsPlugin(changelogPath: string, env: SentrySourcemapEnv) {
