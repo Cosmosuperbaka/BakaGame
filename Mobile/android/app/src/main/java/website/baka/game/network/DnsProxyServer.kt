@@ -70,11 +70,23 @@ class DnsProxyServer private constructor(
                 val release: () -> Unit = {
                     if (released.compareAndSet(false, true)) active.decrementAndGet()
                 }
-                thread(name = "baka-dns-proxy-conn", isDaemon = true) {
+                try {
+                    thread(name = "baka-dns-proxy-conn", isDaemon = true) {
+                        try {
+                            handle(client, release)
+                        } finally {
+                            release()
+                        }
+                    }
+                } catch (err: Throwable) {
+                    // 线程创建失败（资源耗尽）不能让接受循环退出，否则隧道从此停止服务：
+                    // 回 503、归还名额，继续接受后续连接
+                    Log.w(TAG, "创建处理线程失败：${err.message}")
+                    release()
+                    respond(client, "503 Service Unavailable")
                     try {
-                        handle(client, release)
-                    } finally {
-                        release()
+                        client.close()
+                    } catch (_: Exception) {
                     }
                 }
             }
