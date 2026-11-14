@@ -34,9 +34,12 @@ type CoverageMetric = keyof typeof thresholds;
 // `application/CreateServer.ts` 的生产装配体（要起数据 Worker 与真实上游，启动前的
 // 生产配置校验由 `test/Env.test.ts` 覆盖）、`scripts/SongRandomnessProbe.ts` 的联网
 // 主流程（显式运行的真实歌单探针，纯函数部分已由 `test/SongRandomnessProbe.test.ts` 覆盖）。
+//
+// 2026-11-15 同口径重校：实测 functions 94.59% (5963/6304)、lines 96.33% (49363/51245)。
+// 这次留约 0.5pp 余量：本机与持续集成的操作系统不同，按平台分支的代码两边命中的行数略有出入。
 const thresholds = {
-  functions: 92.2,
-  lines: 93.9,
+  functions: 94,
+  lines: 95.8,
 };
 
 // LCIF 单值总计记录（FNF / FNH / LF / LH）到累加字段的映射。
