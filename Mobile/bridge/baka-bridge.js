@@ -409,6 +409,8 @@
             url: url,
             sha256: sha256,
             sizeBytes: Number(body.sizeBytes) || 0,
+            // 原生侧用它拒绝降级；缺失时原生按「无法证明不旧」处理
+            publishedAt: String(body.publishedAt || "").trim(),
           })
         ).catch(function () {
           // 计费网络、离线、校验失败都走这里：下次在首页且联网时再试。

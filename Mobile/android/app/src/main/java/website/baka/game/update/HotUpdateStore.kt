@@ -17,8 +17,8 @@ import java.io.File
  *   一份永远不会再被使用的 40 MB 文件。
  * - **待确认的包有启动次数上限**：页面加载失败（白屏）时桥接脚本不会调用 confirm，
  *   连续几次启动仍未确认就退回内嵌产物。不能把一台设备永久卡在坏包上。
- * - 只保留当前包与新包：每个包几十 MB，旧包没有回滚价值——回滚靠清单重新指向旧构建，
- *   下次下载即可。
+ * - 只保留当前包与新包：每个包几十 MB，旧包没有回滚价值。新包的发布时间不得早于已装的包
+ *   （防降级），所以回滚靠「用旧提交重新发布一次」，而不是让清单指回旧构建。
  *
  * 路径与 SharedPreferences 的键名只在壳内使用；`CapWebViewSettings` 与 `serverBasePath`
  * 是 Capacitor 的既有契约（7.x `com.getcapacitor.plugin.WebView`），升级 Capacitor 时要一起看。
@@ -33,6 +33,7 @@ internal object HotUpdateStore {
     private const val CAP_PREFS = "CapWebViewSettings"
     private const val CAP_SERVER_PATH = "serverBasePath"
     private const val COMPLETE_MARKER = ".complete"
+    internal const val PUBLISHED_MARKER = ".published"
 
     // 构建标记会拼进目录名：拒绝 `..` 与单独一个 `.`，其余字符只允许安全集合。
     internal val BUILD_PATTERN = Regex("^(?!.*\\.\\.)(?!\\.$)[A-Za-z0-9._-]{1,64}$")
@@ -54,6 +55,22 @@ internal object HotUpdateStore {
 
     fun pendingBuild(context: Context): String? =
         prefs(context).getString(KEY_PENDING, null)?.takeIf { isComplete(context, it) }
+
+    /** 资源包落盘时记下的发布时间（已规范化）；没有记录返回 null。 */
+    fun publishedAt(context: Context, build: String): String? {
+        val file = File(bundleDir(context, build) ?: return null, PUBLISHED_MARKER)
+        if (!file.isFile) return null
+        return HotUpdatePolicy.normalizePublishedAt(runCatching { file.readText() }.getOrNull())
+    }
+
+    /**
+     * 防降级的下限：当前包与待确认包里发布时间较晚的那个。
+     * 回滚坏包的办法是用旧提交重新发布一次（发布时间随之是新的），而不是让清单指回旧时间。
+     */
+    fun publishedFloor(context: Context): String? =
+        listOfNotNull(activeBuild(context), pendingBuild(context))
+            .mapNotNull { publishedAt(context, it) }
+            .maxOrNull()
 
     /**
      * 启动时决定这次用哪个目录，并把结果写进 Capacitor 的 `serverBasePath`。

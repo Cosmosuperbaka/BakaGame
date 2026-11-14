@@ -27,7 +27,9 @@ import javax.net.ssl.HttpsURLConnection
  * 热更新不打断当前对局，也不需要用户重新安装。
  *
  * 安全边界：
- * - 只接受 https 与清单给出的 sha256；校验不过就整包丢弃。
+ * - 下载地址（含每一跳重定向）只接受站点域内的 https 主机，见 [HotUpdatePolicy]：
+ *   地址与校验值都来自页面脚本，校验值本身不是信任锚，来源收口才是。
+ * - 新包的发布时间不得早于已装的包（防降级）；校验值不符整包丢弃，不解压、不切换。
  * - 解压按 canonical path 校验，拒绝 `..`、绝对路径与超量条目/体积（zip slip 与 zip bomb）。
  * - 解压后核对 `index.html` 的构建标记，防止「清单说 A、包里是 B」。
  * - 只在非计费网络下载：一个包几十 MB，不能悄悄吃移动流量。
@@ -47,6 +49,7 @@ class BakaHotUpdatePlugin : Plugin() {
         val url = call.getString("url")?.trim().orEmpty()
         val sha256 = call.getString("sha256")?.trim().orEmpty()
         val build = call.getString("build")?.trim().orEmpty()
+        val publishedAt = HotUpdatePolicy.normalizePublishedAt(call.getString("publishedAt"))
         if (!HotUpdateStore.BUILD_PATTERN.matches(build) || !SHA256_PATTERN.matches(sha256)) {
             call.reject("构建标记或校验值不合法", "HOT_UPDATE_BAD_ARGS")
             return
@@ -58,7 +61,7 @@ class BakaHotUpdatePlugin : Plugin() {
 
         bridge.execute {
             try {
-                val result = installBundle(ctx, url, sha256, build)
+                val result = installBundle(ctx, url, sha256, build, publishedAt)
                 call.resolve(result)
             } catch (error: HotUpdateError) {
                 call.reject(error.message ?: error.code, error.code)
@@ -89,16 +92,10 @@ class BakaHotUpdatePlugin : Plugin() {
         ctx: Context,
         rawUrl: String,
         expectedSha256: String,
-        build: String
+        build: String,
+        publishedAt: String?
     ): JSObject {
-        val uri = try {
-            URI(rawUrl)
-        } catch (_: Exception) {
-            throw HotUpdateError("HOT_UPDATE_BAD_ARGS", "下载地址不合法")
-        }
-        if (uri.scheme != "https" || uri.host.isNullOrEmpty()) {
-            throw HotUpdateError("HOT_UPDATE_BAD_ARGS", "只接受 https 下载地址")
-        }
+        val uri = HotUpdatePolicy.checkSource(rawUrl)
 
         val active = HotUpdateStore.activeBuild(ctx)
         val pending = HotUpdateStore.pendingBuild(ctx)
@@ -108,6 +105,10 @@ class BakaHotUpdatePlugin : Plugin() {
                 put("build", build)
                 put("reused", true)
             }
+        }
+
+        if (HotUpdatePolicy.isDowngrade(publishedAt, HotUpdateStore.publishedFloor(ctx))) {
+            throw HotUpdateError("HOT_UPDATE_DOWNGRADE", "资源包比已安装的更旧，拒绝降级")
         }
 
         val root = HotUpdateStore.root(ctx)
@@ -130,6 +131,7 @@ class BakaHotUpdatePlugin : Plugin() {
             if (bundledBuild != build) {
                 throw HotUpdateError("HOT_UPDATE_BUILD_MISMATCH", "资源包内构建标记与清单不一致")
             }
+            if (publishedAt != null) File(tmpDir, HotUpdateStore.PUBLISHED_MARKER).writeText(publishedAt)
             File(tmpDir, ".complete").writeText(build)
             finalDir.deleteRecursively()
             if (!tmpDir.renameTo(finalDir)) {
@@ -150,16 +152,36 @@ class BakaHotUpdatePlugin : Plugin() {
         }
     }
 
+    /**
+     * 逐跳手动跟随重定向：每一跳都重新过 [HotUpdatePolicy.checkSource]，
+     * 否则可信主机一个跳转就能把下载引到别处。
+     */
+    private fun openConnection(first: URI): HttpsURLConnection {
+        var current = first
+        var hops = 0
+        while (true) {
+            val connection = current.toURL().openConnection() as? HttpsURLConnection
+                ?: throw HotUpdateError("HOT_UPDATE_BAD_ARGS", "只接受 https 下载地址")
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Accept", "application/zip")
+            connection.setRequestProperty("Accept-Encoding", "identity")
+            connection.setRequestProperty("User-Agent", "BakaGame-HotUpdate/${BuildConfig.VERSION_NAME}")
+            val status = connection.responseCode
+            if (status !in REDIRECT_STATUS) return connection
+            val location = connection.getHeaderField("Location")
+            connection.disconnect()
+            hops += 1
+            if (location.isNullOrBlank() || hops > HotUpdatePolicy.MAX_REDIRECTS) {
+                throw HotUpdateError("HOT_UPDATE_DOWNLOAD_FAILED", "下载重定向无效或过多")
+            }
+            current = HotUpdatePolicy.checkSource(current.resolve(location).toString())
+        }
+    }
+
     private fun download(uri: URI, target: File) {
-        val connection = uri.toURL().openConnection() as? HttpsURLConnection
-            ?: throw HotUpdateError("HOT_UPDATE_BAD_ARGS", "只接受 https 下载地址")
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
-        // 允许 CDN 做规范化跳转；完整性由清单里的 sha256 保证，与终点是哪个节点无关。
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("Accept", "application/zip")
-        connection.setRequestProperty("Accept-Encoding", "identity")
-        connection.setRequestProperty("User-Agent", "BakaGame-HotUpdate/${BuildConfig.VERSION_NAME}")
+        val connection = openConnection(uri)
         try {
             val status = connection.responseCode
             if (status !in 200..299) {
@@ -269,10 +291,9 @@ class BakaHotUpdatePlugin : Plugin() {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
-    private class HotUpdateError(val code: String, message: String) : Exception(message)
-
     private companion object {
         val SHA256_PATTERN = Regex("^[a-fA-F0-9]{64}$")
+        val REDIRECT_STATUS = setOf(301, 302, 303, 307, 308)
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 120_000
         const val BUFFER_SIZE = 64 * 1024

@@ -100,6 +100,7 @@ const manifest = {
   url: "https://cdn.test/files/BakaGame-web-def5678.zip",
   sha256: "a".repeat(64),
   sizeBytes: 45_000_000,
+  publishedAt: "2026-11-12T08:00:00.000Z",
 };
 
 const settle = async () => {
@@ -130,6 +131,8 @@ test("页面加载后先确认待生效包，再在首页空闲时询问热更�
         url: "https://cdn.test/files/BakaGame-web-def5678.zip",
         sha256: "a".repeat(64),
         sizeBytes: 45_000_000,
+        // 原生侧靠它拒绝降级：清单已经下发，桥接层只负责原样转交
+        publishedAt: "2026-11-12T08:00:00.000Z",
       },
     ]
   );
