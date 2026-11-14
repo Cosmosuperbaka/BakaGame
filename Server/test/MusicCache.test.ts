@@ -195,13 +195,15 @@ describe("MusicCache peek 与维护", () => {
     let calls = 0;
     const { cache, maintenance } = createCache({ now: () => now, isUpstreamBusy: () => false });
     const loader = async () => ({ v: ++calls });
+    // 长 TTL 让条目在 31 分钟时仍未硬过期，peek 读不到只能是被淘汰，而非过期。
+    const ttl = 60 * 60_000;
 
-    await cache.cached("idle", 1000, loader);
+    await cache.cached("idle", ttl, loader);
     now = 31 * 60_000;
     await maintenance();
     expect(cache.peek("idle")).toBeUndefined();
 
-    await cache.cached("idle", 1000, loader);
+    await cache.cached("idle", ttl, loader);
     expect(calls).toBe(2);
   });
 
