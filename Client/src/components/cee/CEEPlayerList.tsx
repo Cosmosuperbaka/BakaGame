@@ -1,5 +1,5 @@
 import type { ReactNode, Ref } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import type { CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Check, Clock, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -87,18 +87,13 @@ export function CEEPlayerList({
 
   // 服务端按 120 秒兜底回收请求、但不给被超时退回的一方发事件；这里挂一个看门狗，
   // 到点仍未批准就补一条超时提示（批准/拒绝会先到并清掉计时器，多留的余量避开与快照竞争）。
-  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!pendingMe) return;
-    if (watchdog.current) clearTimeout(watchdog.current);
-    watchdog.current = setTimeout(
+    const timer = setTimeout(
       () => useCEEStore.getState().showToast(SPECTATE_TIMEOUT_TEXT, "error"),
       SPECTATE_APPROVAL_WATCHDOG_MS
     );
-    return () => {
-      if (watchdog.current) clearTimeout(watchdog.current);
-      watchdog.current = null;
-    };
+    return () => clearTimeout(timer);
   }, [pendingMe]);
 
   const renderRows = (players: CEEPlayer[], inTeam: boolean) => (
