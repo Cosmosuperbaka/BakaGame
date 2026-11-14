@@ -66,6 +66,8 @@ type SelfCheckReport = {
 不接受客户端自报。服务端验完把档位记进设备表，之后每次握手只签挑战，不再重发链。
 
 `selfCheck.attestationLevel` 是壳本地解析扩展的展示值：服务端一旦验过链就用自家结论覆盖它。
+本地只读 `attestationSecurityLevel`：硬件级给 `trusted`，其余 `degraded`，**不会**给 `rejected`；
+启动状态与设备锁由服务端从链里读取并判定。
 
 服务端验证要点（实现提醒，全部在服务端）：双根内置（旧根 + 2026-02 新根）、CRL 缓存容忍拉取失败、
 2021 年前工厂证书过期放行、RKP 到期换证属正常、`attestationChallenge` 与扩展 nonce 核对、
@@ -148,7 +150,7 @@ Mobile/
         ├── channel/
         │   ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck / setSecureScreen（FLAG_SECURE 开关）
         │   ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
-        │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17 本地最小解析（仅展示）
+        │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17：只读 attestationSecurityLevel（仅展示）
         │   └── SelfCheck.kt             # P3.3 运行时检测
         └── update/
             ├── BakaHotUpdatePlugin.kt   # 下载 / sha256 校验 / 安全解压

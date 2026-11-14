@@ -179,7 +179,7 @@ object SelfCheck {
     private fun attestationLevel(context: Context): String {
         return try {
             val chain = KeystoreChannel.ensureCertificateChain(context)
-            AttestationLocal.read(chain.firstOrNull()).attestationLevel()
+            AttestationLocal.attestationLevel(chain.firstOrNull())
         } catch (e: Exception) {
             "degraded" // 读不到扩展 ≠ 设备被破坏：交给服务端按失败态分档处置
         }
