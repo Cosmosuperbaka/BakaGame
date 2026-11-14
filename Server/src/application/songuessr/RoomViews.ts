@@ -247,6 +247,17 @@ export const buildPrivateState = (
     !room.solo &&
     (room.phase === "choosingSubmitter" ||
       (room.phase === "waiting" && room.settings.questionMode === "manual"));
+  const maxGuesses = round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound;
+  const guessesUsed = state?.guessesUsed ?? 0;
+  // 还在作答的猜歌方：能猜与能放弃共用这道门，各自只再多一个条件。
+  const stillAnswering =
+    room.phase === "playing" &&
+    player.membership === "active" &&
+    canParticipateAsGuesser &&
+    Boolean(state) &&
+    !state?.correct &&
+    !state?.gaveUp &&
+    guessesUsed < maxGuesses;
   return {
     playerId: player.id,
     sessionToken: player.sessionToken,
@@ -256,30 +267,9 @@ export const buildPrivateState = (
       ? submitterCandidates(ctx, room).map((candidate) => candidate.id)
       : [],
     canSubmitSong: room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id,
-    canGuess:
-      room.phase === "playing" &&
-      player.membership === "active" &&
-      canParticipateAsGuesser &&
-      Boolean(state && round?.audioReady[player.id]) &&
-      !state?.correct &&
-      !state?.gaveUp &&
-      (state?.guessesUsed ?? 0) <
-        (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
-    canGiveUp:
-      room.phase === "playing" &&
-      player.membership === "active" &&
-      canParticipateAsGuesser &&
-      Boolean(state) &&
-      !state?.inFlight &&
-      !state?.correct &&
-      !state?.gaveUp &&
-      (state?.guessesUsed ?? 0) <
-        (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
-    remainingGuesses: Math.max(
-      0,
-      (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound) -
-        (state?.guessesUsed ?? 0)
-    ),
+    canGuess: stillAnswering && Boolean(round?.audioReady[player.id]),
+    canGiveUp: stillAnswering && !state?.inFlight,
+    remainingGuesses: Math.max(0, maxGuesses - guessesUsed),
     guessDeadlineAt: state?.deadlineAt,
     // 出题人、出题人的队友与旁观者在游戏中均可看到本题答案
     submittedSong: seesAnswer && round ? publicSong(round.song) : undefined,
