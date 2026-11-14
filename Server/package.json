@@ -30,7 +30,6 @@
     "@applemusic-like-lyrics/ttml": "^1.0.1",
     "@better-auth/passkey": "1.7.7",
     "@elysiajs/cors": "^1.4.2",
-    "@elysiajs/openapi": "1.4.17",
     "@neteasecloudmusicapienhanced/api": "4.41.1",
     "@orpc/contract": "1.15.6",
     "@orpc/server": "1.15.6",
@@ -52,6 +51,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@elysiajs/openapi": "1.4.17",
     "@eslint/js": "^10.0.1",
     "@types/nodemailer": "8.0.2",
     "bun": "1.4.2",
