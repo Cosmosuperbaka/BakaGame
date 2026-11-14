@@ -481,6 +481,33 @@ describe("Songuessr store integration", () => {
     );
   });
 
+  it("五个只读查询都经 sendCommand 注入房间身份，信封只有一处来源", async () => {
+    useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
+    wsMock.send.mockResolvedValue({
+      results: [],
+      playlist: { id: "123", name: "我喜欢", songCount: 0 },
+    });
+    const sendCommand = vi.spyOn(useSonGuessrStore.getState(), "sendCommand");
+
+    await useSonGuessrStore.getState().searchMusic("晴天");
+    await useSonGuessrStore.getState().searchBangumi("测试番剧");
+    await useSonGuessrStore.getState().resolveAnimeSongs("subject-1");
+    await useSonGuessrStore.getState().searchArtist("周杰伦");
+    await useSonGuessrStore.getState().resolvePlaylist("https://music.example.com/playlist?id=123");
+
+    expect(sendCommand.mock.calls.map(([type]) => type)).toEqual([
+      "song.music.search",
+      "song.bangumi.search",
+      "song.bangumi.songs",
+      "song.music.artist.search",
+      "song.music.playlist.resolve",
+    ]);
+    expect(wsMock.send).toHaveBeenCalledTimes(5);
+    for (const call of wsMock.send.mock.calls) {
+      expect(call[2]).toMatchObject({ roomId: "5678", sessionToken: "search-token" });
+    }
+  });
+
   it("相同关键词在复用窗口内只发一次上游命令", async () => {
     const results = [{ id: "song-1", title: "晴天", artist: "周杰伦" }];
     wsMock.send.mockResolvedValue({ results });

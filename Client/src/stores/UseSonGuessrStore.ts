@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/QueryReuse";
+import {
+  createQueryReuseCache,
+  exactQueryKey,
+  keywordQueryKey,
+  type QueryReuseCache,
+} from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import {
@@ -11,6 +16,9 @@ import type {
   ChatMessage,
   EventPacket,
   ServerMessage,
+  SonGuessrAck,
+  SonGuessrCommand,
+  SonGuessrPayload,
   SonGuessrRoomEnterAck,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
@@ -210,6 +218,15 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     },
   }));
 
+  /** 只读查询的共用壳：复用窗口 + 带房间身份的命令 + 取字段，身份注入只留在 sendCommand 一处。 */
+  const query = <TCommand extends SonGuessrCommand, TResult>(
+    cache: QueryReuseCache<TResult>,
+    key: string,
+    command: TCommand,
+    payload: SonGuessrPayload<TCommand>,
+    pick: (ack: SonGuessrAck<TCommand>) => TResult
+  ) => cache.run(key, () => get().sendCommand(command, payload).then(pick));
+
   return {
     connected: false,
     lobbyReady: false,
@@ -319,69 +336,49 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     },
 
     searchMusic: (keyword) =>
-      musicSearchCache.run(keyword, async () => {
-        const result = await ws.send(
-          "song.music.search",
-          { keyword },
-          {
-            roomId: get().roomId ?? undefined,
-            sessionToken: get().sessionToken ?? undefined,
-          }
-        );
-        return result.results ?? [];
-      }),
+      query(
+        musicSearchCache,
+        keyword,
+        "song.music.search",
+        { keyword },
+        (ack) => ack.results ?? []
+      ),
 
     searchBangumi: (keyword) =>
-      bangumiSearchCache.run(keyword, async () => {
-        const result = await ws.send(
-          "song.bangumi.search",
-          { keyword },
-          {
-            roomId: get().roomId ?? undefined,
-            sessionToken: get().sessionToken ?? undefined,
-          }
-        );
-        return result.results ?? [];
-      }),
+      query(
+        bangumiSearchCache,
+        keyword,
+        "song.bangumi.search",
+        { keyword },
+        (ack) => ack.results ?? []
+      ),
 
     resolveAnimeSongs: (subjectId) =>
-      bangumiSongsCache.run(subjectId, async () => {
-        const result = await ws.send(
-          "song.bangumi.songs",
-          { subjectId },
-          {
-            roomId: get().roomId ?? undefined,
-            sessionToken: get().sessionToken ?? undefined,
-          }
-        );
-        return result.results ?? [];
-      }),
+      query(
+        bangumiSongsCache,
+        subjectId,
+        "song.bangumi.songs",
+        { subjectId },
+        (ack) => ack.results ?? []
+      ),
 
     searchArtist: (keyword) =>
-      artistSearchCache.run(keyword, async () => {
-        const result = await ws.send(
-          "song.music.artist.search",
-          { keyword },
-          {
-            roomId: get().roomId ?? undefined,
-            sessionToken: get().sessionToken ?? undefined,
-          }
-        );
-        return result.results ?? [];
-      }),
+      query(
+        artistSearchCache,
+        keyword,
+        "song.music.artist.search",
+        { keyword },
+        (ack) => ack.results ?? []
+      ),
 
     resolvePlaylist: (value) =>
-      playlistResolveCache.run(value, async () => {
-        const result = await ws.send(
-          "song.music.playlist.resolve",
-          { value },
-          {
-            roomId: get().roomId ?? undefined,
-            sessionToken: get().sessionToken ?? undefined,
-          }
-        );
-        return result.playlist;
-      }),
+      query(
+        playlistResolveCache,
+        value,
+        "song.music.playlist.resolve",
+        { value },
+        (ack) => ack.playlist
+      ),
 
     sendCommand: async (type, payload = {}, options) => {
       const { roomId, sessionToken } = get();
