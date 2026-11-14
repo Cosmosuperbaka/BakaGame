@@ -18,6 +18,7 @@ import {
 } from "@/components/common/room/PlayerRowGroup";
 import { teamGroups } from "@/lib/Teams";
 import { useCEEAction } from "@/hooks/UseCEEAction";
+import { useHostPlayerActions } from "@/hooks/UseHostPlayerActions";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import {
   SPECTATE_APPROVAL_WATCHDOG_MS,
@@ -29,9 +30,6 @@ import {
   SPECTATE_TIMEOUT_TEXT,
 } from "@/lib/AntiCheatCopy";
 import { CEEMarks } from "@/components/cee/CEEMarks";
-
-/** 与 `useCEEAction` 的 `run` 同签名，避免玩家行各自重写命令类型。 */
-type CEERun = ReturnType<typeof useCEEAction>["run"];
 
 type CEEStatus = { label: string; tone: PlayerStatusTone };
 
@@ -71,6 +69,13 @@ export function CEEPlayerList({
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const waiting = snapshot.phase === "waiting";
   const { run, busy } = useCEEAction();
+  const { kick, transferHost, setSpectator } = useHostPlayerActions({
+    kick: (playerId) => run("cee.room.kick", { playerId }),
+    transferHost: (playerId) => run("cee.room.transferHost", { playerId }),
+    setSpectator: (spectator) => run("cee.player.spectate", { spectator }),
+    onError: (error) => useCEEStore.getState().reportError(error),
+    lock: "none",
+  });
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const observers = snapshot.players.filter((player) => player.membership === "spectator");
   // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
@@ -79,7 +84,6 @@ export function CEEPlayerList({
   // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
   const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
   const canJoinPlayers = waiting && me?.membership === "spectator";
-  const toggleSpectator = (spectator: boolean) => void run("cee.player.spectate", { spectator });
 
   // 反作弊房：旁观要先经房主批准。待批准期间本人既不在玩家组也不在旁观组，单独显示等待状态。
   const pendingMe = me?.membership === "pendingSpectator";
@@ -112,7 +116,8 @@ export function CEEPlayerList({
           self={player.id === privateState.playerId}
           canManage={isHost && player.id !== privateState.playerId}
           busy={busy}
-          run={run}
+          onKick={kick}
+          onTransferHost={transferHost}
         />
       ))}
     </PlayerRowGroup>
@@ -142,7 +147,7 @@ export function CEEPlayerList({
             renderRows(activePlayers, false)
           )}
           {canJoinPlayers ? (
-            <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} />
+            <SpectatorToggle spectator={false} disabled={busy} onToggle={setSpectator} />
           ) : null}
 
           {observers.length > 0 || canJoinSpectators || pendingMe ? (
@@ -150,7 +155,7 @@ export function CEEPlayerList({
               <PlayerGroupTitle label="旁观" count={observers.length} withRule />
               {renderRows(observers, false)}
               {canJoinSpectators ? (
-                <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} />
+                <SpectatorToggle spectator disabled={busy} onToggle={setSpectator} />
               ) : null}
               {pendingMe ? (
                 <div className="mt-1 flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
@@ -166,7 +171,7 @@ export function CEEPlayerList({
                     size="sm"
                     className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
                     disabled={busy}
-                    onClick={() => toggleSpectator(false)}
+                    onClick={() => setSpectator(false)}
                   >
                     {SPECTATE_CANCEL_TEXT}
                   </Button>
@@ -301,8 +306,8 @@ interface CEEPlayerRowProps {
   self: boolean;
   canManage: boolean;
   busy: boolean;
-  /** 与 `useCEEAction` 的 `run` 同签名，避免每个玩家行各自重写命令类型。 */
-  run: CEERun;
+  onKick: (playerId: string) => void;
+  onTransferHost: (playerId: string) => void;
 }
 
 function CEEPlayerRow({
@@ -313,7 +318,8 @@ function CEEPlayerRow({
   self,
   canManage,
   busy,
-  run,
+  onKick,
+  onTransferHost,
 }: CEEPlayerRowProps) {
   const status = resolveCEEStatus(player, snapshot);
   const progress =
@@ -327,10 +333,10 @@ function CEEPlayerRow({
 
   const actions = canManage
     ? hostActions({
-        onTransferHost: () => void run("cee.room.transferHost", { playerId: player.id }),
+        onTransferHost: () => onTransferHost(player.id),
         // 无席位的旁观者接不了房主，掉线时命令会失败；保留动作并禁用，比直接隐藏更好读。
         transferDisabled: busy || !player.online || player.membership !== "active",
-        onKick: () => void run("cee.room.kick", { playerId: player.id }),
+        onKick: () => onKick(player.id),
         kickDisabled: busy,
       })
     : undefined;

@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
@@ -15,6 +14,7 @@ import {
   type PlayerRowProps,
 } from "./FakerPlayerRow";
 import { useScrollFade } from "@/hooks/UseScrollFade";
+import { useHostPlayerActions } from "@/hooks/UseHostPlayerActions";
 import { errorText } from "@/lib/ErrorMessage";
 import { cn } from "@/lib/Utils";
 import {
@@ -27,8 +27,6 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap } from "./FakerPlayerPresentation";
 import { COMPACT_PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./FakerPlayerListLayout";
 import type {
-  WhoIsFakerCommand,
-  WhoIsFakerPayload,
   WhoIsFakerPhase,
   WhoIsFakerRole,
   WhoIsFakerPrivateState,
@@ -115,23 +113,13 @@ export function FakerPlayerList(props: PlayerListProps) {
   ]);
 
   // 房主与旁观操作互相独立，不需要锁：发命令，失败落成错误提示
-  const send = useCallback(
-    async <TCommand extends WhoIsFakerCommand>(
-      type: TCommand,
-      payload: WhoIsFakerPayload<TCommand>
-    ) => {
-      try {
-        await sendCommand(type, payload);
-      } catch (error) {
-        showToast(errorText(error, "操作失败，请重试"), "error");
-      }
-    },
-    [showToast, sendCommand]
-  );
-  const handleKick = (playerId: string) => void send("room.kick", { playerId });
-  const handleTransferHost = (playerId: string) => void send("room.transferHost", { playerId });
-  const handleSetSpectator = (spectator: boolean) =>
-    void send("player.setSpectator", { spectator });
+  const { kick, transferHost, setSpectator } = useHostPlayerActions({
+    kick: (playerId) => sendCommand("room.kick", { playerId }),
+    transferHost: (playerId) => sendCommand("room.transferHost", { playerId }),
+    setSpectator: (spectator) => sendCommand("player.setSpectator", { spectator }),
+    onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
+    lock: "none",
+  });
 
   /**
    * 渲染一行。展开发言历史时，玩家名与该行的发言单元格是同一个
@@ -159,8 +147,8 @@ export function FakerPlayerList(props: PlayerListProps) {
       ),
       availableMarks,
       onMarkChange,
-      onKick: handleKick,
-      onTransferHost: handleTransferHost,
+      onKick: kick,
+      onTransferHost: transferHost,
     };
 
     // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
@@ -276,7 +264,7 @@ export function FakerPlayerList(props: PlayerListProps) {
       </PlayerRowGroup>
 
       {showSpectatorToggle && isSpectator ? (
-        <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
+        <SpectatorToggle spectator={false} onToggle={setSpectator} />
       ) : null}
 
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
@@ -286,7 +274,7 @@ export function FakerPlayerList(props: PlayerListProps) {
             {observers.map((player, index) => renderRow(player, true, observerRowOffset + index))}
           </PlayerRowGroup>
           {showSpectatorToggle && !isSpectator ? (
-            <SpectatorToggle spectator onToggle={handleSetSpectator} />
+            <SpectatorToggle spectator onToggle={setSpectator} />
           ) : null}
         </>
       ) : null}

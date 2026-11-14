@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode, type Ref } from "react";
+import { type ReactNode, type Ref } from "react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
@@ -13,6 +13,7 @@ import {
   membershipRowGroups,
 } from "@/components/common/room/PlayerRowGroup";
 import { errorText } from "@/lib/ErrorMessage";
+import { useHostPlayerActions } from "@/hooks/UseHostPlayerActions";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { teamGroups } from "@/lib/Teams";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -35,40 +36,6 @@ export interface PlayerListProps {
   maxGuesses?: number;
 }
 
-/**
- * 房主操作（踢人、转让、切换旁观）共用一把在途锁：一条命令返回之前，别的操作不发。
- * 同一批事件里的连点在重渲染之前拿不到禁用态，所以锁放在 ref 里同步占位。
- */
-function useHostCommands() {
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const showToast = useSonGuessrStore((state) => state.showToast);
-  const [pending, setPending] = useState(false);
-  const lockRef = useRef(false);
-
-  const guarded = async (action: () => Promise<unknown>) => {
-    if (lockRef.current) return;
-    lockRef.current = true;
-    setPending(true);
-    try {
-      await action();
-    } catch (error) {
-      showToast(errorText(error, "操作失败，请重试"), "error");
-    } finally {
-      lockRef.current = false;
-      setPending(false);
-    }
-  };
-
-  return {
-    pending,
-    kick: (playerId: string) => void guarded(() => sendCommand("song.room.kick", { playerId })),
-    transferHost: (playerId: string) =>
-      void guarded(() => sendCommand("song.room.transferHost", { playerId })),
-    setSpectator: (spectator: boolean) =>
-      void guarded(() => sendCommand("song.player.setSpectator", { spectator })),
-  };
-}
-
 export function SongPlayerList({
   players,
   myPlayerId,
@@ -88,7 +55,15 @@ export function SongPlayerList({
   const canJoinSpectators = Boolean(me) && allowSpectators && me?.membership === "active";
   const canJoinPlayers = me?.membership === "spectator";
 
-  const { pending, kick, transferHost, setSpectator } = useHostCommands();
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const showToast = useSonGuessrStore((state) => state.showToast);
+  const { pending, kick, transferHost, setSpectator } = useHostPlayerActions({
+    kick: (playerId) => sendCommand("song.room.kick", { playerId }),
+    transferHost: (playerId) => sendCommand("song.room.transferHost", { playerId }),
+    setSpectator: (spectator) => sendCommand("song.player.setSpectator", { spectator }),
+    onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
+    lock: "shared",
+  });
 
   const renderRow = (player: SonGuessrPlayerView, hideSpectatorStatus: boolean) => (
     <SongPlayerRow
