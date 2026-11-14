@@ -14,9 +14,8 @@ import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
 import { FAKER_DESCRIPTION_MAX_UNITS, clampUnits, textUnits } from "@bakagame/shared/values";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
-
-const EMPTY_ORDER: readonly string[] = [];
+import { speechModeOf, speechOrderOf } from "@/lib/WhoIsFakerSpeech";
+import type { SpeechMode } from "@bakagame/shared";
 
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
@@ -37,14 +36,6 @@ interface SpeechRow {
   /** 本人本轮发言，用于高亮自己那一行 */
   isMe: boolean;
 }
-
-/**
- * 发言模式：普通描述时服务端不下发 speechMode，按阶段回退，PK 阶段的语气仍是 PK。
- * 应发言名单与已提交名单没有回退：描述、补充发言与平票 PK 描述阶段，服务端快照总会下发
- * speechOrder 与 submittedSpeechPlayerIds，它们是「当前这一列」的唯一定义。
- */
-const resolveSpeechMode = (status: WhoIsFakerRoomSnapshot["status"]): SpeechMode =>
-  status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : "normal");
 
 /** 输入框文案随模式切换：补充发言与正常描述用词不同。 */
 const speechInputLabel = (mode: SpeechMode) => (mode === "supplement" ? "补充发言" : "描述");
@@ -88,7 +79,7 @@ export function FakerDescriptionPhase() {
   const privateState = useWhoIsFakerStore((state) => state.privateState);
   const [text, setText] = useState("");
 
-  const mode = resolveSpeechMode(snapshot.status);
+  const mode = speechModeOf(snapshot.status);
   const meta = speechMeta[mode];
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((player) => player.id === privateState?.playerId);
@@ -122,13 +113,13 @@ export function FakerDescriptionPhase() {
   ]);
 
   const submittedPlayerIds = useMemo(
-    () => new Set(snapshot.status.submittedSpeechPlayerIds ?? []),
+    () => new Set(snapshot.status.submittedSpeechPlayerIds),
     [snapshot.status.submittedSpeechPlayerIds]
   );
 
   const myId = privateState?.playerId ?? "";
 
-  const speechOrder = snapshot.status.speechOrder ?? EMPTY_ORDER;
+  const speechOrder = speechOrderOf(snapshot.status);
 
   const waitingPlayerIds = useMemo(() => {
     return speechOrder.filter((playerId) => !submittedPlayerIds.has(playerId));
