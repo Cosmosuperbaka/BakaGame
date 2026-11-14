@@ -67,6 +67,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     setNameDraft,
     needsPassword,
     passwordDraft,
+    passwordError,
     setPasswordDraft,
     confirmName,
     confirmPassword,
@@ -144,6 +145,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         onPasswordDraftChange={setPasswordDraft}
         onConfirmPassword={() => void confirmPassword()}
         onExit={() => void navigate("/songuessr", { replace: true })}
+        pending={joining}
+        passwordError={passwordError}
       >
         {seoNode}
         {audioNode}

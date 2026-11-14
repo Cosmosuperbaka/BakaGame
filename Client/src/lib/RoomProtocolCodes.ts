@@ -9,8 +9,9 @@ export const ROOM_ID_TAKEN_CODES: ReadonlySet<string> = new Set([
   "ROOM_ALREADY_EXISTS",
 ]);
 
-/** 卧底与猜歌的直链入房：缺密码与密码错误回到密码框，其余拒绝（含尝试过多）提示后回大厅。 */
+/** 卧底与猜歌的直链入房：缺密码、密码错误与尝试过多留在密码框并写明原因，其余拒绝提示后回大厅。 */
 export const BASIC_PASSWORD_STEP_CODES: ReadonlySet<string> = new Set([
   "PASSWORD_REQUIRED",
   "PASSWORD_INCORRECT",
+  "TOO_MANY_ATTEMPTS",
 ]);

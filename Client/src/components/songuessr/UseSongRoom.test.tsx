@@ -469,16 +469,114 @@ describe("猜歌直链入房的分支与去向（补充）", () => {
       expect(navigate).not.toHaveBeenCalled();
     }
   );
-  it("尝试过多不进密码步，提示后替换回大厅", async () => {
+  it("尝试过多留在密码步并给出原因，不提示也不退出", async () => {
     send.mockImplementation(async () =>
       rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" })
     );
     const h = mount();
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
-    );
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    expect(h.result.current.joining).toBe(false);
+    expect(h.result.current.passwordError).toEqual({ message: "尝试次数过多", invalid: false });
+    expect(toast()).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it.each(["PASSWORD_REQUIRED", "PASSWORD_INCORRECT"])(
+    "不带密码的首次加入被 %s 拒绝：进密码步但不算失败，不给原因",
+    async (code) => {
+      send.mockImplementation(async () => rejectedProtocol({ code, message: "要密码" }));
+      const h = mount();
+      await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+      expect(h.result.current.passwordError).toBeNull();
+    }
+  );
+  it("带密码被拒：密码错误标红，尝试过多只给原因；再次确认时先撤下旧原因", async () => {
+    const retry = deferred<ReturnType<typeof receipt>>();
+    send
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "要密码" })
+      )
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "房间密码错误" })
+      )
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" })
+      )
+      .mockImplementationOnce(() => retry.promise);
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    act(() => h.result.current.setPasswordDraft("wrong"));
+    await act(async () => h.result.current.confirmPassword());
+    expect(h.result.current.passwordError).toEqual({ message: "房间密码错误", invalid: true });
+    expect(h.result.current.passwordDraft).toBe("");
+    act(() => h.result.current.setPasswordDraft("again"));
+    await act(async () => h.result.current.confirmPassword());
+    expect(h.result.current.passwordError).toEqual({ message: "尝试次数过多", invalid: false });
+    act(() => h.result.current.setPasswordDraft("secret"));
+    act(() => void h.result.current.confirmPassword());
+    await waitFor(() => expect(h.result.current.joining).toBe(true));
+    expect(h.result.current.passwordError).toBeNull();
+    await act(async () => retry.resolve(receipt()));
     expect(h.result.current.needsPassword).toBe(false);
-    expect(toast()).toHaveBeenCalledExactlyOnceWith("尝试次数过多", "error");
+    expect(h.result.current.joining).toBe(false);
+    expect(toast()).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("确认密码在途：仍停在密码步并标为加入中，重复确认不再发入房", async () => {
+    const retry = deferred<ReturnType<typeof receipt>>();
+    send
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "要密码" })
+      )
+      .mockImplementationOnce(() => retry.promise);
+    // 数入房流程交给 store 的加入次数：store 自己的去重不算入房流程挡住了重复确认。
+    const join = vi.fn(initial.joinRoom);
+    useSonGuessrStore.setState({ joinRoom: join });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    act(() => h.result.current.setPasswordDraft("secret"));
+    act(() => {
+      void h.result.current.confirmPassword();
+      void h.result.current.confirmPassword();
+    });
+    await waitFor(() => expect(h.result.current.joining).toBe(true));
+    expect(h.result.current.needsPassword).toBe(true);
+    act(() => void h.result.current.confirmPassword());
+    expect(join).toHaveBeenCalledTimes(2);
+    expect(types()).toEqual(["song.room.join", "song.room.join"]);
+    await act(async () => retry.resolve(receipt()));
+    expect(h.result.current.needsPassword).toBe(false);
+    expect(useSonGuessrStore.getState().roomId).toBe("1234");
+  });
+  it("确认密码后房间已不在：就地建房成功即离开密码步", async () => {
+    send.mockImplementation(async (type: string, payload: Record<string, unknown> = {}) => {
+      if (type === "song.room.create") return receipt(payload.roomId as string);
+      if (payload.password === undefined)
+        return rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "要密码" });
+      return rejectedProtocol({ code: "ROOM_NOT_FOUND", message: "房间不存在" });
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    act(() => h.result.current.setPasswordDraft("secret"));
+    await act(async () => h.result.current.confirmPassword());
+    expect(types()).toEqual(["song.room.join", "song.room.join", "song.room.create"]);
+    expect(h.result.current.needsPassword).toBe(false);
+    expect(h.result.current.joining).toBe(false);
+  });
+  it("确认密码后被其它原因拒绝：先撤下密码步再提示退出", async () => {
+    send
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "要密码" })
+      )
+      .mockImplementationOnce(async () =>
+        rejectedProtocol({ code: "ROOM_FULL", message: "房间已满" })
+      );
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    act(() => h.result.current.setPasswordDraft("secret"));
+    await act(async () => h.result.current.confirmPassword());
+    expect(h.result.current.needsPassword).toBe(false);
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("房间已满", "error");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true });
   });
   it("房间不存在就以名字建房；测试房小写直链按规范房号建测试房", async () => {
     send.mockImplementation(async (type: string, payload: Record<string, unknown> = {}) => {

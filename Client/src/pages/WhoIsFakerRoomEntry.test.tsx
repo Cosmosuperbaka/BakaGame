@@ -291,16 +291,93 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
       expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
       view.unmount();
     });
-    it("尝试过多不进密码步，提示后回大厅", async () => {
+    it("尝试过多留在密码步，框下写原因不标红，不提示也不回大厅", async () => {
       send.mockImplementation(async (type: string) =>
         type === "room.join"
           ? rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" })
           : undefined
       );
       const view = mount();
-      await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
-      expect(screen.queryByLabelText("房间密码")).toBeNull();
-      expect(useWhoIsFakerStore.getState().showToast).toHaveBeenCalledWith("尝试次数过多", "error");
+      const field = await screen.findByLabelText("房间密码");
+      expect(screen.getByRole("alert")).toHaveTextContent("尝试次数过多");
+      expect(field).not.toHaveAttribute("aria-invalid");
+      expect(navigate).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("刚到密码步不写原因也不标红", async () => {
+      lockRoom();
+      const view = mount();
+      const field = await screen.findByLabelText("房间密码");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(field).not.toHaveAttribute("aria-invalid");
+      view.unmount();
+    });
+    it("输错密码：框下写原因并标红，不另弹提示", async () => {
+      lockRoom();
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      typePassword("wrong");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("房间密码错误");
+      expect(screen.getByLabelText("房间密码")).toHaveAttribute("aria-invalid", "true");
+      expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("输错后再试多次被拒：同一个框下换成尝试过多的说法", async () => {
+      let attempts = 0;
+      send.mockImplementation(async (type: string, payload?: { password?: string }) => {
+        if (type !== "room.join") return undefined;
+        if (!payload?.password)
+          return rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "需要房间密码" });
+        attempts += 1;
+        return attempts === 1
+          ? rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "房间密码错误" })
+          : rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" });
+      });
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      typePassword("wrong");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      await screen.findByText("房间密码错误");
+      typePassword("again");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("尝试次数过多");
+      expect(screen.getByLabelText("房间密码")).not.toHaveAttribute("aria-invalid");
+      expect(navigate).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("确认在途：密码框留着，确认钮转圈并挡住重复提交，旧的原因先撤下", async () => {
+      const retry = deferred<ReturnType<typeof receipt>>();
+      let attempts = 0;
+      send.mockImplementation(async (type: string, payload?: { password?: string }) => {
+        if (type !== "room.join") return undefined;
+        if (!payload?.password)
+          return rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "需要房间密码" });
+        attempts += 1;
+        return attempts === 1
+          ? rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "房间密码错误" })
+          : retry.promise;
+      });
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      typePassword("wrong");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      await screen.findByText("房间密码错误");
+      typePassword("secret");
+      const submit = screen.getByRole("button", { name: "加入房间" });
+      fireEvent.click(submit);
+      await waitFor(() => expect(submit).toHaveAttribute("aria-busy", "true"));
+      expect(submit).toBeDisabled();
+      expect(screen.getByLabelText("房间密码")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
+      fireEvent.submit(submit.closest("form")!);
+      expect(send).toHaveBeenCalledTimes(3);
+      await act(async () => retry.resolve(receipt()));
+      await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+      expect(navigate).not.toHaveBeenCalled();
       view.unmount();
     });
   });

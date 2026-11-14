@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { isValidRoomId } from "@bakagame/shared/values";
+import type { RoomPasswordError } from "@/components/common/room/RoomPasswordField";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { errorCode, errorText } from "@/lib/ErrorMessage";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
@@ -49,7 +50,7 @@ export interface RoomEntryAdapter {
 export interface RoomEntryPolicy {
   /** 直链进房而本机没存过名字：弹名字框让玩家填。 */
   missingName: "prompt";
-  /** 归密码步处理的加入失败码；不在其中的拒绝提示后回大厅。 */
+  /** 归密码步处理的加入失败码（缺密码、密码错误、尝试过多）；不在其中的拒绝提示后回大厅。 */
   passwordCodes: ReadonlySet<string>;
   /** 主动离开时先换页，房间页卸载时退房。 */
   leaveOn: "unmount";
@@ -64,6 +65,23 @@ export interface RoomEntryPolicy {
 }
 
 const CONNECT_TIMEOUT_TEXT = "连接服务器超时，请刷新重试";
+
+/**
+ * 密码步框下写的原因。不带密码的首次加入被拒只是「这间房要密码」，不算失败、不写原因
+ * （猜歌服务端此时回的是密码错误码，同样不能标红）；尝试过多不论带没带密码都要说明。
+ * 只有密码本身不对才标红输入框，文案取服务端应答，与大厅的密码弹窗同一口径。
+ */
+function passwordStepError(
+  error: unknown,
+  code: string,
+  password: string | undefined
+): RoomPasswordError | null {
+  if (password === undefined && code !== "TOO_MANY_ATTEMPTS") return null;
+  return {
+    message: errorText(error, "加入房间失败，请重试"),
+    invalid: code === "PASSWORD_INCORRECT",
+  };
+}
 
 /**
  * 直链进房的状态机：等连接、恢复上次的座位、问名字、问密码、房号不存在就地建房、
@@ -95,6 +113,9 @@ export function useRoomEntryFlow({
   const [needsPassword, setNeedsPassword] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState("");
   const [pendingJoinName, setPendingJoinName] = useState("");
+  const [passwordError, setPasswordError] = useState<RoomPasswordError | null>(null);
+  // 同一次渲染里连点两下时状态还没更新，靠它挡住第二次提交。
+  const passwordInFlight = useRef(false);
   // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
   const [mountTime] = useState(() => Date.now());
   const entryRef = useRef<AbortController | null>(null);
@@ -135,37 +156,44 @@ export function useRoomEntryFlow({
       onDetached();
   }, [policy.exitWhenDetached, joining, needsName, needsPassword, attached]);
 
+  /** 进房成功：离开名字与密码步，展示房间。 */
+  const entered = () => {
+    setNeedsPassword(false);
+    setJoining(false);
+  };
+  /** 无法就地解决的失败：先撤下密码步（确认在途时它还开着），再提示回大厅。 */
+  const failAndExit = (text: string) => {
+    setNeedsPassword(false);
+    adapter.showError(text);
+    exit();
+  };
+
   /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
   const enterWithName = async (name: string, signal: AbortSignal, password?: string) => {
     if (!roomId || signal.aborted) return;
     setJoining(true);
     try {
       await adapter.join(roomId, name, password, signal);
-      if (signal.aborted) return;
-      setNeedsPassword(false);
-      setJoining(false);
+      if (!signal.aborted) entered();
     } catch (error) {
       if (signal.aborted) return;
       const code = errorCode(error);
       if (code !== undefined && policy.passwordCodes.has(code)) {
-        // 密码缺失与密码错误都回到密码框重输，而不是踢回大厅
+        // 缺密码、密码错误与尝试过多都留在密码框，原因写在框下，而不是踢回大厅
         setPendingJoinName(name);
         setPasswordDraft("");
+        setPasswordError(passwordStepError(error, code, password));
         setNeedsPassword(true);
         setJoining(false);
       } else if (code === "ROOM_NOT_FOUND") {
         try {
           await adapter.createMissing(roomId, name, signal);
-          if (signal.aborted) return;
-          setJoining(false);
+          if (!signal.aborted) entered();
         } catch (createError) {
-          if (signal.aborted) return;
-          adapter.showError(errorText(createError, "创建房间失败"));
-          exit();
+          if (!signal.aborted) failAndExit(errorText(createError, "创建房间失败"));
         }
       } else {
-        adapter.showError(errorText(error, "加入房间失败"));
-        exit();
+        failAndExit(errorText(error, "加入房间失败"));
       }
     }
   };
@@ -274,12 +302,18 @@ export function useRoomEntryFlow({
     await enterWithName(name, signal);
   };
 
+  // 确认在途时密码框留着、确认钮转圈（joining 为真），上一次的原因先撤下，新的结果到了再写。
   const confirmPassword = async () => {
-    if (!pendingJoinName || !passwordDraft.trim()) return;
-    setNeedsPassword(false);
+    if (!pendingJoinName || !passwordDraft.trim() || passwordInFlight.current) return;
     const signal = entryRef.current?.signal;
     if (!signal || signal.aborted) return;
-    await enterWithName(pendingJoinName, signal, passwordDraft);
+    passwordInFlight.current = true;
+    setPasswordError(null);
+    try {
+      await enterWithName(pendingJoinName, signal, passwordDraft);
+    } finally {
+      passwordInFlight.current = false;
+    }
   };
 
   // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的转圈，
@@ -306,6 +340,7 @@ export function useRoomEntryFlow({
     needsPassword,
     passwordDraft,
     setPasswordDraft,
+    passwordError,
     confirmPassword,
     leave,
   };

@@ -64,6 +64,7 @@ export default function WhoIsFakerRoomPage() {
     nameDraft,
     setNameDraft,
     passwordDraft,
+    passwordError,
     setPasswordDraft,
     confirmName,
     confirmPassword,
@@ -149,6 +150,8 @@ export default function WhoIsFakerRoomPage() {
         onPasswordDraftChange={setPasswordDraft}
         onConfirmPassword={() => void confirmPassword()}
         onExit={handleLeave}
+        pending={joining}
+        passwordError={passwordError}
       >
         {seoNode}
       </RoomJoinGate>

@@ -37,7 +37,7 @@ export const fakerRoomEntryAdapter: RoomEntryAdapter = {
 };
 
 /**
- * 卧底现状：缺名字弹框、只认缺密码与密码错误、卸载时退房、失败回大厅不替换历史、脱离房间自行回大厅，
+ * 卧底现状：缺名字弹框、缺密码与密码错误及尝试过多都留在密码步、卸载时退房、失败回大厅不替换历史、脱离房间自行回大厅，
  * 房间被关的检查排在入房之前，主动离开后的关闭照样替换回大厅。
  */
 export const FAKER_ROOM_ENTRY_POLICY: RoomEntryPolicy = {
