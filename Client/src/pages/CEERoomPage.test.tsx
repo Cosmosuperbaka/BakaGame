@@ -1,9 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCEEStore } from "@/stores/UseCEEStore";
+import type { CEESendCommand } from "@/lib/CEEWs";
 import {
   CEE_NATIVE_ROOM_ID,
+  ceeOriginalRoom,
   ceePrivateState,
   ceeSettledRoom,
   ceeSnapshot,
@@ -173,5 +175,39 @@ describe("CEE 房间页顶栏的设置面板", () => {
     const dialog = await openSettings();
     expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeEnabled();
     expect(dialog).not.toHaveTextContent("本房间未开启 MCP");
+  });
+});
+
+describe("CEE 房间页的聊天与断线提示", () => {
+  it("聊天栏发出的命令带上输入的原文，发出后输入框清空", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    enterRoom(false);
+    useCEEStore.setState({ sendCommand: sendCommand as unknown as CEESendCommand });
+    mount();
+
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "这波我猜到了" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledWith("cee.chat.send", { text: "这波我猜到了" })
+    );
+    await waitFor(() => expect(input).toHaveValue(""));
+  });
+
+  it("原版房上游断线时顶栏报原版重连，上游恢复后收起", async () => {
+    const { snapshot, privateState } = ceeOriginalRoom();
+    lifecycle.roomId = snapshot.roomId;
+    useCEEStore.setState({ connected: true, roomId: snapshot.roomId, snapshot, privateState });
+    mount();
+
+    // 同一份文案在宽窄两档各有一个播报节点。
+    expect(screen.getAllByText("原版重连中...").length).toBeGreaterThan(0);
+    await act(async () =>
+      useCEEStore.setState({ snapshot: { ...snapshot, upstreamConnected: true } })
+    );
+    // 提示是带动效退场的，恢复后要等它退完。
+    await waitFor(() => expect(screen.queryAllByText("原版重连中...")).toEqual([]));
   });
 });

@@ -70,4 +70,42 @@ describe("状态事件面板", () => {
     });
     expect(sent).not.toHaveProperty("kind");
   });
+
+  it("筛选按档位换查询条件：进行中只传 active，事件与维护只传 kind", async () => {
+    const events = userEvent.setup();
+    render(<StatusEventsPanel />);
+    const filter = screen.getByRole("radiogroup", { name: "筛选" });
+    await screen.findByRole("button", { name: "修改" });
+    expect(statusEvents.list).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+
+    await events.click(within(filter).getByRole("radio", { name: "进行中" }));
+    await vi.waitFor(() =>
+      expect(statusEvents.list).toHaveBeenCalledWith({ active: true, limit: 20, offset: 0 })
+    );
+
+    await events.click(within(filter).getByRole("radio", { name: "维护" }));
+    await vi.waitFor(() =>
+      expect(statusEvents.list).toHaveBeenCalledWith({ kind: "maintenance", limit: 20, offset: 0 })
+    );
+  });
+
+  it("删除先确认：取消不删，确认后按 id 删除并重新拉列表", async () => {
+    statusEvents.remove.mockResolvedValue({});
+    const events = userEvent.setup();
+    render(<StatusEventsPanel />);
+    await events.click(await screen.findByRole("button", { name: "删除" }));
+    let dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(`确定删除「${maintenance.title}」？`);
+
+    await events.click(within(dialog).getByRole("button", { name: "取消" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(statusEvents.remove).not.toHaveBeenCalled();
+
+    const before = statusEvents.list.mock.calls.length;
+    await events.click(screen.getByRole("button", { name: "删除" }));
+    dialog = await screen.findByRole("dialog");
+    await events.click(within(dialog).getByRole("button", { name: "删除" }));
+    await vi.waitFor(() => expect(statusEvents.remove).toHaveBeenCalledWith({ id: 7 }));
+    await vi.waitFor(() => expect(statusEvents.list.mock.calls.length).toBeGreaterThan(before));
+  });
 });

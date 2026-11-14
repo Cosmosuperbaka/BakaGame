@@ -1,11 +1,11 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { WIF_PEOPLE, wifPrivate, wifSnapshot } from "@/stories/fixtures/WhoIsFaker";
-import { BlankGuessStage } from "./FakerBlankGuessPhase";
+import { WIF_PEOPLE, WIF_WORDS, wifPrivate, wifSnapshot } from "@/stories/fixtures/WhoIsFaker";
+import { BlankGuessButton, BlankGuessStage } from "./FakerBlankGuessPhase";
 
 type SendCommand = ReturnType<typeof useWhoIsFakerStore.getState>["sendCommand"];
 
@@ -88,5 +88,98 @@ describe("白板猜词超时自动提交", () => {
     expect(submitCalls(sendCommand as unknown as ReturnType<typeof vi.fn>)).toHaveLength(1);
     await advance(30_000);
     expect(submitCalls(sendCommand as unknown as ReturnType<typeof vi.fn>)).toHaveLength(1);
+  });
+});
+
+describe("白板猜词的交互", () => {
+  const initial = useWhoIsFakerStore.getState();
+  const enter = (viewer: Parameters<typeof wifPrivate>[0], stage: "day3" | "blankGuess") => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      snapshot: wifSnapshot(stage),
+      privateState: wifPrivate(viewer, stage),
+      sendCommand: sendCommand as unknown as SendCommand,
+      addToast: vi.fn(),
+    });
+    return sendCommand;
+  };
+
+  afterEach(() => {
+    // 组件按「已在房间里」写，取快照时不判空：先卸载再还原 Store，否则还原会触发一次空快照渲染。
+    cleanup();
+    useWhoIsFakerStore.setState(initial, true);
+  });
+
+  it("入口先确认再发命令，取消不发；机会用掉后入口收起", async () => {
+    const sendCommand = enter(WIF_PEOPLE.kita, "day3");
+    render(<BlankGuessButton />);
+
+    fireEvent.click(screen.getByRole("button", { name: "白板猜词" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "再想想" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(sendCommand).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "白板猜词" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "进入猜词" })
+    );
+    await waitFor(() => expect(sendCommand).toHaveBeenCalledWith("game.enterBlankGuess"));
+    // 弹窗在场时正文被 aria-hidden 挡住，按角色查按钮会一律查不到：先等它退场。
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    act(() =>
+      useWhoIsFakerStore.setState((state) => ({
+        privateState: { ...state.privateState!, blankGuessUsed: true },
+      }))
+    );
+    expect(screen.queryByRole("button", { name: "白板猜词" })).toBeNull();
+  });
+
+  it("两个词都填了才能提交，提交带上修剪后的词", async () => {
+    const sendCommand = enter(WIF_PEOPLE.kita, "blankGuess");
+    render(<BlankGuessStage />);
+
+    const submit = screen.getByRole("button", { name: "提交猜测" });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("词语 A"), { target: { value: " 饺子 " } });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("词语 B"), { target: { value: "汤圆" } });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(submitCalls(sendCommand)).toEqual([
+        ["game.submitBlankGuess", { words: ["饺子", "汤圆"] }],
+      ])
+    );
+  });
+
+  it("待裁定时只有主持人看得到真实词对与裁定按钮，两个按钮各发对应的判定", async () => {
+    const sendCommand = enter("host", "blankGuess");
+    useWhoIsFakerStore.setState({ snapshot: wifSnapshot("blankReview") });
+    const host = render(<BlankGuessStage />);
+
+    expect(
+      screen.getByText(`${WIF_WORDS.civilianWord} / ${WIF_WORDS.undercoverWord}`)
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "算作正确" }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledWith("game.reviewBlankGuess", { approve: true })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "判定错误" }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledWith("game.reviewBlankGuess", { approve: false })
+    );
+    host.unmount();
+
+    enter(WIF_PEOPLE.me, "blankGuess");
+    useWhoIsFakerStore.setState({ snapshot: wifSnapshot("blankReview") });
+    render(<BlankGuessStage />);
+    expect(screen.queryByRole("button", { name: "算作正确" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "判定错误" })).toBeNull();
+    expect(
+      screen.queryByText(`${WIF_WORDS.civilianWord} / ${WIF_WORDS.undercoverWord}`)
+    ).toBeNull();
   });
 });
