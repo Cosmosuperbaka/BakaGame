@@ -1,0 +1,265 @@
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { isValidRoomId } from "@bakagame/shared/values";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { errorCode, errorText } from "@/lib/ErrorMessage";
+import { getSavedUsername, saveUsername } from "@/lib/Storage";
+
+/** 入房流程从玩法 store 订阅的三项状态。 */
+export interface RoomEntryState {
+  /** store 已经在这间房里（房号与快照都对得上）：页面直接展示房间，不再走入房。 */
+  alreadyIn: boolean;
+  /** store 还挂着房间（快照或房号任一仍在）。 */
+  attached: boolean;
+  /** 最近一次房间被关或席位被替代的时刻。 */
+  closedAt: number | null;
+}
+
+/**
+ * 一款玩法接入入房流程所需的 store 能力。除 `useRoomState` 外都在调用时读 store，
+ * 适配器因此可以是模块级常量。
+ */
+export interface RoomEntryAdapter {
+  /** 在渲染里订阅入房流程关心的 store 状态。 */
+  useRoomState(roomId: string): RoomEntryState;
+  /** 等连接可用；超时以拒绝告知。 */
+  waitReady(): Promise<void>;
+  reconnect(roomId: string, signal: AbortSignal): Promise<boolean>;
+  join(
+    roomId: string,
+    name: string,
+    password: string | undefined,
+    signal: AbortSignal
+  ): Promise<void>;
+  /** 房号不存在时就地以该名字开一间。 */
+  createMissing(roomId: string, name: string, signal: AbortSignal): Promise<void>;
+  roomClosedAt(): number | null;
+  clearRoomClosed(): void;
+  leave(): Promise<void>;
+  showError(text: string): void;
+}
+
+/** 三款之间本质或尚未拍板的差异，逐款取现状，不在入房流程里统一。 */
+export interface RoomEntryPolicy {
+  /** 直链进房而本机没存过名字：弹名字框让玩家填。 */
+  missingName: "prompt";
+  /** 归密码步处理的加入失败码；不在其中的拒绝提示后回大厅。 */
+  passwordCodes: ReadonlySet<string>;
+  /** 主动离开时先换页，房间页卸载时退房。 */
+  leaveOn: "unmount";
+  /** 失败、主动离开与脱离房间回大厅时是否替换历史；无效房号与房间被关一律替换。 */
+  replaceOnExit: boolean;
+  /** 不在入房、名字与密码步，而 store 已不挂任何房间时自行回大厅。 */
+  exitWhenDetached: boolean;
+}
+
+const CONNECT_TIMEOUT_TEXT = "连接服务器超时，请刷新重试";
+
+/**
+ * 直链进房的状态机：等连接、恢复上次的座位、问名字、问密码、房号不存在就地建房、
+ * 房间被关时退回、主动离开时先换页再退房。入房事务归属路由房号：只在房号变化或卸载时作废，
+ * 快照与 ACK 的更新不能取消已经接入的会话；作废后到的 ACK 由 store 的入房事务精确释放。
+ */
+export function useRoomEntryFlow({
+  roomId,
+  exitPath,
+  adapter,
+  policy,
+}: {
+  roomId: string;
+  exitPath: string;
+  adapter: RoomEntryAdapter;
+  policy: RoomEntryPolicy;
+}) {
+  const navigate = usePageNavigate();
+  const { alreadyIn, attached, closedAt } = adapter.useRoomState(roomId);
+
+  const [joining, setJoining] = useState(!alreadyIn);
+  // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
+  const [needsName, setNeedsName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  // 私密房：不带密码的加入被拒后先问密码；名字沿用已确认的那个
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [pendingJoinName, setPendingJoinName] = useState("");
+  // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
+  const [mountTime] = useState(() => Date.now());
+  const entryRef = useRef<AbortController | null>(null);
+
+  const exit = (replace = policy.replaceOnExit) => {
+    if (replace) void navigate(exitPath, { replace: true });
+    else void navigate(exitPath);
+  };
+
+  // 挂载与卸载时清理残留的关闭标记
+  useEffect(() => {
+    adapter.clearRoomClosed();
+    return () => {
+      adapter.clearRoomClosed();
+    };
+  }, [adapter]);
+
+  // 房间被服务端关闭或席位被替换：这是一个明确的事件，无论当前是否正在加入
+  // 都必须立刻退回大厅，否则加入流程中被关闭会一直停在加载态。
+  const onClosed = useEffectEvent(() => {
+    entryRef.current?.abort();
+    adapter.clearRoomClosed();
+    exit(true);
+  });
+  useEffect(() => {
+    if (closedAt && closedAt >= mountTime) onClosed();
+  }, [mountTime, closedAt]);
+
+  // 主动离开等其它原因导致的脱离房间。等用户填名字或密码的这段时间同样没有房间，
+  // 但那是正常状态，不能当成房间已关闭。
+  const onDetached = useEffectEvent(() => exit());
+  useEffect(() => {
+    if (policy.exitWhenDetached && !joining && !needsName && !needsPassword && !attached)
+      onDetached();
+  }, [policy.exitWhenDetached, joining, needsName, needsPassword, attached]);
+
+  /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
+  const enterWithName = async (name: string, signal: AbortSignal, password?: string) => {
+    if (!roomId || signal.aborted) return;
+    setJoining(true);
+    try {
+      await adapter.join(roomId, name, password, signal);
+      if (signal.aborted) return;
+      setNeedsPassword(false);
+      setJoining(false);
+    } catch (error) {
+      if (signal.aborted) return;
+      const code = errorCode(error);
+      if (code !== undefined && policy.passwordCodes.has(code)) {
+        // 密码缺失与密码错误都回到密码框重输，而不是踢回大厅
+        setPendingJoinName(name);
+        setPasswordDraft("");
+        setNeedsPassword(true);
+        setJoining(false);
+      } else if (code === "ROOM_NOT_FOUND") {
+        try {
+          await adapter.createMissing(roomId, name, signal);
+          if (signal.aborted) return;
+          setJoining(false);
+        } catch (createError) {
+          if (signal.aborted) return;
+          adapter.showError(errorText(createError, "创建房间失败"));
+          exit();
+        }
+      } else {
+        adapter.showError(errorText(error, "加入房间失败"));
+        exit();
+      }
+    }
+  };
+
+  /** 连上之后的入房：先恢复上次的座位，恢复不了再按名字加入。 */
+  const enterWhenReady = async (signal: AbortSignal) => {
+    // 首次挂载时 joining 本就为真；同一页面换到另一间房时旧快照的房号对不上，进房界面照样显示加载态，
+    // 因此连上之后再置位即可，不必在 effect 里同步改状态。
+    setJoining(true);
+    let restored: boolean;
+    try {
+      restored = await adapter.reconnect(roomId, signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      // 临时恢复失败不是「没有可恢复会话」，不能继续自动加入或创建。
+      adapter.showError(errorText(error, "恢复房间失败，请重试"));
+      exit();
+      return;
+    }
+    if (signal.aborted) return;
+    if (restored) {
+      setJoining(false);
+      return;
+    }
+    // 恢复被永久拒绝且房间已不在：由关闭分支退回大厅，这里不能再按房号开一间。
+    const closed = adapter.roomClosedAt();
+    if (closed !== null && closed >= mountTime) return;
+
+    const name = getSavedUsername();
+    if (!name) {
+      setJoining(false);
+      setNameDraft("");
+      setNeedsName(true);
+      return;
+    }
+    await enterWithName(name, signal);
+  };
+
+  const begin = useEffectEvent((signal: AbortSignal) => {
+    if (!roomId || alreadyIn) return;
+    if (!isValidRoomId(roomId)) {
+      adapter.showError("房间号无效，请检查链接");
+      exit(true);
+      return;
+    }
+    adapter.clearRoomClosed();
+    adapter.waitReady().then(
+      () => {
+        if (!signal.aborted) void enterWhenReady(signal);
+      },
+      () => {
+        if (signal.aborted) return;
+        adapter.showError(CONNECT_TIMEOUT_TEXT);
+        exit();
+      }
+    );
+  });
+  // 入房事务归属路由房号，而非快照；取消后的 ACK 释放由 store 负责。
+  useEffect(() => {
+    const entry = new AbortController();
+    entryRef.current = entry;
+    begin(entry.signal);
+    return () => {
+      entry.abort();
+      if (entryRef.current === entry) entryRef.current = null;
+    };
+  }, [roomId]);
+
+  const confirmName = async () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      adapter.showError("请输入用户名");
+      return;
+    }
+    saveUsername(name);
+    setNeedsName(false);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(name, signal);
+  };
+
+  const confirmPassword = async () => {
+    if (!pendingJoinName || !passwordDraft.trim()) return;
+    setNeedsPassword(false);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(pendingJoinName, signal, passwordDraft);
+  };
+
+  // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的转圈，
+  // 清空还会触发上面「脱离房间」的回退再导航一次，打断进行中的过渡（DesignGuide §8）。
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (!exiting) return;
+    return () => void adapter.leave();
+  }, [adapter, exiting]);
+  const leave = () => {
+    entryRef.current?.abort();
+    setExiting(true);
+    exit();
+  };
+
+  return {
+    joining,
+    needsName,
+    nameDraft,
+    setNameDraft,
+    confirmName,
+    needsPassword,
+    passwordDraft,
+    setPasswordDraft,
+    confirmPassword,
+    leave,
+  };
+}

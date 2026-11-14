@@ -4,6 +4,7 @@ import { History, Menu, MessageSquare } from "lucide-react";
 import { normalizeRoomId } from "@/lib/Storage";
 import { errorText } from "@/lib/ErrorMessage";
 import { useMinWidth } from "@/hooks/UseMinWidth";
+import { useRoomEntryFlow } from "@/hooks/UseRoomEntryFlow";
 import { Seo } from "@/components/common/Seo";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import { FakerPlayerList } from "@/components/whoisfaker/layout/FakerPlayerList";
@@ -12,7 +13,10 @@ import { FakerRoomHeaderCenter } from "@/components/whoisfaker/layout/FakerRoomH
 import { useFakerPlayerMarks } from "@/components/whoisfaker/layout/UseFakerPlayerMarks";
 import { useFakerWordReveal } from "@/components/whoisfaker/layout/UseFakerWordReveal";
 import { resolveAssignedWordText } from "@/components/whoisfaker/layout/FakerAssignedWordText";
-import { useFakerRoomEntry } from "@/components/whoisfaker/layout/UseFakerRoomEntry";
+import {
+  FAKER_ROOM_ENTRY_POLICY,
+  fakerRoomEntryAdapter,
+} from "@/components/whoisfaker/layout/FakerRoomEntryAdapter";
 import { useFakerHistoryPanel } from "@/components/whoisfaker/layout/UseFakerHistoryPanel";
 import { FakerRoomPlayerAside } from "@/components/whoisfaker/layout/FakerRoomPlayerAside";
 import { FakerAssignedWord } from "@/components/whoisfaker/layout/FakerAssignedWord";
@@ -61,10 +65,15 @@ export default function WhoIsFakerRoomPage() {
     setNameDraft,
     passwordDraft,
     setPasswordDraft,
-    handleConfirmName,
-    handleConfirmPassword,
-    handleLeave,
-  } = useFakerRoomEntry(roomId);
+    confirmName,
+    confirmPassword,
+    leave: handleLeave,
+  } = useRoomEntryFlow({
+    roomId,
+    exitPath: "/whoisfaker",
+    adapter: fakerRoomEntryAdapter,
+    policy: FAKER_ROOM_ENTRY_POLICY,
+  });
 
   const roundId = snapshot?.status.roundId;
   const { playerMarks, onMarkChange: handleMarkChange } = useFakerPlayerMarks(roundId);
@@ -135,10 +144,10 @@ export default function WhoIsFakerRoomPage() {
         needsPassword={needsPassword}
         nameDraft={nameDraft}
         onNameDraftChange={setNameDraft}
-        onConfirmName={() => void handleConfirmName()}
+        onConfirmName={() => void confirmName()}
         passwordDraft={passwordDraft}
         onPasswordDraftChange={setPasswordDraft}
-        onConfirmPassword={() => void handleConfirmPassword()}
+        onConfirmPassword={() => void confirmPassword()}
         onExit={handleLeave}
       >
         {seoNode}
