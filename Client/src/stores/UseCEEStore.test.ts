@@ -177,6 +177,29 @@ describe("CEE 状态同步", () => {
     });
   });
 
+  it("卸载先断连接再退订阅：断线回调仍把连接态与展示态清干净", () => {
+    const statuses = new Set<(connected: boolean) => void>();
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+      statuses.add(handler);
+      return () => {
+        statuses.delete(handler);
+      };
+    });
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+    vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {
+      statuses.forEach((handler) => handler(false));
+    });
+    useCEEStore.setState({ connected: true, lobbyReady: true, snapshot });
+
+    initCEEWs()();
+
+    expect(useCEEStore.getState()).toMatchObject({
+      connected: false,
+      lobbyReady: false,
+      snapshot: null,
+    });
+  });
+
   it("受服务端计时的角色与图片请求不受短客户端超时截断", async () => {
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     const store = useCEEStore.getState();
@@ -1099,6 +1122,18 @@ it("房间结束事件带房号且与当前一致时，清该房会话并退房"
   expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
+it.each(["cee.room.closed", "cee.player.kicked", "session.replaced"])(
+  "%s 的提示优先用服务端句子，其次原因，都没有才兜底",
+  (event) => {
+    const shown = () => useCEEStore.getState().toasts.map((toast) => toast.text);
+    handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
+    expect(shown()).toEqual(["服务端句子"]);
+    handleCEEMessage({ type: "event", event, payload: { reason: "原因" } });
+    expect(shown()).toEqual(["原因"]);
+    handleCEEMessage({ type: "event", event, payload: {} });
+    expect(shown()).toEqual(["房间会话已结束，请重新加入"]);
+  }
+);
 it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
   const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
     if (command === "cee.room.requestSync") return new Promise<never>(() => {});
@@ -1204,6 +1239,38 @@ describe("CEE 连接生命周期", () => {
         lobbyReady: false,
         originalAvailable: false,
       });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("断线即作废同步基线：断线窗口里到达的补丁不续旧修订号", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    const cleanup = initCEEWs();
+    try {
+      handleCEEMessage({
+        type: "event",
+        event: "cee.room.snapshot",
+        payload: { mode: "full", revision: 7, state: snapshot },
+      });
+      status(false);
+      handleCEEMessage({
+        type: "event",
+        event: "cee.room.snapshot",
+        payload: {
+          mode: "patch",
+          baseRevision: 7,
+          revision: 8,
+          operations: [{ op: "replace", path: "/name", value: "断线后" }],
+        },
+      });
+      await vi.waitFor(() =>
+        expect(
+          send.mock.calls.filter(([command]) => command === "cee.room.requestSync")
+        ).toHaveLength(1)
+      );
+      expect(useCEEStore.getState().snapshot).toBeNull();
     } finally {
       cleanup();
     }
