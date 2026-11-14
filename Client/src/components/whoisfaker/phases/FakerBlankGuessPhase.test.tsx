@@ -175,11 +175,20 @@ describe("白板猜词的交互", () => {
 
     enter(WIF_PEOPLE.me, "blankGuess");
     useWhoIsFakerStore.setState({ snapshot: wifSnapshot("blankReview") });
-    render(<BlankGuessStage />);
+    const player = render(<BlankGuessStage />);
     expect(screen.queryByRole("button", { name: "算作正确" })).toBeNull();
     expect(screen.queryByRole("button", { name: "判定错误" })).toBeNull();
     expect(
       screen.queryByText(`${WIF_WORDS.civilianWord} / ${WIF_WORDS.undercoverWord}`)
     ).toBeNull();
+    player.unmount();
+
+    // 旁观者同样拿得到真实词对，只有主持人身份才决定能不能裁定：普通玩家那一档词对本来就是空的，
+    // 单看它区分不出「按身份放行」还是「按有没有词对放行」。
+    enter("spectator", "blankGuess");
+    useWhoIsFakerStore.setState({ snapshot: wifSnapshot("blankReview") });
+    render(<BlankGuessStage />);
+    expect(screen.queryByRole("button", { name: "算作正确" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "判定错误" })).toBeNull();
   });
 });
