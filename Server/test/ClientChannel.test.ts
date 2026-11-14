@@ -275,9 +275,25 @@ describe("客户端通道换票", () => {
     expect(attested.expiresAt).toBe(clock.value + CLIENT_TICKET_TTL_MS);
     expect(attested.outdated).toBe(false);
     expect(typeof attested.ticket).toBe("string");
-    // 服务端判票过期只看 expiresAt：到点前一毫秒还能换，之后不行（与相对量无关）。
+    // 服务端判票过期只看 expiresAt（与相对量无关）：恰好到点仍可换，过了 1 毫秒不行。
     clock.value += CLIENT_TICKET_TTL_MS;
     expect(channel.consume(attested.ticket, "203.0.113.7")?.clientId).toBe(clientId);
+    const second = await (async () => {
+      const issued = channel.issue(clientId);
+      return channel.attest(
+        {
+          clientId,
+          challenge: issued.challenge,
+          signature: sign(issued.challenge),
+          clientType: "desktop",
+          clientVersion: "1.0.0",
+          selfCheck: clean,
+        },
+        "203.0.113.7"
+      );
+    })();
+    clock.value += CLIENT_TICKET_TTL_MS + 1;
+    expect(channel.consume(second.ticket, "203.0.113.7")).toBeUndefined();
   });
   test("被拒的票留下可归因日志：地址不符、未知与过期分开记", async () => {
     const clock = { value: 1_000_000 };

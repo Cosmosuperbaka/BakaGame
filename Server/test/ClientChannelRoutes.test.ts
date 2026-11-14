@@ -340,3 +340,51 @@ test("旧壳视角：按旧请求形状走完注册、领挑战、换票，只�
   // 新壳读的追加字段：相对有效期，不依赖两端时钟是否一致。
   expect(attested.body.ttlMs).toBe(CLIENT_TICKET_TTL_MS);
 });
+
+test("旧壳视角（移动）：按旧移动壳的请求形状走完注册、领挑战、换票，只读旧字段，票照常能用", async () => {
+  const now = 6_000_000;
+  const channel = new ClientChannel({
+    store: new InMemoryClientChannelStore(),
+    now: () => now,
+    minimumVersion: () => "",
+  });
+  const app = clientChannelRoutes(channel);
+  const post = async (path: string, body: unknown) => {
+    const response = await app.handle(
+      new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-real-ip": "203.0.113.31" },
+        body: JSON.stringify(body),
+      })
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const spki = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  // 旧移动壳的自检报告：带 attestationLevel、没有 keyProtection；老 APK 取不到证明链时不带 attestation
+  const selfCheck = { hardFail: [], softFail: [], attestationLevel: "trusted" };
+  const registered = await post("/api/client/register", {
+    clientType: "mobile",
+    platform: "android",
+    clientVersion: "0.1.1",
+    keyAlgorithm: "ec-p256",
+    publicKey: spki,
+    selfCheck,
+  });
+  expect(registered.status).toBe(200);
+  const clientId = registered.body.clientId as string;
+  const challenge = (await post("/api/client/challenge", { clientId })).body.challenge as string;
+  const attested = await post("/api/client/attest", {
+    clientId,
+    challenge,
+    signature: nodeSign("sha256", Buffer.from(challenge, "ascii"), privateKey).toString("base64"),
+    clientType: "mobile",
+    clientVersion: "0.1.1",
+    selfCheck,
+  });
+  expect(attested.status).toBe(200);
+  // 旧移动壳只读 ticket 与 expiresAt：形状与取值不变。
+  expect(typeof attested.body.ticket).toBe("string");
+  expect(attested.body.expiresAt).toBe(now + CLIENT_TICKET_TTL_MS);
+  expect(channel.consume(attested.body.ticket as string, "203.0.113.31")?.clientId).toBe(clientId);
+});
