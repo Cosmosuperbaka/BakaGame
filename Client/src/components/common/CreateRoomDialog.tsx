@@ -5,6 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/Dialog";
 import { FormDialog } from "@/components/common/FormDialog";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import { PRIVACY_COPY, type RoomPrivacy } from "@/components/common/room/RoomBasicsFields";
 import type { OriginPoint } from "@/lib/motion/Origin";
 import { errorText } from "@/lib/ErrorMessage";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
@@ -23,14 +24,6 @@ export interface RoomModeSwitch {
   /** 开关行图标，与下面私密、旁观两行对齐 */
   icon?: LucideIcon;
 }
-
-export type RoomPrivacy = "password" | "unlisted";
-
-/** 私密开关的标签与说明随含义变化；不在大厅显示的说明常驻，告诉房主链接仍然有效。 */
-const PRIVACY_COPY: Record<RoomPrivacy, { label: string; description?: string }> = {
-  password: { label: "私密房间" },
-  unlisted: { label: "不在大厅显示", description: "开启后不在大厅列出，凭链接仍可进入。" },
-};
 
 export interface CreateRoomDialogProps {
   open: boolean;

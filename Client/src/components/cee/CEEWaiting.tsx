@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 恢复函数与等待页共享同一份目录同步规则，放一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Check, Eye, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
+import { Check, Eye, EyeOff, Gamepad2, Settings, X } from "lucide-react";
 import type { CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -9,9 +9,9 @@ import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
-import { SettingReveal, SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
-import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import { RoomBasicsFields, type RoomBasicsValues } from "@/components/common/room/RoomBasicsFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
@@ -116,12 +116,6 @@ async function saveAllowAgents(value: boolean): Promise<void> {
   });
 }
 
-/** 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */
-const visibilityIcon = (
-  source: CEERoomSnapshot["source"],
-  visibility: CEERoomSnapshot["visibility"]
-) => (visibility !== "private" ? Globe : source === "original" ? EyeOff : Lock);
-
 /** 房主开始按钮的文案：既说明能不能开始，也说明卡在哪儿。 */
 const startButtonLabel = (state: {
   canStart: boolean;
@@ -169,6 +163,26 @@ function RoomSettingsSection({
   const roomValues = isHost
     ? draft
     : { visibility: snapshot.visibility, allowSpectators: snapshot.allowSpectators };
+  const native = snapshot.source === "native";
+  const basics: RoomBasicsValues = {
+    name: isHost ? draft.name : snapshot.name,
+    isPrivate: roomValues.visibility === "private",
+    password: draft.password,
+    allowSpectators: roomValues.allowSpectators,
+  };
+  // 基础字段块用 isPrivate 表达私密，CEE 草稿存的是 visibility，这里把开关翻译回草稿口径。
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) => {
+    switch (key) {
+      case "name":
+        return onEdit("name", value as string);
+      case "password":
+        return onEdit("password", value as string);
+      case "allowSpectators":
+        return onEdit("allowSpectators", value as boolean);
+      case "isPrivate":
+        return onEdit("visibility", value ? "private" : "public");
+    }
+  };
 
   return (
     <SettingsAccordion
@@ -180,41 +194,16 @@ function RoomSettingsSection({
       summary={roomSummaryLines(snapshot)}
     >
       <SettingsFields>
-        <SettingTextField
-          label="房间名称"
-          value={isHost ? draft.name : snapshot.name}
-          maxLength={snapshot.source === "original" ? 30 : 32}
-          placeholder="输入房间名称"
-          onChange={(value) => onEdit("name", value)}
-        />
-        <SettingSwitchRow
-          label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
-          description={
-            snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined
-          }
-          icon={visibilityIcon(snapshot.source, roomValues.visibility)}
-          checked={roomValues.visibility === "private"}
-          onCheckedChange={(checked) => onEdit("visibility", checked ? "private" : "public")}
-        />
-        {isHost && snapshot.source === "native" ? (
-          <SettingReveal open={draft.visibility === "private"}>
-            <SettingTextField
-              label="房间密码"
-              type="password"
-              value={draft.password}
-              placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
-              onChange={(value) => onEdit("password", value)}
-            />
-          </SettingReveal>
-        ) : null}
-        {snapshot.source === "native" ? (
-          <>
-            <SettingSwitchRow
-              label="允许旁观"
-              icon={Users}
-              checked={roomValues.allowSpectators}
-              onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
-            />
+        <RoomBasicsFields
+          values={basics}
+          onEdit={editBasics}
+          nameMaxLength={snapshot.source === "original" ? 30 : 32}
+          privacy={snapshot.source === "original" ? "unlisted" : "password"}
+          passwordField={isHost && native}
+          hasPassword={snapshot.hasPassword}
+          spectatorsField={native}
+        >
+          {native ? (
             <SettingSwitchRow
               label="旁观者可见答案"
               description={seeAnswersDescription(snapshot)}
@@ -223,18 +212,18 @@ function RoomSettingsSection({
               disabled={seeAnswersPending || snapshot.bakaAntiCheat}
               onCheckedChange={onSeeAnswersChange}
             />
-          </>
-        ) : null}
-        {validation ? (
-          <p role="alert" className="text-xs text-destructive">
-            {validation}
-          </p>
-        ) : null}
-        {notice ? (
-          <p role="alert" className="text-xs text-destructive">
-            {notice}
-          </p>
-        ) : null}
+          ) : null}
+          {validation ? (
+            <p role="alert" className="text-xs text-destructive">
+              {validation}
+            </p>
+          ) : null}
+          {notice ? (
+            <p role="alert" className="text-xs text-destructive">
+              {notice}
+            </p>
+          ) : null}
+        </RoomBasicsFields>
       </SettingsFields>
     </SettingsAccordion>
   );

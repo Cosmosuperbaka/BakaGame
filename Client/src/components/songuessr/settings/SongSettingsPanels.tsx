@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Disc3, Eye, EyeOff, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
+import { Disc3, Eye, EyeOff, ListMusic, Mic2, Tv, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -28,6 +28,12 @@ import {
   SettingToggleChips,
 } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import {
+  RoomBasicsFields,
+  canSaveRoomBasics,
+  roomBasicsPayload,
+  type RoomBasicsValues,
+} from "@/components/common/room/RoomBasicsFields";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/motion/Choreography";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
@@ -601,19 +607,28 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
   const values = readOnly ? roomOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) => {
+    switch (key) {
+      case "name":
+        return edit("name", value as string);
+      case "isPrivate":
+        return edit("isPrivate", value as boolean);
+      case "password":
+        return edit("password", value as string);
+      case "allowSpectators":
+        return edit("allowSpectators", value as boolean);
+    }
+  };
 
   useSongWaitingSettingsSave(
     snapshot,
     {
-      name: draft.name || undefined,
-      visibility: draft.isPrivate ? "private" : "public",
-      password: draft.isPrivate ? draft.password || undefined : "",
-      allowSpectators: draft.allowSpectators,
+      ...roomBasicsPayload(draft),
       spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
     },
     {
       // 私密房间必须有密码：还没有、也没填新的就先不保存。
-      enabled: !draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0,
+      enabled: canSaveRoomBasics(draft, snapshot.hasPassword),
       // 名称与口令不进记忆，下次建房沿用的只有旁观可见答案。
       remember: (payload) =>
         updateRoomSettingsMemory("song", (current) => ({
@@ -625,44 +640,21 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
 
   return (
     <SettingsFields>
-      <SettingTextField
-        label="房间名称"
-        value={values.name}
-        maxLength={40}
-        placeholder="输入房间名称"
-        onChange={(value) => edit("name", value)}
-      />
-      <SettingSwitchRow
-        label="私密房间"
-        icon={values.isPrivate ? Lock : Globe}
-        checked={values.isPrivate}
-        onCheckedChange={(value) => edit("isPrivate", value)}
-      />
-      {!readOnly ? (
-        <SettingReveal open={values.isPrivate}>
-          {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-          <SettingTextField
-            label="房间密码"
-            type="password"
-            value={draft.password}
-            onChange={(value) => edit("password", value)}
-            placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
-          />
-        </SettingReveal>
-      ) : null}
-      <SettingSwitchRow
-        label="允许旁观"
-        icon={Users}
-        checked={values.allowSpectators}
-        onCheckedChange={(value) => edit("allowSpectators", value)}
-      />
-      <SettingSwitchRow
-        label="旁观者可见答案"
-        description="局中把本题答案与全部猜测发给旁观者；关闭时旁观者看不到答案，揭晓后照常公开。"
-        icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
-        checked={values.spectatorsSeeAnswers}
-        onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
-      />
+      <RoomBasicsFields
+        values={values}
+        onEdit={editBasics}
+        nameMaxLength={40}
+        passwordField={!readOnly}
+        hasPassword={snapshot.hasPassword}
+      >
+        <SettingSwitchRow
+          label="旁观者可见答案"
+          description="局中把本题答案与全部猜测发给旁观者；关闭时旁观者看不到答案，揭晓后照常公开。"
+          icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
+          checked={values.spectatorsSeeAnswers}
+          onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
+        />
+      </RoomBasicsFields>
     </SettingsFields>
   );
 }

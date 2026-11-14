@@ -1,25 +1,19 @@
 import { useState } from "react";
-import {
-  Check,
-  X,
-  Gamepad2,
-  Settings,
-  Lock,
-  Globe,
-  Users,
-  Eye,
-  EyeOff,
-  VenetianMask,
-} from "lucide-react";
+import { Check, X, Gamepad2, Settings, Eye, EyeOff, VenetianMask } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
-import { SettingReveal, SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingStepper } from "@/components/common/room/settings/NumberFields";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
-import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import {
+  RoomBasicsFields,
+  canSaveRoomBasics,
+  roomBasicsPayload,
+  type RoomBasicsValues,
+} from "@/components/common/room/RoomBasicsFields";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -30,12 +24,7 @@ import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
-import type {
-  RoleConfig,
-  RoomVisibility,
-  RoleLimits,
-  WhoIsFakerRoomSnapshot,
-} from "@bakagame/shared";
+import type { RoleConfig, RoleLimits, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 
 const notifyCopyFailed = () =>
   useWhoIsFakerStore.getState().showToast("复制失败，请手动复制", "error");
@@ -226,17 +215,24 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
   const values = readOnly ? settingsOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) => {
+    switch (key) {
+      case "name":
+        return edit("name", value as string);
+      case "isPrivate":
+        return edit("isPrivate", value as boolean);
+      case "password":
+        return edit("password", value as string);
+      case "allowSpectators":
+        return edit("allowSpectators", value as boolean);
+    }
+  };
   // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
   const roleConfig = effectiveRoleConfig(values, limits);
 
-  const visibility: RoomVisibility = draft.isPrivate ? "private" : "public";
-
   useAutoSave(
     {
-      name: draft.name || undefined,
-      visibility,
-      password: draft.isPrivate ? draft.password || undefined : "",
-      allowSpectators: draft.allowSpectators,
+      ...roomBasicsPayload(draft),
       revealRoleOnDeath: draft.revealRoleOnDeath,
       spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
       roleConfig: effectiveRoleConfig(draft, limits),
@@ -254,7 +250,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
       enabled:
         !readOnly &&
         snapshot.status.phase === "waiting" &&
-        (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
+        canSaveRoomBasics(draft, snapshot.hasPassword),
       onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
     }
   );
@@ -320,44 +316,21 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
         ]}
       >
         <SettingsFields>
-          <SettingTextField
-            label="房间名称"
-            value={values.name}
-            maxLength={40}
-            placeholder="输入房间名称"
-            onChange={(value) => edit("name", value)}
-          />
-          <SettingSwitchRow
-            label="私密房间"
-            icon={values.isPrivate ? Lock : Globe}
-            checked={values.isPrivate}
-            onCheckedChange={(value) => edit("isPrivate", value)}
-          />
-          {!readOnly ? (
-            <SettingReveal open={values.isPrivate}>
-              {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
-              <SettingTextField
-                label="房间密码"
-                type="password"
-                value={draft.password}
-                onChange={(value) => edit("password", value)}
-                placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
-              />
-            </SettingReveal>
-          ) : null}
-          <SettingSwitchRow
-            label="允许旁观"
-            icon={Users}
-            checked={values.allowSpectators}
-            onCheckedChange={(value) => edit("allowSpectators", value)}
-          />
-          <SettingSwitchRow
-            label="旁观者可见答案"
-            description="局中把双侧词语、全员身份与投票预览发给旁观者；关闭时旁观者看不到答案，结算后照常公开。"
-            icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
-            checked={values.spectatorsSeeAnswers}
-            onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
-          />
+          <RoomBasicsFields
+            values={values}
+            onEdit={editBasics}
+            nameMaxLength={40}
+            passwordField={!readOnly}
+            hasPassword={snapshot.hasPassword}
+          >
+            <SettingSwitchRow
+              label="旁观者可见答案"
+              description="局中把双侧词语、全员身份与投票预览发给旁观者；关闭时旁观者看不到答案，结算后照常公开。"
+              icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
+              checked={values.spectatorsSeeAnswers}
+              onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
+            />
+          </RoomBasicsFields>
         </SettingsFields>
       </SettingsAccordion>
 
