@@ -279,5 +279,264 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith("/whoisfaker"));
       view.unmount();
     });
+    it("缺密码同样进密码步", async () => {
+      send.mockImplementation(async (type: string) =>
+        type === "room.join"
+          ? rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "需要房间密码" })
+          : undefined
+      );
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      expect(navigate).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("尝试过多不进密码步，提示后回大厅", async () => {
+      send.mockImplementation(async (type: string) =>
+        type === "room.join"
+          ? rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" })
+          : undefined
+      );
+      const view = mount();
+      await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
+      expect(screen.queryByLabelText("房间密码")).toBeNull();
+      expect(useWhoIsFakerStore.getState().showToast).toHaveBeenCalledWith("尝试次数过多", "error");
+      view.unmount();
+    });
+  });
+});
+
+describe("卧底直链入房的分支与去向（补充）", () => {
+  const toast = () => useWhoIsFakerStore.getState().showToast;
+
+  it("严格模式下直链加入只发一次入房", async () => {
+    const view = mount(true);
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    expect(send.mock.calls.filter(([type]) => type === "room.join")).toHaveLength(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it("严格模式下卸载的那一轮不留孤儿席位", async () => {
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockImplementation((type: string) => (type === "room.join" ? ack.promise : undefined));
+    const view = mount(true);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => ack.resolve(receipt()));
+    expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join", "room.leave"]);
+    expect(useWhoIsFakerStore.getState().roomId).toBeNull();
+  });
+  it("恢复因座位失效被拒：清掉旧凭据，改用名字加入", async () => {
+    saveSessionToken("1234", "saved-token");
+    send.mockImplementation(async (type: string) => {
+      if (type === "room.reconnect")
+        return rejectedProtocol({ code: "SESSION_INVALID", message: "座位失效" });
+      return receipt();
+    });
+    const view = mount();
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    expect(send.mock.calls.map(([type]) => type)).toEqual(["room.reconnect", "room.join"]);
+    expect(getSessionToken("1234")).toBe("fixture-token");
+    expect(navigate).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it.each(["ROOM_NOT_FOUND", "PLAYER_KICKED"])(
+    "恢复被 %s 永久拒绝：回大厅，不加入也不建房",
+    async (code) => {
+      saveSessionToken("1234", "saved-token");
+      send.mockImplementation(async (type: string) => {
+        if (type === "room.reconnect") return rejectedProtocol({ code, message: "回不去了" });
+        throw new Error(`不该发出 ${type}`);
+      });
+      const view = mount();
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker", { replace: true })
+      );
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(getSessionToken("1234")).toBeNull();
+      view.unmount();
+    }
+  );
+  it("本机没有名字时弹名字框，空白名字不能提交，填名后记住并入房", async () => {
+    window.localStorage.clear();
+    const view = mount();
+    await screen.findByLabelText("用户名");
+    expect(send).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "  " } });
+    fireEvent.submit(screen.getByLabelText("用户名").closest("form")!);
+    expect(send).not.toHaveBeenCalled();
+    expect(toast()).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: " 新玩家 " } });
+    fireEvent.click(screen.getByRole("button", { name: "进入房间" }));
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      "room.join",
+      { userName: "新玩家", password: undefined },
+      { roomId: "1234" }
+    );
+    expect(window.localStorage.getItem("bakagame:username")).toBe("新玩家");
+    view.unmount();
+  });
+  it("取消名字框回到大厅", async () => {
+    window.localStorage.clear();
+    const view = mount();
+    await screen.findByLabelText("用户名");
+    fireEvent.click(screen.getByRole("button", { name: "返回大厅" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
+    view.unmount();
+  });
+  it("房间不存在就以名字建房", async () => {
+    send.mockImplementation(async (type: string) => {
+      if (type === "room.join")
+        return rejectedProtocol({ code: "ROOM_NOT_FOUND", message: "房间不存在" });
+      return receipt();
+    });
+    const view = mount();
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    expect(send.mock.calls[1]).toEqual([
+      "room.create",
+      {
+        roomId: "1234",
+        name: "玩家的房间",
+        visibility: "public",
+        allowSpectators: true,
+        userName: "玩家",
+      },
+    ]);
+    expect(navigate).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it("房间不存在且建房失败：提示后回大厅", async () => {
+    send.mockImplementation(async (type: string) =>
+      rejectedProtocol(
+        type === "room.join"
+          ? { code: "ROOM_NOT_FOUND", message: "房间不存在" }
+          : { code: "INTERNAL", message: "" }
+      )
+    );
+    const view = mount();
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("创建房间失败", "error");
+    view.unmount();
+  });
+  it("加入被其它业务拒绝：提示服务端文案后回大厅", async () => {
+    send.mockImplementation(async () =>
+      rejectedProtocol({ code: "ROOM_FULL", message: "房间已满" })
+    );
+    const view = mount();
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("房间已满", "error");
+    view.unmount();
+  });
+  it("等连接超时：提示后回大厅，不发入房", async () => {
+    waitConnection.mockRejectedValue(new Error("timeout"));
+    const view = mount();
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker"));
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("连接服务器超时，请刷新重试", "error");
+    expect(waitConnection).toHaveBeenCalledWith(8000);
+    expect(send).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it("房号无效：提示后替换回大厅，不等连接", async () => {
+    const view = mount(false, "bad id!");
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker", { replace: true })
+    );
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("房间号无效，请检查链接", "error");
+    expect(waitConnection).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it("挂载前留下的关闭标记不挡住这次进房", async () => {
+    useWhoIsFakerStore.setState({ roomClosedAt: Date.now() - 5_000 });
+    const view = mount();
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+    view.unmount();
+  });
+  it("入房途中房间被关：作废入房并替换回大厅，清掉关闭标记", async () => {
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockImplementation((type: string) => (type === "room.join" ? ack.promise : undefined));
+    const view = mount();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    act(() => useWhoIsFakerStore.getState().markRoomClosed());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker", { replace: true });
+    expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+    await act(async () => ack.resolve(receipt()));
+    expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join", "room.leave"]);
+    expect(useWhoIsFakerStore.getState().roomId).toBeNull();
+    view.unmount();
+  });
+  it.each([
+    ["room.closed", "房间已关闭"],
+    ["session.replaced", "您的连接已被新标签页替代"],
+  ])("入房之后收到 %s：提示并替换回大厅", async (event, text) => {
+    const dispose = initWhoIsFakerWs();
+    send.mockImplementation(async (type: string) => {
+      if (type !== "room.join") return undefined;
+      emitSnapshot("1234");
+      return receipt();
+    });
+    const view = mount();
+    await waitFor(() => expect(screen.queryByText("正在加入房间...")).toBeNull());
+    act(() =>
+      listeners.forEach((handler) =>
+        handler({ type: "event", event, payload: { roomId: "1234" } } as unknown as ServerMessage)
+      )
+    );
+    expect(toast()).toHaveBeenCalledWith(text, "error");
+    expect(navigate).toHaveBeenCalledWith("/whoisfaker", { replace: true });
+    view.unmount();
+    dispose();
+  });
+  it("在房里时 store 脱离了房间（没有关闭标记）：自行回大厅，不替换历史", async () => {
+    const view = mount();
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    act(() => useWhoIsFakerStore.getState().leaveRoomState());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker");
+    view.unmount();
+  });
+  it("挂载同一毫秒留下的关闭标记：先替换回大厅，入房仍照常发出（现状）", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      useWhoIsFakerStore.setState({ roomClosedAt: now });
+      const view = mount();
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker", { replace: true });
+      await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+      expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join"]);
+      view.unmount();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("页面被直接卸载（没点离开）不退房", async () => {
+    const view = mount();
+    await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+    view.unmount();
+    expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join"]);
+    expect(useWhoIsFakerStore.getState().roomId).toBe("1234");
+  });
+  it("点离开先回大厅（不替换历史），卸载后才退房；离开后的关闭事件仍会替换回大厅", async () => {
+    const dispose = initWhoIsFakerWs();
+    send.mockImplementation(async (type: string) => {
+      if (type !== "room.join") return undefined;
+      emitSnapshot("1234");
+      return receipt();
+    });
+    const view = mount();
+    await waitFor(() => expect(screen.queryByText("正在加入房间...")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "离开房间" }));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/whoisfaker");
+    expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join"]);
+    act(() => useWhoIsFakerStore.getState().markRoomClosed());
+    expect(navigate).toHaveBeenLastCalledWith("/whoisfaker", { replace: true });
+    view.unmount();
+    await waitFor(() =>
+      expect(send.mock.calls.map(([type]) => type)).toEqual(["room.join", "room.leave"])
+    );
+    dispose();
   });
 });
