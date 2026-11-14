@@ -3,6 +3,7 @@ import { GAME_IDS, GAME_ROUTES } from "@bakagame/shared/values";
 import { RouteErrorFallback } from "@/components/common/AppErrorFallback";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { GAME_CLIENT, lazyPage } from "@/config/GameClient";
+import { ABOUTS_PATH, ABOUTS_TAB_SEGMENTS } from "@/lib/AboutsTabs";
 import { RootLayout } from "@/layouts/RootLayout";
 
 /** 数据路由：跨页过渡（`viewTransition`）只在数据路由下生效，见 DesignGuide §8。 */
@@ -26,8 +27,13 @@ export function createAppRouter() {
           ],
         })),
         { path: "/admin", lazy: lazyPage(() => import("@/pages/AdminPage")) },
-        // 关于项目：开源致谢 / 更新日志 / 提交历史 / 隐私说明 / 用户条款统一走 ?tab=。
-        { path: "/abouts", lazy: lazyPage(() => import("@/pages/CreditsPage")) },
+        // 关于项目：一张页面五个标签。更新日志、隐私说明、用户条款各有独立路径，其余标签挂在 ?tab= 上；
+        // 子路由只用来认路径，页面本身挂在父路由上，切标签不会重新挂载。
+        {
+          path: ABOUTS_PATH,
+          lazy: lazyPage(() => import("@/pages/CreditsPage")),
+          children: [{ index: true }, ...ABOUTS_TAB_SEGMENTS.map((path) => ({ path }))],
+        },
         // 公开状态页：noindex，不进营销页登记位；后端不可达时按未知降级。
         { path: "/status", lazy: lazyPage(() => import("@/pages/StatusPage")) },
         // 已下线的旧入口仍回首页：外部还有指向它的旧链接，那是有意保留的去向，不算未知路径。

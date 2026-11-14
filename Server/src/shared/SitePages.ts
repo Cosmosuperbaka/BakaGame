@@ -19,6 +19,10 @@ export const SITE_PAGE_ENTRIES = {
   song: { path: "/songuessr", shortTitle: "听歌猜歌 Songuessr" },
   cee: { path: "/cee", shortTitle: "猜动漫角色 CEE" },
   abouts: { path: "/abouts", shortTitle: `关于 ${SITE_NAME}` },
+  // 关于页里各有独立地址的三个标签：正文仍是关于页的那一份，地址让它们能被单独收录与分享。
+  changelog: { path: "/abouts/changelog", shortTitle: "更新日志" },
+  privacy: { path: "/abouts/privacy", shortTitle: "隐私说明" },
+  terms: { path: "/abouts/terms", shortTitle: "用户条款" },
 } as const satisfies Record<string, SitePageEntry>;
 
 /** 「中文名 英文名」形的短标题换成「英文名 中文名」，Agent 地图的大厅标题用它。 */

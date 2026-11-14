@@ -36,6 +36,7 @@ export {
   ROOM_ID_TEST_MODE,
 } from "./ModelValues";
 export { GAME_IDS, SERVER_SHUTDOWN_MESSAGE } from "./Protocol";
+export { SITE_PAGE_ENTRIES } from "./SitePages";
 export {
   CEE_SETTING_BOUNDS,
   SONG_SUBJECT_LIMIT_BOUNDS,

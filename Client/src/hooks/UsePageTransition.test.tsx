@@ -77,6 +77,7 @@ function renderRouter(initial: string) {
             <Shared id="card-b" partner="/b" />
             <Go to="/a" label="进入 A" />
             <Go to="/abouts" label="打开关于项目" />
+            <Go to="/abouts/changelog" label="打开更新日志" />
           </Frame>
         ),
       },
@@ -87,6 +88,14 @@ function renderRouter(initial: string) {
             <p>lobby-a</p>
             <Shared id="lobby-title" partner="/" />
             <Go to="/" label="返回主页" />
+          </Frame>
+        ),
+      },
+      {
+        path: "/abouts/changelog",
+        element: (
+          <Frame>
+            <p>changelog</p>
           </Frame>
         ),
       },
@@ -141,6 +150,18 @@ describe("usePageNavigate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "打开关于项目" }));
     expect(await screen.findByText("credits")).toBeInTheDocument();
+    await waitFor(() => expect(captures.new).toBeDefined());
+
+    expect(captures.old).toMatchObject({ direction: "forward", transition: "credits" });
+    expect(captures.new).toMatchObject({ direction: "forward", transition: "credits" });
+  });
+
+  it("直达关于页的独立标签地址（版本号入口）也走 credits 形态", async () => {
+    const { captures } = stubViewTransition();
+    renderRouter("/");
+
+    await userEvent.click(screen.getByRole("button", { name: "打开更新日志" }));
+    expect(await screen.findByText("changelog")).toBeInTheDocument();
     await waitFor(() => expect(captures.new).toBeDefined());
 
     expect(captures.old).toMatchObject({ direction: "forward", transition: "credits" });

@@ -32,8 +32,8 @@ describe("玩法客户端登记表", () => {
   });
 
   it("页面元信息里的玩法路径集合等于登记表的大厅路径集合", () => {
-    // 站点页（首页、关于）不进玩法登记表，其余登记页必须一款不多一款不少。
-    const siteOnlyPaths = ["/", "/abouts"];
+    // 站点页（首页、关于及其独立标签页）不进玩法登记表，其余登记页必须一款不多一款不少。
+    const siteOnlyPaths = ["/", "/abouts", "/abouts/changelog", "/abouts/privacy", "/abouts/terms"];
     const bases = GAME_IDS.map((game) => GAME_ROUTES[game].base);
     expect(PAGE_META.map((meta) => meta.path).sort()).toEqual([...bases, ...siteOnlyPaths].sort());
   });

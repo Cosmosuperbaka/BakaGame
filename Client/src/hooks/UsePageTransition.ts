@@ -5,6 +5,7 @@ import {
   type NavigateOptions,
   type To,
 } from "react-router";
+import { isAboutsPath } from "@/lib/AboutsTabs";
 
 /**
  * 页面导航默认走 View Transitions：旧页定格成快照向前退出、新页自后方推入（见 `index.css` 的页面过渡）。
@@ -79,14 +80,15 @@ const pathDepth = (pathname: string) => pathname.split("/").filter(Boolean).leng
 export type PageTransitionKind = "credits";
 
 /**
- * 本次过渡的专属形态。关于项目页（`/abouts`）与任何页面之间都走「自底缘升起 / 落回页脚」，
+ * 本次过渡的专属形态。关于项目页（`/abouts` 及各标签的独立路径）与任何页面之间都走「自底缘升起 / 落回页脚」，
  * 读作从页脚版本号拉出一整页，而不是页面被前后推入。方向（前进/返回）仍由 `data-page-direction` 决定。
  */
 export function pageTransitionKind(
   from: string | undefined,
   to: string | undefined
 ): PageTransitionKind | undefined {
-  return from === "/abouts" || to === "/abouts" ? "credits" : undefined;
+  const touchesAbouts = [from, to].some((path) => path !== undefined && isAboutsPath(path));
+  return touchesAbouts ? "credits" : undefined;
 }
 
 /**

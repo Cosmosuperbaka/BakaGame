@@ -13,6 +13,7 @@
  */
 
 import { ABOUTS_PAGE_META } from "./pages/Abouts.ts";
+import { CHANGELOG_PAGE_META, PRIVACY_PAGE_META, TERMS_PAGE_META } from "./pages/AboutsTabPages.ts";
 import { CEE_PAGE_META } from "./pages/Cee.ts";
 import { FAKER_PAGE_META } from "./pages/Faker.ts";
 import { HOME_PAGE_META } from "./pages/Home.ts";
@@ -57,6 +58,9 @@ export const PAGE_META: PageMeta[] = [
   SONG_PAGE_META,
   CEE_PAGE_META,
   ABOUTS_PAGE_META,
+  CHANGELOG_PAGE_META,
+  PRIVACY_PAGE_META,
+  TERMS_PAGE_META,
 ];
 
 const roomInvite = (

@@ -1,5 +1,6 @@
 import { GAME_ROOM_PATH, GAME_ROUTES } from "./GameRoutes";
 import { GAME_IDS } from "./Protocol";
+import { SITE_PAGE_ENTRIES } from "./SitePages";
 
 /**
  * 标签页接管的页面边界，两端同一份：服务端拦 `navigate`，页面在读取与点击时再拦一次。
@@ -10,7 +11,10 @@ import { GAME_IDS } from "./Protocol";
 export const AGENT_PAGE_PATHS: readonly string[] = [
   "/",
   ...GAME_IDS.flatMap((game) => [GAME_ROUTES[game].base, ...GAME_ROUTES[game].agentPages]),
-  "/abouts",
+  SITE_PAGE_ENTRIES.abouts.path,
+  SITE_PAGE_ENTRIES.changelog.path,
+  SITE_PAGE_ENTRIES.privacy.path,
+  SITE_PAGE_ENTRIES.terms.path,
   "/status",
 ];
 

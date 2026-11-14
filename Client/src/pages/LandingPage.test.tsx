@@ -291,16 +291,16 @@ describe("LandingPage", () => {
               </TooltipProvider>
             }
           />
-          <Route path="/abouts" element={<CreditsProbe />} />
+          <Route path="/abouts/changelog" element={<CreditsProbe />} />
         </Routes>
       </MemoryRouter>
     );
 
     const version = screen.getByRole("link", { name: /^V\d+\.\d+\.\d+/ });
-    expect(version).toHaveAttribute("href", "/abouts?tab=changelog");
+    expect(version).toHaveAttribute("href", "/abouts/changelog");
     await user.click(version);
 
-    expect(await screen.findByText("credits/abouts?tab=changelog")).toBeInTheDocument();
+    expect(await screen.findByText("credits/abouts/changelog")).toBeInTheDocument();
     // 弹窗入口已经删除：版本详情只在完整页面上出现。
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

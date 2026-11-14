@@ -8,11 +8,15 @@
  * 在构建期（Node 环境）也要读它。结构化数据用纯字面量表达，避免把组件层的类型带进来。
  */
 
-import { SITE_NAME, SITE_PAGE_ENTRIES } from "../../../../Server/src/shared/SitePages.ts";
+import {
+  SITE_NAME,
+  SITE_PAGE_ENTRIES,
+  type SitePageEntry,
+} from "../../../../Server/src/shared/SitePages.ts";
 
 export const SITE_ORIGIN = "https://game.baka.website";
 // 站名与公开页的路径、短标题是服务端 Agent 地图共用的登记，只在共享契约里写一份。
-export { SITE_NAME, SITE_PAGE_ENTRIES };
+export { SITE_NAME, SITE_PAGE_ENTRIES, type SitePageEntry };
 
 /** 站点标语本体：首页标题用它，不带句号。 */
 export const SITE_SLOGAN = "1000万以内最好玩的小游戏网站";

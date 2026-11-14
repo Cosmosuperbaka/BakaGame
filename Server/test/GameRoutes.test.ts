@@ -20,6 +20,9 @@ describe("玩法路径登记", () => {
       "/songuessr/solo",
       "/cee",
       "/abouts",
+      "/abouts/changelog",
+      "/abouts/privacy",
+      "/abouts/terms",
       "/status",
     ]);
     for (const game of GAME_IDS) {

@@ -53,8 +53,9 @@ export const ABOUTS_PAGE_META: PageMeta = {
       { href: "/whoisfaker", label: "Who is Faker 谁是卧底" },
       { href: "/songuessr", label: "Songuessr 听歌猜歌" },
       { href: "/cee", label: "CEE 猜动漫角色" },
-      { href: "/abouts?tab=privacy", label: "隐私说明" },
-      { href: "/abouts?tab=terms", label: "用户条款" },
+      { href: SITE_PAGE_ENTRIES.changelog.path, label: "更新日志" },
+      { href: SITE_PAGE_ENTRIES.privacy.path, label: "隐私说明" },
+      { href: SITE_PAGE_ENTRIES.terms.path, label: "用户条款" },
     ],
   },
   structuredData: {

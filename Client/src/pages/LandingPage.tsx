@@ -22,6 +22,7 @@ import { REPOSITORY_URL, findPageMeta } from "@/data/PageMeta";
 import { GAME_ROUTES } from "@bakagame/shared/values";
 import { useSiteFeatures, type SiteFeatures } from "@/lib/SiteConfig";
 import { cn } from "@/lib/Utils";
+import { aboutsTabHref } from "@/lib/AboutsTabs";
 
 interface GameSubMode {
   id: string;
@@ -389,8 +390,8 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
   );
 }
 
-/** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
-const VERSION_PAGE_PATH = "/abouts?tab=changelog";
+/** 版本号入口：直达关于页的更新日志标签（它有自己的独立地址）。 */
+const VERSION_PAGE_PATH = aboutsTabHref("changelog");
 
 export default function LandingPage() {
   const linkClick = usePageLinkClick();
