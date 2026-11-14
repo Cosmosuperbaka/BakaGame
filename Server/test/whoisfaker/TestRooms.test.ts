@@ -118,18 +118,13 @@ describe("测试房间", () => {
     const { service } = createTestContext();
     const { host } = await createRoom(service, "Oblivionis");
 
-    let errorCode: string | undefined;
-    try {
-      await execute(service, host, {
+    await expect(
+      execute(service, host, {
         id: "jump-solo",
         type: "test.jumpToPhase",
         payload: { phase: "voting" },
-      });
-    } catch (error) {
-      errorCode = (error as { code?: string }).code;
-    }
-
-    expect(errorCode).toBe("INSUFFICIENT_PLAYERS");
+      })
+    ).rejects.toMatchObject({ code: "INSUFFICIENT_PLAYERS" });
 
     // 人数不足的跳转在建 round 之前就被拒，房间仍停在等待阶段，
     // 所以补进来的机器人直接参战，不需要先回退阶段。
@@ -238,18 +233,13 @@ describe("测试房间", () => {
     const { host } = await createRoom(service, "Oblivionis");
 
     for (const phase of ["assigningQuestioner", "wordSubmission", "description"] as const) {
-      let errorCode: string | undefined;
-      try {
-        await execute(service, host, {
+      await expect(
+        execute(service, host, {
           id: `solo-${phase}`,
           type: "test.jumpToPhase",
           payload: { phase },
-        });
-      } catch (error) {
-        errorCode = (error as { code?: string }).code;
-      }
-
-      expect(errorCode).toBe("INSUFFICIENT_PLAYERS");
+        })
+      ).rejects.toMatchObject({ code: "INSUFFICIENT_PLAYERS" });
       // 关键：拒绝必须发生在 startRound 之前，房间仍停在等待阶段。
       const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
       expect(snapshot?.status.phase).toBe("waiting");
@@ -269,7 +259,7 @@ describe("测试房间", () => {
     expect(service.getRoomSummaries()).toHaveLength(0);
 
     const next = await createRoom(service, "7777");
-    advanceTime(10 * 60 * 1000 + 1);
+    advanceTime(ROOM_IDLE_TIMEOUT_MS + 1);
     await service.runHousekeeping();
 
     const closed = getLastEventPayload<{ roomId: string; reason: string }>(
@@ -345,13 +335,9 @@ describe("测试房间", () => {
       payload: {},
     });
     // 反馈只有出题人能继续，房主不行。
-    let hostContinueError: string | undefined;
-    try {
-      await execute(service, host, { id: "host-continue", type: "game.advancePhase", payload: {} });
-    } catch (error) {
-      hostContinueError = (error as { code?: string }).code;
-    }
-    expect(hostContinueError).toBe("FORBIDDEN");
+    await expect(
+      execute(service, host, { id: "host-continue", type: "game.advancePhase", payload: {} })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await execute(service, questioner.connection, {
       id: "continue-voting",
       type: "game.advancePhase",
@@ -361,17 +347,13 @@ describe("测试房间", () => {
       "gameOver"
     );
 
-    let errorCode: string | undefined;
-    try {
-      await execute(service, host, {
+    await expect(
+      execute(service, host, {
         id: "advance-during-result",
         type: "game.advancePhase",
         payload: {},
-      });
-    } catch (error) {
-      errorCode = (error as { code?: string }).code;
-    }
-    expect(errorCode).toBe("PHASE_RESULT_PENDING");
+      })
+    ).rejects.toMatchObject({ code: "PHASE_RESULT_PENDING" });
     expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.status.phase).toBe(
       "gameOver"
     );
@@ -974,7 +956,7 @@ describe("测试房守卫", () => {
     // 大厅与后台不再把它当测试房隐藏，调试身份也不再下发。
     expect(service.getRoomSummaries().some((item) => item.roomId === "Oblivionis")).toBe(true);
     // 空房与闲置回收恢复：不再豁免。
-    advanceTime(30 * 60 * 1000);
+    advanceTime(ROOM_IDLE_TIMEOUT_MS + 1);
     await service.runHousekeeping();
     expect(getEventPayloads(host, "room.closed")).toHaveLength(1);
   });
