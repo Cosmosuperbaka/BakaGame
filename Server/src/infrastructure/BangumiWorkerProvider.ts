@@ -3,7 +3,11 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
+import {
+  pickRandomSubject,
+  type BangumiDataProvider,
+  type BangumiGetSubjectOptions,
+} from "./BangumiDataProvider";
 import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
 /**
@@ -31,11 +35,15 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
     }) as Promise<BangumiSubjectSearchResult[]>;
   }
 
-  async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
+  async getSubject(
+    subjectId: string,
+    options: BangumiGetSubjectOptions = {}
+  ): Promise<BangumiSubjectDetails> {
     await this.ready;
     return this.client.request({
       method: "song.getSubject",
       subjectId,
+      ...(options.waitForImage ? { waitForImage: true } : {}),
     }) as Promise<BangumiSubjectDetails>;
   }
 

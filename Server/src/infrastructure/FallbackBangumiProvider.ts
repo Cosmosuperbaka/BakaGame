@@ -3,7 +3,7 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import type { BangumiDataProvider } from "./BangumiDataProvider";
+import type { BangumiDataProvider, BangumiGetSubjectOptions } from "./BangumiDataProvider";
 
 /**
  * 本地数据集降级后重新探测的冷却期。
@@ -80,10 +80,13 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     );
   }
 
-  getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
+  getSubject(
+    subjectId: string,
+    options?: BangumiGetSubjectOptions
+  ): Promise<BangumiSubjectDetails> {
     return this.run(
-      () => this.local.getSubject(subjectId),
-      () => this.remote.getSubject(subjectId)
+      () => this.local.getSubject(subjectId, options),
+      () => this.remote.getSubject(subjectId, options)
     );
   }
 

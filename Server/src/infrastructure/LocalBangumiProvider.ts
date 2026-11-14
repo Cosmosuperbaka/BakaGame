@@ -134,6 +134,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly upstream: BangumiUpstream;
   private readonly imageCache = new Map<string, string>();
   private readonly imageMissUntil = new Map<string, number>();
+  /** 进行中的回源：同一实体并发取图（含后台补取）共用一次上游往返。 */
+  private readonly imageInflight = new Map<string, Promise<string | undefined>>();
   private readonly search?: BangumiSearchIndex;
   private readonly searchReady: Promise<void>;
   private readonly onSubjectView?: (subjectId: number) => void;
@@ -193,11 +195,23 @@ export class LocalBangumiProvider implements BangumiDataProvider {
    * 以免重复打爆上游。历史实现把失败也塞进内存正缓存，一次瞬时超时就会让该条目
    * 在进程剩余生命周期里再也没有图片。
    */
-  private async resolveEntityImage(
-    entity: EnrichmentEntity,
-    id: number
-  ): Promise<string | undefined> {
+  private resolveEntityImage(entity: EnrichmentEntity, id: number): Promise<string | undefined> {
     const key = `${entity}:${id}`;
+    const running = this.imageInflight.get(key);
+    if (running) return running;
+    // 内部从不抛出（失败都在里面吞掉并记负缓存），finally 只负责清占位。
+    const task = this.fetchEntityImage(entity, id, key).finally(() =>
+      this.imageInflight.delete(key)
+    );
+    this.imageInflight.set(key, task);
+    return task;
+  }
+
+  private async fetchEntityImage(
+    entity: EnrichmentEntity,
+    id: number,
+    key: string
+  ): Promise<string | undefined> {
     if (this.imageCache.has(key)) return this.imageCache.get(key);
     const missUntil = this.imageMissUntil.get(key);
     if (missUntil !== undefined && missUntil > Date.now()) return undefined;
@@ -335,7 +349,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     }
     return rows.map((row) => toResult(this.fillPersistedImage(row), this.imageBase));
   }
-  async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
+  async getSubject(
+    subjectId: string,
+    options: { waitForImage?: boolean } = {}
+  ): Promise<BangumiSubjectDetails> {
     const id = Number(subjectId);
     if (!Number.isInteger(id) || id <= 0)
       throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
@@ -369,14 +386,30 @@ export class LocalBangumiProvider implements BangumiDataProvider {
         seen.add(key);
         return true;
       });
-    const imageUrl =
-      rewriteImage(row.image, this.imageBase) ?? (await this.resolveEntityImage("subject", id));
+    const imageUrl = await this.subjectImageFor(row, id, options.waitForImage === true);
     return {
       ...toResult({ ...row, image: imageUrl }, ""),
       summary: row.summary || undefined,
       locked: false,
       musicTracks,
     };
+  }
+  /**
+   * 取条目时的封面：数据集有就用，其次只读回填缓存；都没有时，需要等的调用方（出题）等一次回源，
+   * 其余（猜测判定）立即返回并在后台补取落库，下一次读取就有。后台补取内部不抛出。
+   */
+  private async subjectImageFor(
+    row: SubjectRow,
+    id: number,
+    waitForImage: boolean
+  ): Promise<string | undefined> {
+    const known =
+      rewriteImage(this.fillPersistedImage(row).image, this.imageBase) ??
+      this.imageCache.get(`subject:${id}`);
+    if (known) return known;
+    if (waitForImage) return this.resolveEntityImage("subject", id);
+    void this.resolveEntityImage("subject", id);
+    return undefined;
   }
   chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
     return pickRandomSubject(this, filters, random);

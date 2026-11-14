@@ -18,8 +18,13 @@ import {
 
 describe("SonGuessrService", () => {
   test("听歌猜番提交后只向出题人公开答案，并按 subject ID 完成猜测结算", async () => {
+    // 记录每次取条目是否要求等封面：出题可以等一下，猜测判定绝不能等。
+    const subjectCalls: Array<{ id: string; waitForImage: boolean }> = [];
     const bangumiProvider = fakeBangumiProvider({
-      getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
+      getSubject: async (subjectId: string, options?: { waitForImage?: boolean }) => {
+        subjectCalls.push({ id: subjectId, waitForImage: options?.waitForImage === true });
+        return subjectId === anime.id ? anime : wrongAnime;
+      },
       searchSubjects: async () => [anime],
     });
     const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
@@ -103,6 +108,11 @@ describe("SonGuessrService", () => {
     expect(snapshot.roundSummary?.attempts.map((attempt) => attempt.guessedAnime?.id)).toEqual([
       wrongAnime.id,
       anime.id,
+    ]);
+    expect(subjectCalls).toEqual([
+      { id: anime.id, waitForImage: true },
+      { id: wrongAnime.id, waitForImage: false },
+      { id: anime.id, waitForImage: false },
     ]);
   });
 

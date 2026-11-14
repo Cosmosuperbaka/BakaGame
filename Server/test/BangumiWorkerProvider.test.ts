@@ -211,12 +211,14 @@ describe("BangumiWorkerProvider 其余门面方法", () => {
 
     expect((await facade.getSubject("1")).name).toBe("Hit");
     expect(calls[0]).toEqual({ method: "song.getSubject", subjectId: "1" });
+    await facade.getSubject("1", { waitForImage: true });
+    expect(calls[1]).toEqual({ method: "song.getSubject", subjectId: "1", waitForImage: true });
 
     expect(await facade.resolveCharacterImage(123)).toBe("https://img.example/r/400/x.jpg");
-    expect(calls[1]).toEqual({ method: "song.resolveCharacterImage", characterId: 123 });
+    expect(calls[2]).toEqual({ method: "song.resolveCharacterImage", characterId: 123 });
 
     expect(await facade.resolveSubjectImage("5")).toBeUndefined();
-    expect(calls[2]).toEqual({ method: "song.resolveSubjectImage", subjectId: "5" });
+    expect(calls[3]).toEqual({ method: "song.resolveSubjectImage", subjectId: "5" });
   });
 
   test("chooseRandomSubject：搜索 + 详情两跳取一条，空候选报错", async () => {

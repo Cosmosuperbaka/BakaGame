@@ -50,7 +50,7 @@ export type BangumiDataRequest =
       limit?: number;
       filters?: AnimeAutoFilters;
     }
-  | { id: number; method: "song.getSubject"; subjectId: string }
+  | { id: number; method: "song.getSubject"; subjectId: string; waitForImage?: boolean }
   | { id: number; method: "song.resolveCharacterImage"; characterId: number }
   | { id: number; method: "song.resolveSubjectImage"; subjectId: string }
   // ---- CEE ----
@@ -424,7 +424,7 @@ const dispatchSongRequest = async (
     case "song.searchSubjects":
       return provider.searchSubjects(request.keyword, request.limit, request.filters);
     case "song.getSubject":
-      return provider.getSubject(request.subjectId);
+      return provider.getSubject(request.subjectId, { waitForImage: request.waitForImage });
     case "song.resolveCharacterImage":
       return provider.resolveCharacterImage(request.characterId);
     case "song.resolveSubjectImage":

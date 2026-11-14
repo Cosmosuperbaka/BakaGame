@@ -5,6 +5,10 @@ import type {
   BangumiSubjectSearchResult,
 } from "../shared/Index";
 
+export interface BangumiGetSubjectOptions {
+  waitForImage?: boolean;
+}
+
 export interface BangumiDataProvider {
   initialize?: () => Promise<void>;
   searchSubjects(
@@ -12,7 +16,12 @@ export interface BangumiDataProvider {
     limit?: number,
     filters?: AnimeAutoFilters
   ): Promise<BangumiSubjectSearchResult[]>;
-  getSubject(subjectId: string): Promise<BangumiSubjectDetails>;
+  /**
+   * 条目详情。本地库缺封面时默认**不等回源**（猜测判定在热路径上，不能被上游往返拖慢），
+   * 封面在后台补取落库；出题这类可以等一下的调用方传 `waitForImage` 换完整封面。
+   * 在线 provider 的详情本就带封面，忽略该选项。
+   */
+  getSubject(subjectId: string, options?: BangumiGetSubjectOptions): Promise<BangumiSubjectDetails>;
   chooseRandomSubject(
     filters?: AnimeAutoFilters,
     random?: () => number
@@ -48,5 +57,5 @@ export const pickRandomSubject = async (
   if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
   const selected =
     candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
-  return provider.getSubject(selected.id);
+  return provider.getSubject(selected.id, { waitForImage: true });
 };

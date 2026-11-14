@@ -134,7 +134,7 @@ export async function submitAnime(
   if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
   const submitterId = player.id;
   extendSubmitterDeadline(ctx, room);
-  const anime = await provider.getSubject(subjectId);
+  const anime = await provider.getSubject(subjectId, { waitForImage: true });
   const resolved = songId
     ? await resolveSpecifiedAnimeSong(ctx, room, anime, songId)
     : await resolveAnimeSong(ctx, room, anime);

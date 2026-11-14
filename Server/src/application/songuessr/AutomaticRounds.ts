@@ -160,7 +160,7 @@ export const startAutomaticAnimeRound = async (
     verify();
     const selected = pool.splice(ctx.random.nextInt(pool.length), 1)[0];
     try {
-      const anime = await provider.getSubject(selected.id);
+      const anime = await provider.getSubject(selected.id, { waitForImage: true });
       const resolved = await resolveAnimeSong(ctx, room, anime);
       verify();
       installRound(ctx, room, resolved.song, "", anime, resolved.track);

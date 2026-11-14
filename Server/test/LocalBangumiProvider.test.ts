@@ -168,7 +168,7 @@ describe("LocalBangumiProvider", () => {
       apiBase: "https://api.example",
       fetcher,
     });
-    const detail = await provider.getSubject("8");
+    const detail = await provider.getSubject("8", { waitForImage: true });
     // 对外 URL = 镜像前缀 + 缓存档位路径（作品 /r/200/），与自建图床逐字对齐。
     expect(detail.imageUrl).toBe("https://img.example/r/200/pic/cover/l/aa/bb/8_test.jpg");
     provider.close();
@@ -636,5 +636,107 @@ describe("LocalBangumiProvider · 图片接口与候选选取", () => {
     expect(picked.nameCn).toBe("测试中心");
     provider.close();
     await removeFiles(songPath, characterPath);
+  });
+});
+
+describe("LocalBangumiProvider · 取条目不等封面回源", () => {
+  const COVER = "https://lain.bgm.tv/pic/cover/l/aa/bb/8_test.jpg";
+  const createSubjectDb = () => {
+    const dbPath = join(tmpdir(), `bangumi-cover-${crypto.randomUUID()}.sqlite`);
+    const db = new Database(dbPath);
+    db.run(
+      "CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)"
+    );
+    db.run(
+      "CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)"
+    );
+    db.run(
+      "INSERT INTO subjects VALUES (8,2,'Test','测试','','','2020-01-01',0,'[]','[]',0,0,0,'')"
+    );
+    db.close();
+    return dbPath;
+  };
+  /** 可手动放行的上游：用来证明「判定不等回源」与「并发只回源一次」。 */
+  const gatedFetcher = () => {
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetcher = async () => {
+      calls += 1;
+      await gate;
+      return new Response(JSON.stringify({ images: { large: COVER } }), { status: 200 });
+    };
+    return { fetcher, release: () => release(), calls: () => calls };
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  for (const persisted of [true, false]) {
+    test(`默认不等封面：上游挂起时照样返回，补取完成后下一次读取就有封面（${persisted ? "有" : "无"}回填缓存）`, async () => {
+      const dbPath = createSubjectDb();
+      const enrichmentPath = join(tmpdir(), `bangumi-cover-e-${crypto.randomUUID()}.sqlite`);
+      const upstream = gatedFetcher();
+      const provider = new LocalBangumiProvider({
+        dbPath,
+        enrichmentPath: persisted ? enrichmentPath : undefined,
+        imageBase: "https://img.example",
+        apiBase: "https://api.example",
+        fetcher: upstream.fetcher,
+      });
+      const first = await provider.getSubject("8");
+      expect(first.imageUrl).toBeUndefined();
+      expect(first.name).toBe("Test");
+      upstream.release();
+      await settle();
+      const second = await provider.getSubject("8");
+      expect(second.imageUrl).toBe("https://img.example/r/200/pic/cover/l/aa/bb/8_test.jpg");
+      expect(upstream.calls()).toBe(1);
+      provider.close();
+      await removeFiles(dbPath, enrichmentPath);
+    });
+  }
+
+  test("同一条目并发取两次只回源一次，等封面与不等封面共用同一次回源", async () => {
+    const dbPath = createSubjectDb();
+    const upstream = gatedFetcher();
+    const provider = new LocalBangumiProvider({
+      dbPath,
+      imageBase: "https://img.example",
+      apiBase: "https://api.example",
+      fetcher: upstream.fetcher,
+    });
+    const quick = provider.getSubject("8");
+    const patient = provider.getSubject("8", { waitForImage: true });
+    const another = provider.getSubject("8");
+    await quick;
+    await another;
+    await settle();
+    upstream.release();
+    const waited = await patient;
+    expect(waited.imageUrl).toBe("https://img.example/r/200/pic/cover/l/aa/bb/8_test.jpg");
+    expect(upstream.calls()).toBe(1);
+    provider.close();
+    await removeFiles(dbPath);
+  });
+
+  test("后台补取失败不产生未处理的拒绝，也不让取条目本身失败", async () => {
+    const dbPath = createSubjectDb();
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    const provider = new LocalBangumiProvider({
+      dbPath,
+      imageBase: "https://img.example",
+      apiBase: "https://api.example",
+      fetcher: async () => {
+        throw new Error("上游不可达");
+      },
+    });
+    const detail = await provider.getSubject("8");
+    expect(detail.imageUrl).toBeUndefined();
+    await settle();
+    expect(rejections).toEqual([]);
+    process.off("unhandledRejection", onRejection);
+    provider.close();
+    await removeFiles(dbPath);
   });
 });
