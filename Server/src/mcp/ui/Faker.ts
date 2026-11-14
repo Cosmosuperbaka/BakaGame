@@ -17,6 +17,7 @@ import {
   youBase,
   type UiContext,
 } from "./Support";
+import { idMatcher, type GameUiAdapter } from "./GameUi";
 import type { UiControl, UiScreen } from "./Types";
 
 const PHASE_TITLES: Record<string, string> = {
@@ -343,7 +344,7 @@ const blankGuessEntry = (context: UiContext): UiControl[] => {
   return [button("faker.blank.enter", "白板猜词", "game")];
 };
 
-export function buildFakerScreen(context: UiContext): UiScreen {
+function buildFakerScreen(context: UiContext): UiScreen {
   const phase = phaseOf(context);
   const status = statusOf(context);
   const noticeParts = [
@@ -399,10 +400,6 @@ export function buildFakerScreen(context: UiContext): UiScreen {
     },
     fakerPlayers(context.snapshot)
   );
-}
-
-export async function autoSearchFaker(): Promise<void> {
-  // 谁是卧底没有检索控件。
 }
 
 const needDraft = (context: UiContext, id: string, label: string): string => {
@@ -514,10 +511,7 @@ const clickFakerBasic = async (context: UiContext, id: string): Promise<string |
   return undefined;
 };
 
-export async function clickFakerControl(
-  context: UiContext,
-  controlValue: UiControl
-): Promise<string> {
+async function clickFakerControl(context: UiContext, controlValue: UiControl): Promise<string> {
   const id = controlValue.id;
   if (id.startsWith("faker.blank.")) {
     const blank = await clickFakerBlank(context, id);
@@ -530,7 +524,7 @@ export async function clickFakerControl(
   throw new Error(`控件「${controlValue.label}」当前不可操作`);
 }
 
-export async function pressFaker(
+async function pressFaker(
   context: UiContext,
   controlValue: UiControl,
   key: string
@@ -543,9 +537,38 @@ export async function pressFaker(
   return undefined;
 }
 
-export async function setFakerControl(
-  _context: UiContext,
-  controlValue: UiControl
-): Promise<string> {
+async function setFakerControl(_context: UiContext, controlValue: UiControl): Promise<string> {
   throw new Error(`控件「${controlValue.label}」不是可设置取值的控件`);
 }
+
+/** 点击后会改动服务端状态的控件：执行后要等页面刷新再回屏。 */
+const mutatesFaker = idMatcher(
+  [
+    "faker.ready",
+    "faker.start",
+    "faker.advance",
+    "faker.words.submit",
+    "faker.description.send",
+    "faker.cancelVote",
+    "faker.cancelNight",
+    "faker.blank.enter",
+    "faker.blank.submit",
+    "faker.blank.approve",
+    "faker.blank.reject",
+  ],
+  ["faker.questioner.", "faker.vote.", "faker.night."]
+);
+
+export const fakerUiAdapter: GameUiAdapter = {
+  build: buildFakerScreen,
+  click: clickFakerControl,
+  set: setFakerControl,
+  press: pressFaker,
+  // 谁是卧底没有检索控件。
+  autoSearch: async () => undefined,
+  mutatesOnClick: mutatesFaker,
+  mutatesOnSet: new Set(),
+  mutatesOnPress: new Set(["faker.description.input"]),
+  longActions: new Set(["faker.start", "faker.advance", "faker.words.submit"]),
+  chatCommand: "chat.send",
+};

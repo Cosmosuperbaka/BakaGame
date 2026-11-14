@@ -1,20 +1,8 @@
 import type { AgentGameClient, GameId } from "../GameClient";
-import { autoSearchCee, buildCeeScreen, clickCeeControl, pressCee, setCeeControl } from "./Cee";
-import {
-  autoSearchFaker,
-  buildFakerScreen,
-  clickFakerControl,
-  pressFaker,
-  setFakerControl,
-} from "./Faker";
-import {
-  autoSearchSong,
-  buildSongScreen,
-  clickSongControl,
-  ensureSongAudioReady,
-  pressSong,
-  setSongControl,
-} from "./Song";
+import { ceeUiAdapter } from "./Cee";
+import { fakerUiAdapter } from "./Faker";
+import type { GameUiAdapter } from "./GameUi";
+import { songUiAdapter } from "./Song";
 import {
   createUiState,
   isRecord,
@@ -29,26 +17,10 @@ import type { UiControl, UiRunResult, UiScreen, UiStep, UiStepAction, UiStepRepo
 const MAX_STEPS = 16;
 const MAX_TYPE_LENGTH = 200;
 
-/** 出题/开局/换轮会跨多次上游请求，等待页面刷新时不能按普通命令的短超时判失败。 */
-const LONG_ACTIONS = new Set([
-  "song.start",
-  "song.clip.confirm",
-  "song.nextRound",
-  "song.finish",
-  "song.audio.retry",
-  "cee.start",
-  "cee.next",
-  "cee.answer.confirm",
-  "cee.hint.image",
-  "faker.start",
-  "faker.advance",
-  "faker.words.submit",
-]);
-
-const CHAT_COMMAND: Record<GameId, string> = {
-  faker: "chat.send",
-  song: "song.chat.send",
-  cee: "cee.chat.send",
+const ADAPTERS: Record<GameId, GameUiAdapter> = {
+  faker: fakerUiAdapter,
+  song: songUiAdapter,
+  cee: ceeUiAdapter,
 };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -115,23 +87,15 @@ export class SeatUi {
 
   private build(game: GameId): { context: UiContext; screen: UiScreen } {
     const context = this.context(game);
-    const screen =
-      game === "faker"
-        ? buildFakerScreen(context)
-        : game === "song"
-          ? buildSongScreen(context)
-          : buildCeeScreen(context);
-    return { context, screen };
+    return { context, screen: ADAPTERS[game].build(context) };
   }
 
   async screen(game: GameId): Promise<UiScreen> {
     const { context, screen } = this.build(game);
-    if (game === "song") {
-      try {
-        await ensureSongAudioReady(context);
-      } catch {
-        /* 音频就绪是增强信号，不影响读屏 */
-      }
+    try {
+      await ADAPTERS[game].prepare?.(context);
+    } catch {
+      /* 增强步骤（如音频就绪）不影响读屏 */
     }
     return screen;
   }
@@ -160,21 +124,10 @@ export class SeatUi {
 
   private async autoSearch(game: GameId, context: UiContext, controlId: string): Promise<void> {
     try {
-      if (game === "song") await autoSearchSong(context, controlId);
-      else if (game === "cee") await autoSearchCee(context, controlId);
-      else await autoSearchFaker();
+      await ADAPTERS[game].autoSearch(context, controlId);
     } catch (error) {
       context.state.lastFeedback = error instanceof Error ? error.message : String(error);
     }
-  }
-
-  private async genericChat(
-    game: GameId,
-    context: UiContext,
-    control: UiControl
-  ): Promise<string | undefined> {
-    if (control.id === "chat.send") return sendChat(context, CHAT_COMMAND[game]);
-    return undefined;
   }
 
   private async executeClick(
@@ -182,19 +135,12 @@ export class SeatUi {
     context: UiContext,
     control: UiControl
   ): Promise<StepOutcome> {
-    const generic = await this.genericChat(game, context, control);
-    if (generic) return { feedback: generic, mutate: true };
-    if (game === "faker") {
-      const feedback = await clickFakerControl(context, control);
-      return { feedback, mutate: mutatesFaker(control.id) };
-    }
-    if (game === "song") {
-      const mutate = mutatesSong(control.id, context);
-      const feedback = await clickSongControl(context, control);
-      return { feedback, mutate };
-    }
-    const mutate = mutatesCee(control.id, context.state);
-    const feedback = await clickCeeControl(context, control);
+    const adapter = ADAPTERS[game];
+    if (control.id === "chat.send")
+      return { feedback: await sendChat(context, adapter.chatCommand), mutate: true };
+    // 是否改动服务端状态要在点击前判定：点击本身会清掉搜索态，事后再看就判错了。
+    const mutate = adapter.mutatesOnClick(control.id, context);
+    const feedback = await adapter.click(context, control);
     return { feedback, mutate };
   }
 
@@ -204,16 +150,9 @@ export class SeatUi {
     control: UiControl,
     value: unknown
   ): Promise<StepOutcome> {
-    if (game === "song") {
-      const feedback = await setSongControl(context, control, value);
-      return { feedback, mutate: control.id === "song.team" };
-    }
-    if (game === "cee") {
-      const feedback = await setCeeControl(context, control, value);
-      return { feedback, mutate: control.id === "cee.team" };
-    }
-    const feedback = await setFakerControl(context, control);
-    return { feedback, mutate: false };
+    const adapter = ADAPTERS[game];
+    const feedback = await adapter.set(context, control, value);
+    return { feedback, mutate: adapter.mutatesOnSet.has(control.id) };
   }
 
   private async executePress(
@@ -222,18 +161,14 @@ export class SeatUi {
     control: UiControl,
     key: string
   ): Promise<StepOutcome> {
+    const adapter = ADAPTERS[game];
     if (control.id === "chat.input" && key === "Enter") {
-      const feedback = await sendChat(context, CHAT_COMMAND[game]);
+      const feedback = await sendChat(context, adapter.chatCommand);
       return { feedback, mutate: true };
     }
-    const feedback =
-      game === "faker"
-        ? await pressFaker(context, control, key)
-        : game === "song"
-          ? await pressSong(context, control, key)
-          : await pressCee(context, control, key);
+    const feedback = await adapter.press(context, control, key);
     if (!feedback) throw new Error(`控件「${control.label}」没有绑定按键 ${key} 的动作`);
-    return { feedback, mutate: control.id === "faker.description.input" };
+    return { feedback, mutate: adapter.mutatesOnPress.has(control.id) };
   }
 
   private async executeType(
@@ -342,7 +277,7 @@ export class SeatUi {
       context,
       before,
       outcome.mutate,
-      LONG_ACTIONS.has(control.id) ? 30_000 : 1_800
+      ADAPTERS[game].longActions.has(control.id) ? 30_000 : 1_800
     );
     return {
       index,
@@ -387,60 +322,3 @@ export class SeatUi {
     return { ok, steps: reports, screen: await this.screen(game) };
   }
 }
-
-const mutatesFaker = (id: string): boolean =>
-  id === "faker.ready" ||
-  id === "faker.start" ||
-  id === "faker.advance" ||
-  id.startsWith("faker.questioner.") ||
-  id === "faker.words.submit" ||
-  id === "faker.description.send" ||
-  id === "faker.cancelVote" ||
-  id === "faker.cancelNight" ||
-  id.startsWith("faker.vote.") ||
-  id.startsWith("faker.night.") ||
-  id === "faker.blank.enter" ||
-  id === "faker.blank.submit" ||
-  id === "faker.blank.approve" ||
-  id === "faker.blank.reject";
-
-const mutatesSong = (id: string, { state, snapshot }: UiContext): boolean => {
-  if (
-    id === "song.ready" ||
-    id === "song.start" ||
-    id === "song.finish" ||
-    id === "song.nextRound" ||
-    id === "song.guess.giveup" ||
-    id === "song.clip.confirm" ||
-    id === "song.audio.retry" ||
-    id.startsWith("song.submitter.")
-  )
-    return true;
-  if (id === "song.guess.search.result" || id.startsWith("song.guess.search.result.")) return true;
-  if (id.startsWith("song.submit.search.result.")) {
-    // 猜番选到关联曲才出题；猜歌关闭自选片段时选中即出题，开着时只是打开片段确认。
-    if (state.search?.kind === "anime") return Boolean(state.search.subject);
-    return isRecord(snapshot.settings) && snapshot.settings.allowCustomClip === false;
-  }
-  if (id === "chat.send") return true;
-  return false;
-};
-
-const mutatesCee = (id: string, state: UiState): boolean => {
-  if (
-    id === "cee.ready" ||
-    id === "cee.start" ||
-    id === "cee.next" ||
-    id === "cee.answer.confirm" ||
-    id === "cee.hint.image" ||
-    id === "cee.cancel" ||
-    id === "cee.guess.surrender" ||
-    id.startsWith("cee.setter.") ||
-    id.startsWith("cee.spectate.")
-  )
-    return true;
-  if (id.startsWith("cee.guess.search.result."))
-    return !(state.search?.kind === "subject" && !state.search.subject);
-  if (id === "chat.send") return true;
-  return false;
-};

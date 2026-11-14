@@ -25,6 +25,7 @@ import {
   type UiContext,
   type UiSearchState,
 } from "./Support";
+import { idMatcher, type GameUiAdapter } from "./GameUi";
 import type { UiControl, UiScreen } from "./Types";
 
 const MIN_CLIP_MS = 5_000;
@@ -408,7 +409,7 @@ const withoutAudioUrl = (summary: Record<string, unknown>): Record<string, unkno
   return { ...summary, song };
 };
 
-export function buildSongScreen(context: UiContext): UiScreen {
+function buildSongScreen(context: UiContext): UiScreen {
   const phase = str(context.snapshot.phase) ?? "waiting";
   const sections = screenSections("song", phaseControls(context), context);
   const roundSummary = isRecord(context.snapshot.roundSummary)
@@ -484,7 +485,7 @@ const searchPurposeOf = (prefix: string): UiSearchState["purpose"] =>
 const searchCommandOf = (kind: UiSearchState["kind"]): string =>
   kind === "anime" ? "song.bangumi.search" : "song.music.search";
 
-export async function autoSearchSong(context: UiContext, controlId: string): Promise<void> {
+async function autoSearchSong(context: UiContext, controlId: string): Promise<void> {
   const prefix = inputPrefixOf(controlId);
   if (prefix !== "song.submit.search" && prefix !== "song.guess.search") return;
   const keyword = (context.state.drafts[`${prefix}.input`] ?? "").trim();
@@ -652,10 +653,7 @@ const clickSongBasic = async (context: UiContext, id: string): Promise<string | 
   }
 };
 
-export async function clickSongControl(
-  context: UiContext,
-  controlValue: UiControl
-): Promise<string> {
+async function clickSongControl(context: UiContext, controlValue: UiControl): Promise<string> {
   const id = controlValue.id;
   if (id.startsWith("song.submitter.")) {
     const playerId = id.slice("song.submitter.".length);
@@ -671,7 +669,7 @@ export async function clickSongControl(
   throw new Error(`控件「${controlValue.label}」当前不可操作`);
 }
 
-export async function setSongControl(
+async function setSongControl(
   context: UiContext,
   controlValue: UiControl,
   value: unknown
@@ -701,7 +699,7 @@ export async function setSongControl(
   throw new Error(`控件「${controlValue.label}」不是可设置取值的控件`);
 }
 
-export async function pressSong(
+async function pressSong(
   context: UiContext,
   controlValue: UiControl,
   key: string
@@ -719,7 +717,7 @@ export async function pressSong(
 }
 
 /** 进入播放回合后替玩家完成「音频已就绪」这一步；人类客户端是播放器加载完自动上报。 */
-export async function ensureSongAudioReady(context: UiContext): Promise<void> {
+async function ensureSongAudioReady(context: UiContext): Promise<void> {
   if (str(context.snapshot.phase) !== "playing") return;
   const round = currentRound(context);
   const roundNumber = round?.roundNumber;
@@ -735,3 +733,47 @@ export async function ensureSongAudioReady(context: UiContext): Promise<void> {
     context.state.audioReadyRound = undefined;
   }
 }
+
+const mutatesSongBasic = idMatcher(
+  [
+    "song.ready",
+    "song.start",
+    "song.finish",
+    "song.nextRound",
+    "song.guess.giveup",
+    "song.clip.confirm",
+    "song.audio.retry",
+  ],
+  ["song.submitter.", "song.guess.search.result."]
+);
+
+/** 点击后会改动服务端状态的控件：执行后要等页面刷新再回屏。 */
+const mutatesSong = (id: string, { state, snapshot }: UiContext): boolean => {
+  if (mutatesSongBasic(id)) return true;
+  if (id.startsWith("song.submit.search.result.")) {
+    // 猜番选到关联曲才出题；猜歌关闭自选片段时选中即出题，开着时只是打开片段确认。
+    if (state.search?.kind === "anime") return Boolean(state.search.subject);
+    return isRecord(snapshot.settings) && snapshot.settings.allowCustomClip === false;
+  }
+  return false;
+};
+
+export const songUiAdapter: GameUiAdapter = {
+  build: buildSongScreen,
+  prepare: ensureSongAudioReady,
+  click: clickSongControl,
+  set: setSongControl,
+  press: pressSong,
+  autoSearch: autoSearchSong,
+  mutatesOnClick: mutatesSong,
+  mutatesOnSet: new Set(["song.team"]),
+  mutatesOnPress: new Set(),
+  longActions: new Set([
+    "song.start",
+    "song.clip.confirm",
+    "song.nextRound",
+    "song.finish",
+    "song.audio.retry",
+  ]),
+  chatCommand: "song.chat.send",
+};

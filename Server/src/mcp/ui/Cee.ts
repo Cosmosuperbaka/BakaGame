@@ -25,6 +25,7 @@ import {
   type UiContext,
   type UiSearchState,
 } from "./Support";
+import { idMatcher, type GameUiAdapter } from "./GameUi";
 import type { UiControl, UiScreen } from "./Types";
 
 const PHASE_TITLES: Record<string, string> = {
@@ -334,7 +335,7 @@ const searchPanel = (context: UiContext): Record<string, unknown> | undefined =>
   };
 };
 
-export function buildCeeScreen(context: UiContext): UiScreen {
+function buildCeeScreen(context: UiContext): UiScreen {
   const phase = str(context.snapshot.phase) ?? "waiting";
   const me = selfOf(context);
   const sections = screenSections("cee", phaseControls(context), context);
@@ -421,7 +422,7 @@ const runSearch = async (
   return search;
 };
 
-export async function autoSearchCee(context: UiContext, controlId: string): Promise<void> {
+async function autoSearchCee(context: UiContext, controlId: string): Promise<void> {
   const prefix = inputPrefixOf(controlId);
   if (prefix !== "cee.answer.search" && prefix !== "cee.guess.search") return;
   await waitSearchDebounce();
@@ -602,10 +603,7 @@ const clickCeeImage = async (context: UiContext): Promise<string> => {
   return "已获取图片提示";
 };
 
-export async function clickCeeControl(
-  context: UiContext,
-  controlValue: UiControl
-): Promise<string> {
+async function clickCeeControl(context: UiContext, controlValue: UiControl): Promise<string> {
   const id = controlValue.id;
   if (id.startsWith("cee.setter.")) {
     const playerId = id.slice("cee.setter.".length);
@@ -625,7 +623,7 @@ export async function clickCeeControl(
   throw new Error(`控件「${controlValue.label}」当前不可操作`);
 }
 
-export async function setCeeControl(
+async function setCeeControl(
   context: UiContext,
   controlValue: UiControl,
   value: unknown
@@ -641,7 +639,7 @@ export async function setCeeControl(
   throw new Error(`控件「${controlValue.label}」不是可设置取值的控件`);
 }
 
-export async function pressCee(
+async function pressCee(
   context: UiContext,
   controlValue: UiControl,
   key: string
@@ -654,3 +652,38 @@ export async function pressCee(
   }
   return undefined;
 }
+
+const mutatesCeeBasic = idMatcher(
+  [
+    "cee.ready",
+    "cee.start",
+    "cee.next",
+    "cee.answer.confirm",
+    "cee.hint.image",
+    "cee.cancel",
+    "cee.guess.surrender",
+  ],
+  ["cee.setter.", "cee.spectate."]
+);
+
+/** 点击后会改动服务端状态的控件：执行后要等页面刷新再回屏。 */
+const mutatesCee = (id: string, { state }: UiContext): boolean => {
+  if (mutatesCeeBasic(id)) return true;
+  // 猜测侧点开作品只是展开角色表，选定角色才真正提交。
+  if (id.startsWith("cee.guess.search.result."))
+    return !(state.search?.kind === "subject" && !state.search.subject);
+  return false;
+};
+
+export const ceeUiAdapter: GameUiAdapter = {
+  build: buildCeeScreen,
+  click: clickCeeControl,
+  set: setCeeControl,
+  press: pressCee,
+  autoSearch: autoSearchCee,
+  mutatesOnClick: mutatesCee,
+  mutatesOnSet: new Set(["cee.team"]),
+  mutatesOnPress: new Set(),
+  longActions: new Set(["cee.start", "cee.next", "cee.answer.confirm", "cee.hint.image"]),
+  chatCommand: "cee.chat.send",
+};
