@@ -1,11 +1,61 @@
-import { useState } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { RoomDrawer } from "./RoomDrawer";
 import { RoomShell } from "./RoomShell";
 import { Users } from "lucide-react";
+
+// 动画在 jsdom 里会往 style 上写中间帧，逐字比对结构时先换成普通元素。
+// AnimatePresence 保留真身：没有 motion 子节点登记退场时它立刻卸载并回调 onExitComplete，
+// 依赖退场时序的既有用例照旧成立。
+vi.mock("framer-motion", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("framer-motion")>();
+  const MOTION_ONLY = new Set([
+    "layout",
+    "layoutId",
+    "variants",
+    "initial",
+    "animate",
+    "exit",
+    "transition",
+    "custom",
+    "whileHover",
+    "whileTap",
+    "whileFocus",
+    "whileDrag",
+    "whileInView",
+  ]);
+  type PlainProps = { children?: ReactNode } & Record<string, unknown>;
+  const cache = new Map<string, (props: PlainProps) => ReactElement>();
+  const plain = (tag: string) => {
+    const Tag = tag as "div";
+    return ({ children, ...props }: PlainProps) => (
+      <Tag
+        {...Object.fromEntries(Object.entries(props).filter(([name]) => !MOTION_ONLY.has(name)))}
+      >
+        {children}
+      </Tag>
+    );
+  };
+  return {
+    ...actual,
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, tag: string) => {
+          let component = cache.get(tag);
+          if (!component) {
+            component = plain(tag);
+            cache.set(tag, component);
+          }
+          return component;
+        },
+      }
+    ),
+  };
+});
 
 it("侧栏把键盘焦点留在面板内并允许按退出键关闭", async () => {
   const user = userEvent.setup();
@@ -163,4 +213,63 @@ it("抽屉打开时顶栏对读屏与指针都不可达，关掉面板后恢复�
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+function DrawerHarness({ side }: { side: "left" | "right" }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen(true)}>
+        打开
+      </button>
+      <RoomDrawer open={open} onOpenChange={setOpen} side={side} title="玩家" closeFrom="md">
+        <p>面板内容</p>
+      </RoomDrawer>
+    </div>
+  );
+}
+
+describe("RoomDrawer 渲染结构", () => {
+  const openDrawer = async (side: "left" | "right") => {
+    const user = userEvent.setup();
+    render(<DrawerHarness side={side} />);
+    await user.click(screen.getByRole("button", { name: "打开" }));
+    await screen.findByRole("dialog", { name: "玩家" });
+  };
+
+  it("关闭时背板与面板都不进 DOM", () => {
+    stubMatchMedia(false);
+    try {
+      render(<DrawerHarness side="left" />);
+      expect(document.body.innerHTML).toMatchInlineSnapshot(
+        `"<div><div><button type="button">打开</button></div></div>"`
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("左侧打开时背板与面板的类名与属性逐字不变", async () => {
+    stubMatchMedia(false);
+    try {
+      await openDrawer("left");
+      expect(document.body.innerHTML).toMatchInlineSnapshot(
+        `"<span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span><div><div><button type="button" data-aria-hidden="true" aria-hidden="true">打开</button><div class="scrim absolute inset-0 z-drawer" data-state="open" style="pointer-events: auto;" data-aria-hidden="true" aria-hidden="true"></div><aside class="absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg left-0 border-r [--tw-ring-shadow:-1rem_0_0_0_var(--color-panel)] w-72" role="dialog" id="radix-_r_16_" data-state="open" tabindex="-1" aria-labelledby="radix-_r_17_" style="pointer-events: auto;"><div class="flex h-10 shrink-0 items-center justify-between border-b pl-3 pr-1"><h2 id="radix-_r_17_" class="text-sm font-medium">玩家</h2><button type="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-serif font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 cursor-pointer hover:bg-accent hover:text-accent-foreground h-8 w-8 shrink-0 text-muted-foreground" aria-label="关闭面板"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div><div class="min-h-0 flex-1"><p>面板内容</p></div></aside></div></div><span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span>"`
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("右侧打开时背板与面板的类名与属性逐字不变", async () => {
+    stubMatchMedia(false);
+    try {
+      await openDrawer("right");
+      expect(document.body.innerHTML).toMatchInlineSnapshot(
+        `"<span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span><div><div><button type="button" data-aria-hidden="true" aria-hidden="true">打开</button><div class="scrim absolute inset-0 z-drawer" data-state="open" style="pointer-events: auto;" data-aria-hidden="true" aria-hidden="true"></div><aside class="absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg right-0 border-l [--tw-ring-shadow:1rem_0_0_0_var(--color-panel)] w-80" role="dialog" id="radix-_r_1b_" data-state="open" tabindex="-1" aria-labelledby="radix-_r_1c_" style="pointer-events: auto;"><div class="flex h-10 shrink-0 items-center justify-between border-b pl-3 pr-1"><h2 id="radix-_r_1c_" class="text-sm font-medium">玩家</h2><button type="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-serif font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 cursor-pointer hover:bg-accent hover:text-accent-foreground h-8 w-8 shrink-0 text-muted-foreground" aria-label="关闭面板"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div><div class="min-h-0 flex-1"><p>面板内容</p></div></aside></div></div><span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span>"`
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
