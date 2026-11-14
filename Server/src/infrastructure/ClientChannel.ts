@@ -377,6 +377,12 @@ export class ClientChannel {
   ): Promise<{
     ticket: string;
     expiresAt: number;
+    /**
+     * 票还剩多久有效（毫秒），追加给新壳用：壳按本地单调时钟加这个相对量算到期，
+     * 不再拿本地墙上时钟去比 `expiresAt`（两端时钟偏差几十秒是常态）。
+     * `expiresAt` 与 `outdated` 原样保留给已发出去的旧壳，判票是否过期仍只看 `expiresAt`。
+     */
+    ttlMs: number;
     outdated: boolean;
   }> {
     const pending = this.challenges.get(input.challenge);
@@ -410,6 +416,7 @@ export class ClientChannel {
     return {
       ticket,
       expiresAt: at + CLIENT_TICKET_TTL_MS,
+      ttlMs: CLIENT_TICKET_TTL_MS,
       outdated: this.isOutdated(device.clientType, input.clientVersion),
     };
   }

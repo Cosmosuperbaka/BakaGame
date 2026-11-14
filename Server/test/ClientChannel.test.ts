@@ -245,6 +245,40 @@ describe("客户端通道换票", () => {
     expect(channel.consume(ticket, "203.0.113.7")?.clientId).toBe(clientId);
     expect(channel.consume(ticket, "203.0.113.7")).toBeUndefined();
   });
+  test("换票响应追加相对有效期 ttlMs，旧字段 expiresAt 与 outdated 原样保留", async () => {
+    const clock = { value: 1_000_000 };
+    const { channel } = harness({ clock });
+    const { device, sign } = desktopDevice();
+    const { clientId } = await channel.register({
+      clientType: "desktop",
+      platform: "windows",
+      clientVersion: "1.0.0",
+      keyAlgorithm: "ed25519",
+      publicKey: device.publicKey,
+      selfCheck: clean,
+    });
+    const { challenge } = channel.issue(clientId);
+    const attested = await channel.attest(
+      {
+        clientId,
+        challenge,
+        signature: sign(challenge),
+        clientType: "desktop",
+        clientVersion: "1.0.0",
+        selfCheck: clean,
+      },
+      "203.0.113.7"
+    );
+    // 壳不再拿本地墙上时钟去比服务端时钟：相对量与服务端判过期用的是同一个 TTL。
+    expect(attested.ttlMs).toBe(CLIENT_TICKET_TTL_MS);
+    // 旧壳只读这三个字段：取值与改动前一致，绝对时刻仍是服务端时钟。
+    expect(attested.expiresAt).toBe(clock.value + CLIENT_TICKET_TTL_MS);
+    expect(attested.outdated).toBe(false);
+    expect(typeof attested.ticket).toBe("string");
+    // 服务端判票过期只看 expiresAt：到点前一毫秒还能换，之后不行（与相对量无关）。
+    clock.value += CLIENT_TICKET_TTL_MS;
+    expect(channel.consume(attested.ticket, "203.0.113.7")?.clientId).toBe(clientId);
+  });
   test("被拒的票留下可归因日志：地址不符、未知与过期分开记", async () => {
     const clock = { value: 1_000_000 };
     const { channel, warnings } = harness({ clock });

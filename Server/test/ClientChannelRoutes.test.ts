@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import { generateKeyPairSync, sign as nodeSign } from "node:crypto";
 import { ClientArtifacts } from "../src/infrastructure/ClientArtifacts";
-import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
+import {
+  CLIENT_TICKET_TTL_MS,
+  ClientChannel,
+  InMemoryClientChannelStore,
+} from "../src/infrastructure/ClientChannel";
 import { ClientWebBundle } from "../src/infrastructure/ClientWebBundle";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
 
@@ -284,4 +289,54 @@ test("构建标记只接受安全字符：路径分隔符不该出现在查询�
   const result = await webBundleCheck("clientType=mobile&shellVersion=0.1.2&build=../evil");
   expect(result.status).toBeGreaterThanOrEqual(400);
   expect(result.status).toBeLessThan(500);
+});
+
+test("旧壳视角：按旧请求形状走完注册、领挑战、换票，只读 ticket、expiresAt、outdated 照常可用", async () => {
+  const now = 5_000_000;
+  const app = clientChannelRoutes(
+    new ClientChannel({
+      store: new InMemoryClientChannelStore(),
+      now: () => now,
+      minimumVersion: () => "",
+    })
+  );
+  const post = async (path: string, body: unknown) => {
+    const response = await app.handle(
+      new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-real-ip": "203.0.113.30" },
+        body: JSON.stringify(body),
+      })
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const raw = publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("base64");
+  const selfCheck = { hardFail: [], softFail: [], keyProtection: "software" };
+  const registered = await post("/api/client/register", {
+    clientType: "desktop",
+    platform: "windows",
+    clientVersion: "0.1.1",
+    keyAlgorithm: "ed25519",
+    publicKey: raw,
+    selfCheck,
+  });
+  expect(registered.status).toBe(200);
+  const clientId = registered.body.clientId as string;
+  const challenge = (await post("/api/client/challenge", { clientId })).body.challenge as string;
+  const attested = await post("/api/client/attest", {
+    clientId,
+    challenge,
+    signature: nodeSign(null, Buffer.from(challenge, "ascii"), privateKey).toString("base64"),
+    clientType: "desktop",
+    clientVersion: "0.1.1",
+    selfCheck,
+  });
+  expect(attested.status).toBe(200);
+  // 旧壳读的三个字段：形状与取值不变（expiresAt 仍是服务端时钟的绝对毫秒）。
+  expect(typeof attested.body.ticket).toBe("string");
+  expect(attested.body.expiresAt).toBe(now + CLIENT_TICKET_TTL_MS);
+  expect(attested.body.outdated).toBe(false);
+  // 新壳读的追加字段：相对有效期，不依赖两端时钟是否一致。
+  expect(attested.body.ttlMs).toBe(CLIENT_TICKET_TTL_MS);
 });
