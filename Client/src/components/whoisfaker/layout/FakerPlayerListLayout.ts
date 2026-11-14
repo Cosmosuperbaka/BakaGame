@@ -1,4 +1,4 @@
-import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerListLayout";
 
 /**
  * 发言列的最小宽度。侧栏展开的发言历史、移动端面板与战报表格共用这一个值，

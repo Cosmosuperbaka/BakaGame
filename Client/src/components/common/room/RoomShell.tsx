@@ -1,6 +1,6 @@
 import { createRef, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { LucideIcon } from "lucide-react";
-import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerListLayout";
 import { ChatDraftContext, useChatDraftSource } from "@/hooks/UseChatDraft";
 import { useMinWidth } from "@/hooks/UseMinWidth";
 import { roomEntranceMs } from "@/lib/motion/NamedMoves";

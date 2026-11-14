@@ -6,12 +6,8 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
-import {
-  PlayerGroupTitle,
-  PlayerListLayout,
-  PlayerStatusIcon,
-  type PlayerStatusTone,
-} from "@/components/common/PlayerStatusPill";
+import { PlayerGroupTitle, PlayerListLayout } from "@/components/common/PlayerListLayout";
+import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { TeamSection } from "@/components/common/TeamSection";

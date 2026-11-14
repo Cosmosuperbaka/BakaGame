@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 
 import type { PublicPlayerView } from "@bakagame/shared";
-import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerListLayout";
 import { buildKnownRoleMap, resolveStatus } from "./FakerPlayerPresentation";
 import {
   COMPACT_PLAYER_COLUMN_WIDTH,

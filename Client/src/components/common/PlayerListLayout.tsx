@@ -1,0 +1,63 @@
+import { useId, type ReactNode } from "react";
+import { LayoutGroup, motion } from "framer-motion";
+import { playerRelayout } from "@/lib/motion/Choreography";
+import { cn } from "@/lib/Utils";
+
+/** 玩家行统一行高：头像加首行名字与次行状态刚好，八人以上的房间也能一屏放下 */
+export const PLAYER_ROW_HEIGHT = "min-h-11";
+
+/**
+ * 玩家列宽度（16rem）。同时用于面板、网格首列与分界线定位。
+ * 必须以 rem 表达：全局字号为 120%，1rem 不等于 16px。
+ */
+export const PLAYER_COLUMN_WIDTH = "16rem";
+
+/** 分组标题行高，展开历史时列标题沿用同一高度 */
+export const PLAYER_GROUP_TITLE_HEIGHT = "1.25rem";
+
+/** 徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用，底色由各自色调给 */
+export const PLAYER_BADGE_BASE =
+  "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-0.5 font-serif text-2xs font-normal leading-none tracking-normal";
+
+/** 玩家栏共用的行布局基底；游戏房间在此基础上追加自身状态 */
+export const PLAYER_ROW_BASE =
+  "relative flex w-full min-w-0 items-center gap-2 rounded-md py-1 pl-2.5 pr-2 text-left text-sm";
+
+/** 本人标识指示条 */
+export const PLAYER_ME_MARK =
+  "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary";
+
+/** 跨游戏通用的玩家分组标题（如“玩家 (4)”、“旁观 (1)”） */
+export function PlayerGroupTitle({
+  label,
+  count,
+  withRule = false,
+}: {
+  label: string;
+  count: number;
+  withRule?: boolean;
+}) {
+  return (
+    <motion.div
+      layout="position"
+      transition={playerRelayout}
+      className={cn("flex items-center gap-2 px-2", withRule && "mt-1.5")}
+      style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
+    >
+      <h3 className="text-2xs font-normal text-muted-foreground">{label}</h3>
+      <span className="font-sans text-2xs font-normal tabular-nums text-muted-foreground">
+        {count}
+      </span>
+      <span className="h-px flex-1 bg-border" />
+    </motion.div>
+  );
+}
+
+/**
+ * 一份玩家栏的布局作用域：行（`PlayerRow layoutId`）、分组标题与旁观切换入口在同一组里联动，
+ * 有人在玩家与旁观之间换组时，行滑到新位置，下方的标题与入口跟着让位，不跳。
+ * 每个实例单独命名，桌面侧栏与窄屏抽屉同时挂载时互不串台。
+ */
+export function PlayerListLayout({ children }: { children: ReactNode }) {
+  return <LayoutGroup id={useId()}>{children}</LayoutGroup>;
+}

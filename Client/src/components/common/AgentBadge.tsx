@@ -1,5 +1,5 @@
 import { Bot } from "lucide-react";
-import { PLAYER_BADGE_BASE } from "@/components/common/PlayerStatusPill";
+import { PLAYER_BADGE_BASE } from "@/components/common/PlayerListLayout";
 import { cn } from "@/lib/Utils";
 
 /**

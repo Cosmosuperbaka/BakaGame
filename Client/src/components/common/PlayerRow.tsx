@@ -11,8 +11,8 @@ import {
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
-  PlayerStatusIcon,
-} from "@/components/common/PlayerStatusPill";
+} from "@/components/common/PlayerListLayout";
+import { PlayerStatusIcon } from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, tappable } from "@/lib/motion/Feedback";
 import { listItem, playerRelayout, popover } from "@/lib/motion/Choreography";

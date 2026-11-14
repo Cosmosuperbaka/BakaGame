@@ -21,7 +21,7 @@ import {
   PLAYER_GROUP_TITLE_HEIGHT,
   PlayerGroupTitle,
   PlayerListLayout,
-} from "@/components/common/PlayerStatusPill";
+} from "@/components/common/PlayerListLayout";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap } from "./FakerPlayerPresentation";
 import { COMPACT_PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./FakerPlayerListLayout";

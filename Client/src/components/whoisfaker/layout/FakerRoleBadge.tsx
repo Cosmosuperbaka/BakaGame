@@ -1,4 +1,4 @@
-import { PLAYER_BADGE_BASE } from "@/components/common/PlayerStatusPill";
+import { PLAYER_BADGE_BASE } from "@/components/common/PlayerListLayout";
 import { ROLE_COLORS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
 import type { WhoIsFakerRole } from "@bakagame/shared";

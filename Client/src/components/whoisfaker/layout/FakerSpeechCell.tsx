@@ -4,7 +4,7 @@ import {
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
-} from "@/components/common/PlayerStatusPill";
+} from "@/components/common/PlayerListLayout";
 import { cn } from "@/lib/Utils";
 import { FakerPendingSpeech, SubmittedSpeech } from "./FakerPendingSpeech";
 import type { DescriptionRecord, PublicPlayerView } from "@bakagame/shared";

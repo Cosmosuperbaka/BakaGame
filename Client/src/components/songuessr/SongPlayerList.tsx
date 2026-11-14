@@ -4,12 +4,8 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { SongRoundMarks } from "@/components/songuessr/layout/SongRoundMarks";
-import {
-  PlayerGroupTitle,
-  PlayerListLayout,
-  PlayerStatusIcon,
-  type PlayerStatusTone,
-} from "@/components/common/PlayerStatusPill";
+import { PlayerGroupTitle, PlayerListLayout } from "@/components/common/PlayerListLayout";
+import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
 import { errorText } from "@/lib/ErrorMessage";

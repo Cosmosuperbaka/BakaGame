@@ -2,12 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Bot, Crown, Skull, WifiOff } from "lucide-react";
 import { STORY_PLAYERS, STORY_SPECTATORS } from "@/stories/fixtures/Common";
 import { PlayerRow } from "./PlayerRow";
-import {
-  PlayerStatusIcon,
-  PlayerStatusPill,
-  PlayerGroupTitle,
-  type PlayerStatusTone,
-} from "./PlayerStatusPill";
+import { PlayerGroupTitle } from "./PlayerListLayout";
+import { PlayerStatusIcon, PlayerStatusPill, type PlayerStatusTone } from "./PlayerStatusPill";
 
 const meta = {
   title: "公共组件/PlayerStatusPill",

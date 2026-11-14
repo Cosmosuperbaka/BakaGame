@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { badgeDescriptionOf, badgeLabelOf } from "@bakagame/shared/values";
 import type { AccountBadge, BadgeKind, PlayerAccount } from "@bakagame/shared";
-import { PLAYER_BADGE_BASE } from "@/components/common/PlayerStatusPill";
+import { PLAYER_BADGE_BASE } from "@/components/common/PlayerListLayout";
 import { Hint } from "@/components/ui/Tooltip";
 import { loadPublicProfile } from "@/lib/ProfileCache";
 import { useAccountStore } from "@/stores/UseAccountStore";
