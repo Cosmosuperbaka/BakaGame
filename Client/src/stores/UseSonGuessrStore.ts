@@ -6,7 +6,6 @@ import {
   keywordQueryKey,
   type QueryReuseCache,
 } from "@/lib/QueryReuse";
-import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import {
   SERVER_SHUTDOWN_MESSAGE,
@@ -15,8 +14,6 @@ import {
 } from "@bakagame/shared/values";
 import type {
   ChatMessage,
-  EventPacket,
-  ServerMessage,
   SonGuessrAck,
   SonGuessrCommand,
   SonGuessrPayload,
@@ -39,8 +36,9 @@ import {
 import * as ws from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
-import { resolveEndedRoom } from "./room/RoomEndedEvent";
-import { createStateSyncChannel } from "./room/StateSyncChannel";
+import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
+import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
+import type { StateSyncChannel } from "./room/StateSyncChannel";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
@@ -58,17 +56,10 @@ export function clearSonGuessrQueryCache() {
   playlistResolveCache.clear();
 }
 
-export interface SonGuessrStore extends ToastState {
-  connected: boolean;
-  /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
-  lobbyReady: boolean;
-  rooms: SonGuessrRoomSummary[];
-  roomId: string | null;
-  sessionToken: string | null;
-  snapshot: SonGuessrRoomSnapshot | null;
-  privateState: SonGuessrPrivateState | null;
-  roomClosedAt: number | null;
-
+export interface SonGuessrStore
+  extends
+    ToastState,
+    RoomCoreState<SonGuessrRoomSummary, SonGuessrRoomSnapshot, SonGuessrPrivateState> {
   subscribeLobby: () => Promise<void>;
   createRoom: (
     params: {
@@ -91,7 +82,6 @@ export interface SonGuessrStore extends ToastState {
     signal?: AbortSignal
   ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
-  clearRoomClosed: () => void;
   resetRoomState: () => void;
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
@@ -106,22 +96,20 @@ export interface SonGuessrStore extends ToastState {
 /** 进房凭据 = 服务端 ack（含首屏快照与私有态）+ 客户端自己记的旧 token。 */
 type RoomEntryReceipt = SonGuessrRoomEnterAck & { previousToken?: string | null };
 
-let connectionGeneration = 0;
-let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-
-const stateSync = createStateSyncChannel<SonGuessrRoomSnapshot, SonGuessrPrivateState>({
-  requestFull: () => useSonGuessrStore.getState().sendCommand("song.room.requestSync"),
-  // 猜歌的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
-  defer: () => false,
-  onError: () => {},
-});
+let runtime: RoomRuntime<
+  ws.SonGuessrCommandMap,
+  SonGuessrRoomSnapshot,
+  SonGuessrPrivateState,
+  RoomEntryReceipt
+>;
 
 export const resetSonGuessrStateSync = () => {
-  stateSync.reset();
+  runtime.sync.reset();
 };
 
 export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   const applyRoomEnter = (
+    sync: StateSyncChannel<SonGuessrRoomSnapshot, SonGuessrPrivateState>,
     targetRoomId: string,
     sessionToken: string,
     payloadSnapshot?: SonGuessrRoomSnapshot,
@@ -129,24 +117,24 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   ) => {
     saveSonGuessrSessionToken(targetRoomId, sessionToken);
 
-    const leftover = stateSync.snapshot.baseline();
+    const leftover = sync.snapshot.baseline();
     if (leftover && leftover.roomId !== targetRoomId && payloadSnapshot?.roomId !== targetRoomId) {
-      resetSonGuessrStateSync();
+      sync.reset();
     }
 
-    const rawSnapshot = stateSync.snapshot.baseline();
-    const rawPrivateState = stateSync.privateState.baseline();
+    const rawSnapshot = sync.snapshot.baseline();
+    const rawPrivateState = sync.privateState.baseline();
     if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
-      stateSync.snapshot.adopt(payloadSnapshot);
+      sync.snapshot.adopt(payloadSnapshot);
     }
     if (payloadPrivateState && (!rawPrivateState || get().roomId !== targetRoomId)) {
-      stateSync.privateState.adopt(payloadPrivateState);
+      sync.privateState.adopt(payloadPrivateState);
     }
 
     const currentSnapshot = get().snapshot;
     const currentPrivate = get().privateState;
-    const incomingSnapshot = payloadSnapshot ?? stateSync.snapshot.baseline();
-    const incomingPrivate = payloadPrivateState ?? stateSync.privateState.baseline();
+    const incomingSnapshot = payloadSnapshot ?? sync.snapshot.baseline();
+    const incomingPrivate = payloadPrivateState ?? sync.privateState.baseline();
     const nextSnapshot =
       incomingSnapshot?.roomId === targetRoomId
         ? incomingSnapshot
@@ -171,33 +159,133 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     });
   };
 
-  const entry = (roomEntry = createRoomEntry<RoomEntryReceipt>({
-    generation: () => connectionGeneration,
-    begin: resetSonGuessrStateSync,
-    apply: (receipt) =>
-      applyRoomEnter(receipt.roomId, receipt.sessionToken, receipt.snapshot, receipt.privateState),
-    discard: async (receipt) => {
-      try {
-        await ws.send(
-          "song.room.leave",
-          {},
-          { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
-        );
-      } finally {
-        const token = getSonGuessrSessionToken(receipt.roomId);
-        if (
-          token === receipt.sessionToken ||
-          (receipt.previousToken && token === receipt.previousToken)
-        )
-          clearSonGuessrSessionToken(receipt.roomId);
-        resetSonGuessrStateSync();
-        const current = get();
-        if (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
-          current.resetRoomState();
-        else if (get().roomId === null) current.resetRoomState();
-      }
+  runtime = createRoomRuntime<
+    ws.SonGuessrCommandMap,
+    SonGuessrRoomSnapshot,
+    SonGuessrPrivateState,
+    RoomEntryReceipt
+  >({
+    ws,
+    tokens: {
+      read: getSonGuessrSessionToken,
+      save: saveSonGuessrSessionToken,
+      clear: clearSonGuessrSessionToken,
     },
-  }));
+    requestSync: "song.room.requestSync",
+    identity: get,
+    events: {
+      lobbyRooms: "song.lobby.rooms",
+      snapshot: "song.room.snapshot",
+      privateState: "song.game.privateState",
+      ended: {
+        "song.room.closed": "房间已关闭",
+        "song.room.kicked": "你已被移出房间",
+        "session.replaced": "当前席位已在另一个标签页接管",
+        "song.session.replaced": "当前席位已在另一个标签页接管",
+      },
+      extra: {
+        "song.auth.session": (payload) => {
+          // 服务端后台续期后把新 Cookie 只推给号主；同步本机副本，下次进房不再拿旧凭据覆盖。
+          const session = payload as {
+            platform?: "netease" | "qq";
+            cookie?: string;
+            account?: SonGuessrMusicAccount;
+          };
+          if (
+            (session.platform === "netease" || session.platform === "qq") &&
+            session.cookie &&
+            session.account
+          ) {
+            const stored = getStoredSongMusicSession(session.platform);
+            saveSongMusicSession(
+              { cookie: session.cookie, account: session.account },
+              stored?.persistent ?? true,
+              session.platform
+            );
+          }
+        },
+        "song.room.expiring": () => get().showToast("房间即将因超时关闭", "error"),
+        "song.chat.message": applyChatMessageEvent,
+      },
+    },
+    sync: {
+      // 猜歌的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
+      defer: () => false,
+      onError: () => {},
+    },
+    entry: {
+      apply: (receipt, { sync }) =>
+        applyRoomEnter(
+          sync,
+          receipt.roomId,
+          receipt.sessionToken,
+          receipt.snapshot,
+          receipt.privateState
+        ),
+      discard: async (receipt, { sync }) => {
+        try {
+          await ws.send(
+            "song.room.leave",
+            {},
+            { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
+          );
+        } finally {
+          const token = getSonGuessrSessionToken(receipt.roomId);
+          if (
+            token === receipt.sessionToken ||
+            (receipt.previousToken && token === receipt.previousToken)
+          )
+            clearSonGuessrSessionToken(receipt.roomId);
+          sync.reset();
+          const current = get();
+          if (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
+            current.resetRoomState();
+          else if (get().roomId === null) current.resetRoomState();
+        }
+      },
+    },
+    status: {
+      generationOn: "disconnect",
+      syncOn: "clearRevisionsOnConnect",
+      write: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
+      subscribeLobby: () => {
+        void get()
+          .subscribeLobby()
+          .catch(() => {});
+      },
+      restore: { by: "runtime", reconnect: (roomId) => get().reconnectRoom(roomId) },
+    },
+    cleanup: {
+      disconnectFirst: false,
+      bumpGeneration: true,
+      finish: () => {
+        resetSonGuessrStateSync();
+        set({ connected: false, lobbyReady: false });
+      },
+    },
+    handlers: {
+      lobbyRooms: (payload) => set({ rooms: payload as SonGuessrRoomSummary[], lobbyReady: true }),
+      snapshot: applyRoomSnapshotEvent,
+      privateState: applyPrivateStateEvent,
+      roomEnded: (text) => {
+        resetSonGuessrStateSync();
+        set({
+          roomId: null,
+          sessionToken: null,
+          snapshot: null,
+          privateState: null,
+          roomClosedAt: Date.now(),
+        });
+        get().showToast(text, "error");
+      },
+      shutdown: (payload) => {
+        runtime.cancelEntry();
+        // 原地待命：保留票据与快照。连接恢复后状态回调会带原 sessionToken 自动
+        // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
+        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", 10_000);
+      },
+    },
+  });
 
   /** 只读查询的共用壳：复用窗口 + 带房间身份的命令 + 取字段，身份注入只留在 sendCommand 一处。 */
   const query = <TCommand extends SonGuessrCommand, TResult>(
@@ -209,14 +297,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   ) => cache.run(key, () => get().sendCommand(command, payload).then(pick));
 
   return {
-    connected: false,
-    lobbyReady: false,
-    rooms: [],
-    roomId: null,
-    sessionToken: null,
-    snapshot: null,
-    privateState: null,
-    roomClosedAt: null,
+    ...createRoomCoreSlice(set),
     ...createToastSlice(set, { mode: "slot", defaultType: "info", defaultMs: 3000 }),
 
     subscribeLobby: async () => {
@@ -224,19 +305,19 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     },
 
     createRoom: (params, signal) =>
-      entry.enter(async () => {
+      runtime.enter(async () => {
         return ws.send("song.room.create", params);
       }, signal),
 
     joinRoom: (roomId, userName, password, signal) =>
-      entry.enter(async () => {
+      runtime.enter(async () => {
         return ws.send("song.room.join", { userName, password }, { roomId });
       }, signal),
 
     reconnectRoom: (roomId, signal) => {
       const token = getSonGuessrSessionToken(roomId);
       if (!token) return Promise.resolve(false);
-      return entry.restore(
+      return runtime.restore(
         `${roomId}:${token}`,
         async () => {
           const res = await ws.send("song.room.reconnect", {
@@ -259,8 +340,6 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       );
     },
 
-    clearRoomClosed: () => set({ roomClosedAt: null }),
-
     resetRoomState: () => {
       resetSonGuessrStateSync();
       set({
@@ -273,7 +352,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     },
 
     leaveRoom: async () => {
-      entry.cancel();
+      runtime.cancelEntry();
       const { roomId, sessionToken } = get();
       if (!roomId) return;
       try {
@@ -346,25 +425,12 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         (ack) => ack.playlist
       ),
 
-    sendCommand: async (type, payload = {}, options) => {
-      const { roomId, sessionToken } = get();
-      return ws.send(type, payload, {
-        roomId: roomId ?? undefined,
-        sessionToken: sessionToken ?? undefined,
-        timeout: options?.timeout,
-      });
-    },
+    sendCommand: runtime.sendCommand,
   };
 });
 
-/** 幂等门闩：重复调用 initSonGuessrWs 不应叠加第二条消息订阅。 */
-let sonGuessrWsInitialized = false;
-
 /** 房间快照事件：保住完整协议基线供补丁索引使用，只展示合并并裁剪后的聊天。 */
-function applyRoomSnapshotEvent(payload: unknown) {
-  const snapshot = stateSync.snapshot.consume(payload);
-  if (!snapshot) return;
-  if (roomEntry.isPending()) return;
+function applyRoomSnapshotEvent(snapshot: SonGuessrRoomSnapshot) {
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   const nextSnapshot = {
     ...snapshot,
@@ -386,10 +452,7 @@ function applyRoomSnapshotEvent(payload: unknown) {
 }
 
 /** 私有状态事件：席位凭据随快照归属落盘，其余情况只换私有状态。 */
-function applyPrivateStateEvent(payload: unknown) {
-  const nextPrivateState = stateSync.privateState.consume(payload);
-  if (!nextPrivateState) return;
-  if (roomEntry.isPending()) return;
+function applyPrivateStateEvent(nextPrivateState: SonGuessrPrivateState) {
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   if (nextPrivateState.sessionToken && currentSnapshot?.roomId) {
     saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
@@ -416,132 +479,7 @@ function applyChatMessageEvent(payload: unknown) {
   });
 }
 
-/**
- * 退出房间：清掉席位凭据与整套房间态。
- *
- * 差量同步基线必须一起重置：残留旧 revision 会让后续反复触发全量同步。
- * 事件指向的不是当前房间时只清那间的令牌（口径见 RoomEndedEvent）。
- */
-function leaveRoom(
-  eventRoomId: string | null | undefined,
-  toastText: string,
-  toastDurationMs?: number
-) {
-  const { roomId: closedRoomId, foreign } = resolveEndedRoom(
-    eventRoomId,
-    useSonGuessrStore.getState().roomId
-  );
-  if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
-  if (foreign) return;
-  roomEntry.cancel();
-  resetSonGuessrStateSync();
-  useSonGuessrStore.setState({
-    roomId: null,
-    sessionToken: null,
-    snapshot: null,
-    privateState: null,
-    roomClosedAt: Date.now(),
-  });
-  useSonGuessrStore.getState().showToast(toastText, "error", toastDurationMs);
-}
-
+/** 玩法对外的连接入口：幂等门闩、事件分发与清理都在运行时里。 */
 export function initSonGuessrWs() {
-  if (sonGuessrWsInitialized) return () => {};
-  sonGuessrWsInitialized = true;
-
-  const unsubMsg = ws.onMessage((msg: ServerMessage) => {
-    if (msg.type !== "event") return;
-    const evt = msg as EventPacket;
-    const store = useSonGuessrStore.getState();
-
-    switch (evt.event) {
-      case "song.lobby.rooms":
-        useSonGuessrStore.setState({
-          rooms: evt.payload as SonGuessrRoomSummary[],
-          lobbyReady: true,
-        });
-        break;
-      case "song.room.snapshot":
-        applyRoomSnapshotEvent(evt.payload);
-        break;
-      case "song.game.privateState":
-        applyPrivateStateEvent(evt.payload);
-        break;
-      case "song.auth.session": {
-        // 服务端后台续期后把新 Cookie 只推给号主；同步本机副本，下次进房不再拿旧凭据覆盖。
-        const payload = evt.payload as {
-          platform?: "netease" | "qq";
-          cookie?: string;
-          account?: SonGuessrMusicAccount;
-        };
-        if (
-          (payload.platform === "netease" || payload.platform === "qq") &&
-          payload.cookie &&
-          payload.account
-        ) {
-          const stored = getStoredSongMusicSession(payload.platform);
-          saveSongMusicSession(
-            { cookie: payload.cookie, account: payload.account },
-            stored?.persistent ?? true,
-            payload.platform
-          );
-        }
-        break;
-      }
-      case "song.room.expiring":
-        store.showToast("房间即将因超时关闭", "error");
-        break;
-      case "song.chat.message":
-        applyChatMessageEvent(evt.payload);
-        break;
-      case "song.room.closed": {
-        leaveRoom((evt.payload as { roomId?: string }).roomId, "房间已关闭");
-        break;
-      }
-      case "song.room.kicked": {
-        leaveRoom((evt.payload as { roomId?: string }).roomId, "你已被移出房间");
-        break;
-      }
-      case "session.replaced":
-      case "song.session.replaced": {
-        leaveRoom((evt.payload as { roomId?: string }).roomId, "当前席位已在另一个标签页接管");
-        break;
-      }
-      case "server.shutdown": {
-        roomEntry.cancel();
-        const message = errorText(evt.payload, SERVER_SHUTDOWN_MESSAGE);
-        // 原地待命：保留票据与快照。连接恢复后 onStatus 会带原 sessionToken 自动
-        // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
-        useSonGuessrStore.getState().showToast(message, "error", 10_000);
-        break;
-      }
-    }
-  });
-
-  const unsubStatus = ws.onStatus((connected) => {
-    if (!connected) connectionGeneration += 1;
-    useSonGuessrStore.setState(connected ? { connected } : { connected, lobbyReady: false });
-    const store = useSonGuessrStore.getState();
-
-    if (connected) {
-      stateSync.clearRevisions();
-      ws.send("song.lobby.subscribeRooms", {}).catch(() => {});
-      if (store.roomId && store.sessionToken) {
-        saveSonGuessrSessionToken(store.roomId, store.sessionToken);
-        void store.reconnectRoom(store.roomId).catch(() => {});
-      }
-    }
-  });
-
-  ws.connect();
-
-  return () => {
-    sonGuessrWsInitialized = false;
-    unsubMsg();
-    unsubStatus();
-    connectionGeneration += 1;
-    ws.disconnect();
-    resetSonGuessrStateSync();
-    useSonGuessrStore.setState({ connected: false, lobbyReady: false });
-  };
+  return runtime.init();
 }
