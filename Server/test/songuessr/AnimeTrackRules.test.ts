@@ -1220,28 +1220,33 @@ describe("SonGuessrService 猜番出题等概率", () => {
       searchSubjects: async () => [anime],
     } as unknown as BangumiDataProvider;
 
-    // 线性同余伪随机源：取值始终落在 [0, maxExclusive) 内，既驱动洗牌也不越界。
+    // mulberry32：取值落在 [0, maxExclusive) 内。不用最小线性同余——它的低位与洗牌的
+    // 两次取号强相关，固定种子下会整整一批抽不到同一个位置，冤枉被测的洗牌。
     const seededRandom = (seed: number) => {
-      let state = seed;
+      let state = seed >>> 0;
       return {
         nextInt: (maxExclusive: number) => {
-          state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
-          return state % Math.max(1, maxExclusive);
+          state = (state + 0x6d2b79f5) >>> 0;
+          let t = state;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) % Math.max(1, maxExclusive);
         },
       };
     };
 
-    const chosen = new Set<string>();
-    for (let seed = 1; seed <= 8; seed += 1) {
+    const picks = new Map<string, number>();
+    for (let seed = 1; seed <= 30; seed += 1) {
       const songId = await startAnimeRound(musicProvider, bangumiProvider, seededRandom(seed));
       expect(songId).toBeDefined();
-      chosen.add(songId!);
+      picks.set(songId!, (picks.get(songId!) ?? 0) + 1);
     }
 
-    // 不同随机源必须落到不同曲目上——否则说明「顺序取首位」的旧行为还在。
-    expect(chosen.size).toBeGreaterThan(1);
-    for (const songId of chosen) {
-      expect(titles).toContain(songId);
+    // 三首都要出现，且不能某首占压倒性多数：只在头部随机或只洗前两首都会破坏这两条。
+    expect([...picks.keys()].sort()).toEqual([...titles].sort());
+    for (const count of picks.values()) {
+      expect(count).toBeGreaterThanOrEqual(5);
+      expect(count).toBeLessThanOrEqual(15);
     }
   });
 });
@@ -1373,7 +1378,7 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
   };
 
   /** 直接校验歌曲元数据到曲目类型的映射，避免依赖出题随机性。 */
-  test("歌曲元数据明确标注片尾曲时覆盖 Bangumi 的插曲分类", () => {
+  test("detectExplicitTrackKind 识别片尾曲标注", () => {
     const song = {
       ...songs.answer,
       title: "喜劇《SPY×FAMILY》TV动画片尾曲)",
