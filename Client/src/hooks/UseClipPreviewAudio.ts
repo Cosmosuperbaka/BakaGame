@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clipVolume } from "@/lib/ClipFade";
+import { createClipEnvelope, type ClipEnvelope } from "@/lib/ClipPlayback";
 
 export interface ClipPreviewAudioOptions {
   range: readonly [number, number];
@@ -20,12 +20,25 @@ export function useClipPreviewAudio({ range, volume }: ClipPreviewAudioOptions) 
   const [currentTimeMs, setCurrentTimeMs] = useState(startTime);
   const [failed, setFailed] = useState(false);
 
-  const applyVolume = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const [start, end] = rangeRef.current;
-    audio.volume = clipVolume(volumeRef.current, audio.currentTime, start / 1_000, end / 1_000);
+  // 元素晚于钩子挂载才出现：包络按 getter 取元素，整个挂载期共用一个实例。
+  const envelopeRef = useRef<ClipEnvelope | null>(null);
+  const getEnvelope = useCallback(() => {
+    let envelope = envelopeRef.current;
+    if (!envelope) {
+      envelope = createClipEnvelope(
+        () => audioRef.current,
+        () => volumeRef.current,
+        () => ({
+          startSeconds: rangeRef.current[0] / 1_000,
+          endSeconds: rangeRef.current[1] / 1_000,
+        })
+      );
+      envelopeRef.current = envelope;
+    }
+    return envelope;
   }, []);
+
+  const applyVolume = useCallback(() => getEnvelope().apply(), [getEnvelope]);
 
   const rewind = useCallback(() => {
     const audio = audioRef.current;
@@ -60,14 +73,13 @@ export function useClipPreviewAudio({ range, volume }: ClipPreviewAudioOptions) 
   // timeupdate 约四次每秒，跟不上淡入淡出：包络与终点判定逐帧走。
   useEffect(() => {
     if (!playing) return;
-    let frame = 0;
-    const tick = () => {
-      applyVolume();
-      if (!stopAtEnd()) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [applyVolume, playing, stopAtEnd]);
+    const envelope = getEnvelope();
+    envelope.start(() => {
+      envelope.apply();
+      return !stopAtEnd();
+    });
+    return () => envelope.stop();
+  }, [getEnvelope, playing, stopAtEnd]);
 
   // 卸载时 ref 已被置空，只能靠每次提交后记下的元素来停播；元素晚于挂载才渲染时也能停到。
   const mountedAudioRef = useRef<HTMLAudioElement | null>(null);

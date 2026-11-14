@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { clipVolume } from "@/lib/ClipFade";
+import { createClipEnvelope } from "@/lib/ClipPlayback";
 import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { notifyPreferencesChanged, onPreferencesApplied } from "@/lib/PreferenceBus";
@@ -123,34 +123,29 @@ export function useAudioClipPlayer({
     const startSeconds = currentClipStartTime / 1_000;
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
 
-    const volumeAt = (currentTime: number) =>
-      clipVolume(volumeRef.current, currentTime, startSeconds, endSeconds);
-
-    let fadeRafId: number | null = null;
-    const updateAudioFade = () => {
-      if (!audio.paused && !audio.ended) {
-        audio.volume = volumeAt(audio.currentTime);
-        fadeRafId = requestAnimationFrame(updateAudioFade);
-      }
-    };
+    const envelope = createClipEnvelope(
+      () => audio,
+      () => volumeRef.current,
+      () => ({ startSeconds, endSeconds })
+    );
 
     const startFadeLoop = () => {
-      if (fadeRafId !== null) cancelAnimationFrame(fadeRafId);
-      audio.volume = volumeAt(audio.currentTime);
-      fadeRafId = requestAnimationFrame(updateAudioFade);
+      envelope.apply();
+      envelope.start(() => {
+        if (audio.paused || audio.ended) return false;
+        envelope.apply();
+        return true;
+      });
     };
 
     const stopFadeLoop = () => {
-      if (fadeRafId !== null) {
-        cancelAnimationFrame(fadeRafId);
-        fadeRafId = null;
-      }
+      envelope.stop();
       audio.volume = volumeRef.current;
     };
 
     const moveToStart = () => {
       if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
-      audio.volume = volumeAt(startSeconds);
+      audio.volume = envelope.volumeAt(startSeconds);
     };
     const stopAtEnd = () => {
       if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
@@ -159,7 +154,7 @@ export function useAudioClipPlayer({
         audio.currentTime = startSeconds;
         setAudioPlaybackState("completed");
       } else if (endSeconds !== undefined) {
-        audio.volume = volumeAt(audio.currentTime);
+        envelope.apply();
       }
     };
     const keepPlaybackInClip = () => {
