@@ -607,18 +607,8 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
   const values = readOnly ? roomOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
-  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) => {
-    switch (key) {
-      case "name":
-        return edit("name", value as string);
-      case "isPrivate":
-        return edit("isPrivate", value as boolean);
-      case "password":
-        return edit("password", value as string);
-      case "allowSpectators":
-        return edit("allowSpectators", value as boolean);
-    }
-  };
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
   useSongWaitingSettingsSave(
     snapshot,

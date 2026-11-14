@@ -215,18 +215,8 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
   const values = readOnly ? settingsOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
-  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) => {
-    switch (key) {
-      case "name":
-        return edit("name", value as string);
-      case "isPrivate":
-        return edit("isPrivate", value as boolean);
-      case "password":
-        return edit("password", value as string);
-      case "allowSpectators":
-        return edit("allowSpectators", value as boolean);
-    }
-  };
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
   // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
   const roleConfig = effectiveRoleConfig(values, limits);
 
