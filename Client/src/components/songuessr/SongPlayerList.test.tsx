@@ -282,6 +282,17 @@ describe("SonGuessr PlayerList", () => {
       await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
       expect(sendCommand).toHaveBeenCalledTimes(2);
     });
+
+    it("踢出玩家发出 kick 指令并带目标玩家编号", async () => {
+      const user = userEvent.setup();
+      const sendCommand = vi.fn().mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      await user.click(screen.getByRole("button", { name: "玩家甲 操作" }));
+      await user.click(await screen.findByRole("button", { name: "踢出玩家" }));
+      expect(sendCommand).toHaveBeenCalledWith("song.room.kick", { playerId: "player-2" });
+    });
   });
 
   it("组队时按队伍分块：标题给合计分与共享次数，观战与队伍猜中各有状态", () => {
