@@ -4,6 +4,7 @@ import {
   type DescriptionColumn,
   type SpeechStatus,
 } from "@/lib/DescriptionColumns";
+import { submittedOf } from "@/lib/WhoIsFakerSpeech";
 import type { DescriptionRecord, PublicPlayerView } from "@bakagame/shared";
 
 /** 玩家行右侧续接的发言列 */
@@ -57,6 +58,6 @@ export function buildSpeechHistory(
     playerOrder,
     departedPlayers: [...departed.values()],
     submittedColumnKey: (status ? pendingColumn(status) : null)?.key,
-    submittedPlayerIds: new Set(status?.submittedSpeechPlayerIds ?? []),
+    submittedPlayerIds: status ? submittedOf(status) : new Set<string>(),
   };
 }

@@ -1,4 +1,5 @@
 import type { DescriptionRecord, PublicPlayerView, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+import { speechModeOf, speechOrderOf } from "@/lib/WhoIsFakerSpeech";
 
 /** 发言历史的一列。轮次、平票 PK 与补充发言各自独立编号。 */
 export interface DescriptionColumn {
@@ -38,7 +39,10 @@ function columnKeyOf(record: DescriptionRecord): string {
  * 当前正在进行的发言列及其应发言名单。
  * 只有处于发言阶段时才有值；投票、夜晚等阶段没有待提交的格子。
  */
-export function pendingColumn(status: SpeechStatus): { key: string; playerIds: string[] } | null {
+export function pendingColumn(status: SpeechStatus): {
+  key: string;
+  playerIds: readonly string[];
+} | null {
   const pending = pendingColumnOf(status);
   return pending && { key: columnKeyOfPending(pending), playerIds: pending.playerIds };
 }
@@ -47,14 +51,14 @@ export function pendingColumn(status: SpeechStatus): { key: string; playerIds: s
 interface PendingColumn {
   kind: "cycle" | "tie" | "sup";
   index: number;
-  playerIds: string[];
+  playerIds: readonly string[];
 }
 
 const columnKeyOfPending = ({ kind, index }: PendingColumn): string => `${kind}-${index}`;
 
 function pendingColumnOf(status: SpeechStatus): PendingColumn | null {
-  const mode = status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : undefined);
-  const playerIds = status.speechOrder ?? [];
+  const mode = speechModeOf(status);
+  const playerIds = speechOrderOf(status);
   if (mode === "supplement") return { kind: "sup", index: status.supplementIndex ?? 1, playerIds };
   if (mode === "tieBreak") {
     if (status.tieBreakStage !== "description") return null;

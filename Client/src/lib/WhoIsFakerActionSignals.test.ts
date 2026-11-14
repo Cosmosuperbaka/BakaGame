@@ -6,6 +6,7 @@ import {
   wifFeedbackSnapshot,
   wifPrivate,
   wifSnapshot,
+  type WifStage,
 } from "@/stories/fixtures/WhoIsFaker";
 import { whoIsFakerNeedsAction } from "@/lib/WhoIsFakerActionSignals";
 
@@ -102,5 +103,46 @@ describe("whoIsFakerNeedsAction", () => {
     resetPageControl();
     expect(whoIsFakerNeedsAction(null, wifPrivate("me", "vote1"))).toBe(false);
     expect(whoIsFakerNeedsAction(snapshot, null)).toBe(false);
+  });
+
+  // 三种发言模式各至少两组快照：提示名单只由「存活、非出题人、未提交、轮到」决定。
+  const speechActionCases: {
+    name: string;
+    stage: WifStage;
+    submitted?: string[];
+    expected: string[];
+  }[] = [
+    { name: "描述首轮全员已交", stage: "day1", expected: [] },
+    {
+      name: "描述次轮进行中",
+      stage: "day2",
+      expected: [WIF_PEOPLE.me.id, WIF_PEOPLE.kita.id],
+    },
+    { name: "补充发言进行中", stage: "sup2", expected: [WIF_PEOPLE.yuzu.id] },
+    {
+      name: "补充发言刚开始",
+      stage: "sup2",
+      submitted: [],
+      expected: [WIF_PEOPLE.kita.id, WIF_PEOPLE.yuzu.id],
+    },
+    { name: "平票发言进行中", stage: "tie2", expected: [WIF_PEOPLE.kita.id] },
+    {
+      name: "平票发言刚开始",
+      stage: "tie2",
+      submitted: [],
+      expected: [WIF_PEOPLE.peach.id, WIF_PEOPLE.kita.id],
+    },
+  ];
+
+  it.each(speechActionCases)("$name：只有该发言的人被提示", ({ stage, submitted, expected }) => {
+    const base = wifSnapshot(stage);
+    const snapshot =
+      submitted === undefined
+        ? base
+        : { ...base, status: { ...base.status, submittedSpeechPlayerIds: submitted } };
+    const prompted = Object.values(WIF_PEOPLE)
+      .filter((person) => whoIsFakerNeedsAction(snapshot, wifPrivate(person, stage)))
+      .map((person) => person.id);
+    expect(prompted.sort()).toEqual([...expected].sort());
   });
 });
