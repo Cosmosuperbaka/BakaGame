@@ -1,13 +1,7 @@
 import { useEffect } from "react";
 import { Helmet } from "react-helmet-async";
-import {
-  SITE_NAME,
-  SITE_ORIGIN,
-  buildBreadcrumbStructuredData,
-  buildFaqStructuredData,
-  buildHeadTags,
-  findPageMeta,
-} from "@/data/PageMeta";
+import { SITE_NAME, SITE_ORIGIN } from "@/data/PageMeta";
+import { resolveSeo } from "@/lib/ResolveSeo";
 
 /** 结构化数据脚本在 <head> 中的固定 id，用于跨页面切换时先移除旧数据再写入新数据。 */
 const STRUCTURED_DATA_ID = "bakagame-structured-data";
@@ -76,38 +70,20 @@ export function Seo({
   description,
   image,
   keywords,
-  indexable = true,
+  indexable,
   structuredData,
 }: SeoProps) {
-  const meta = findPageMeta(path);
-  const resolvedDescription = description ?? meta?.description;
-  if (!resolvedDescription) {
-    // 宁可当场报错，也不要静默产出一个空 description 的页面：那等于把页面交给搜索引擎瞎猜。
-    throw new Error(`Seo：路径 ${path} 未登记在 PageMeta，且未显式传入 description`);
-  }
-
-  const resolvedTitle = title ?? meta?.title ?? SITE_NAME;
-  const headTags = buildHeadTags({
-    path,
+  const {
     title: resolvedTitle,
-    description: resolvedDescription,
-    image: image ?? meta?.image,
-    imageAlt: image ? undefined : meta?.imageAlt,
-    keywords: keywords ?? meta?.keywords,
-    indexable,
-  });
-  const resolvedStructuredData = structuredData ?? meta?.structuredData;
-  const structuredDataJson = resolvedStructuredData ? JSON.stringify(resolvedStructuredData) : null;
-  const faqStructuredData = buildFaqStructuredData(meta?.faq);
-  const faqStructuredDataJson = faqStructuredData ? JSON.stringify(faqStructuredData) : null;
+    headTags,
+    structuredDataJson,
+    faqStructuredDataJson,
+    breadcrumbStructuredDataJson,
+  } = resolveSeo({ path, title, description, image, keywords, indexable, structuredData });
 
   useStructuredDataScript(STRUCTURED_DATA_ID, structuredDataJson);
   useStructuredDataScript(FAQ_STRUCTURED_DATA_ID, faqStructuredDataJson);
-  const breadcrumb = buildBreadcrumbStructuredData(meta);
-  useStructuredDataScript(
-    BREADCRUMB_STRUCTURED_DATA_ID,
-    breadcrumb ? JSON.stringify(breadcrumb) : null
-  );
+  useStructuredDataScript(BREADCRUMB_STRUCTURED_DATA_ID, breadcrumbStructuredDataJson);
 
   return (
     <Helmet prioritizeSeoTags>
