@@ -27,6 +27,11 @@ pub type LPCSTR = *const c_char;
 
 pub const TRUE: BOOL = 1;
 
+/// `GetLastError` 在 `CreateMutexW` 打开已存在的同名互斥量时给出的码
+pub const ERROR_ALREADY_EXISTS: DWORD = 183;
+/// `ShowWindow` 的还原命令
+pub const SW_RESTORE: c_int = 9;
+
 /// `CreateToolhelp32Snapshot` 失败时返回的伪句柄
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
@@ -120,6 +125,15 @@ extern "system" {
     pub fn GetEnvironmentVariableW(name: LPCWSTR, buffer: LPWSTR, size: DWORD) -> DWORD;
     pub fn GetCommandLineW() -> LPWSTR;
     pub fn LocalFree(memory: *mut c_void) -> *mut c_void;
+    pub fn CreateMutexW(attributes: *mut c_void, initial_owner: BOOL, name: LPCWSTR) -> HANDLE;
+}
+
+#[link(name = "user32")]
+extern "system" {
+    pub fn FindWindowW(class_name: LPCWSTR, window_name: LPCWSTR) -> HANDLE;
+    pub fn IsIconic(window: HANDLE) -> BOOL;
+    pub fn ShowWindow(window: HANDLE, command: c_int) -> BOOL;
+    pub fn SetForegroundWindow(window: HANDLE) -> BOOL;
 }
 
 #[link(name = "crypt32")]

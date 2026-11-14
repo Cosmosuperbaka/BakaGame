@@ -17,6 +17,7 @@ mod notice;
 mod peb;
 mod secret;
 mod selfcheck;
+mod single_instance;
 #[cfg(test)]
 mod test_support;
 #[cfg(target_os = "windows")]
@@ -443,6 +444,21 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
 pub fn run() {
     // 先落条款与构建身份，再启动任何可能失败的步骤
     notice::log_identity();
+
+    // 单实例保护只在发布构建启用：开发时需要同时开多个壳（不同账号联调）。
+    // 已有实例在跑就把它的窗口拉到前台并退出，不去碰同一份设备密钥文件、不再起第二套隧道。
+    let _single_instance = if cfg!(debug_assertions) {
+        None
+    } else {
+        match single_instance::acquire(single_instance::MUTEX_NAME) {
+            single_instance::Instance::First(guard) => Some(guard),
+            single_instance::Instance::AlreadyRunning => {
+                eprintln!("已有一个 BakaGame 桌面客户端在运行，聚焦它的窗口后退出");
+                single_instance::focus_existing_window(config::WINDOW_TITLE);
+                return;
+            }
+        }
+    };
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
