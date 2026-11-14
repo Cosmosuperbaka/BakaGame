@@ -59,12 +59,17 @@
     return override.indexOf("https://") === 0 ? override : DEFAULT_API_ORIGIN;
   }
 
+  // Capacitor 对已注册的插件再次 registerPlugin 会打印警告再返回同一个代理，
+  // 所以每个插件只注册一次，之后复用。
+  var channelPlugin = null;
   function plugin() {
+    if (channelPlugin) return channelPlugin;
     var C = window.Capacitor;
     if (!C || typeof C.registerPlugin !== "function") {
       throw new Error("BAKA_CHANNEL_NATIVE_UNAVAILABLE");
     }
-    return C.registerPlugin("BakaChannel");
+    channelPlugin = C.registerPlugin("BakaChannel");
+    return channelPlugin;
   }
 
   function storageGet(key) {
@@ -355,11 +360,14 @@
   var HOT_UPDATE_PATH = "/api/client/web-bundle";
   var HOT_UPDATE_BUILD_ATTR = 'meta[name="bakagame-build"]';
 
+  var hotUpdateProxy = null;
   function hotUpdatePlugin() {
+    if (hotUpdateProxy) return hotUpdateProxy;
     var C = window.Capacitor;
     if (!C || typeof C.registerPlugin !== "function") return null;
     try {
-      return C.registerPlugin("BakaHotUpdate");
+      hotUpdateProxy = C.registerPlugin("BakaHotUpdate");
+      return hotUpdateProxy;
     } catch (e) {
       return null;
     }

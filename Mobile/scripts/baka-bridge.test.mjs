@@ -22,6 +22,7 @@ const harness = ({ manifest, pathname = "/" } = {}) => {
   const confirms = [];
   const installs = [];
   const fetches = [];
+  const registrations = [];
 
   const on = (type, handler) => {
     const list = listeners.get(type) ?? [];
@@ -30,6 +31,8 @@ const harness = ({ manifest, pathname = "/" } = {}) => {
   };
 
   const pluginStub = (name) => {
+    registrations.push(name);
+    if (name === "BakaChannel") return { setSecureScreen: async () => {} };
     if (name !== "BakaHotUpdate") return {};
     return {
       confirm: async (args) => {
@@ -82,6 +85,7 @@ const harness = ({ manifest, pathname = "/" } = {}) => {
     confirms,
     installs,
     fetches,
+    registrations,
     timers,
     sandbox,
     fire: (type) => (listeners.get(type) ?? []).forEach((handler) => handler()),
@@ -172,4 +176,23 @@ test("清单字段不可信时不下发给原生：URL 必须 https，sha256 必
     await settle();
     assert.equal(h.installs.length, 0, `不该安装 ${JSON.stringify(broken)}`);
   }
+});
+
+test("同一个插件在页面生命周期内只向 Capacitor 注册一次", async () => {
+  // Capacitor 对重复注册会每次打印警告；桥接层每次调用都重新注册会刷屏控制台与面包屑
+  const h = harness({ manifest });
+  h.fire("DOMContentLoaded");
+  h.runTimer(8000);
+  await settle();
+  h.sandbox.window.__BAKA_CHANNEL__.setSecureScreen(true);
+  h.sandbox.window.__BAKA_CHANNEL__.setSecureScreen(false);
+  h.fire("visibilitychange");
+  await settle();
+
+  for (const name of ["BakaChannel", "BakaHotUpdate"]) {
+    const times = h.registrations.filter((entry) => entry === name).length;
+    assert.ok(times <= 1, `${name} 被注册了 ${times} 次`);
+  }
+  assert.ok(h.registrations.includes("BakaChannel"), "setSecureScreen 应当用到 BakaChannel");
+  assert.ok(h.registrations.includes("BakaHotUpdate"), "热更新应当用到 BakaHotUpdate");
 });
