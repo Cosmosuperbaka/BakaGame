@@ -17,7 +17,7 @@ import tencentIconUrl from "@lobehub/icons-static-svg/icons/tencent.svg?url";
 import zaiIconUrl from "@lobehub/icons-static-svg/icons/zai.svg?url";
 import zhipuIconUrl from "@lobehub/icons-static-svg/icons/zhipu.svg?url";
 import type { CreditBrandId } from "@/lib/Credits";
-import { CreditBrandMark, DependencyGlyph } from "./CreditsIcons";
+import { CreditBrandMark, DependencyGlyph, ThanksGlyph } from "./CreditsIcons";
 
 /**
  * 穷举 `CreditBrandId`：`Record<CreditBrandId, true>` 少一个键就编译失败，
@@ -263,6 +263,24 @@ describe("自备品牌资产", () => {
       // 文件末尾的 HTML 注释登记来源 URL 与许可证。
       expect(content, file).toMatch(/<!-- Source: https:\/\/\S+ \| License: .+ -->/);
     }
+  });
+});
+
+describe("鸣谢条目的位图", () => {
+  // 随站点分发的自备位图必须能说清来源与许可；说不清的不进资产目录，条目改用通用图标。
+  it("资产目录里的位图只剩登记过来源与许可的那几张", () => {
+    const rasters = readdirSync(BRANDS_DIR)
+      .filter((file) => !file.endsWith(".svg"))
+      .sort();
+    expect(rasters).toEqual(["moegirl.jpg"]);
+  });
+
+  it("Bangumi 条目用通用的资料库图标，不再引用位图", () => {
+    const { container } = render(<ThanksGlyph icon="bangumi" />);
+    expect(container.querySelector("img")).toBeNull();
+    const svg = container.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg).toHaveAttribute("aria-hidden", "true");
   });
 });
 

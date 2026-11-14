@@ -298,31 +298,30 @@ export function DependencyGlyph({
  */
 const GENERIC_THANKS_ICONS = {
   database: Database,
+  // Bangumi 没有许可允许再分发的官方标识，按资料库性质取通用图标。
+  bangumi: Database,
   wiki: BookOpenText,
   music: Music,
   code: Package,
 } as const;
 
 /**
- * 鸣谢条目的彩色位图标识：simple-icons 与厂商图标包都没有这三家的字形，只能自备官方图。
- * 它们按原色渲染，不走单色 mask——压成单色就不再是那三个东西了。
+ * 鸣谢条目的彩色位图标识：simple-icons 与厂商图标包都没有这两家的字形，只能用站内资产或自备官方图。
+ * 它们按原色渲染，不走单色 mask——压成单色就不再是那两个东西了。
  *
- * 来源与许可（位图带不了 SVG 那样的文件末注释，登记在这里）：
+ * 来源与许可（位图带不了 SVG 那样的文件末注释，登记在这里；说不清许可的位图不随站点分发）：
  * - `cee.jpg`：站内自有资产，与首页游戏入口同一份；
- * - `bangumi.png`：https://i.loli.net/2020/03/20/GXu1DQhalV5TJ4B.png ｜ 许可未核实（维护者指定的来源）；
  * - `moegirl.jpg`：https://storage.moegirl.org.cn/moegirl/commons/d/df/Moegirl_is_watching_you.jpg
- *   ｜ CC BY-NC-SA 4.0（萌娘百科文件页声明）｜ 非商业、相同方式共享；
- *   两枚位图都缩到 64–96px 存放，不保留原尺寸。
+ *   ｜ CC BY-NC-SA 4.0（萌娘百科文件页声明）｜ 非商业、相同方式共享；缩到 64–96px 存放，不保留原尺寸。
  */
 const RASTER_THANKS_ICONS: Partial<Record<SpecialThanksIcon, string>> = {
   cee: "/assets/CEE.jpg",
-  bangumi: "/assets/brands/bangumi.png",
   moegirl: "/assets/brands/moegirl.jpg",
 };
 
 /**
  * 鸣谢条目标识。四条路径，外观尺寸一致：
- * - 彩色位图：站内自有或自备的官方图，按原色显示；
+ * - 彩色位图：站内自有资产或许可允许再分发的官方图，按原色显示；
  * - `qqmusic`：官方双色矢量，与猜歌的音乐账号设置共用同一份定义；
  * - 其余通用键：说明来源性质的 lucide 图标；
  * - 品牌键：官方单色字形，走 `CreditBrandMark`。

@@ -269,7 +269,7 @@ export type SpecialThanksIcon =
   | "qqmusic"
   /** 复用首页 CEE 游戏入口的图标：玩法原型就是那款游戏本身 */
   | "cee"
-  /** Bangumi 官方圆标位图（两个图标包都没有字形） */
+  /** Bangumi：两个图标包都没有字形，官方标识的许可也不允许随站点分发，按资料库性质用通用图标 */
   | "bangumi"
   /** 萌娘百科站徽位图（CC BY-NC-SA 4.0，来源登记在 CreditsIcons.tsx） */
   | "moegirl";
