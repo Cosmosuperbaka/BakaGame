@@ -543,9 +543,16 @@ test("正式玩家出题：出词人数扣掉他自己，其余座位不下发",
     await send(client, { type: "player.setReady", payload: { ready: true } });
     guests.push(client);
   }
+  // 一位开了上帝视角的旁观者：他与出题人走同一条私有态构造，但人数只该发给出题人。
+  const watcher = createConnection(service, `self-${roomId}-旁观`);
+  await send(watcher, { type: "room.join", roomId, payload: { userName: "旁观" } });
+  await send(watcher, { type: "player.setSpectator", payload: { spectator: true } });
   await send(host, {
     type: "room.updateSettings",
-    payload: { roleConfig: { undercoverCount: 2, hasAngel: true, hasBlank: true } },
+    payload: {
+      roleConfig: { undercoverCount: 2, hasAngel: true, hasBlank: true },
+      spectatorsSeeAnswers: true,
+    },
   });
   await send(host, { type: "game.advancePhase", payload: {} });
   await send(host, {
@@ -572,4 +579,7 @@ test("正式玩家出题：出词人数扣掉他自己，其余座位不下发",
     expect(state.canAct).toBe(false);
     expect(state.requiredRoleCounts).toBeUndefined();
   }
+  const watcherState = await privateOf(watcher);
+  expect(watcherState.canAct).toBe(false);
+  expect(watcherState.requiredRoleCounts).toBeUndefined();
 });
