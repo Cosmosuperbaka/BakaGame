@@ -431,6 +431,53 @@ describe("waiting room sharing", () => {
     );
   });
 
+  it("房主设置保存被拒：被拒的值不写进下次建房的记忆", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(await readRoomSettingsMemory("faker")).toBeNull();
+  });
+
+  it("记忆写在服务端接受之后：命令还在途时先不记，接受了才记", async () => {
+    vi.useFakeTimers();
+    let accept: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn().mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          accept = resolve;
+        })
+    );
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(await readRoomSettingsMemory("faker")).toBeNull();
+
+    accept({});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(await readRoomSettingsMemory("faker")).toMatchObject({ revealRoleOnDeath: false });
+  });
+
   it("房主可以单独打开旁观者局中看答案的开关", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
     useWhoIsFakerStore.setState({

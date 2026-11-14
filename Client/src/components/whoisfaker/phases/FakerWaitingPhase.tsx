@@ -243,15 +243,16 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
       canSaveRoomBasics(draft, snapshot.hasPassword),
     liveRoom: () => liveFakerRoom(snapshot.roomId),
     send: async (payload) => {
-      // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
+      await sendCommand("room.updateSettings", payload);
+      return payload;
+    },
+    // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
+    remember: (payload) =>
       saveRoomSettingsMemory("faker", {
         revealRoleOnDeath: payload.revealRoleOnDeath,
         spectatorsSeeAnswers: payload.spectatorsSeeAnswers,
         roleConfig: payload.roleConfig,
-      });
-      await sendCommand("room.updateSettings", payload);
-      return payload;
-    },
+      }),
     onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
   });
 

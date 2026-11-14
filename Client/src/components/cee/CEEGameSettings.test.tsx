@@ -16,6 +16,7 @@ const base = (changes: Partial<CEESettings> = {}): CEESettings => ({
   ...createDefaultCEESettings(2026),
   ...changes,
 });
+const CEE_MEMORY_KEY = "bakagame:room-settings:cee";
 /** 把本机视作已在该房间里：保存边界读的是 Store 里的当前快照。 */
 const inRoom = (
   settings: CEESettings,
@@ -43,6 +44,7 @@ afterEach(() => {
   vi.useRealTimers();
   useCEEStore.getState().resetRoom();
   vi.restoreAllMocks();
+  window.localStorage.removeItem(CEE_MEMORY_KEY);
 });
 
 describe("CEE 设置草稿与服务端同步", () => {
@@ -197,6 +199,41 @@ describe("CEE 设置自动保存的防抖与失败", () => {
     await advance(1_000);
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("玩法设置保存被拒：被拒的值不写进下次建房的记忆", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    window.localStorage.removeItem(CEE_MEMORY_KEY);
+    inRoom(base());
+    render(panel(base()));
+    edit("同步模式");
+    await advance(400);
+
+    expect(window.localStorage.getItem(CEE_MEMORY_KEY)).toBeNull();
+  });
+
+  it("记忆写在服务端接受之后：命令还在途时先不记，接受了才记", async () => {
+    vi.useFakeTimers();
+    let accept: (value: Record<string, unknown>) => void = () => {};
+    vi.spyOn(ceeWsClient, "send").mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          accept = resolve;
+        })
+    );
+    window.localStorage.removeItem(CEE_MEMORY_KEY);
+    inRoom(base());
+    render(panel(base()));
+    edit("同步模式");
+    await advance(400);
+    expect(window.localStorage.getItem(CEE_MEMORY_KEY)).toBeNull();
+
+    accept({});
+    await advance(0);
+    expect(JSON.parse(window.localStorage.getItem(CEE_MEMORY_KEY)!)).toMatchObject({
+      settings: { syncMode: true },
+    });
   });
 });
 

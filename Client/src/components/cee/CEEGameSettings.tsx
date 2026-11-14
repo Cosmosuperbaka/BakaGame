@@ -78,10 +78,12 @@ export function CEEGameSettings({
       const next = withRoomSwitches(value, live.settings);
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
       if (equal(next, live.settings)) return null;
-      saveRoomSettingsMemory("cee", { settings: { ...next, allowAgents: false } });
       await useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
       return next;
     },
+    // MCP 接入是房间级开关，不进下次建房的记忆。
+    remember: (next) =>
+      saveRoomSettingsMemory("cee", { settings: { ...next, allowAgents: false } }),
     onError: (error) => useCEEStore.getState().reportError(error),
   });
 
