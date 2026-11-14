@@ -14,6 +14,7 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { SearchOptionContent } from "@/components/common/search/SearchPanel";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
@@ -28,7 +29,6 @@ import { CEEAnswerCard } from "./CEEAnswerCard";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEEFeedbackTable } from "./CEEFeedbackTable";
 import { CEEReplay } from "./CEEReplay";
-import { CEEConfirmDialog } from "./CEEConfirmDialog";
 import { CEEWaiting } from "./CEEWaiting";
 import { CEEChoosingSetter } from "./CEEChoosingSetter";
 
@@ -172,7 +172,7 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
       >
         取消本局
       </Button>
-      <CEEConfirmDialog
+      <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
         origin={origin.origin}
@@ -181,6 +181,7 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
         cancelLabel="继续本局"
         confirmLabel="确认取消"
         busy={cancelling}
+        agentControlPrefix="cee.dialog"
         onConfirm={() => void handleCancel()}
       />
     </>
@@ -534,7 +535,7 @@ function CEEGuessing({
         showRound={snapshot.settings.syncMode}
         emptyText={slot === "sealed" ? "揭晓后，这里会显示全场的猜测" : undefined}
       />
-      <CEEConfirmDialog
+      <ConfirmDialog
         open={surrenderOpen}
         onOpenChange={setSurrenderOpen}
         origin={origin.origin}
@@ -543,6 +544,7 @@ function CEEGuessing({
         cancelLabel="继续猜测"
         confirmLabel="确认放弃"
         busy={surrendering}
+        agentControlPrefix="cee.dialog"
         onConfirm={() => void handleSurrender()}
       />
     </div>

@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
@@ -16,7 +16,6 @@ import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import type { AdminQuery } from "@/hooks/UseAdminQuery";
 import { useScrollFade } from "@/hooks/UseScrollFade";
-import { apiErrorMessage } from "@/lib/Api";
 import { formatNumber } from "@/lib/AdminFormat";
 import { cn } from "@/lib/Utils";
 
@@ -425,96 +424,6 @@ export function AdminFormDialog({
           </Button>
           <Button type="button" loading={busy} disabled={submitDisabled} onClick={onSubmit}>
             {submitLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** 危险操作的二次确认；失败文案留在弹窗内。 */
-export function ConfirmDialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  confirmLabel,
-  destructive = true,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  /** 确认钮是否用危险色；授予类的正向操作传 false。 */
-  destructive?: boolean;
-  /** 返回失败文案，成功返回 null。 */
-  onConfirm: () => Promise<string | null>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // 确认框由按钮的点击状态打开，没有 Radix 的 Trigger 可回：打开时记下焦点所在的按钮，关闭时还给它，
-  // 键盘用户（尤其是嵌在详情弹窗里时）关掉确认框后不会掉到页面顶层。
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const confirm = async () => {
-    setBusy(true);
-    setError(null);
-    let failure: string | null;
-    try {
-      failure = await onConfirm();
-    } catch (cause) {
-      // 契约是返回失败文案；回调漏接异常时也不能让弹窗永远忙碌。
-      failure = apiErrorMessage(cause, "操作失败，请稍后重试");
-    } finally {
-      setBusy(false);
-    }
-    if (failure) setError(failure);
-    else onOpenChange(false);
-  };
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!busy) {
-          setError(null);
-          onOpenChange(next);
-        }
-      }}
-    >
-      <DialogContent
-        onOpenAutoFocus={() => {
-          const active = document.activeElement;
-          restoreFocusRef.current = active instanceof HTMLElement ? active : null;
-        }}
-        onCloseAutoFocus={(event) => {
-          const target = restoreFocusRef.current;
-          if (!target?.isConnected) return;
-          event.preventDefault();
-          target.focus();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        {error ? <FormAlert>{error}</FormAlert> : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
-          >
-            取消
-          </Button>
-          <Button
-            type="button"
-            variant={destructive ? "destructive" : "default"}
-            loading={busy}
-            onClick={() => void confirm()}
-          >
-            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

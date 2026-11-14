@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/Button";
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   AdminDetailDialog,
   AdminNotice,
-  ConfirmDialog,
   QueryStatus,
   UserCell,
 } from "@/components/admin/AdminParts";

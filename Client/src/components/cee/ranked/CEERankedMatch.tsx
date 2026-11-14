@@ -3,9 +3,9 @@ import { useState } from "react";
 import { Flag, Lightbulb, LogOut } from "lucide-react";
 import type { CEERankedSeriesView } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { bannerRise, dropIn, readoutTick } from "@/lib/motion/NamedMoves";
-import { CEEConfirmDialog } from "../CEEConfirmDialog";
 import { CEEFeedbackTable } from "../CEEFeedbackTable";
 import { CEESearch } from "../CEESearch";
 import { CEERankedOpponentClues } from "./CEERankedOpponentClues";
@@ -143,7 +143,7 @@ export function CEERankedMatch({
         </aside>
       </div>
       {/* 退出整场是判负的操作：显式确认，不会误触。 */}
-      <CEEConfirmDialog
+      <ConfirmDialog
         open={exitOpen}
         onOpenChange={setExitOpen}
         title="退出这场排位？"
@@ -151,6 +151,7 @@ export function CEERankedMatch({
         cancelLabel="继续比赛"
         confirmLabel="退出并判负"
         busy={Boolean(pending.exit)}
+        agentControlPrefix="cee.dialog"
         onConfirm={onExit}
       />
     </div>

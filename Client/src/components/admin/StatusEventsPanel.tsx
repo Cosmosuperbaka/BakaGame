@@ -3,13 +3,8 @@ import type { PublicStatusEvent, PublicStatusIncidentKind } from "@bakagame/shar
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import {
-  AdminTable,
-  AdminToolbar,
-  ConfirmDialog,
-  ListState,
-  Pager,
-} from "@/components/admin/AdminParts";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { AdminTable, AdminToolbar, ListState, Pager } from "@/components/admin/AdminParts";
 import { EventDialog } from "@/components/admin/StatusEventDialog";
 import { useAdminList } from "@/hooks/UseAdminList";
 import { api, apiErrorMessage } from "@/lib/Api";

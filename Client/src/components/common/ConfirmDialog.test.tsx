@@ -1,9 +1,8 @@
-import type { JSX, ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { useState, type JSX, type ReactNode } from "react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ConfirmDialog as AdminConfirmDialog } from "@/components/admin/AdminParts";
-import { CEEConfirmDialog } from "@/components/cee/CEEConfirmDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 // 动效库在 jsdom 里会往 style 上写中间帧，逐字比对结构前把 motion.* 换成普通元素，
 // 只丢掉动效专用属性，className/style/ref/aria/data 原样保留（办法同 GameLayout.test.tsx）。
@@ -87,7 +86,7 @@ const bodyHtml = () => {
 describe("确认弹窗渲染结果逐字快照", () => {
   it("管理端：打开", () => {
     render(
-      <AdminConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="关闭房间"
@@ -103,7 +102,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("管理端：关闭", () => {
     render(
-      <AdminConfirmDialog
+      <ConfirmDialog
         open={false}
         onOpenChange={vi.fn()}
         title="关闭房间"
@@ -117,7 +116,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("管理端：正向操作不用危险色", () => {
     render(
-      <AdminConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="授予管理员"
@@ -135,7 +134,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
   it("管理端：请求在途", async () => {
     const user = userEvent.setup();
     render(
-      <AdminConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="关闭房间"
@@ -153,7 +152,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
   it("管理端：确认失败后文案留在弹窗内", async () => {
     const user = userEvent.setup();
     render(
-      <AdminConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="删除状态事件"
@@ -171,7 +170,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("CEE：打开", () => {
     render(
-      <CEEConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="取消本局？"
@@ -179,6 +178,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
         cancelLabel="继续本局"
         confirmLabel="确认取消"
         busy={false}
+        agentControlPrefix="cee.dialog"
         onConfirm={vi.fn()}
       />
     );
@@ -189,7 +189,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("CEE：关闭", () => {
     render(
-      <CEEConfirmDialog
+      <ConfirmDialog
         open={false}
         onOpenChange={vi.fn()}
         title="取消本局？"
@@ -197,6 +197,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
         cancelLabel="继续本局"
         confirmLabel="确认取消"
         busy={false}
+        agentControlPrefix="cee.dialog"
         onConfirm={vi.fn()}
       />
     );
@@ -205,7 +206,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("CEE：请求在途", () => {
     render(
-      <CEEConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         title="放弃本局？"
@@ -213,6 +214,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
         cancelLabel="继续猜测"
         confirmLabel="确认放弃"
         busy
+        agentControlPrefix="cee.dialog"
         onConfirm={vi.fn()}
       />
     );
@@ -223,7 +225,7 @@ describe("确认弹窗渲染结果逐字快照", () => {
 
   it("CEE：带来源点打开", () => {
     render(
-      <CEEConfirmDialog
+      <ConfirmDialog
         open
         onOpenChange={vi.fn()}
         origin={{ x: 120, y: 240 }}
@@ -232,11 +234,67 @@ describe("确认弹窗渲染结果逐字快照", () => {
         cancelLabel="继续本局"
         confirmLabel="确认取消"
         busy={false}
+        agentControlPrefix="cee.dialog"
         onConfirm={vi.fn()}
       />
     );
     expect(bodyHtml()).toMatchInlineSnapshot(
       `"<span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span><div data-aria-hidden="true" aria-hidden="true"></div><div class="relative z-modal"><div class="scrim fixed inset-0 z-overlay" data-state="open" style="pointer-events: auto;" data-aria-hidden="true" aria-hidden="true"></div><div style="transform-origin: 50% 50%; pointer-events: auto;" class="fixed left-1/2 top-1/2 z-modal flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg" role="dialog" id="radix-«id0»" data-state="open" tabindex="-1" aria-labelledby="radix-«id1»" aria-describedby="radix-«id2»"><div class="scrollbar-hidden scroll-fade-y grid min-h-0 gap-4 p-6 [--scroll-fade-size:2rem]" style="--scroll-fade-start: 0px; --scroll-fade-end: 0px;"><div class="flex flex-col space-y-1.5 pr-8 text-left"><h2 id="radix-«id1»" class="text-lg font-semibold leading-none">取消本局？</h2><p id="radix-«id2»" class="text-sm text-muted-foreground">取消后本局作废，所有玩家回到等待页。</p></div><div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-serif font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 cursor-pointer border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2" data-agent-control="cee.dialog.cancel">继续本局</button><button type="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-serif font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 cursor-pointer bg-destructive-solid text-destructive-foreground shadow-sm hover:bg-destructive-solid/90 focus-visible:outline-offset-2 h-9 px-4 py-2" data-agent-control="cee.dialog.confirm">确认取消</button></div></div><button type="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-serif font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 cursor-pointer hover:bg-accent hover:text-accent-foreground h-8 w-8 shrink-0 text-muted-foreground absolute right-3 top-3" aria-label="关闭"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div></div><span data-radix-focus-guard="" tabindex="0" style="outline: none; opacity: 0; position: fixed; pointer-events: none;" data-aria-hidden="true" aria-hidden="true"></span>"`
     );
+  });
+});
+
+describe("ConfirmDialog", () => {
+  it("确认回调抛错时忙碌态复位，显示失败原因，仍可重试与取消", async () => {
+    const onConfirm = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(null);
+    const onOpenChange = vi.fn();
+    const events = userEvent.setup();
+    render(
+      <ConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        title="关闭房间"
+        description="确定？"
+        confirmLabel="确认关闭"
+        onConfirm={onConfirm}
+      />
+    );
+    await events.click(screen.getByRole("button", { name: "确认关闭" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    // 忙碌态已复位：取消可点，确认可再点。
+    expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "确认关闭" })).toBeEnabled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await events.click(screen.getByRole("button", { name: "确认关闭" }));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("关闭确认框后焦点回到打开它的按钮", async () => {
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            打开
+          </button>
+          <ConfirmDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="标题"
+            description="说明"
+            confirmLabel="确认"
+            onConfirm={() => Promise.resolve(null)}
+          />
+        </>
+      );
+    }
+    const events = userEvent.setup();
+    render(<Host />);
+    await events.click(screen.getByRole("button", { name: "打开" }));
+    await events.click(await screen.findByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("button", { name: "打开" })).toHaveFocus();
   });
 });
