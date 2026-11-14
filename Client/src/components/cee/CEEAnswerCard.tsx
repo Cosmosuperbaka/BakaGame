@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import type { CEECharacterView } from "@bakagame/shared";
-import { BangumiRichText } from "@/components/common/BangumiRichText";
+import { CEEBangumiRichText } from "@/components/cee/CEEBangumiRichText";
 import { Badge } from "@/components/ui/Badge";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { revealCard } from "@/lib/motion/NamedMoves";
@@ -117,7 +117,7 @@ export function CEEAnswerCard({
             <dt className={DETAIL_LABEL}>简介</dt>
             <dd className="min-w-0 flex-1">
               <ClampedText label="角色简介" lines={3}>
-                <BangumiRichText text={answer.summary} />
+                <CEEBangumiRichText text={answer.summary} />
               </ClampedText>
             </dd>
           </div>

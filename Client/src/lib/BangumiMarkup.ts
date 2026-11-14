@@ -1,6 +1,6 @@
 /**
  * Bangumi 维基 BBCode 的解析：只认 Bangumi 实际用到的那几种标记，不认识的方括号原样保留为文字；
- * 未闭合或错位的标记同样退回文字，不吞内容。渲染见 `components/common/BangumiRichText`。
+ * 未闭合或错位的标记同样退回文字，不吞内容。渲染见 `components/cee/CEEBangumiRichText`。
  */
 export type MarkupTag =
   | "b"
