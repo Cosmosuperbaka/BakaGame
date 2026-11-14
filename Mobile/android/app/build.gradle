@@ -90,6 +90,11 @@ android {
         }
     }
 
+    testOptions {
+        // 被测类里的 android.util.Log 等调用在 JVM 单测里按默认值返回，不抛「未模拟」异常
+        unitTests.returnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -130,4 +135,7 @@ dependencies {
     // 钉 1.14.0 与官方 WebView 通行密钥指引同一枚。设备 WebView 太旧时会由
     // WebViewFeature.isFeatureSupported 兜住，继续按不支持 WebAuthn 降级。
     implementation 'androidx.webkit:webkit:1.14.0'
+
+    // 纯逻辑的 JVM 单元测试（app/src/test）：只在测试配置里，不进 APK 的依赖面。
+    testImplementation 'junit:junit:4.13.2'
 }

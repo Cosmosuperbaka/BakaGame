@@ -536,6 +536,12 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      # 纯逻辑（热更新来源与降级判定、密钥条目策略、回环隧道、HTTPDNS 解析等）的 JVM 单元测试，
+      # 不需要模拟器或真机。放在打包之前：判定逻辑坏了就不必再花时间构建 APK。
+      - name: Run Android unit tests
+        working-directory: Mobile/android
+        run: gradle --no-daemon :app:testDebugUnitTest
+
       - name: Assemble debug APK
         working-directory: Mobile/android
         run: gradle --no-daemon :app:assembleDebug
