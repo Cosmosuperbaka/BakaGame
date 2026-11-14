@@ -17,6 +17,7 @@ window.__BAKA_CHANNEL__ = {
   channelTicket: string,                       // 桥接层签好的一次性票据；无票时为空串（见第 3 节）
   sign(challenge: string): Promise<string>,    // base64(DER ECDSA P-256 SHA-256)
   selfCheck(): Promise<SelfCheckReport>,
+  setSecureScreen(enabled: boolean): void,     // 窗口级防截屏开关，见第 4 节
 }
 type SelfCheckReport = {
   hardFail: string[]
@@ -120,8 +121,10 @@ type SelfCheckReport = {
 | `accessibility_check_failed` | soft | 检测本身异常 |
 
 **录屏检测的诚实局限**：Android 8+ 不允许枚举其它应用的 MediaProjection 服务，
-真正兜住「截屏 OCR / 录屏外传」的是 MainActivity 里恒定设置的 `FLAG_SECURE`（系统级把本窗口采集变黑屏），
-`SelfCheck` 的相关项只是 best-effort 加分。无障碍白名单必须随设备反馈持续维护，新增条目需人工核实来源
+真正兜住「截屏 OCR / 录屏外传」的是窗口级 `FLAG_SECURE`（系统级把本窗口采集变黑屏）。
+它**不是**恒定开启的：页面按是否处于反作弊房，经 `__BAKA_CHANNEL__.setSecureScreen` 调原生插件的
+`setSecureScreen` 切换，普通房关闭（否则玩家连正常截图分享都做不到），离开反作弊房页面时关回去；
+`MainActivity` 不设置它。`SelfCheck` 的相关项只是 best-effort 加分。无障碍白名单必须随设备反馈持续维护，新增条目需人工核实来源
 （见 `SelfCheck.kt` 注释）。
 
 ## 5. 目录
@@ -139,9 +142,9 @@ Mobile/
     ├── buildscript-gradle.lockfile / app/gradle.lockfile  # Gradle 依赖锁（入库，勿手改）
     ├── app/build.gradle / src/main/AndroidManifest.xml
     └── app/src/main/java/website/baka/game/
-        ├── MainActivity.kt              # FLAG_SECURE + 注册插件 + 启动时选择热更资源
+        ├── MainActivity.kt              # 注册插件 + 启动时选择热更资源 + HTTPDNS 与 WebAuthn 开关
         ├── channel/
-        │   ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck
+        │   ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck / setSecureScreen（FLAG_SECURE 开关）
         │   ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
         │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17 本地最小解析（仅展示）
         │   └── SelfCheck.kt             # P3.3 运行时检测
