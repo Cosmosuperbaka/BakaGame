@@ -129,16 +129,13 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   ) => {
     saveSonGuessrSessionToken(targetRoomId, sessionToken);
 
-    const rawSnapshot = stateSync.snapshot.baseline();
-    const rawPrivateState = stateSync.privateState.baseline();
-    if (
-      rawSnapshot &&
-      rawSnapshot.roomId !== targetRoomId &&
-      payloadSnapshot?.roomId !== targetRoomId
-    ) {
+    const leftover = stateSync.snapshot.baseline();
+    if (leftover && leftover.roomId !== targetRoomId && payloadSnapshot?.roomId !== targetRoomId) {
       resetSonGuessrStateSync();
     }
 
+    const rawSnapshot = stateSync.snapshot.baseline();
+    const rawPrivateState = stateSync.privateState.baseline();
     if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
       stateSync.snapshot.adopt(payloadSnapshot);
     }
