@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { BangumiRichText } from "./BangumiRichText";
+import { CEEBangumiRichText } from "./CEEBangumiRichText";
 
 const meta = {
   title: "公共组件/BangumiRichText",
-  component: BangumiRichText,
+  component: CEEBangumiRichText,
   args: {
     className: "text-sm leading-relaxed",
     text: [
@@ -23,7 +23,7 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof BangumiRichText>;
+} satisfies Meta<typeof CEEBangumiRichText>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

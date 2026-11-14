@@ -127,7 +127,7 @@ function render(nodes: MarkupNode[], masked: boolean, prefix = ""): ReactNode[] 
   });
 }
 
-export function BangumiRichText({ text, className }: { text: string; className?: string }) {
+export function CEEBangumiRichText({ text, className }: { text: string; className?: string }) {
   const nodes = parseBangumiMarkup(text.replace(/\r\n?/g, "\n").trim());
   return (
     <div className={cn("whitespace-pre-wrap break-words", className)}>{render(nodes, false)}</div>

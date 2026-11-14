@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { parseBangumiMarkup } from "@/lib/BangumiMarkup";
-import { BangumiRichText } from "./BangumiRichText";
+import { CEEBangumiRichText } from "./CEEBangumiRichText";
 
-describe("BangumiRichText", () => {
+describe("CEEBangumiRichText", () => {
   it("渲染链接、粗斜体与小标题，未知方括号原样保留", () => {
     const { container } = render(
-      <BangumiRichText
+      <CEEBangumiRichText
         text={
           "[size=22]简介[/size]\r\n由[url=https://bangumi.tv/person/1]某社[/url]制作，[b]粗[/b][i]斜[/i]，[jack]保留，见[url]https://weibo.com/x[/url]"
         }
@@ -27,13 +27,13 @@ describe("BangumiRichText", () => {
   });
 
   it("只放行 http(s) 链接，其他协议只留文字", () => {
-    render(<BangumiRichText text="[url=javascript:alert(1)]点我[/url]" />);
+    render(<CEEBangumiRichText text="[url=javascript:alert(1)]点我[/url]" />);
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText("点我")).toBeInTheDocument();
   });
 
   it("剧透遮罩点按后揭开，揭开前读屏只报剧透", () => {
-    render(<BangumiRichText text="结局是[mask]主角[/mask]。" />);
+    render(<CEEBangumiRichText text="结局是[mask]主角[/mask]。" />);
     const spoiler = screen.getByRole("button", { name: /剧透/ });
     fireEvent.click(spoiler);
     expect(screen.queryByRole("button")).toBeNull();
