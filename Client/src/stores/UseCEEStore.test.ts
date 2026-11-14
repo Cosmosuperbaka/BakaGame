@@ -12,6 +12,7 @@ import {
   useCEEStore,
 } from "./UseCEEStore";
 import { readCEESession, writeCEESession } from "@/lib/CEESession";
+import { ceePrivateState } from "@/stories/fixtures/CEE";
 
 const snapshot: CEERoomSnapshot = {
   roomId: "1234",
@@ -459,7 +460,7 @@ describe("CEE 状态同步通道行为", () => {
     expect(useCEEStore.getState().snapshot?.name).toBe("测试");
   });
 
-  it("入房在途时推送直接写展示态，身份仍等 ACK 安装", async () => {
+  it("入房在途时推送只进同步基线，展示态与身份都等 ACK 落定", async () => {
     let resolveAck!: (value: Record<string, unknown>) => void;
     const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
       command === "cee.room.join"
@@ -489,9 +490,9 @@ describe("CEE 状态同步通道行为", () => {
       event: "cee.game.privateState",
       payload: { mode: "full", revision: 1, state: { playerId: "p1" } },
     });
-    // CEE 现状：入房期间的推送照常写展示态，只有身份与凭据等 ACK 落定。
-    expect(useCEEStore.getState().snapshot?.name).toBe("暂存名");
-    expect(useCEEStore.getState().privateState?.playerId).toBe("p1");
+    // 入房期间的推送只进同步基线：展示态、身份与凭据都等 ACK 落定后一次安装。
+    expect(useCEEStore.getState().snapshot).toBeNull();
+    expect(useCEEStore.getState().privateState).toBeNull();
     expect(useCEEStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
     expect(requestSyncCalls(send)).toHaveLength(0);
 
@@ -506,6 +507,45 @@ describe("CEE 状态同步通道行为", () => {
     expect(useCEEStore.getState()).toMatchObject({ roomId: "1234", sessionToken: "tok" });
     // 同房 ACK 不覆盖入房期间已应用的更新。
     expect(useCEEStore.getState().snapshot?.name).toBe("暂存名");
+  });
+
+  it("入房往返期间收到快照，已确认房间的展示态不变；ACK 落定后一次装上", async () => {
+    useCEEStore.setState({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "tok-a",
+      snapshot,
+      privateState: ceePrivateState({ playerId: "p1" }),
+    });
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      command === "cee.room.join"
+        ? new Promise<Record<string, unknown>>((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const joined = useCEEStore.getState().joinRoom("5678", "甲");
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: { ...snapshot, roomId: "5678", name: "新房" } },
+    });
+    // 往返期间的推送只进同步基线，不覆盖已确认房间的展示态与命令身份。
+    expect(useCEEStore.getState()).toMatchObject({ roomId: "1234", sessionToken: "tok-a" });
+    expect(useCEEStore.getState().snapshot?.roomId).toBe("1234");
+    expect(useCEEStore.getState().snapshot?.name).toBe("测试");
+
+    resolveAck({
+      roomId: "5678",
+      source: "native",
+      sessionToken: "tok-b",
+      snapshot: { ...snapshot, roomId: "5678", name: "新房" },
+      privateState: { playerId: "p1" },
+    });
+    await joined;
+    expect(useCEEStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "tok-b" });
+    expect(useCEEStore.getState().snapshot?.name).toBe("新房");
   });
 
   it("入房期间凭据已就绪时缺口立即请求全量，不记欠账", async () => {
@@ -720,6 +760,112 @@ it("StrictMode 重挂载接管同房在途恢复，不重复恢复或离房", as
   expect(send).toHaveBeenCalledOnce();
   expect(readCEESession("1234")).toBe("new-token");
   expect(useCEEStore.getState().sessionToken).toBe("new-token");
+});
+it("恢复的全部发起者都取消时，晚到 ACK 只用结果凭据离房", async () => {
+  writeCEESession("1234", "old-token");
+  let resolveAck!: (value: Record<string, unknown>) => void;
+  const ack = new Promise<Record<string, unknown>>((resolve) => {
+    resolveAck = resolve;
+  });
+  const send = vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const first = new AbortController();
+  const second = new AbortController();
+  const tasks = [
+    useCEEStore
+      .getState()
+      .reconnectRoom("1234", first.signal)
+      .catch((error) => error),
+    useCEEStore
+      .getState()
+      .reconnectRoom("1234", second.signal)
+      .catch((error) => error),
+  ];
+  first.abort();
+  second.abort();
+  resolveAck({
+    source: "native",
+    roomId: "1234",
+    sessionToken: "late-token",
+    snapshot,
+    privateState: null,
+  });
+  expect(await tasks[0]).toMatchObject({ name: "AbortError" });
+  expect(await tasks[1]).toMatchObject({ name: "AbortError" });
+  expect(send.mock.calls.map(([command]) => command)).toEqual([
+    "cee.room.reconnect",
+    "cee.room.leave",
+  ]);
+  expect(send.mock.calls[1][2]).toEqual({ roomId: "1234", sessionToken: "late-token" });
+  expect(readCEESession("1234")).toBeNull();
+  expect(useCEEStore.getState()).toMatchObject({
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+  });
+});
+it("取消恢复后晚到的永久拒绝不清凭据也不发旧提示", async () => {
+  writeCEESession("1234", "previous-token");
+  let rejectAck!: (error: unknown) => void;
+  vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+    command === "cee.room.reconnect"
+      ? new Promise<Record<string, unknown>>((_resolve, reject) => {
+          rejectAck = reject;
+        })
+      : Promise.resolve({})
+  );
+  const controller = new AbortController();
+  const task = useCEEStore
+    .getState()
+    .reconnectRoom("1234", controller.signal)
+    .catch((error) => error);
+  const toastsBefore = useCEEStore.getState().toasts;
+  controller.abort();
+  rejectAck({ code: "SESSION_NOT_FOUND", message: "旧拒绝" });
+  expect(await task).toMatchObject({ name: "AbortError" });
+  expect(readCEESession("1234")).toBe("previous-token");
+  expect(useCEEStore.getState().toasts).toBe(toastsBefore);
+});
+it("断线作废在途入房：晚到 ACK 不安装身份，也不向新连接发旧离房", async () => {
+  let status: (connected: boolean) => void = () => {};
+  vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+    status = handler;
+    return () => {};
+  });
+  vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+  vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {});
+  let resolveAck!: (value: Record<string, unknown>) => void;
+  const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+    command === "cee.room.join"
+      ? new Promise<Record<string, unknown>>((resolve) => {
+          resolveAck = resolve;
+        })
+      : Promise.resolve({})
+  );
+  const cleanup = initCEEWs();
+  try {
+    const outcome = useCEEStore
+      .getState()
+      .joinRoom("1234", "玩家")
+      .catch((error) => error);
+    status(false);
+    resolveAck({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "late-token",
+      snapshot,
+      privateState: null,
+    });
+    expect(await outcome).toMatchObject({ name: "AbortError" });
+    expect(send.mock.calls.map(([command]) => command)).toEqual(["cee.room.join"]);
+    expect(readCEESession("1234")).toBeNull();
+    expect(useCEEStore.getState()).toMatchObject({
+      roomId: null,
+      sessionToken: null,
+      snapshot: null,
+    });
+  } finally {
+    cleanup();
+  }
 });
 it("取消后的旧离房尚未完成时，新加入必须等待旧会话释放", async () => {
   let resolveAck!: (value: Record<string, unknown>) => void;

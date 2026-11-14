@@ -27,6 +27,7 @@ import {
   isLoginRequiredCode,
 } from "@/lib/AntiCheatCopy";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
+import { createRoomEntry } from "@/lib/RoomEntry";
 import { createQueryReuseCache, keywordQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { createStateSyncChannel } from "./room/StateSyncChannel";
 import { playSound } from "@/lib/SoundEffects";
@@ -95,27 +96,16 @@ export interface CEEStore extends ToastState {
   ) => Promise<CEEResponse<"cee.subject.characters">["results"]>;
 }
 
-/**
- * 是否正处在「进入房间」的往返中（join / create / reconnect 已发出、结果未回）。
- *
- * 服务端会在结果返回前就推送新房间状态，这期间客户端还没有可用凭据，
- * 任何主动同步都会被原版会话校验拒绝。
- */
-let enteringRoom = false;
+let connectionGeneration = 0;
+let roomEntry: ReturnType<typeof createRoomEntry<CEERoomEnterResult>>;
 
 const stateSync = createStateSyncChannel<CEERoomSnapshot, CEEPrivateState>({
   requestFull: () => useCEEStore.getState().sendCommand("cee.room.requestSync", {}),
   // 凭据未写回时抢发全量，信封不带凭据，原版会话校验必判 SESSION_INVALID，
   // 还会连带触发永久错误处理清掉刚建立的会话；只记欠账，等 enter() 写回凭据后补发。
-  defer: () => enteringRoom && !useCEEStore.getState().sessionToken,
+  defer: () => roomEntry.isPending() && !useCEEStore.getState().sessionToken,
   onError: (error) => useCEEStore.getState().reportError(error),
 });
-let connectionGeneration = 0;
-/**
- * 入房/恢复事务的作废代次。退房、房间关闭、被踢与会话接管都会让它前进：
- * 在途请求即使晚到 ACK 也不能再把已经结束的会话写回本地。
- */
-let entryGeneration = 0;
 /**
  * 恢复失败即放弃本地会话的错误码：共享永久码表，加上 CEE 原版房自己的会话过期码。
  * 共享部分不在这里再抄一份——抄的那份迟早会漏掉或多出服务端根本不发的码。
@@ -156,62 +146,25 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     // 进入房间期间若收到过无法应用的状态补丁，此刻凭据已就绪，补一次全量同步。
     if (deferred) stateSync.flushDeferred();
   };
-  let entryTail: Promise<void> | null = null;
-  let restoring: {
-    roomId: string;
-    token: string;
-    owners: Set<AbortSignal | undefined>;
-    promise: Promise<boolean>;
-  } | null = null;
-  const cancelEntry = () => {
-    entryGeneration += 1;
-    // 同一个恢复意图的共享 promise 也一并作废，下一次恢复必须重新发起请求。
-    restoring = null;
-  };
-  const enterRequest = (
-    request: () => Promise<CEERoomEnterResult>,
-    abandoned: () => boolean
-  ): Promise<void> => {
-    // StrictMode 重挂载或路由切换时，先结清旧意图，再允许新会话使用同一连接。
-    const predecessor = entryTail;
-    const generation = connectionGeneration;
-    const entryAt = entryGeneration;
-    const isAbandoned = () => entryAt !== entryGeneration || abandoned();
-    const run = async () => {
-      if (generation !== connectionGeneration) throw new DOMException("连接已更换", "AbortError");
-      if (isAbandoned()) throw new DOMException("入房操作已取消", "AbortError");
-      resetCEEStateSync();
-      enteringRoom = true;
+  const entry = (roomEntry = createRoomEntry<CEERoomEnterResult>({
+    generation: () => connectionGeneration,
+    begin: resetCEEStateSync,
+    apply: enter,
+    discard: async (result) => {
+      // ACK 已建立服务器会话，但页面不再拥有该意图：用 ACK 凭据释放，不写入本地身份。
+      const generation = connectionGeneration;
       try {
-        const result = await request();
-        if (generation !== connectionGeneration) throw new DOMException("连接已更换", "AbortError");
-        if (isAbandoned()) {
-          // ACK 已建立服务器会话，但页面不再拥有该意图：用 ACK 凭据释放，不写入本地身份。
-          try {
-            await ws.send(
-              "cee.room.leave",
-              {},
-              { roomId: result.roomId, sessionToken: result.sessionToken }
-            );
-            removeCEESession(result.roomId);
-          } finally {
-            if (generation === connectionGeneration) get().resetRoom(get().roomClosedAt !== null);
-          }
-          throw new DOMException("入房操作已取消", "AbortError");
-        }
-        enter(result);
+        await ws.send(
+          "cee.room.leave",
+          {},
+          { roomId: result.roomId, sessionToken: result.sessionToken }
+        );
+        removeCEESession(result.roomId);
       } finally {
-        enteringRoom = false;
+        if (generation === connectionGeneration) get().resetRoom(get().roomClosedAt !== null);
       }
-    };
-    const pending = predecessor ? predecessor.then(run, run) : run();
-    entryTail = pending;
-    const release = () => {
-      if (entryTail === pending) entryTail = null;
-    };
-    void pending.then(release, release);
-    return pending;
-  };
+    },
+  }));
   /** 只读查询的共用壳：复用窗口 + 取 results，房间身份只由 sendCommand 注入一处。 */
   const query = <TResult>(
     cache: QueryReuseCache<TResult>,
@@ -243,53 +196,36 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       set({ lobbyReady: true, originalAvailable: result.originalAvailable });
     },
     createRoom: (payload, signal) =>
-      enterRequest(
-        () => ws.send("cee.room.create", payload, { timeout: 0 }),
-        () => signal?.aborted ?? false
-      ),
+      entry.enter(() => ws.send("cee.room.create", payload, { timeout: 0 }), signal),
     joinRoom: (roomId, userName, password, signal) =>
-      enterRequest(
+      entry.enter(
         () =>
           ws.send(
             "cee.room.join",
             { userName, ...(password ? { password } : {}) },
             { roomId: normalizeCEERoomId(roomId), timeout: 0 }
           ),
-        () => signal?.aborted ?? false
+        signal
       ),
     reconnectRoom: (roomId, signal) => {
       roomId = normalizeCEERoomId(roomId);
       const token = readCEESession(roomId);
       if (!token) return Promise.resolve(false);
       // 同一恢复意图可由 StrictMode 的新 effect 接管；只有所有所有者都撤销才释放 ACK 会话。
-      if (!restoring || restoring.roomId !== roomId || restoring.token !== token) {
-        const owners = new Set<AbortSignal | undefined>();
-        owners.add(signal);
-        const promise = enterRequest(
-          () => ws.send("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
-          () => [...owners].every((owner) => owner?.aborted)
-        )
-          .then(() => true)
-          .catch((error: unknown) => {
-            if (!isPermanentCEEError(error)) throw error;
-            removeCEESession(roomId);
-            get().resetRoom(roomIsGone(error));
-            // 原版房的会话过期码不在共享表里，文案仍用服务端给的那句。
-            if (isPermanentRoomError(error)) get().showToast(permanentRoomErrorMessage(error));
-            else get().reportError(error);
-            return false;
-          });
-        const entry = { roomId, token, owners, promise };
-        restoring = entry;
-        const release = () => {
-          if (restoring === entry) restoring = null;
-        };
-        void promise.then(release, release);
-      } else restoring.owners.add(signal);
-      return restoring.promise.then((result) => {
-        if (signal?.aborted) throw new DOMException("恢复操作已取消", "AbortError");
-        return result;
-      });
+      return entry.restore(
+        `${roomId}:${token}`,
+        () => ws.send("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
+        (error) => {
+          if (!isPermanentCEEError(error)) return false;
+          removeCEESession(roomId);
+          get().resetRoom(roomIsGone(error));
+          // 原版房的会话过期码不在共享表里，文案仍用服务端给的那句。
+          if (isPermanentRoomError(error)) get().showToast(permanentRoomErrorMessage(error));
+          else get().reportError(error);
+          return true;
+        },
+        signal
+      );
     },
     leaveRoom: async () => {
       // 退房同时作废在途入房：晚到的 ACK 不能再把刚离开的房间写回本地。
@@ -314,7 +250,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       });
     },
     clearRoomClosed: () => set({ roomClosedAt: null }),
-    cancelEntry,
+    cancelEntry: () => entry.cancel(),
     sendCommand: (command, payload = {}, options) => {
       const { roomId, sessionToken } = get();
       return ws.send(command, payload, {
@@ -342,7 +278,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
 function applyCEESnapshotEvent(payload: unknown): void {
   const previous = stateSync.snapshot.baseline();
   const snapshot = stateSync.snapshot.consume(payload);
-  if (!snapshot) return;
+  // 入房在途的推送只进同步基线：展示态与回合开始音效都等 ACK 落定后一次安装。
+  if (!snapshot || roomEntry.isPending()) return;
   useCEEStore.setState({ snapshot });
   // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
   if (
@@ -364,7 +301,7 @@ export function handleCEEMessage(message: ServerMessage) {
     applyCEESnapshotEvent(message.payload);
   } else if (message.event === "cee.game.privateState") {
     const privateState = stateSync.privateState.consume(message.payload);
-    if (privateState) useCEEStore.setState({ privateState });
+    if (privateState && !roomEntry.isPending()) useCEEStore.setState({ privateState });
   } else if (message.event === "cee.player.spectateResult") {
     // 房主对旁观请求的显式处理结果只发给请求者；身份本身随快照下发，这里只给一条反馈。
     const approved = (message.payload as { approved?: boolean }).approved === true;
