@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Button } from "@/components/ui/Button";
-import { rankedProfile, rankedQueuedState, rankedSeries } from "@/stories/fixtures/CEERanked";
+import {
+  RANKED_IDLE_STATE,
+  rankedProfile,
+  rankedQueuedState,
+  rankedSeries,
+} from "@/stories/fixtures/CEERanked";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEERankedStore } from "@/stores/UseCEERankedStore";
@@ -26,6 +31,8 @@ const meta = {
     useCEEStore.setState({ connected: true, sendCommand: (async () => ({})) as never });
     useCEERankedStore.setState({
       ready: true,
+      syncFailed: false,
+      syncRetrying: false,
       state: rankedQueuedState(12_000),
       profile: rankedProfile("rated"),
       attach: () => () => {},
@@ -41,6 +48,61 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/** 排位状态已就绪、空闲：排位首页。与连接中、失败两态对照，就绪后的画面以它为准。 */
+export const Ready: Story = {
+  name: "就绪",
+  tags: ["!no-shot", "page"],
+  beforeEach: () => {
+    useCEERankedStore.setState({ ready: true, state: RANKED_IDLE_STATE });
+  },
+};
+
+/** 排位状态还没到：骨架上写着正在连接。 */
+export const Connecting: Story = {
+  name: "连接中",
+  tags: ["!no-shot", "page"],
+  beforeEach: () => {
+    useCEERankedStore.setState({
+      ready: false,
+      syncFailed: false,
+      syncRetrying: false,
+      state: null,
+    });
+  },
+};
+
+/** 已连接但状态请求失败：同一块位置换成说明与重试；点重试即进入在途。 */
+export const SyncFailed: Story = {
+  name: "连接失败",
+  tags: ["!no-shot", "page"],
+  beforeEach: () => {
+    useCEERankedStore.setState({
+      ready: false,
+      syncFailed: true,
+      syncRetrying: false,
+      state: null,
+      retryStatus: () => {
+        useCEERankedStore.setState({ syncFailed: false, syncRetrying: true });
+        return new Promise<void>(() => {});
+      },
+    });
+  },
+};
+
+/** 重试在途：入口转圈、不可再点，说明留在原处。 */
+export const Retrying: Story = {
+  name: "重试在途",
+  tags: ["!no-shot", "page"],
+  beforeEach: () => {
+    useCEERankedStore.setState({
+      ready: false,
+      syncFailed: false,
+      syncRetrying: true,
+      state: null,
+    });
+  },
+};
 
 export const MatchFound: Story = {
   name: "匹配成功",
