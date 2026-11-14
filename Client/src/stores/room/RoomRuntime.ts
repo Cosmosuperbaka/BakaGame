@@ -23,11 +23,12 @@ export interface RoomEnterReceipt {
   previousToken?: string | null;
 }
 
-/** 结束类事件的载荷：房号决定清哪间的凭据，CEE 另取服务端给的句子。 */
+/** 结束类事件的载荷：房号决定清哪间的凭据；CEE 原版房另取服务端给的句子，`source` 标明来源。 */
 export interface EndedRoomPayload {
   roomId?: string;
   message?: string;
   reason?: string;
+  source?: string;
 }
 
 /** 入房事务回调拿到的运行时内部件：同步基线与当前连接代次。 */

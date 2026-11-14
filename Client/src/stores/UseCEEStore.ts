@@ -1,4 +1,5 @@
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
+import { ROOM_ENDED_TEXT } from "./room/RoomEndedEvent";
 import { createRoomRuntime, type EndedRoomPayload, type RoomRuntime } from "./room/RoomRuntime";
 import type { StateSyncChannel } from "./room/StateSyncChannel";
 import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
@@ -87,10 +88,6 @@ export interface CEEStore
 
 let runtime: RoomRuntime<ws.CEECommandMap, CEERoomSnapshot, CEEPrivateState, CEERoomEnterResult>;
 
-/** 结束类事件优先用服务端给的句子；只有它什么都没给时才用兜底。 */
-const ceeEndedText = (payload: EndedRoomPayload): string =>
-  payload.message ?? payload.reason ?? "房间会话已结束，请重新加入";
-
 /**
  * 恢复失败即放弃本地会话的错误码：共享永久码表，加上 CEE 原版房自己的会话过期码。
  * 共享部分不在这里再抄一份——抄的那份迟早会漏掉或多出服务端根本不发的码。
@@ -134,6 +131,14 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     // 进入房间期间若收到过无法应用的状态补丁，此刻凭据已就绪，补一次全量同步。
     if (deferred) sync.flushDeferred();
   };
+  /**
+   * 结束提示与另两款同一句；原版房用上游给的句子，上游没给才回到同语义的那一句。
+   * 是否原版房先看事件自带的来源（入房在途时本地还没有快照），再看当前快照。
+   */
+  const endedText = (payload: EndedRoomPayload, text: string): string =>
+    payload.source === "original" || get().snapshot?.source === "original"
+      ? (payload.message ?? payload.reason ?? text)
+      : text;
   runtime = createRoomRuntime<
     ws.CEECommandMap,
     CEERoomSnapshot,
@@ -151,9 +156,9 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       snapshot: "cee.room.snapshot",
       privateState: "cee.game.privateState",
       ended: {
-        "cee.room.closed": ceeEndedText,
-        "cee.player.kicked": ceeEndedText,
-        "session.replaced": ceeEndedText,
+        "cee.room.closed": (payload) => endedText(payload, ROOM_ENDED_TEXT.closed),
+        "cee.player.kicked": (payload) => endedText(payload, ROOM_ENDED_TEXT.kicked),
+        "session.replaced": (payload) => endedText(payload, ROOM_ENDED_TEXT.replaced),
       },
       extra: {
         "cee.player.spectateResult": (payload) => {

@@ -331,7 +331,7 @@ describe("game store integration", () => {
     expect(getSessionToken("4567")).toBeNull();
     expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
     expect(useWhoIsFakerStore.getState().toasts.at(-1)).toMatchObject({
-      text: "您的连接已被新标签页替代",
+      text: "当前席位已在另一个标签页接管",
       type: "error",
     });
   });

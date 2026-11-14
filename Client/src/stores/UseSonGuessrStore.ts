@@ -37,6 +37,7 @@ import * as ws from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
+import { ROOM_ENDED_TEXT } from "./room/RoomEndedEvent";
 import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
 import type { StateSyncChannel } from "./room/StateSyncChannel";
 import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
@@ -178,10 +179,10 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       snapshot: "song.room.snapshot",
       privateState: "song.game.privateState",
       ended: {
-        "song.room.closed": "房间已关闭",
-        "song.room.kicked": "你已被移出房间",
-        "session.replaced": "当前席位已在另一个标签页接管",
-        "song.session.replaced": "当前席位已在另一个标签页接管",
+        "song.room.closed": ROOM_ENDED_TEXT.closed,
+        "song.room.kicked": ROOM_ENDED_TEXT.kicked,
+        "session.replaced": ROOM_ENDED_TEXT.replaced,
+        "song.session.replaced": ROOM_ENDED_TEXT.replaced,
       },
       extra: {
         "song.auth.session": (payload) => {

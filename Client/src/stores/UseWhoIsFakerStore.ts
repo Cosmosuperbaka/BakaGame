@@ -5,6 +5,7 @@ import * as ws from "@/lib/WhoIsFakerWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { serverNow } from "./UseServerClock";
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
+import { ROOM_ENDED_TEXT } from "./room/RoomEndedEvent";
 import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
 import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
@@ -167,9 +168,11 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       privateState: "game.privateState",
       ended: {
         // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
-        "room.closed": "房间已关闭",
+        // 被踢的一方收到的也是这个事件，原因标为 kicked。
+        "room.closed": (payload) =>
+          payload.reason === "kicked" ? ROOM_ENDED_TEXT.kicked : ROOM_ENDED_TEXT.closed,
         // 席位已被新标签页接管，本标签页同样必须退回大厅。
-        "session.replaced": "您的连接已被新标签页替代",
+        "session.replaced": ROOM_ENDED_TEXT.replaced,
       },
       extra: {
         "game.disconnectDecisionRequested": () =>

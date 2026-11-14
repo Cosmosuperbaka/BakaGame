@@ -547,9 +547,10 @@ describe("卧底直链入房的分支与去向（补充）", () => {
     view.unmount();
   });
   it.each([
-    ["room.closed", "房间已关闭"],
-    ["session.replaced", "您的连接已被新标签页替代"],
-  ])("入房之后收到 %s：提示并替换回大厅", async (event, text) => {
+    ["room.closed", {}, "房间已关闭"],
+    ["room.closed", { reason: "kicked" }, "你已被移出房间"],
+    ["session.replaced", {}, "当前席位已在另一个标签页接管"],
+  ])("入房之后收到 %s %o：提示并替换回大厅", async (event, extra, text) => {
     const dispose = initWhoIsFakerWs();
     send.mockImplementation(async (type: string) => {
       if (type !== "room.join") return undefined;
@@ -560,7 +561,11 @@ describe("卧底直链入房的分支与去向（补充）", () => {
     await waitFor(() => expect(screen.queryByText("正在加入房间...")).toBeNull());
     act(() =>
       listeners.forEach((handler) =>
-        handler({ type: "event", event, payload: { roomId: "1234" } } as unknown as ServerMessage)
+        handler({
+          type: "event",
+          event,
+          payload: { roomId: "1234", ...extra },
+        } as unknown as ServerMessage)
       )
     );
     expect(toast()).toHaveBeenCalledWith(text, "error");

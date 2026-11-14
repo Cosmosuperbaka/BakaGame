@@ -1165,18 +1165,44 @@ it("房间结束事件带房号且与当前一致时，清该房会话并退房"
   expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
-it.each(["cee.room.closed", "cee.player.kicked", "session.replaced"])(
-  "%s 的提示优先用服务端句子，其次原因，都没有才兜底",
-  (event) => {
-    const shown = () => useCEEStore.getState().toasts.at(-1);
-    handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
-    expect(shown()).toMatchObject({ text: "服务端句子", type: "error" });
-    handleCEEMessage({ type: "event", event, payload: { reason: "原因" } });
-    expect(shown()).toMatchObject({ text: "原因", type: "error" });
-    handleCEEMessage({ type: "event", event, payload: {} });
-    expect(shown()).toMatchObject({ text: "房间会话已结束，请重新加入", type: "error" });
-  }
-);
+it.each([
+  ["cee.room.closed", "房间已关闭"],
+  ["cee.player.kicked", "你已被移出房间"],
+  ["session.replaced", "当前席位已在另一个标签页接管"],
+])("增强房的 %s 与另两款同一句，不用服务端句子", (event, text) => {
+  const shown = () => useCEEStore.getState().toasts.at(-1);
+  useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot });
+  handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
+  expect(shown()).toMatchObject({ text, type: "error" });
+});
+it.each([
+  ["cee.room.closed", "房间已关闭"],
+  ["cee.player.kicked", "你已被移出房间"],
+  ["session.replaced", "当前席位已在另一个标签页接管"],
+])("原版房的 %s 优先用服务端句子，其次原因，都没有才用同语义的那一句", (event, text) => {
+  const shown = () => useCEEStore.getState().toasts.at(-1);
+  const original = { ...snapshot, source: "original" as const };
+  const enter = () =>
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot: original });
+  enter();
+  handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
+  expect(shown()).toMatchObject({ text: "服务端句子", type: "error" });
+  enter();
+  handleCEEMessage({ type: "event", event, payload: { reason: "原因" } });
+  expect(shown()).toMatchObject({ text: "原因", type: "error" });
+  enter();
+  handleCEEMessage({ type: "event", event, payload: {} });
+  expect(shown()).toMatchObject({ text, type: "error" });
+});
+it("原版房的结束事件自带来源标记时，即使本地还没有快照也用服务端句子", () => {
+  const shown = () => useCEEStore.getState().toasts.at(-1);
+  handleCEEMessage({
+    type: "event",
+    event: "cee.room.closed",
+    payload: { source: "original", reason: "原版房间已关闭" },
+  });
+  expect(shown()).toMatchObject({ text: "原版房间已关闭", type: "error" });
+});
 it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
   const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
     if (command === "cee.room.requestSync") return new Promise<never>(() => {});
@@ -1438,12 +1464,10 @@ describe("CEE 提示行为", () => {
     expect(shownToasts().map((t) => t.text)).toEqual(["二", "三", "四"]);
   });
 
-  it("房间结束没有服务端句子时用兜底文案，按默认五秒消失", () => {
+  it("被移出房间的提示按默认五秒消失", () => {
     useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot });
     handleCEEMessage({ type: "event", event: "cee.player.kicked", payload: {} });
-    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([
-      ["房间会话已结束，请重新加入", "error"],
-    ]);
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([["你已被移出房间", "error"]]);
     vi.advanceTimersByTime(4999);
     expect(shownToasts()).toHaveLength(1);
     vi.advanceTimersByTime(1);
