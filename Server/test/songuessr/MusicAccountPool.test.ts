@@ -1,4 +1,3 @@
-import { AggregatedMusicProvider } from "../../src/infrastructure/music/AggregatedMusicProvider";
 import {
   MUSIC_POOL_COOLDOWN_MS,
   MUSIC_POOL_MAX_COOLDOWN_MS,
@@ -23,6 +22,7 @@ import {
   songs,
   startRound,
 } from "./Fixtures";
+import { createAggregatedProvider } from "../support/AggregatedProviders";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   beginMusicAuthentication,
@@ -555,33 +555,10 @@ describe("SonGuessrService", () => {
     await createRoom(service, host);
     const hostSeat = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "同房玩家");
-    await execute(service, guest, {
-      id: "ready",
-      type: "song.player.setReady",
-      roomId: "1234",
-      payload: { ready: true },
-    });
-    await execute(service, host, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "1234",
-      payload: {},
-    });
-    await execute(service, host, {
-      id: "choose",
-      type: "song.game.chooseSubmitter",
-      roomId: "1234",
-      payload: { playerId: hostSeat.playerId },
-    });
 
-    await expect(
-      execute(service, host, {
-        id: "submit",
-        type: "song.game.submitSong",
-        roomId: "1234",
-        payload: { songId: "answer" },
-      })
-    ).rejects.toMatchObject({ code: "MUSIC_LOGIN_RISK" });
+    await expect(startRound(service, host, guest, hostSeat.playerId)).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_RISK",
+    });
 
     await execute(service, host, {
       id: "sync",
@@ -655,33 +632,10 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { cookie: "MUSIC_U=guest-cookie" },
     });
-    await execute(service, guest, {
-      id: "ready",
-      type: "song.player.setReady",
-      roomId: "1234",
-      payload: { ready: true },
-    });
-    await execute(service, host, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "1234",
-      payload: {},
-    });
-    await execute(service, host, {
-      id: "choose",
-      type: "song.game.chooseSubmitter",
-      roomId: "1234",
-      payload: { playerId: hostSeat.playerId },
-    });
 
-    await expect(
-      execute(service, host, {
-        id: "submit",
-        type: "song.game.submitSong",
-        roomId: "1234",
-        payload: { songId: "answer" },
-      })
-    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+    await expect(startRound(service, host, guest, hostSeat.playerId)).rejects.toMatchObject({
+      code: "MUSIC_SESSION_INVALID",
+    });
 
     await execute(service, host, {
       id: "sync",
@@ -747,10 +701,7 @@ describe("SonGuessrService", () => {
         return [{ ...songs.wrong, id: "qq:2001" }];
       },
     };
-    const aggregated = new AggregatedMusicProvider({
-      neteaseProvider: neteaseMock,
-      qqProvider: qqMock,
-    });
+    const aggregated = createAggregatedProvider({ netease: neteaseMock, qq: qqMock });
     const service = new SonGuessrService({ musicProvider: aggregated });
     const host = connection(service, "degrade-host");
     const guest = connection(service, "degrade-guest");
@@ -814,10 +765,7 @@ describe("SonGuessrService", () => {
         return [];
       },
     };
-    const aggregated = new AggregatedMusicProvider({
-      neteaseProvider: neteaseMock,
-      qqProvider: qqMock,
-    });
+    const aggregated = createAggregatedProvider({ netease: neteaseMock, qq: qqMock });
     const service = new SonGuessrService({ musicProvider: aggregated });
     const host = connection(service, "renew-host");
     const guest = connection(service, "renew-guest");
@@ -891,10 +839,7 @@ describe("SonGuessrService", () => {
         return [];
       },
     };
-    const aggregated = new AggregatedMusicProvider({
-      neteaseProvider: neteaseMock,
-      qqProvider: qqMock,
-    });
+    const aggregated = createAggregatedProvider({ netease: neteaseMock, qq: qqMock });
     const service = new SonGuessrService({
       musicProvider: aggregated,
       now: () => now,
@@ -947,10 +892,7 @@ describe("SonGuessrService", () => {
       },
     };
     const service = new SonGuessrService({
-      musicProvider: new AggregatedMusicProvider({
-        neteaseProvider: { ...provider, search: async () => [] },
-        qqProvider: qqMock,
-      }),
+      musicProvider: createAggregatedProvider({ netease: { search: async () => [] }, qq: qqMock }),
       now: () => now,
       // 续期间隔大于巡检扫描周期：扫描会跑，但没到期的号不该被续。
       musicSessionRefreshIntervalMs: 15 * minute,
@@ -1017,10 +959,7 @@ describe("SonGuessrService", () => {
       },
       search: async () => [],
     };
-    const aggregated = new AggregatedMusicProvider({
-      neteaseProvider: neteaseMock,
-      qqProvider: qqMock,
-    });
+    const aggregated = createAggregatedProvider({ netease: neteaseMock, qq: qqMock });
     const service = new SonGuessrService({
       musicProvider: aggregated,
       now: () => now,
@@ -1068,10 +1007,7 @@ describe("SonGuessrService", () => {
       }),
       search: async () => [{ ...songs.answer, id: "qq:2001" }],
     };
-    const aggregated = new AggregatedMusicProvider({
-      neteaseProvider: neteaseMock,
-      qqProvider: qqMock,
-    });
+    const aggregated = createAggregatedProvider({ netease: neteaseMock, qq: qqMock });
     const service = new SonGuessrService({ musicProvider: aggregated });
     const host = connection(service, "qq-only-host");
     const guest = connection(service, "qq-only-guest");
@@ -1223,32 +1159,13 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { cookie: "qm_keyst=qq-vip", platform: "qq" },
     });
-    for (const client of [freeGuest, vipGuest]) {
-      await execute(service, client, {
-        id: `ready-${client.record.id}`,
-        type: "song.player.setReady",
-        roomId: "1234",
-        payload: { ready: true },
-      });
-    }
-    await execute(service, host, {
-      id: "start",
-      type: "song.game.start",
+    await execute(service, vipGuest, {
+      id: "ready-vip",
+      type: "song.player.setReady",
       roomId: "1234",
-      payload: {},
+      payload: { ready: true },
     });
-    await execute(service, host, {
-      id: "choose",
-      type: "song.game.chooseSubmitter",
-      roomId: "1234",
-      payload: { playerId: hostSeat.playerId },
-    });
-    await execute(service, host, {
-      id: "submit",
-      type: "song.game.submitSong",
-      roomId: "1234",
-      payload: { songId: "qq:9001" },
-    });
+    await startRound(service, host, freeGuest, hostSeat.playerId, "qq:9001");
 
     await execute(service, vipGuest, {
       id: "audio-failed",
@@ -1441,31 +1358,7 @@ describe("SonGuessrService", () => {
     await createRoom(service, host);
     await joinRoom(service, guest, "玩家");
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
-    await execute(service, guest, {
-      id: "ready-before-vip-check",
-      type: "song.player.setReady",
-      roomId: "1234",
-      payload: { ready: true },
-    });
-    await execute(service, host, {
-      id: "start-before-vip-check",
-      type: "song.game.start",
-      roomId: "1234",
-      payload: {},
-    });
-    await execute(service, host, {
-      id: "choose-before-vip-check",
-      type: "song.game.chooseSubmitter",
-      roomId: "1234",
-      payload: { playerId: hostState.playerId },
-    });
-
-    const submitted = await execute(service, host, {
-      id: "submit-vip-song-without-vip",
-      type: "song.game.submitSong",
-      roomId: "1234",
-      payload: { songId: "answer" },
-    });
+    const submitted = await startRound(service, host, guest, hostState.playerId);
     expect(submitted).toMatchObject({ roundNumber: 1 });
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
   });
@@ -1487,31 +1380,7 @@ describe("SonGuessrService", () => {
     await createRoom(service, host);
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     await joinRoom(service, guest, "玩家");
-    await execute(service, guest, {
-      id: "ready",
-      type: "song.player.setReady",
-      roomId: "1234",
-      payload: { ready: true },
-    });
-    await execute(service, host, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "1234",
-      payload: {},
-    });
-    await execute(service, host, {
-      id: "choose",
-      type: "song.game.chooseSubmitter",
-      roomId: "1234",
-      payload: { playerId: hostState.playerId },
-    });
-
-    await execute(service, host, {
-      id: "submit",
-      type: "song.game.submitSong",
-      roomId: "1234",
-      payload: { songId: "answer" },
-    });
+    await startRound(service, host, guest, hostState.playerId);
 
     // 第一次用池内账号，被限流归还后池子已把它冷却，重试落到匿名出口。
     expect(cookies).toEqual(["MUSIC_U=test-host", undefined]);

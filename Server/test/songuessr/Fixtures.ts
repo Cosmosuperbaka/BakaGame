@@ -175,7 +175,7 @@ export const startRound = async (
     roomId: "1234",
     payload: { playerId: submitterPlayerId },
   });
-  await execute(service, host, {
+  return execute(service, host, {
     id: "submit",
     type: "song.game.submitSong",
     roomId: "1234",
