@@ -1,9 +1,10 @@
 import { Elysia } from "elysia";
 import { AppError } from "../../domain/Errors";
+import { PublicStatusSnapshotSchema } from "../../shared/PublicStatusSchemas";
 import type { PublicStatusSnapshot } from "../../shared/Status";
 import { resolveClientIp } from "../ClientIp";
 import type { HandshakeLease, WsHandshakeQuota } from "../WsHandshakeQuota";
-import { snapshotSchema, type StatusAggregator } from "./Status";
+import type { StatusAggregator } from "./Status";
 
 /**
  * 推送间隔与快照缓存同值：每个间隔最多触发一轮真实探测，
@@ -67,7 +68,7 @@ export const statusWsRoutes = ({
   };
 
   return new Elysia({ name: "public-status-ws", normalize: false }).ws("/api/status/ws", {
-    response: snapshotSchema,
+    response: PublicStatusSnapshotSchema,
     // Origin 与停机闸在全局 onRequest 里统一判定，这里只占来源名额：拒绝必须 throw（返回值被忽略）。
     upgrade: (context: {
       request: Request;

@@ -1,4 +1,4 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import {
   MockExternalStatusProbe,
   type ExternalMonitorReading,
@@ -20,6 +20,12 @@ import {
   type PublicStatusLevel,
   type PublicStatusSnapshot,
 } from "../../shared/Status";
+import {
+  PublicStatusEventsSchema,
+  PublicStatusHistorySchema,
+  PublicStatusRealtimeSchema,
+  PublicStatusSnapshotSchema,
+} from "../../shared/PublicStatusSchemas";
 
 export interface StatusProbeDependencies {
   /** 后端进程自身是否可服务；停机中返回 false。 */
@@ -275,104 +281,6 @@ export const startStatusSampler = ({
   return () => clearInterval(timer);
 };
 
-/**
- * 组件白名单在响应 schema 里逐字写一遍：Elysia 要按字面量推断返回类型，
- * 由常量 map 出来的联合到这里会退化成 `string`，白名单就形同虚设。
- * `Status.test.ts` 用 `PUBLIC_STATUS_COMPONENT_IDS` 反向核对这份清单，两边不会各写各的。
- */
-const componentIdSchema = t.Union([
-  t.Literal("frontend"),
-  t.Literal("backend"),
-  t.Literal("bangumi"),
-  t.Literal("qqmusic"),
-  t.Literal("netease"),
-  t.Literal("qq"),
-  t.Literal("rooms"),
-  t.Literal("search"),
-  t.Literal("dataset"),
-  t.Literal("images"),
-]);
-
-const levelSchema = t.Union([
-  t.Literal("operational"),
-  t.Literal("degraded"),
-  t.Literal("unknown"),
-]);
-
-export const snapshotSchema = t.Object({
-  observedAt: t.Number(),
-  level: levelSchema,
-  version: t.String(),
-  components: t.Array(
-    t.Object({ id: componentIdSchema, level: levelSchema, latencyMs: t.Nullable(t.Number()) })
-  ),
-});
-
-const historySchema = t.Object({
-  days: t.Number(),
-  generatedAt: t.Number(),
-  entries: t.Array(
-    t.Object({
-      id: componentIdSchema,
-      uptime: t.Array(
-        t.Object({
-          days: t.Number(),
-          ratio: t.Nullable(t.Number()),
-        })
-      ),
-      cells: t.Array(
-        t.Object({
-          day: t.String(),
-          total: t.Number(),
-          ratio: t.Nullable(t.Number()),
-          level: levelSchema,
-          latencyMs: t.Nullable(t.Number()),
-        })
-      ),
-      latencyMs: t.Nullable(t.Number()),
-    })
-  ),
-});
-
-const realtimeSchema = t.Object({
-  intervalMs: t.Number(),
-  windowMs: t.Number(),
-  generatedAt: t.Number(),
-  entries: t.Array(
-    t.Object({
-      id: componentIdSchema,
-      uptime: t.Nullable(t.Number()),
-      cells: t.Array(
-        t.Object({
-          start: t.Number(),
-          total: t.Number(),
-          ratio: t.Nullable(t.Number()),
-          level: levelSchema,
-          latencyMs: t.Nullable(t.Number()),
-        })
-      ),
-    })
-  ),
-});
-
-const eventSchema = t.Object({
-  id: t.Number(),
-  kind: t.Union([t.Literal("incident"), t.Literal("maintenance")]),
-  title: t.String(),
-  body: t.String(),
-  status: t.String(),
-  components: t.Array(componentIdSchema),
-  startedAt: t.Number(),
-  plannedEndAt: t.Nullable(t.Number()),
-  resolvedAt: t.Nullable(t.Number()),
-  updatedAt: t.Number(),
-});
-
-const eventsSchema = t.Object({
-  generatedAt: t.Number(),
-  events: t.Array(eventSchema),
-});
-
 /** 公开事件列表：进行中的一律返回，已结束的只看近一个月；排序留给页面。 */
 const readPublicEvents = async (
   events: StatusEventRepository,
@@ -426,7 +334,7 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
         description:
           "返回前端、后端、四个上游接口（含当前延迟）与本项目内部各能力的归一化状态。只暴露白名单字段，不含地址、容器名、凭据或内部拓扑。",
       },
-      response: snapshotSchema,
+      response: PublicStatusSnapshotSchema,
     }
   );
 
@@ -450,7 +358,7 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
         summary: "公开站点状态历史",
         description: "按北京时间自然日聚合的可用率窗口与日格，覆盖最近 30 天。含日均延迟。",
       },
-      response: historySchema,
+      response: PublicStatusHistorySchema,
     }
   );
 
@@ -469,7 +377,7 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
         description:
           "按采样间隔（3 分钟）聚合的近 6 小时格子：可用率、等级与平均延迟，只含本环境的数据。",
       },
-      response: realtimeSchema,
+      response: PublicStatusRealtimeSchema,
     }
   );
 
@@ -491,7 +399,7 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
         description:
           "进行中的故障事件与维护窗口一律返回，已结束的回看一个月；正文与管理操作不出现在这个接口。",
       },
-      response: eventsSchema,
+      response: PublicStatusEventsSchema,
     }
   );
 };
