@@ -7,29 +7,49 @@
 //! 单独起一个回环端口并把 WebView2 的 proxy 指过来，是为了让 hosts 被污染时页面本身
 //! 也能打开，而不只是壳自己的三趟通道证明请求。
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::httpdns::HttpDnsResolver;
 
-const HEADER_LIMIT_BYTES: usize = 16 * 1024;
+/// CONNECT 请求头只有几百字节，上限给足余量即可；与安卓壳取同一个值
+const HEADER_LIMIT_BYTES: usize = 8 * 1024;
 const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// 同时存在的连接数上限（含读头阶段与已建立的隧道）。Chromium 对单个代理的并发连接
+/// 本身就有限（量级几十），留 4 倍余量，页面正常使用不会碰到，只挡失控的本机连接
+const MAX_CONNECTIONS: usize = 128;
 
 /// 启动隧道并返回回环地址；调用方把它交给 `WebviewWindowBuilder::proxy_url`。
 pub fn start(resolver: Arc<HttpDnsResolver>) -> std::io::Result<SocketAddr> {
+    start_with_limit(resolver, MAX_CONNECTIONS)
+}
+
+fn start_with_limit(
+    resolver: Arc<HttpDnsResolver>,
+    max_connections: usize,
+) -> std::io::Result<SocketAddr> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     let address = listener.local_addr()?;
+    let active = Arc::new(AtomicUsize::new(0));
     std::thread::Builder::new()
         .name("baka-dns-proxy".to_string())
         .spawn(move || {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
+                        // 占位在接受线程里同步完成：这样连接数在新连接被处理之前就已计入，
+                        // 上限不会被「线程还没起来」的间隙冲破
+                        let Some(slot) = ConnectionSlot::acquire(&active, max_connections) else {
+                            let _ = write_response(&stream, "503 Service Unavailable");
+                            continue;
+                        };
                         let resolver = resolver.clone();
                         std::thread::spawn(move || {
+                            let _slot = slot;
                             if let Err(err) = handle(stream, resolver) {
                                 eprintln!("[baka-dns-proxy] {err}");
                             }
@@ -45,6 +65,63 @@ pub fn start(resolver: Arc<HttpDnsResolver>) -> std::io::Result<SocketAddr> {
     Ok(address)
 }
 
+/// 并发连接名额：持有期间计数加一，释放（含处理线程 panic）时自动减一。
+struct ConnectionSlot(Arc<AtomicUsize>);
+
+impl ConnectionSlot {
+    fn acquire(active: &Arc<AtomicUsize>, max: usize) -> Option<Self> {
+        // 只有接受线程调用，不存在并发竞争；先加后判，超限就退回
+        if active.fetch_add(1, Ordering::AcqRel) >= max {
+            active.fetch_sub(1, Ordering::AcqRel);
+            return None;
+        }
+        Some(Self(active.clone()))
+    }
+}
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// 读到请求头结尾，返回请求行。每一行与总量都受 `HEADER_LIMIT_BYTES` 约束：
+/// 先限长再读，没有换行的超长输入读到上限就停，不会无界占用内存。
+fn read_head(reader: &mut BufReader<TcpStream>) -> Result<String, HeadError> {
+    let mut remaining = HEADER_LIMIT_BYTES;
+    let mut request_line = String::new();
+    let mut first = true;
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .by_ref()
+            .take(remaining as u64)
+            .read_line(&mut line)
+            .map_err(|err| HeadError::Io(format!("读取请求头失败：{err}")))?;
+        if read == 0 {
+            break;
+        }
+        if !line.ends_with('\n') && read >= remaining {
+            return Err(HeadError::TooLarge);
+        }
+        remaining -= read;
+        if first {
+            request_line = line;
+            first = false;
+            continue;
+        }
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+    }
+    Ok(request_line)
+}
+
+enum HeadError {
+    TooLarge,
+    Io(String),
+}
+
 fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), String> {
     stream
         .set_read_timeout(Some(HEADER_TIMEOUT))
@@ -54,25 +131,14 @@ fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), S
             .try_clone()
             .map_err(|err| format!("复制客户端连接失败：{err}"))?,
     );
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .map_err(|err| format!("读取请求行失败：{err}"))?;
-    let mut consumed = request_line.len();
-    loop {
-        let mut line = String::new();
-        let read = reader
-            .read_line(&mut line)
-            .map_err(|err| format!("读取请求头失败：{err}"))?;
-        if read == 0 || line == "\r\n" || line == "\n" {
-            break;
-        }
-        consumed += read;
-        if consumed > HEADER_LIMIT_BYTES {
+    let request_line = match read_head(&mut reader) {
+        Ok(line) => line,
+        Err(HeadError::TooLarge) => {
             let _ = write_response(&stream, "431 Request Header Fields Too Large");
             return Err("请求头过大，已断开".to_string());
         }
-    }
+        Err(HeadError::Io(message)) => return Err(message),
+    };
 
     let leftover = reader.buffer().to_vec();
     let mut parts = request_line.split_whitespace();
@@ -224,16 +290,19 @@ mod tests {
             }
         });
 
-        let dns = mock_httpdns();
-        let resolver = Arc::new(HttpDnsResolver::new(Config {
+        (start(test_resolver()).unwrap(), echo_port)
+    }
+
+    /// HTTPDNS 指向本机的解析器：受管域名解析成 127.0.0.1。
+    fn test_resolver() -> Arc<HttpDnsResolver> {
+        Arc::new(HttpDnsResolver::new(Config {
             app_id: "12345".to_string(),
             secret_key: KEY.to_string(),
             token: String::new(),
-            endpoint: dns,
+            endpoint: mock_httpdns(),
             domains: vec![HOST.to_string()],
             timeout: Duration::from_secs(1),
-        }));
-        (start(resolver).unwrap(), echo_port)
+        }))
     }
 
     /// 读到响应头结尾并断言是 200。
@@ -279,6 +348,55 @@ mod tests {
         let mut reply = [0u8; 4];
         client.read_exact(&mut reply).unwrap();
         assert_eq!(&reply, b"PING");
+    }
+
+    /// 没有换行的超长请求头不能让隧道无界读取：超过上限就断开（能回 431 则回 431）。
+    #[test]
+    fn oversized_header_without_newline_is_rejected() {
+        let (proxy, _) = proxy_to_echo();
+        let mut client = TcpStream::connect(proxy).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.write_all(&vec![b'a'; HEADER_LIMIT_BYTES * 2]).unwrap();
+        let mut response = String::new();
+        match client.read_to_string(&mut response) {
+            Ok(_) => assert!(response.starts_with("HTTP/1.1 431"), "{response}"),
+            // 服务端关闭时还有未读数据，回 RST 也是「已断开」；超时才是还在无界等待
+            Err(err) => assert!(
+                matches!(
+                    err.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ),
+                "隧道没有在上限处断开：{err}"
+            ),
+        }
+    }
+
+    /// 并发连接数有上限：占满之后的新连接立即得到 503，释放后恢复接受。
+    #[test]
+    fn connections_beyond_the_limit_are_refused_and_released() {
+        let proxy = start_with_limit(test_resolver(), 2).unwrap();
+        let mut held: Vec<TcpStream> = (0..2).map(|_| TcpStream::connect(proxy).unwrap()).collect();
+
+        let mut refused = TcpStream::connect(proxy).unwrap();
+        refused.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut response = String::new();
+        let _ = refused.read_to_string(&mut response);
+        assert!(response.starts_with("HTTP/1.1 503"), "{response}");
+
+        // 放掉一条占用后，新连接重新被接受（处理线程退出需要一点时间，轮询等待）
+        held.pop();
+        let mut accepted = false;
+        for _ in 0..30 {
+            let mut probe = TcpStream::connect(proxy).unwrap();
+            probe.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+            let mut text = String::new();
+            let _ = probe.read_to_string(&mut text);
+            if !text.starts_with("HTTP/1.1 503") {
+                accepted = true;
+                break;
+            }
+        }
+        assert!(accepted, "释放占用后仍在返回 503");
     }
 
     fn mock_httpdns() -> String {
