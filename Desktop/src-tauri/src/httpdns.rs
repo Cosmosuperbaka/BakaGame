@@ -426,6 +426,8 @@ fn get(endpoint: &str, query: &str, timeout: Duration) -> Result<String, String>
         .to_socket_addrs()
         .map_err(|err| format!("连接 HTTPDNS 服务失败：{err}"))?
         .collect();
+    // 整个往返（连接、握手、收发）共用一个截止时间：连接要等多久、握手慢不慢都算在里面
+    let deadline = Instant::now() + timeout.saturating_mul(2);
     let mut last_error = String::from("HTTPDNS 地址没有可用 IP");
     for address in addresses {
         let stream = match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
@@ -440,12 +442,13 @@ fn get(endpoint: &str, query: &str, timeout: Duration) -> Result<String, String>
         let result = if parsed.scheme() == "https" {
             let connector = native_tls::TlsConnector::new()
                 .map_err(|err| format!("TLS 初始化失败：{err}"))?;
-            let tls = connector
-                .connect(&host, stream)
-                .map_err(|err| format!("HTTPDNS TLS 握手失败：{err}"))?;
-            send_http(tls, &host, Some(port), &target)
+            // 握手失败只是这个地址不可用，换下一个地址再试，不整体放弃
+            match connector.connect(&host, stream) {
+                Ok(tls) => send_http(tls, &host, Some(port), &target, deadline),
+                Err(err) => Err(format!("HTTPDNS TLS 握手失败：{err}")),
+            }
         } else {
-            send_http(stream, &host, Some(port), &target)
+            send_http(stream, &host, Some(port), &target, deadline)
         };
         match result {
             Ok(body) => return Ok(body),
@@ -460,6 +463,7 @@ fn send_http<S: Read + Write>(
     host: &str,
     port: Option<u16>,
     target: &str,
+    deadline: Instant,
 ) -> Result<String, String> {
     let host_header = match port {
         Some(80) | Some(443) | None => host.to_string(),
@@ -477,6 +481,11 @@ fn send_http<S: Read + Write>(
     let mut response = Vec::new();
     let mut buffer = [0u8; 4096];
     loop {
+        // 单次读超时只管「一次读多久没数据」，慢速滴灌能让每次读都在超时内到达一点数据；
+        // 整个往返的总时限才是兜底，否则它能长期占住查询闸门，让所有受管域名的新解析排队
+        if Instant::now() >= deadline {
+            return Err("HTTPDNS 应答超过总时限".to_string());
+        }
         let read = stream
             .read(&mut buffer)
             .map_err(|err| format!("读取 HTTPDNS 应答失败：{err}"))?;
@@ -488,17 +497,74 @@ fn send_http<S: Read + Write>(
         }
         response.extend_from_slice(&buffer[..read]);
     }
+    parse_response(&response)
+}
+
+/// 解析一个完整的 HTTP 应答：检查状态行，按 `Transfer-Encoding: chunked` 还原分块，
+/// 按 `Content-Length` 校验应答体没有被截断，取出应答体。
+fn parse_response(response: &[u8]) -> Result<String, String> {
     let split = response
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
         .ok_or_else(|| "HTTPDNS 应答缺少响应头".to_string())?;
     let head = String::from_utf8_lossy(&response[..split]);
-    let status = head.lines().next().unwrap_or_default();
+    let mut lines = head.lines();
+    let status = lines.next().unwrap_or_default();
     if !(status.starts_with("HTTP/1.1 200") || status.starts_with("HTTP/1.0 200")) {
         return Err(format!("HTTPDNS 返回非 200：{status}"));
     }
-    String::from_utf8(response[split + 4..].to_vec())
-        .map_err(|err| format!("HTTPDNS 应答不是 UTF-8：{err}"))
+    let mut chunked = false;
+    let mut content_length: Option<usize> = None;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim().to_ascii_lowercase().as_str() {
+            "transfer-encoding" if value.to_ascii_lowercase().contains("chunked") => chunked = true,
+            "content-length" => content_length = value.trim().parse().ok(),
+            _ => {}
+        }
+    }
+    let raw_body = &response[split + 4..];
+    let payload = if chunked {
+        decode_chunked(raw_body)?
+    } else {
+        match content_length {
+            Some(length) if raw_body.len() < length => {
+                return Err("HTTPDNS 应答体被截断".to_string());
+            }
+            Some(length) => raw_body[..length].to_vec(),
+            None => raw_body.to_vec(),
+        }
+    };
+    String::from_utf8(payload).map_err(|err| format!("HTTPDNS 应答不是 UTF-8：{err}"))
+}
+
+/// 还原 `Transfer-Encoding: chunked` 的应答体：十六进制块长（可带 `;扩展`）+ 块数据，
+/// 以长度 0 的块结束，其后的尾部头忽略；任何一块缺失或块后缺 CRLF 都当作损坏
+fn decode_chunked(mut body: &[u8]) -> Result<Vec<u8>, String> {
+    const BAD: &str = "HTTPDNS 分块应答损坏";
+    let mut out = Vec::new();
+    loop {
+        let line_end = body
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .ok_or_else(|| BAD.to_string())?;
+        let size_text = std::str::from_utf8(&body[..line_end]).map_err(|_| BAD.to_string())?;
+        let size_text = size_text.split(';').next().unwrap_or_default().trim();
+        let size = usize::from_str_radix(size_text, 16).map_err(|_| BAD.to_string())?;
+        body = &body[line_end + 2..];
+        if size == 0 {
+            return Ok(out);
+        }
+        // 块长来自对端：用带检查的加法，避免超大块长在加 2 时溢出
+        let end = size.checked_add(2).filter(|end| *end <= body.len());
+        let Some(end) = end.filter(|end| &body[end - 2..*end] == b"\r\n") else {
+            return Err(BAD.to_string());
+        };
+        out.extend_from_slice(&body[..size]);
+        body = &body[end..];
+    }
 }
 
 /// 给 reqwest 用的适配器；返回端口 0，由 hyper 按 URL 方案补 80/443。
@@ -742,5 +808,93 @@ mod tests {
         assert_eq!(addrs[0].ip(), "203.0.113.10".parse::<IpAddr>().unwrap());
         assert_eq!(addrs[0].port(), 0, "端口由 hyper 按 URL 方案补全");
         assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    fn http_200(headers: &str, body: &[u8]) -> Vec<u8> {
+        let mut out = format!("HTTP/1.1 200 OK\r\n{headers}\r\n").into_bytes();
+        out.extend_from_slice(body);
+        out
+    }
+
+    /// 应答改用分块传输时要能还原应答体，而不是把分块框架当原文去解析
+    #[test]
+    fn chunked_response_body_is_decoded() {
+        let body = b"7\r\n1.2.3.4\r\n8;ext=1\r\n;5.6.7.8\r\n4\r\n,120\r\n0\r\nX-Trailer: 1\r\n\r\n";
+        let response = http_200("Transfer-Encoding: chunked\r\nConnection: close\r\n", body);
+        assert_eq!(parse_response(&response).unwrap(), "1.2.3.4;5.6.7.8,120");
+
+        let mixed = http_200("transfer-encoding: Chunked\r\n", b"3\r\nabc\r\n0\r\n\r\n");
+        assert_eq!(parse_response(&mixed).unwrap(), "abc");
+    }
+
+    #[test]
+    fn malformed_chunked_body_is_rejected() {
+        for body in [
+            &b"zz\r\nabc\r\n0\r\n\r\n"[..],
+            b"5\r\nabc",
+            b"3\r\nabcXX0\r\n\r\n",
+            b"3\r\nabc\r\n",
+            b"ffffffffffffffff\r\nabc\r\n0\r\n\r\n",
+        ] {
+            let response = http_200("Transfer-Encoding: chunked\r\n", body);
+            assert!(
+                parse_response(&response).is_err(),
+                "{:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    /// 带 Content-Length 的应答体被截断时不能当成完整应答
+    #[test]
+    fn truncated_content_length_body_is_rejected() {
+        let response = http_200("Content-Length: 10\r\n", b"1.2.3.4");
+        assert!(parse_response(&response).is_err());
+        let exact = http_200("Content-Length: 7\r\n", b"1.2.3.4");
+        assert_eq!(parse_response(&exact).unwrap(), "1.2.3.4");
+        let without = http_200("Connection: close\r\n", b"1.2.3.4");
+        assert_eq!(parse_response(&without).unwrap(), "1.2.3.4");
+    }
+
+    #[test]
+    fn non_200_and_headerless_responses_are_rejected() {
+        assert!(parse_response(b"HTTP/1.1 503 Service Unavailable\r\n\r\n").is_err());
+        assert!(parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 1").is_err());
+    }
+
+    /// 慢速滴灌：每次读都在单次超时内到达一点数据，也必须受整个往返的总时限约束，
+    /// 否则它能长期占住查询闸门，让所有受管域名的新解析排队
+    #[test]
+    fn slow_drip_response_hits_the_total_deadline() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request);
+                std::thread::spawn(move || {
+                    let response = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n1.2.3.4;5.6.7.8";
+                    for byte in response {
+                        if stream.write_all(&[*byte]).is_err() {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                });
+            }
+        });
+        let started = Instant::now();
+        let result = get(
+            &format!("http://{address}/d"),
+            "dn=a",
+            Duration::from_millis(300),
+        );
+        assert!(result.is_err(), "慢速滴灌的应答不该成功返回");
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "总时限没有生效：{:?}",
+            started.elapsed()
+        );
     }
 }
