@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { useActiveTabIntoView, useScrollFade } from "@/hooks/UseScrollFade";
 import { useSearchParams } from "react-router";
-import { ArrowLeft, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
+import { ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { BackToHomeButton } from "@/components/common/BackToHomeButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Seo } from "@/components/common/Seo";
@@ -143,15 +144,7 @@ function AdminPage() {
       />
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
-            onClick={() => void navigate("/")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>返回主页</span>
-          </Button>
+          <BackToHomeButton onClick={() => void navigate("/")} />
           <div className="h-4 w-px shrink-0 bg-border" />
           {/* 与关于页、状态页同构的顶栏，标题同一字号。 */}
           <h1 className="text-lg font-bold sm:text-xl">管理后台</h1>

@@ -6,7 +6,6 @@ import {
   PUBLIC_STATUS_SAMPLE_INTERVAL_MS,
 } from "@bakagame/shared/values";
 import type { PublicStatusComponentId, PublicStatusLevel } from "@bakagame/shared";
-import { ArrowLeft } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
 import { ComponentRow, type RowLatency } from "@/components/status/StatusComponentRow";
 import { StatusEventsSection } from "@/components/status/StatusEventsSection";
@@ -26,7 +25,7 @@ import {
   formatRatio,
 } from "@/components/status/StatusFormat";
 import { Legend, StatusGlyph, SummaryStat } from "@/components/status/StatusReadout";
-import { Button } from "@/components/ui/Button";
+import { BackToHomeButton } from "@/components/common/BackToHomeButton";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useStatusData } from "@/components/status/UseStatusData";
@@ -120,15 +119,7 @@ export default function StatusPage() {
       />
       <header>
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 py-3 md:py-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
-            onClick={() => void navigate("/")}
-          >
-            <ArrowLeft aria-hidden="true" />
-            <span>返回主页</span>
-          </Button>
+          <BackToHomeButton onClick={() => void navigate("/")} />
           <h1 className="flex flex-1 items-center gap-2 text-lg font-bold sm:text-xl">服务状态</h1>
         </div>
       </header>

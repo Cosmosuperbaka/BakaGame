@@ -1,9 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useActiveTabIntoView, useScrollFade } from "@/hooks/UseScrollFade";
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
 import { BrandIcon } from "@/components/common/BrandIcon";
 import { Button } from "@/components/ui/Button";
+import { BackToHomeButton } from "@/components/common/BackToHomeButton";
 import { Sheet } from "@/components/ui/Sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
@@ -76,8 +76,8 @@ function HeaderIconButton({
         <Button
           asChild
           variant="ghost"
-          size="icon"
-          className={cn("h-8 w-8 shrink-0 text-muted-foreground", className)}
+          size="icon-sm"
+          className={cn("shrink-0 text-muted-foreground", className)}
         >
           {children}
         </Button>
@@ -142,15 +142,7 @@ export function CreditsView({
     <div className="flex h-full min-h-0 flex-col overflow-clip">
       <header className="shrink-0 border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-6 py-3 md:px-10 md:py-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
-            onClick={onBack}
-          >
-            <ArrowLeft aria-hidden="true" />
-            <span>返回主页</span>
-          </Button>
+          <BackToHomeButton onClick={onBack} />
           <div aria-hidden="true" className="hidden h-4 w-px shrink-0 bg-border sm:block" />
           <h1 className="text-lg font-bold sm:text-xl">关于项目</h1>
           <div className="ml-auto flex min-w-0 items-center gap-2">

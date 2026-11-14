@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, CircleAlert, RotateCw } from "lucide-react";
+import { CircleAlert, RotateCw } from "lucide-react";
 import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { Button } from "@/components/ui/Button";
+import { BackToHomeButton } from "@/components/common/BackToHomeButton";
 import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { CEERankedGameRecap } from "@/components/cee/ranked/CEERankedGameRecap";
 import { CEERankedGate } from "@/components/cee/ranked/CEERankedGate";
@@ -149,16 +150,7 @@ export default function CEERankedPage() {
       />
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
-            disabled={inSeries}
-            onClick={() => void navigate("/")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>返回主页</span>
-          </Button>
+          <BackToHomeButton disabled={inSeries} onClick={() => void navigate("/")} />
           <div className="h-4 w-px shrink-0 bg-border" />
           <h1 className="flex min-w-0 items-center gap-2 text-lg font-bold sm:text-2xl">
             <span className="min-w-0 truncate">排位赛</span>
