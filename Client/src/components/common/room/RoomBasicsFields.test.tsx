@@ -11,6 +11,7 @@ import { SettingsReadOnly } from "@/components/common/room/settings/Layout";
 import { FakerWaitingPhase } from "@/components/whoisfaker/phases/FakerWaitingPhase";
 import { SongRoomSettings } from "@/components/songuessr/settings/SongSettingsPanels";
 import { CEEWaiting } from "@/components/cee/CEEWaiting";
+import { canSaveRoomBasics, roomBasicsPayload } from "@/components/common/room/RoomBasicsFields";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -330,5 +331,43 @@ describe("CEE 等待页 · 房间基础字段逐字快照", () => {
     expect(roomAccordionHtml()).toMatchInlineSnapshot(
       `"<div class="overflow-hidden rounded-md border bg-panel"><button type="button" aria-expanded="true" aria-labelledby="«id0»" class="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2" aria-controls="«id1»"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg><span class="min-w-0 flex-1"><span class="flex flex-wrap items-center gap-x-2 gap-y-1"><span id="«id0»" class="font-serif text-sm font-medium">房间设置</span></span></span><span aria-hidden="true" class="inline-flex mt-0.5 text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-4 w-4" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></span></button><div id="«id1»" class=""><div class="border-t px-4 py-4"><div class="[&amp;>*+*]:mt-4"><div class="grid gap-2"><label class="text-sm peer-disabled:cursor-not-allowed peer-disabled:opacity-70 font-serif leading-snug font-normal" for="«id2»">房间名称</label><div class="flex gap-2"><input class="field-frame flex h-9 w-full rounded-md bg-background px-3 py-1 text-sm placeholder:text-muted-foreground file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground disabled:cursor-not-allowed disabled:opacity-50" id="«id2»" maxlength="30" placeholder="输入房间名称" type="text" value="结束乐队应援团"></div></div><div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><div class="min-w-0 flex-1 basis-40"><div class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"></path><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"></path><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"></path><path d="m2 2 20 20"></path></svg><label class="text-sm peer-disabled:cursor-not-allowed peer-disabled:opacity-70 font-serif leading-snug font-normal" for="«id3»">不在大厅显示</label></div><p id="«id4»" class="mt-1 text-xs leading-relaxed text-muted-foreground">开启后不在大厅列出，凭链接仍可进入。</p></div><div class="ml-auto flex shrink-0 items-center"><button type="button" role="switch" aria-checked="true" data-state="checked" value="on" class="group peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input enabled:data-[state=checked]:hover:bg-primary/90 enabled:data-[state=unchecked]:hover:bg-accent" id="«id3»" aria-describedby="«id4»"><span data-state="checked" class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm ring-0 dark:data-[state=unchecked]:bg-foreground/75 transition-transform duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap) data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 group-active:scale-90"></span></button></div></div></div></div></div></div>"`
     );
+  });
+});
+
+describe("房间基础字段的保存口径", () => {
+  it("空名称交给服务端缺省，公开房把密码清成空串", () => {
+    expect(
+      roomBasicsPayload({ name: "", isPrivate: false, password: "旧密码", allowSpectators: true })
+    ).toEqual({ name: undefined, visibility: "public", password: "", allowSpectators: true });
+  });
+
+  it("私密房带上新密码，留空表示保留当前密码", () => {
+    expect(
+      roomBasicsPayload({ name: "房间", isPrivate: true, password: "abc", allowSpectators: false })
+    ).toEqual({ name: "房间", visibility: "private", password: "abc", allowSpectators: false });
+    expect(
+      roomBasicsPayload({ name: "房间", isPrivate: true, password: "", allowSpectators: false })
+        .password
+    ).toBeUndefined();
+  });
+
+  it("私密房间必须有密码：还没有、也没填新的就不保存", () => {
+    const draft = { name: "房间", isPrivate: true, password: "  ", allowSpectators: true };
+    expect(canSaveRoomBasics(draft, false)).toBe(false);
+    expect(canSaveRoomBasics(draft, true)).toBe(true);
+    expect(canSaveRoomBasics({ ...draft, password: "abc" }, false)).toBe(true);
+    expect(canSaveRoomBasics({ ...draft, isPrivate: false }, false)).toBe(true);
+  });
+});
+
+describe("CEE 等待页 · 私密开关", () => {
+  // 字段块用「是否私密」表达，CEE 草稿存的是可见性：翻译方向错了开关就点不动。
+  it("房主点开私密开关后开关变为开启", () => {
+    renderCEE();
+    openRoomAccordion();
+    const toggle = () => screen.getByRole("switch", { name: "私密房间" });
+    expect(toggle()).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle());
+    expect(toggle()).toHaveAttribute("aria-checked", "true");
   });
 });

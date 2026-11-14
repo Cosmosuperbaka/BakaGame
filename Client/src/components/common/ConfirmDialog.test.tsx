@@ -298,3 +298,32 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("button", { name: "打开" })).toHaveFocus();
   });
 });
+
+describe("ConfirmDialog 的在途拦截", () => {
+  it("回调返回的请求还没结束时，Esc 与取消钮都关不掉弹窗", async () => {
+    const onOpenChange = vi.fn();
+    let settle: (failure: string | null) => void = () => {};
+    const events = userEvent.setup();
+    render(
+      <ConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        title="标题"
+        description="说明"
+        confirmLabel="确认"
+        onConfirm={() =>
+          new Promise<string | null>((resolve) => {
+            settle = resolve;
+          })
+        }
+      />
+    );
+    await events.click(screen.getByRole("button", { name: "确认" }));
+    await events.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    settle(null);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+});
