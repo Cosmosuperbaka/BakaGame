@@ -95,7 +95,7 @@ export function useCEERoomLifecycle() {
   };
 
   /**
-   * 直链自动进房：没存过名字就用访客名，与另外两个游戏一致，不弹设置用户名。
+   * 直链自动进房：没存过名字就用访客名，不弹设置用户名（卧底与猜歌这时会弹名字框，三款现状不同）。
    * 密码错误、房间已满等业务拒绝在此报出，页面按错误码决定是否转入密码步。
    */
   const autoJoin = async (targetRoomId: string, controller: AbortController) => {

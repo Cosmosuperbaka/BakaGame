@@ -55,7 +55,7 @@ export default function CEERoomPage() {
   }, [lifecycle.error, passwordFailure]);
 
   if (!ready) {
-    // 与另外两个游戏一致：直链进房自动用本地用户名（没存过就取访客名）加入，不再拦「设置用户名」弹窗。
+    // 直链进房自动用本地用户名（没存过就取访客名）加入，不拦「设置用户名」弹窗；卧底与猜歌没存过名字时会弹名字框。
     // 只剩私密房要输密码这一步——是否私密取大厅列表（私密房带锁进大厅）；列表里查不到时
     // （刚转私密）由服务端的缺密码 / 密码错误应答（错误码）把人带到这一步。
     const needsPassword = lifecycle.needsJoin && passwordFailure;
