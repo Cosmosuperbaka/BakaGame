@@ -6,7 +6,7 @@ import type { GameSendCommand } from "@/lib/GameWs";
 import { serverNow } from "./UseServerClock";
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
 import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
-import { createToastSlice, type ToastState } from "./room/ToastSlice";
+import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
   isPermanentRoomError,
@@ -254,7 +254,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         // 状态回调会带原 sessionToken 自动 reconnectRoom 回到原位；
         // 若那局已被丢弃（旧版本服务或停机过久），那一步会收到 SESSION_NOT_FOUND
         // 并走既有的失效分支。这里提前清票据才是真的回不去了。
-        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", 10000);
+        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", SHUTDOWN_TOAST_MS);
       },
     },
   });
@@ -269,7 +269,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   };
   return {
     ...createRoomCoreSlice(set),
-    ...createToastSlice(set, { mode: "queue", defaultType: "info", defaultMs: 3000 }),
+    ...createToastSlice(set, get),
     channelNotices: [],
 
     setRooms: (rooms) => set({ rooms, lobbyReady: true }),

@@ -39,6 +39,7 @@ vi.mock("framer-motion", () => {
   return {
     AnimatePresence: ({ children }: { children: ReactNode }) => children,
     motion: { div: plain("div"), span: plain("span") },
+    useAnimationControls: () => ({ set: () => {}, start: () => Promise.resolve() }),
   };
 });
 
@@ -106,7 +107,7 @@ describe("游戏布局骨架", () => {
     say("轮到你了", "info");
     const { container } = renderLayout(SonGuessrLayout);
     expect(container.innerHTML).toMatchInlineSnapshot(
-      `"<div data-probe="song-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div role="status" aria-live="polite" class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
+      `"<div data-probe="song-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div role="status" aria-live="polite" class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
     );
   });
 
@@ -114,7 +115,7 @@ describe("游戏布局骨架", () => {
     say("轮到你了", "info");
     const { container } = renderLayout(WhoIsFakerLayout);
     expect(container.innerHTML).toMatchInlineSnapshot(
-      `"<div data-probe="faker-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div role="status" aria-live="polite" class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
+      `"<div data-probe="faker-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div role="status" aria-live="polite" class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
     );
   });
 
@@ -122,7 +123,7 @@ describe("游戏布局骨架", () => {
     say("轮到你了", "info");
     const { container } = renderLayout(CEELayout);
     expect(container.innerHTML).toMatchInlineSnapshot(
-      `"<div data-probe="cee-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div role="status" aria-live="polite" class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
+      `"<div data-probe="cee-sound-bridge"></div><p>房间页</p><div role="region" aria-label="通知" class="fixed inset-x-5 top-5 z-toast ml-auto flex w-fit max-w-sm flex-col gap-2 pointer-events-none"><div class="pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg border-primary/40"><div role="status" aria-live="polite" class="flex items-start gap-2 px-4 py-3 bg-primary/10 text-primary"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><p class="min-w-0">轮到你了</p></div></div></div><div data-probe="account-dialogs"></div>"`
     );
   });
 

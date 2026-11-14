@@ -1,4 +1,5 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect } from "react";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { CircleAlert, CircleCheck, Info, type LucideIcon } from "lucide-react";
 import { spring } from "@/lib/motion/Transitions";
 import { toastItem } from "@/lib/motion/NamedMoves";
@@ -8,6 +9,8 @@ export interface ToastItem {
   id: string | number;
   text: string;
   type: "info" | "error" | "success";
+  /** 同一句话重发的次数：每加一次，这条提示原地重播入场并重新播报，不叠出第二条。 */
+  repeat?: number;
 }
 
 /** 每种语义一枚前导图标：状态不只靠底色与字色区分（DesignGuide §3），色弱与灰度下也读得出成败。 */
@@ -28,31 +31,41 @@ export function ToastViewport({ toasts }: { toasts: readonly ToastItem[] }) {
     >
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
-          <motion.div
-            key={t.id}
-            layout
-            variants={toastItem}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ layout: spring.settle }}
-            {...(t.type === "error"
-              ? { role: "alert" }
-              : { role: "status", "aria-live": "polite" as const })}
-            // 外层取不透明的页面底色，状态浅底叠在内层：提示浮在任意内容之上，
-            // 半透明底会让文字对比度随身后内容变化（盖在本人主色气泡上时几乎看不清）。
-            className={cn(
-              "pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg",
-              t.type === "error" && "border-destructive/40",
-              t.type === "success" && "border-success/40",
-              t.type === "info" && "border-primary/40"
-            )}
-          >
-            <ToastBody item={t} />
-          </motion.div>
+          <ToastCard key={t.id} item={t} />
         ))}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ToastCard({ item }: { item: ToastItem }) {
+  const controls = useAnimationControls();
+  const repeat = item.repeat ?? 0;
+  // 首次挂载播入场；同一句话重发时从入场起点再播一遍，读作「又来了一次」，而不是另起一条。
+  useEffect(() => {
+    if (repeat > 0) controls.set("initial");
+    void controls.start("animate");
+  }, [controls, repeat]);
+  return (
+    <motion.div
+      layout
+      variants={toastItem}
+      initial="initial"
+      animate={controls}
+      exit="exit"
+      transition={{ layout: spring.settle }}
+      // 外层取不透明的页面底色，状态浅底叠在内层：提示浮在任意内容之上，
+      // 半透明底会让文字对比度随身后内容变化（盖在本人主色气泡上时几乎看不清）。
+      className={cn(
+        "pointer-events-auto overflow-hidden rounded-md border bg-background text-sm shadow-lg",
+        item.type === "error" && "border-destructive/40",
+        item.type === "success" && "border-success/40",
+        item.type === "info" && "border-primary/40"
+      )}
+    >
+      {/* 播报节点按重发次数换新：内容不变的节点读屏不会再读，换一个新节点才会。 */}
+      <ToastBody key={repeat} item={item} />
+    </motion.div>
   );
 }
 
@@ -61,6 +74,9 @@ function ToastBody({ item }: { item: ToastItem }) {
   const Icon = TOAST_ICONS[item.type];
   return (
     <div
+      {...(item.type === "error"
+        ? { role: "alert" }
+        : { role: "status", "aria-live": "polite" as const })}
       className={cn(
         "flex items-start gap-2 px-4 py-3",
         item.type === "error" && "bg-destructive/10 text-destructive",

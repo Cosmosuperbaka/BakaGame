@@ -1070,7 +1070,7 @@ describe("卧底提示行为", () => {
     vi.useRealTimers();
   });
 
-  it("连续两条不同提示并存，按发出先后排列", () => {
+  it("不同提示并存，按发出先后排列", () => {
     const { showToast } = useWhoIsFakerStore.getState();
     showToast("第一条");
     showToast("第二条", "error");
@@ -1080,24 +1080,27 @@ describe("卧底提示行为", () => {
     ]);
   });
 
-  it("连续两条相同提示各自成条，编号互不相同", () => {
+  it("连续两条相同提示仍是一条，编号不变，重播一次", () => {
     const { showToast } = useWhoIsFakerStore.getState();
     showToast("同一句");
+    const first = shownToasts()[0];
     showToast("同一句");
-    expect(shownToasts().map((t) => t.text)).toEqual(["同一句", "同一句"]);
-    expect(new Set(shownToasts().map((t) => t.id)).size).toBe(2);
+    expect(shownToasts().map((t) => t.text)).toEqual(["同一句"]);
+    expect(shownToasts()[0].id).toBe(first.id);
+    expect(shownToasts()[0].repeat).toBe(1);
   });
 
-  it("默认时长到点消失，多条各自计时", () => {
+  it("普通信息三秒、错误五秒到点消失", () => {
     const { showToast } = useWhoIsFakerStore.getState();
-    showToast("先发的");
-    vi.advanceTimersByTime(1000);
-    showToast("后发的");
-    vi.advanceTimersByTime(1999);
-    expect(shownToasts().map((t) => t.text)).toEqual(["先发的", "后发的"]);
+    showToast("普通信息");
+    showToast("错误", "error");
+    vi.advanceTimersByTime(2999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["普通信息", "错误"]);
     vi.advanceTimersByTime(1);
-    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
-    vi.advanceTimersByTime(1000);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
+    vi.advanceTimersByTime(1999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
+    vi.advanceTimersByTime(1);
     expect(shownToasts()).toEqual([]);
   });
 
@@ -1109,8 +1112,14 @@ describe("卧底提示行为", () => {
     expect(shownToasts()).toEqual([]);
   });
 
-  it("默认类型是 info", () => {
+  it("默认类型是普通信息", () => {
     useWhoIsFakerStore.getState().showToast("默认类型");
     expect(shownToasts().map((t) => t.type)).toEqual(["info"]);
+  });
+
+  it("最多同时三条，再来新的最早一条让位", () => {
+    const { showToast } = useWhoIsFakerStore.getState();
+    for (const text of ["一", "二", "三", "四"]) showToast(text);
+    expect(shownToasts().map((t) => t.text)).toEqual(["二", "三", "四"]);
   });
 });

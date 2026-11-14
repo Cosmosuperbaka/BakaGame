@@ -240,7 +240,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     ...createRoomCoreSlice(set),
     originalAvailable: false,
     source: null,
-    ...createToastSlice(set, { mode: "slot", defaultType: "error", defaultMs: 5000 }),
+    ...createToastSlice(set, get),
     requestLoginAt: 0,
     promptLogin: () => set({ requestLoginAt: Date.now() }),
     reportError: (error) => {

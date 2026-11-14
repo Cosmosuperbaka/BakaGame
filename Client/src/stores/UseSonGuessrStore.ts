@@ -39,7 +39,7 @@ import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessr
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
 import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
 import type { StateSyncChannel } from "./room/StateSyncChannel";
-import { createToastSlice, type ToastState } from "./room/ToastSlice";
+import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
 const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
@@ -282,7 +282,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         runtime.cancelEntry();
         // 原地待命：保留票据与快照。连接恢复后状态回调会带原 sessionToken 自动
         // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
-        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", 10_000);
+        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", SHUTDOWN_TOAST_MS);
       },
     },
   });
@@ -298,7 +298,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
   return {
     ...createRoomCoreSlice(set),
-    ...createToastSlice(set, { mode: "slot", defaultType: "info", defaultMs: 3000 }),
+    ...createToastSlice(set, get),
 
     subscribeLobby: async () => {
       await ws.send("song.lobby.subscribeRooms", {});

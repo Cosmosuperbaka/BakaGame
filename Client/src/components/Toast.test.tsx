@@ -37,6 +37,17 @@ describe("ToastViewport", () => {
     expect(status).toHaveAttribute("aria-live", "polite");
   });
 
+  it("同一句话重发：仍是一条，播报节点换新，读屏再读一遍", () => {
+    const item: ToastItem = { id: 1, text: "轮到你了", type: "info" };
+    const { rerender } = render(<ToastViewport toasts={[item]} />);
+    const before = screen.getByRole("status");
+    rerender(<ToastViewport toasts={[{ ...item, repeat: 1 }]} />);
+    expect(screen.getAllByText("轮到你了")).toHaveLength(1);
+    const after = screen.getByRole("status");
+    expect(after).toHaveTextContent("轮到你了");
+    expect(after).not.toBe(before);
+  });
+
   it("每种语义都带一枚前导图标，状态不只靠颜色区分", () => {
     render(
       <ToastViewport

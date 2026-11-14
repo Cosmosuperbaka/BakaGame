@@ -294,7 +294,7 @@ describe("Songuessr store integration", () => {
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
     expect(useSonGuessrStore.getState().toasts).toEqual([
       {
-        id: "error:原座位已失效，可能掉线过久或房间已重建",
+        id: expect.any(Number),
         text: "原座位已失效，可能掉线过久或房间已重建",
         type: "error",
       },
@@ -521,7 +521,7 @@ describe("Songuessr store integration", () => {
     dispose();
   });
 
-  it("结束事件的提示按默认三秒消失", () => {
+  it("结束事件的提示是错误，按错误的五秒消失", () => {
     useSonGuessrStore.setState({ roomId: "4567", sessionToken: "room-token" });
     const dispose = initSonGuessrWs();
     wsMock.messageHandlers[0]({
@@ -530,7 +530,7 @@ describe("Songuessr store integration", () => {
       payload: { roomId: "4567" },
     });
 
-    vi.advanceTimersByTime(2999);
+    vi.advanceTimersByTime(4999);
     expect(useSonGuessrStore.getState().toasts.map((toast) => toast.text)).toEqual(["房间已关闭"]);
     vi.advanceTimersByTime(1);
     expect(useSonGuessrStore.getState().toasts).toEqual([]);
@@ -1328,27 +1328,36 @@ describe("猜歌提示行为", () => {
     vi.useRealTimers();
   });
 
-  it("连续两条不同提示只留最后一条", () => {
+  it("不同提示并存，按发出先后排列", () => {
     const { showToast } = useSonGuessrStore.getState();
     showToast("第一条");
     showToast("第二条", "error");
-    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([["第二条", "error"]]);
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([
+      ["第一条", "info"],
+      ["第二条", "error"],
+    ]);
   });
 
-  it("连续两条相同提示仍是一条，编号不变", () => {
+  it("连续两条相同提示仍是一条，编号不变，重播一次", () => {
     const { showToast } = useSonGuessrStore.getState();
     showToast("同一句");
     const first = shownToasts()[0];
     showToast("同一句");
     expect(shownToasts().map((t) => t.text)).toEqual(["同一句"]);
     expect(shownToasts()[0].id).toBe(first.id);
-    expect(first.id).toBe("info:同一句");
+    expect(shownToasts()[0].repeat).toBe(1);
   });
 
-  it("默认时长到点消失", () => {
-    useSonGuessrStore.getState().showToast("到点消失");
+  it("普通信息三秒、错误五秒到点消失", () => {
+    const { showToast } = useSonGuessrStore.getState();
+    showToast("普通信息");
+    showToast("错误", "error");
     vi.advanceTimersByTime(2999);
-    expect(shownToasts().map((t) => t.text)).toEqual(["到点消失"]);
+    expect(shownToasts().map((t) => t.text)).toEqual(["普通信息", "错误"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
+    vi.advanceTimersByTime(1999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
     vi.advanceTimersByTime(1);
     expect(shownToasts()).toEqual([]);
   });
@@ -1361,8 +1370,14 @@ describe("猜歌提示行为", () => {
     expect(shownToasts()).toEqual([]);
   });
 
-  it("默认类型是 info", () => {
+  it("默认类型是普通信息", () => {
     useSonGuessrStore.getState().showToast("默认类型");
     expect(shownToasts().map((t) => t.type)).toEqual(["info"]);
+  });
+
+  it("最多同时三条，再来新的最早一条让位", () => {
+    const { showToast } = useSonGuessrStore.getState();
+    for (const text of ["一", "二", "三", "四"]) showToast(text);
+    expect(shownToasts().map((t) => t.text)).toEqual(["二", "三", "四"]);
   });
 });

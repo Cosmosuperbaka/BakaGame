@@ -83,6 +83,8 @@ it("停机不作废在途入房：晚到 ACK 照常落座", async () => {
 afterEach(() => {
   resetCEEStateSync();
   useCEEStore.getState().resetRoom();
+  // 提示是队列：上一条用例留下的提示会排在前面，也会让同一句话变成原地重播。
+  useCEEStore.getState().clearToasts();
   sessionStorage.clear();
   vi.restoreAllMocks();
 });
@@ -1368,47 +1370,57 @@ describe("CEE 提示行为", () => {
     vi.useRealTimers();
   });
 
-  it("连续两条不同提示只留最后一条", () => {
+  it("不同提示并存，按发出先后排列", () => {
     const { showToast } = useCEEStore.getState();
     showToast("第一条");
-    showToast("第二条", "success");
-    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([["第二条", "success"]]);
+    showToast("第二条", "error");
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([
+      ["第一条", "info"],
+      ["第二条", "error"],
+    ]);
   });
 
-  it("连续两条相同提示仍是一条，编号不变", () => {
+  it("连续两条相同提示仍是一条，编号不变，重播一次", () => {
     const { showToast } = useCEEStore.getState();
     showToast("同一句");
     const first = shownToasts()[0];
     showToast("同一句");
     expect(shownToasts().map((t) => t.text)).toEqual(["同一句"]);
     expect(shownToasts()[0].id).toBe(first.id);
-    expect(first.id).toBe("error:同一句");
+    expect(shownToasts()[0].repeat).toBe(1);
   });
 
-  it("默认时长到点消失", () => {
-    useCEEStore.getState().showToast("到点消失");
-    vi.advanceTimersByTime(4999);
-    expect(shownToasts().map((t) => t.text)).toEqual(["到点消失"]);
-    vi.advanceTimersByTime(1);
-    expect(shownToasts()).toEqual([]);
-  });
-
-  it("每条提示各自按固定时长重新计时", () => {
+  it("普通信息三秒、错误五秒到点消失", () => {
     const { showToast } = useCEEStore.getState();
-    showToast("先发的");
-    vi.advanceTimersByTime(3000);
-    showToast("后发的");
-    vi.advanceTimersByTime(2000);
-    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
+    showToast("普通信息");
+    showToast("错误", "error");
     vi.advanceTimersByTime(2999);
-    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
+    expect(shownToasts().map((t) => t.text)).toEqual(["普通信息", "错误"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
+    vi.advanceTimersByTime(1999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["错误"]);
     vi.advanceTimersByTime(1);
     expect(shownToasts()).toEqual([]);
   });
 
-  it("默认类型是 error", () => {
+  it("手动传时长按传入值到点消失", () => {
+    useCEEStore.getState().showToast("短提示", "error", 1000);
+    vi.advanceTimersByTime(999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["短提示"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("默认类型是普通信息", () => {
     useCEEStore.getState().showToast("默认类型");
-    expect(shownToasts().map((t) => t.type)).toEqual(["error"]);
+    expect(shownToasts().map((t) => t.type)).toEqual(["info"]);
+  });
+
+  it("最多同时三条，再来新的最早一条让位", () => {
+    const { showToast } = useCEEStore.getState();
+    for (const text of ["一", "二", "三", "四"]) showToast(text);
+    expect(shownToasts().map((t) => t.text)).toEqual(["二", "三", "四"]);
   });
 
   it("房间结束没有服务端句子时用兜底文案，按默认五秒消失", () => {
