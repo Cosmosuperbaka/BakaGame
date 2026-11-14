@@ -75,7 +75,6 @@ const config: StorybookConfig = {
           "@radix-ui/react-label",
           "@radix-ui/react-popover",
           "@radix-ui/react-select",
-          "@radix-ui/react-separator",
           "@radix-ui/react-slider",
           "@radix-ui/react-slot",
           "@radix-ui/react-switch",
