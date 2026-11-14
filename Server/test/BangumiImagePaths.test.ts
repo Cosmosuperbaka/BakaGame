@@ -29,9 +29,9 @@ test("路径映射与构建脚本一致：作品 r200 / 角色 r400 / 角色 gri
 });
 
 test("对外 URL：镜像前缀 + 缓存路径；映射不了就退回只换 host", () => {
-  expect(
-    bangumiImageUrl("https://lain.bgm.tv/pic/cover/l/a.jpg", "https://img.example.com/")
-  ).toBe("https://img.example.com/r/200/pic/cover/l/a.jpg");
+  expect(bangumiImageUrl("https://lain.bgm.tv/pic/cover/l/a.jpg", "https://img.example.com/")).toBe(
+    "https://img.example.com/r/200/pic/cover/l/a.jpg"
+  );
   expect(bangumiImageUrl("https://lain.bgm.tv/pic/crt/l/b.jpg", "https://img.example.com")).toBe(
     "https://img.example.com/r/400/pic/crt/l/b.jpg"
   );
