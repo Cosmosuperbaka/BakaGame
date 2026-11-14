@@ -351,6 +351,39 @@ describe("useAudioClipPlayer", () => {
       expect(mockAudio.volume).toBeCloseTo(0.65 * 0.1, 5);
     });
 
+    it("恢复播放的当下先写一次包络音量，不等下一帧", async () => {
+      const hook = mountPlayer();
+      await loadAndPlay(hook, {
+        url: "https://example.com/song.mp3",
+        startMs: 10_000,
+        endMs: 20_000,
+      });
+
+      // 在片段中段恢复播放：恢复那一刻就该是中段音量，不能带着旧值先响一帧。
+      mockAudio.currentTime = 15;
+      mockAudio.volume = 0;
+      await act(async () => {
+        mockAudio.dispatchEvent(new Event("play"));
+      });
+      expect(mockAudio.volume).toBeCloseTo(0.65, 5);
+    });
+
+    it("暂停后淡变循环自己停下，不再改音量也不再续排", async () => {
+      const hook = mountPlayer();
+      await loadAndPlay(hook, {
+        url: "https://example.com/song.mp3",
+        startMs: 10_000,
+        endMs: 20_000,
+      });
+
+      Object.defineProperty(mockAudio, "paused", { configurable: true, value: true });
+      mockAudio.currentTime = 15;
+      mockAudio.volume = 0.123;
+      act(() => flushFrame());
+      expect(mockAudio.volume).toBe(0.123);
+      expect(frames.size).toBe(0);
+    });
+
     it("片段中段保持设定音量", async () => {
       const hook = mountPlayer();
       await loadAndPlay(hook, {
