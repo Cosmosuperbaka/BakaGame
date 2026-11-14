@@ -107,6 +107,8 @@ export interface RoomRuntime<
 > {
   /** 幂等门闩：重复调用不叠加第二路订阅；返回清理。 */
   init: () => () => void;
+  /** 事件分发入口：玩法自己留了公开的事件入口时转交给它。 */
+  handleMessage: (message: ServerMessage) => void;
   sync: StateSyncChannel<TSnapshot, TPrivate>;
   generation: () => number;
   isInitialized: () => boolean;
@@ -241,6 +243,7 @@ export function createRoomRuntime<
 
   return {
     init,
+    handleMessage,
     sync,
     generation: () => generation,
     isInitialized: () => initialized,
