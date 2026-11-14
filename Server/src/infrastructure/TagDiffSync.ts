@@ -93,6 +93,8 @@ export function scheduleTagDiffSync(options: {
   const schedule = (delay: number): void => {
     if (stopped) return;
     timer = setTimeout(() => {
+      // 停止之后才到点的定时器不再发起同步：停止只清得掉最近排的那一个，更早排下的要在这里自己收手。
+      if (stopped) return;
       // 无论这一轮怎么收场（含回调自己抛错）都要续排，否则轮询会悄无声息地永久停摆。
       void run()
         .catch((error: unknown) =>

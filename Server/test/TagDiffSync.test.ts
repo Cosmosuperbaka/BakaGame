@@ -426,6 +426,37 @@ test("某一轮拉取挂起被超时中止后，定时链仍会续排下一轮",
   }
 });
 
+test("停止之后才到点的定时器不再发起同步", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
+  const statePath = join(directory, "state.json");
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    let fetches = 0;
+    const fetcher = fakeFetch(async () => {
+      fetches += 1;
+      return Response.json({ baseSha256: null, targetSha256: "v1" });
+    });
+    const stop = scheduleTagDiffSync({
+      repository: () => ({ applyTagChanges: async () => {}, replaceAllTags: async () => {} }),
+      diffUrl: "https://example.invalid/diff.json",
+      statePath,
+      fetcher,
+    });
+    const firstTick = spy.mock.calls.at(-1)![0] as () => void;
+    const ticksBeforeStop = spy.mock.calls.length;
+    stop();
+    // 停止只清得掉最近排的那一个定时器；更早排下、之后才到点的回调必须自己收手，
+    // 否则停机之后（或下一个测试文件运行时）还会冒出一轮同步。
+    firstTick();
+    await Bun.sleep(5);
+    expect(fetches).toBe(0);
+    expect(spy.mock.calls.length).toBe(ticksBeforeStop);
+  } finally {
+    spy.mockRestore();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("回调自身抛错也不会断掉定时链", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
   const statePath = join(directory, "state.json");
