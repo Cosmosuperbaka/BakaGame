@@ -39,8 +39,8 @@ import {
 import * as ws from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
-import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
+import { createStateSyncChannel } from "./room/StateSyncChannel";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
@@ -108,30 +108,16 @@ type RoomEntryReceipt = SonGuessrRoomEnterAck & { previousToken?: string | null 
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-let snapshotRevision: number | undefined;
-let privateStateRevision: number | undefined;
-let syncRequestPending = false;
-let rawSnapshot: SonGuessrRoomSnapshot | null = null;
-let rawPrivateState: SonGuessrPrivateState | null = null;
+
+const stateSync = createStateSyncChannel<SonGuessrRoomSnapshot, SonGuessrPrivateState>({
+  requestFull: () => useSonGuessrStore.getState().sendCommand("song.room.requestSync"),
+  // 猜歌的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
+  defer: () => false,
+  onError: () => {},
+});
 
 export const resetSonGuessrStateSync = () => {
-  snapshotRevision = undefined;
-  privateStateRevision = undefined;
-  syncRequestPending = false;
-  rawSnapshot = null;
-  rawPrivateState = null;
-};
-
-const requestFullSync = () => {
-  if (syncRequestPending) return;
-  syncRequestPending = true;
-  void useSonGuessrStore
-    .getState()
-    .sendCommand("song.room.requestSync")
-    .catch(() => {})
-    .finally(() => {
-      syncRequestPending = false;
-    });
+  stateSync.reset();
 };
 
 export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
@@ -143,6 +129,8 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
   ) => {
     saveSonGuessrSessionToken(targetRoomId, sessionToken);
 
+    const rawSnapshot = stateSync.snapshot.baseline();
+    const rawPrivateState = stateSync.privateState.baseline();
     if (
       rawSnapshot &&
       rawSnapshot.roomId !== targetRoomId &&
@@ -152,18 +140,16 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     }
 
     if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
-      rawSnapshot = payloadSnapshot;
-      snapshotRevision = undefined;
+      stateSync.snapshot.adopt(payloadSnapshot);
     }
     if (payloadPrivateState && (!rawPrivateState || get().roomId !== targetRoomId)) {
-      rawPrivateState = payloadPrivateState;
-      privateStateRevision = undefined;
+      stateSync.privateState.adopt(payloadPrivateState);
     }
 
     const currentSnapshot = get().snapshot;
     const currentPrivate = get().privateState;
-    const incomingSnapshot = payloadSnapshot ?? rawSnapshot;
-    const incomingPrivate = payloadPrivateState ?? rawPrivateState;
+    const incomingSnapshot = payloadSnapshot ?? stateSync.snapshot.baseline();
+    const incomingPrivate = payloadPrivateState ?? stateSync.privateState.baseline();
     const nextSnapshot =
       incomingSnapshot?.roomId === targetRoomId
         ? incomingSnapshot
@@ -379,14 +365,8 @@ let sonGuessrWsInitialized = false;
 
 /** 房间快照事件：保住完整协议基线供补丁索引使用，只展示合并并裁剪后的聊天。 */
 function applyRoomSnapshotEvent(payload: unknown) {
-  const result = consumeStateSync(rawSnapshot, snapshotRevision, payload);
-  if (result.needsFullSync || !result.state) {
-    requestFullSync();
-    return;
-  }
-  snapshotRevision = result.revision;
-  const snapshot = result.state as SonGuessrRoomSnapshot;
-  rawSnapshot = snapshot;
+  const snapshot = stateSync.snapshot.consume(payload);
+  if (!snapshot) return;
   if (roomEntry.isPending()) return;
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   const nextSnapshot = {
@@ -410,15 +390,9 @@ function applyRoomSnapshotEvent(payload: unknown) {
 
 /** 私有状态事件：席位凭据随快照归属落盘，其余情况只换私有状态。 */
 function applyPrivateStateEvent(payload: unknown) {
-  const result = consumeStateSync(rawPrivateState, privateStateRevision, payload);
-  if (result.needsFullSync || !result.state) {
-    requestFullSync();
-    return;
-  }
-  privateStateRevision = result.revision;
-  rawPrivateState = result.state as SonGuessrPrivateState;
+  const nextPrivateState = stateSync.privateState.consume(payload);
+  if (!nextPrivateState) return;
   if (roomEntry.isPending()) return;
-  const nextPrivateState = rawPrivateState;
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   if (nextPrivateState.sessionToken && currentSnapshot?.roomId) {
     saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
@@ -553,8 +527,7 @@ export function initSonGuessrWs() {
     const store = useSonGuessrStore.getState();
 
     if (connected) {
-      snapshotRevision = undefined;
-      privateStateRevision = undefined;
+      stateSync.clearRevisions();
       ws.send("song.lobby.subscribeRooms", {}).catch(() => {});
       if (store.roomId && store.sessionToken) {
         saveSonGuessrSessionToken(store.roomId, store.sessionToken);

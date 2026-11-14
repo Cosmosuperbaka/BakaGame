@@ -4,9 +4,9 @@ import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
 import type { GameSendCommand } from "@/lib/GameWs";
-import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
 import { serverNow } from "./UseServerClock";
+import { createStateSyncChannel } from "./room/StateSyncChannel";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
@@ -89,18 +89,16 @@ type RoomEntryReceipt = WhoIsFakerRoomEnterAck & { previousToken?: string | null
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-let snapshotRevision: number | undefined;
-let privateStateRevision: number | undefined;
-let syncRequestPending = false;
-let syncedSnapshot: WhoIsFakerRoomSnapshot | null = null;
-let syncedPrivateState: WhoIsFakerPrivateState | null = null;
+
+const stateSync = createStateSyncChannel<WhoIsFakerRoomSnapshot, WhoIsFakerPrivateState>({
+  requestFull: () => useWhoIsFakerStore.getState().sendCommand("room.requestSync"),
+  // 卧底的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
+  defer: () => false,
+  onError: () => {},
+});
 
 export const resetWhoIsFakerStateSync = () => {
-  snapshotRevision = undefined;
-  privateStateRevision = undefined;
-  syncRequestPending = false;
-  syncedSnapshot = null;
-  syncedPrivateState = null;
+  stateSync.reset();
 };
 
 let lastPlayerChannel: "main" | "ghost" | undefined;
@@ -170,24 +168,14 @@ export const withChannelNotices = (
   notices: readonly WhoIsFakerChatMessage[]
 ): WhoIsFakerRoomSnapshot["chat"] => (notices.length ? mergeChatWindow(chat, [...notices]) : chat);
 
-const requestFullSync = () => {
-  if (syncRequestPending) return;
-  syncRequestPending = true;
-  void useWhoIsFakerStore
-    .getState()
-    .sendCommand("room.requestSync")
-    .catch(() => {})
-    .finally(() => {
-      syncRequestPending = false;
-    });
-};
-
 export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   const entry = (roomEntry = createRoomEntry<RoomEntryReceipt>({
     generation: () => connectionGeneration,
     begin: resetWhoIsFakerStateSync,
     apply: (receipt) => {
       saveSessionToken(receipt.roomId, receipt.sessionToken);
+      const syncedSnapshot = stateSync.snapshot.baseline();
+      const syncedPrivateState = stateSync.privateState.baseline();
       const snapshot = syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined;
       const privateState =
         syncedPrivateState?.sessionToken === receipt.sessionToken ? syncedPrivateState : undefined;
@@ -399,26 +387,14 @@ export function initWhoIsFakerWs() {
         break;
       case "room.snapshot":
         {
-          const result = consumeStateSync(syncedSnapshot, snapshotRevision, evt.payload);
-          if (result.needsFullSync || !result.state) {
-            requestFullSync();
-            break;
-          }
-          snapshotRevision = result.revision;
-          syncedSnapshot = result.state as WhoIsFakerRoomSnapshot;
-          if (!roomEntry.isPending()) currentStore.setSnapshot(syncedSnapshot);
+          const snapshot = stateSync.snapshot.consume(evt.payload);
+          if (snapshot && !roomEntry.isPending()) currentStore.setSnapshot(snapshot);
         }
         break;
       case "game.privateState":
         {
-          const result = consumeStateSync(syncedPrivateState, privateStateRevision, evt.payload);
-          if (result.needsFullSync || !result.state) {
-            requestFullSync();
-            break;
-          }
-          privateStateRevision = result.revision;
-          syncedPrivateState = result.state as WhoIsFakerPrivateState;
-          if (!roomEntry.isPending()) currentStore.setPrivateState(syncedPrivateState);
+          const privateState = stateSync.privateState.consume(evt.payload);
+          if (privateState && !roomEntry.isPending()) currentStore.setPrivateState(privateState);
         }
         break;
       case "game.disconnectDecisionRequested":

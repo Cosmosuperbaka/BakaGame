@@ -29,7 +29,7 @@ import {
 } from "@/lib/AntiCheatCopy";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import { createQueryReuseCache, keywordQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
-import { consumeStateSync } from "@/lib/StateSync";
+import { createStateSyncChannel } from "./room/StateSyncChannel";
 import { playSound } from "@/lib/SoundEffects";
 import { isProtocolError } from "@/lib/WebsocketClient";
 
@@ -96,19 +96,6 @@ export interface CEEStore extends ToastState {
   ) => Promise<CEEResponse<"cee.subject.characters">["results"]>;
 }
 
-let snapshotRevision: number | undefined;
-let privateRevision: number | undefined;
-let rawSnapshot: CEERoomSnapshot | null = null;
-let rawPrivate: CEEPrivateState | null = null;
-let syncPending = false;
-/**
- * 凭据尚未就绪时被压下的全量同步请求。
- *
- * 服务端建立会话后会先推快照事件、再回进入房间的 ACK（见 `requestSync` 的说明）。
- * 快照先到而凭据未就绪时不能立刻同步，否则必然收到 `SESSION_INVALID`；
- * 这里记下「有同步欠账」，等 `enter()` 写回凭据后立即补发。
- */
-let syncDeferred = false;
 /**
  * 是否正处在「进入房间」的往返中（join / create / reconnect 已发出、结果未回）。
  *
@@ -116,6 +103,14 @@ let syncDeferred = false;
  * 任何主动同步都会被原版会话校验拒绝。
  */
 let enteringRoom = false;
+
+const stateSync = createStateSyncChannel<CEERoomSnapshot, CEEPrivateState>({
+  requestFull: () => useCEEStore.getState().sendCommand("cee.room.requestSync", {}),
+  // 凭据未写回时抢发全量，信封不带凭据，原版会话校验必判 SESSION_INVALID，
+  // 还会连带触发永久错误处理清掉刚建立的会话；只记欠账，等 enter() 写回凭据后补发。
+  defer: () => enteringRoom && !useCEEStore.getState().sessionToken,
+  onError: (error) => useCEEStore.getState().reportError(error),
+});
 let connectionGeneration = 0;
 /**
  * 入房/恢复事务的作废代次。退房、房间关闭、被踢与会话接管都会让它前进：
@@ -139,12 +134,7 @@ const serverTimedCommands = new Set<CEECommand>([
 ]);
 
 export function resetCEEStateSync() {
-  snapshotRevision = undefined;
-  privateRevision = undefined;
-  rawSnapshot = null;
-  rawPrivate = null;
-  syncDeferred = false;
-  syncPending = false;
+  stateSync.reset();
 }
 
 export const ceeErrorMessage = (error: unknown): string => {
@@ -155,25 +145,26 @@ export const ceeErrorMessage = (error: unknown): string => {
 
 export const useCEEStore = create<CEEStore>((set, get) => {
   const enter = (result: CEERoomEnterResult) => {
-    // 先取走「进入期间被压下的同步欠账」——resetCEEStateSync 会清掉它。
-    const deferred = syncDeferred;
+    // 先取走「进入期间被压下的同步欠账」——reset 会清掉它。
+    const deferred = stateSync.takeDeferred();
+    const rawSnapshot = stateSync.snapshot.baseline();
     const sameRoom = rawSnapshot?.roomId === result.roomId && rawSnapshot.source === result.source;
     if (!sameRoom) {
-      resetCEEStateSync();
-      rawSnapshot = result.snapshot;
-      rawPrivate = result.privateState;
+      stateSync.reset();
+      stateSync.snapshot.adopt(result.snapshot);
+      stateSync.privateState.adopt(result.privateState);
     }
     writeCEESession(result.roomId, result.sessionToken);
     set({
       source: result.source,
       roomId: result.roomId,
       sessionToken: result.sessionToken,
-      snapshot: rawSnapshot,
-      privateState: rawPrivate ?? result.privateState,
+      snapshot: stateSync.snapshot.baseline(),
+      privateState: stateSync.privateState.baseline() ?? result.privateState,
       roomClosedAt: null,
     });
     // 进入房间期间若收到过无法应用的状态补丁，此刻凭据已就绪，补一次全量同步。
-    if (deferred) requestSync();
+    if (deferred) stateSync.flushDeferred();
   };
   let entryTail: Promise<void> | null = null;
   let restoring: {
@@ -357,49 +348,17 @@ export const useCEEStore = create<CEEStore>((set, get) => {
   };
 });
 
-/**
- * 请求全量房态。
- *
- * **必须等会话凭据就绪**：服务端在 `enter()` 返回结果**之前**就会推送新房间的快照事件
- * （`publish()` 先于 ACK 到达），此时客户端 `sessionToken` 还是初值 `null`。若立刻发
- * `requestSync`，信封不带凭据，服务端原版会话校验（`message.sessionToken !== session.token`）
- * 会直接判定 `SESSION_INVALID`。该错误发生在服务端会话已建立之后，会连带触发
- * `reconnectRoom` 的永久错误处理、把刚建立的原版会话清掉——表现为「加入原版房间失败」。
- * 因此仅在「正在进入房间且凭据尚未写回」时登记欠账，等 `enter()` 落定后补发；
- * 其余情况（房内已有凭据、只是补丁出现缺口）照常立即请求。
- */
-function requestSync() {
-  if (syncPending) return;
-  if (!useCEEStore.getState().sessionToken && enteringRoom) {
-    syncDeferred = true;
-    return;
-  }
-  syncPending = true;
-  void useCEEStore
-    .getState()
-    .sendCommand("cee.room.requestSync", {})
-    .catch((error: unknown) => useCEEStore.getState().reportError(error))
-    .finally(() => {
-      syncPending = false;
-    });
-}
-
 function applyCEESnapshotEvent(payload: unknown): void {
-  const result = consumeStateSync<CEERoomSnapshot>(rawSnapshot, snapshotRevision, payload);
-  if (result.needsFullSync || !result.state) {
-    requestSync();
-    return;
-  }
-  const previous = rawSnapshot;
-  rawSnapshot = result.state;
-  snapshotRevision = result.revision;
-  useCEEStore.setState({ snapshot: rawSnapshot });
+  const previous = stateSync.snapshot.baseline();
+  const snapshot = stateSync.snapshot.consume(payload);
+  if (!snapshot) return;
+  useCEEStore.setState({ snapshot });
   // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
   if (
     previous &&
-    previous.roomId === rawSnapshot.roomId &&
-    rawSnapshot.roundNumber > previous.roundNumber &&
-    rawSnapshot.phase === "guessing"
+    previous.roomId === snapshot.roomId &&
+    snapshot.roundNumber > previous.roundNumber &&
+    snapshot.phase === "guessing"
   ) {
     playSound("roundStart");
   }
@@ -413,14 +372,8 @@ export function handleCEEMessage(message: ServerMessage) {
   } else if (message.event === "cee.room.snapshot") {
     applyCEESnapshotEvent(message.payload);
   } else if (message.event === "cee.game.privateState") {
-    const result = consumeStateSync<CEEPrivateState>(rawPrivate, privateRevision, message.payload);
-    if (result.needsFullSync || !result.state) {
-      requestSync();
-      return;
-    }
-    rawPrivate = result.state;
-    privateRevision = result.revision;
-    useCEEStore.setState({ privateState: rawPrivate });
+    const privateState = stateSync.privateState.consume(message.payload);
+    if (privateState) useCEEStore.setState({ privateState });
   } else if (message.event === "cee.player.spectateResult") {
     // 房主对旁观请求的显式处理结果只发给请求者；身份本身随快照下发，这里只给一条反馈。
     const approved = (message.payload as { approved?: boolean }).approved === true;
