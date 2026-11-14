@@ -24,7 +24,7 @@ mod winapi;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -36,10 +36,47 @@ const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 /// （票的 TTL 只有几十秒，间隔再长就会让页面长时间拿不到票）
 const TICKET_RETRY_SECONDS: u64 = 10;
 
+/// 设备身份槽：启动线程载入密钥后发布，取票路径阻塞等待。用条件变量等，发布时立刻唤醒，
+/// 不靠定时轮询。
+struct DeviceSlot {
+    device: Mutex<Option<Arc<device::Device>>>,
+    ready: Condvar,
+}
+
+impl DeviceSlot {
+    fn new() -> Self {
+        Self {
+            device: Mutex::new(None),
+            ready: Condvar::new(),
+        }
+    }
+
+    fn get(&self) -> Option<Arc<device::Device>> {
+        self.device.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    fn publish(&self, device: Arc<device::Device>) {
+        if let Ok(mut guard) = self.device.lock() {
+            *guard = Some(device);
+            self.ready.notify_all();
+        }
+    }
+
+    /// 最多等 `timeout`，发布后立即返回
+    fn wait(&self, timeout: Duration) -> Option<Arc<device::Device>> {
+        let guard = self.device.lock().ok()?;
+        let (guard, _) = self
+            .ready
+            .wait_timeout_while(guard, timeout, |device| device.is_none())
+            .ok()?;
+        guard.clone()
+    }
+}
+
 /// 壳的运行状态
 pub struct AppState {
-    /// 设备身份；启动线程完成密钥载入与注册后才为 `Some`
-    device: Mutex<Option<Arc<device::Device>>>,
+    /// 设备身份；启动线程载入密钥后立即发布（不等注册完成）
+    device: DeviceSlot,
     /// 密钥与 `clientId` 的目录
     dir: PathBuf,
     /// 最近一次签发失败的 Unix 秒（0 表示没有失败过）；与 `TICKET_RETRY_SECONDS` 一起做退避
@@ -55,7 +92,7 @@ pub struct AppState {
 impl AppState {
     fn new(dir: PathBuf) -> Self {
         Self {
-            device: Mutex::new(None),
+            device: DeviceSlot::new(),
             dir,
             last_attest_failure: AtomicU64::new(0),
             ticket: Mutex::new(None),
@@ -65,15 +102,13 @@ impl AppState {
 
     /// 当前已发布的设备身份（非阻塞）
     fn current_device(&self) -> Option<Arc<device::Device>> {
-        self.device.lock().ok().and_then(|guard| guard.clone())
+        self.device.get()
     }
 
     /// 发布设备身份：密钥一就绪就发布，不等注册完成——注册在慢网下最长要 20 秒，
     /// 而取票路径自己会在没有 `clientId` 时补注册，不依赖启动线程先注册完
     fn publish_device(&self, device: Arc<device::Device>) {
-        if let Ok(mut guard) = self.device.lock() {
-            *guard = Some(device);
-        }
+        self.device.publish(device);
     }
 
     fn now_secs() -> u64 {
@@ -85,16 +120,7 @@ impl AppState {
 
     /// 取设备身份，最多等 `DEVICE_READY_TIMEOUT`（阻塞调用，必须跑在 `spawn_blocking` 里）
     fn wait_for_device(&self) -> Option<Arc<device::Device>> {
-        let deadline = Self::now_secs() + DEVICE_READY_TIMEOUT.as_secs().max(1);
-        loop {
-            if let Some(found) = self.current_device() {
-                return Some(found);
-            }
-            if Self::now_secs() >= deadline {
-                return None;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        self.device.wait(DEVICE_READY_TIMEOUT)
     }
 
     /// 取缓存里那张**还没交给页面**且仍然新鲜的票；取出即记为已用，绝不二次给出
@@ -108,10 +134,14 @@ impl AppState {
         Some(held.payload())
     }
 
-    /// 弃用当前票（导航换页面上下文时调用：旧页可能已经把它用掉了）
-    fn clear_ticket(&self) {
+    /// 放行一次导航时对票缓存的处理：只清掉**已经交给过页面**的票。
+    /// 缓存里没交出去的票页面从没见过，旧页不可能把它用掉，换页面后仍然有效，
+    /// 留着让新页面直接取，省掉重签的两趟 HTTP 和一次自检。
+    fn on_navigation_allowed(&self) {
         if let Ok(mut guard) = self.ticket.lock() {
-            *guard = None;
+            if guard.as_ref().is_some_and(|held| held.served) {
+                *guard = None;
+            }
         }
     }
 
@@ -165,12 +195,10 @@ fn mint_ticket(state: &AppState) -> Result<Option<attest::TicketPayload>, String
         return Ok(None);
     };
     match attest::prove(&current, &state.dir) {
-        Ok(mut ticket) => {
+        Ok(ticket) => {
             let payload = ticket.payload();
             state.note_attest_success();
-            // 这张票当场就交给了调用方：缓存里留一份「已取用」的记录只为排查，绝不再二次给出
-            ticket.served = true;
-            state.store_ticket(ticket);
+            // 这张票当场交给了调用方，不在缓存里留副本：留着只会被误当成还能用的票
             Ok(Some(payload))
         }
         Err(err) => {
@@ -394,11 +422,9 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
         .on_navigation(move |url| {
             let allowed = navigation_allowed(url.as_str(), &nav_site);
             if allowed {
-                // 换页面上下文：旧票要么已被旧页面用掉、要么随旧页面作废，先弃掉再后台补签，
-                // 让新页面的第一次同步读取就有票可用（票 30 秒 TTL，只在这一刻重签）
-                let state = nav_handle.state::<AppState>();
-                state.clear_ticket();
-                drop(state);
+                // 换页面上下文：交给过旧页面的票先清掉，再后台补一张没交出去的（已有可用的就不补），
+                // 让新页面的第一次同步读取就有票可用（票 30 秒 TTL）
+                nav_handle.state::<AppState>().on_navigation_allowed();
                 spawn_ticket_pump(pump_handle.clone());
             }
             allowed
@@ -414,7 +440,6 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
     Ok(builder.build()?)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 先落条款与构建身份，再启动任何可能失败的步骤
     notice::log_identity();
@@ -463,6 +488,70 @@ mod tests {
             "注册开始时设备身份应已发布"
         );
         assert!(state.current_device().is_some());
+    }
+
+    fn ticket_in_cache(state: &AppState) -> Option<attest::Ticket> {
+        state.ticket.lock().unwrap().clone()
+    }
+
+    fn fresh_ticket(served: bool) -> attest::Ticket {
+        attest::Ticket {
+            value: "t".to_string(),
+            expires_at_ms: attest::now_ms() + 30_000,
+            served,
+        }
+    }
+
+    /// 页面从没见过缓存里那张没交出去的票，换页面时它仍然有效，不该白白弃掉再重签
+    /// （重签要多两趟 HTTP 和一次自检）；只有已经交给过页面的票才没有保留价值
+    #[test]
+    fn navigation_keeps_unserved_ticket_and_drops_served_one() {
+        let state = AppState::new(PathBuf::new());
+        state.store_ticket(fresh_ticket(false));
+        state.on_navigation_allowed();
+        assert!(ticket_in_cache(&state).is_some(), "没交出去的票不该被丢");
+        assert!(
+            state.take_cached_ticket().is_some(),
+            "新页面应当还能直接取到它"
+        );
+
+        // 取出后它已记为已用；下一次导航再清掉这条已用记录
+        state.on_navigation_allowed();
+        assert!(ticket_in_cache(&state).is_none(), "已用的票应被清掉");
+        assert!(state.take_cached_ticket().is_none());
+    }
+
+    /// 设备身份槽：发布立即唤醒等待者，超时返回 None，已发布时不阻塞
+    #[test]
+    fn device_slot_wakes_waiters_on_publish() {
+        let dir = TempDir::new("slot");
+        let slot = Arc::new(DeviceSlot::new());
+        assert!(
+            slot.wait(Duration::from_millis(80)).is_none(),
+            "无人发布应超时"
+        );
+
+        let device = Arc::new(device::load_or_create(dir.path()).unwrap());
+        let publisher = {
+            let slot = slot.clone();
+            let device = device.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                slot.publish(device);
+            })
+        };
+        let started = std::time::Instant::now();
+        let found = slot.wait(Duration::from_secs(5)).expect("发布后应被唤醒");
+        assert_eq!(found.public_key_b64(), device.public_key_b64());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        publisher.join().unwrap();
+
+        let again = std::time::Instant::now();
+        assert!(slot.wait(Duration::from_secs(5)).is_some());
+        assert!(
+            again.elapsed() < Duration::from_millis(500),
+            "已发布时不应阻塞"
+        );
     }
 
     /// 站内导航要放行，前缀相同的域名要挡住（否则窗口能被导航去外站当钓鱼壳）
