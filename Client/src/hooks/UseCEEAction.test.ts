@@ -55,7 +55,7 @@ describe("useCEEAction", () => {
       failed = h.result.current.run("cee.game.setAnswer", { characterId: 1, hints: [] });
     });
     await act(async () => expect(await failed).toBeUndefined());
-    expect(useCEEStore.getState().toast?.text).toBe("该房间要求登录后再创建、加入或旁观");
+    expect(useCEEStore.getState().toasts[0]?.text).toBe("该房间要求登录后再创建、加入或旁观");
     expect(useCEEStore.getState().requestLoginAt).toBeGreaterThan(before);
     expect(h.result.current.pending.size).toBe(0);
     expect(h.result.current.busy).toBe(false);

@@ -37,7 +37,6 @@ import {
 } from "@/lib/Storage";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { clearSonGuessrQueryCache, initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
-import { toToastItems } from "@/layouts/ToastItems";
 
 const initialState = useSonGuessrStore.getState();
 
@@ -293,10 +292,13 @@ describe("Songuessr store integration", () => {
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
-    expect(useSonGuessrStore.getState().toast).toEqual({
-      text: "原座位已失效，可能掉线过久或房间已重建",
-      type: "error",
-    });
+    expect(useSonGuessrStore.getState().toasts).toEqual([
+      {
+        id: "error:原座位已失效，可能掉线过久或房间已重建",
+        text: "原座位已失效，可能掉线过久或房间已重建",
+        type: "error",
+      },
+    ]);
   });
 
   it("刷新时房间已不在：标记关闭让页面退回大厅，不留给页面按房号重建", async () => {
@@ -438,7 +440,7 @@ describe("Songuessr store integration", () => {
       sessionToken: null,
       snapshot: null,
       privateState: null,
-      toast: { text: toast, type: "error" },
+      toasts: [{ text: toast, type: "error" }],
     });
     expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
     dispose();
@@ -461,7 +463,7 @@ describe("Songuessr store integration", () => {
       expect(useSonGuessrStore.getState()).toMatchObject({
         roomId: "4567",
         sessionToken: "room-token",
-        toast: { text: SERVER_SHUTDOWN_MESSAGE, type: "error" },
+        toasts: [{ text: SERVER_SHUTDOWN_MESSAGE, type: "error" }],
       });
       expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
     } finally {
@@ -732,11 +734,11 @@ it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初�
 
 describe("猜歌提示行为", () => {
   // 断言布局实际渲染的那份列表：同一句话连发是否重播入场，取决于其中的编号。
-  const shownToasts = () => toToastItems(useSonGuessrStore.getState().toast);
+  const shownToasts = () => useSonGuessrStore.getState().toasts;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    useSonGuessrStore.setState({ toast: null });
+    useSonGuessrStore.setState({ toasts: [] });
   });
 
   afterEach(() => {

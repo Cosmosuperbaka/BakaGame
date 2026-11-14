@@ -41,6 +41,7 @@ import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
+import { createToastSlice, type ToastState } from "./room/ToastSlice";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
 const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
@@ -57,7 +58,7 @@ export function clearSonGuessrQueryCache() {
   playlistResolveCache.clear();
 }
 
-export interface SonGuessrStore {
+export interface SonGuessrStore extends ToastState {
   connected: boolean;
   /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
   lobbyReady: boolean;
@@ -67,10 +68,6 @@ export interface SonGuessrStore {
   snapshot: SonGuessrRoomSnapshot | null;
   privateState: SonGuessrPrivateState | null;
   roomClosedAt: number | null;
-  /** 单槽：新提示顶掉旧提示。 */
-  toast: { text: string; type: "info" | "error" | "success" } | null;
-  showToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
-  clearToast: () => void;
 
   subscribeLobby: () => Promise<void>;
   createRoom: (
@@ -111,7 +108,6 @@ type RoomEntryReceipt = SonGuessrRoomEnterAck & { previousToken?: string | null 
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
@@ -238,22 +234,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     snapshot: null,
     privateState: null,
     roomClosedAt: null,
-    toast: null,
-
-    showToast: (text, type = "info", durationMs = 3000) => {
-      if (toastTimer) clearTimeout(toastTimer);
-      set({ toast: { text, type } });
-      toastTimer = setTimeout(() => {
-        set({ toast: null });
-        toastTimer = undefined;
-      }, durationMs);
-    },
-
-    clearToast: () => {
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = undefined;
-      set({ toast: null });
-    },
+    ...createToastSlice(set, { mode: "slot", defaultType: "info", defaultMs: 3000 }),
 
     subscribeLobby: async () => {
       await ws.send("song.lobby.subscribeRooms", {});
@@ -323,13 +304,13 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         if (current.roomId === roomId && current.sessionToken === sessionToken) {
           clearSonGuessrSessionToken(roomId);
           resetSonGuessrStateSync();
+          current.clearToasts();
           set({
             roomId: null,
             sessionToken: null,
             snapshot: null,
             privateState: null,
             roomClosedAt: null,
-            toast: null,
           });
         } else if (sessionToken && getSonGuessrSessionToken(roomId) === sessionToken) {
           clearSonGuessrSessionToken(roomId);

@@ -10,8 +10,8 @@ const probe = vi.hoisted(() => ({
   initSong: vi.fn(),
   initFaker: vi.fn(),
   initCEE: vi.fn(),
-  songToast: null as Toast | null,
-  ceeToast: null as Toast | null,
+  songToasts: [] as Array<Toast & { id: string }>,
+  ceeToasts: [] as Array<Toast & { id: string }>,
   ceeRequestLoginAt: 0,
   fakerToasts: [] as Array<Toast & { id: string }>,
 }));
@@ -56,7 +56,7 @@ vi.mock("@/components/cee/CEESoundBridge", () => ({
   CEESoundBridge: () => <div data-probe="cee-sound-bridge" />,
 }));
 vi.mock("@/stores/UseSonGuessrStore", () => ({
-  useSonGuessrStore: (select: (state: unknown) => unknown) => select({ toast: probe.songToast }),
+  useSonGuessrStore: (select: (state: unknown) => unknown) => select({ toasts: probe.songToasts }),
   initSonGuessrWs: probe.initSong,
 }));
 vi.mock("@/stores/UseWhoIsFakerStore", () => ({
@@ -66,7 +66,7 @@ vi.mock("@/stores/UseWhoIsFakerStore", () => ({
 }));
 vi.mock("@/stores/UseCEEStore", () => ({
   useCEEStore: (select: (state: unknown) => unknown) =>
-    select({ toast: probe.ceeToast, requestLoginAt: probe.ceeRequestLoginAt }),
+    select({ toasts: probe.ceeToasts, requestLoginAt: probe.ceeRequestLoginAt }),
   initCEEWs: probe.initCEE,
 }));
 
@@ -88,15 +88,16 @@ const renderLayout = (Layout: () => ReactNode) => {
 };
 
 const say = (text: string, type: Toast["type"]): void => {
-  probe.songToast = { text, type };
-  probe.ceeToast = { text, type };
-  probe.fakerToasts = [{ id: `${type}:${text}`, text, type }];
+  const item = { id: `${type}:${text}`, text, type };
+  probe.songToasts = [item];
+  probe.ceeToasts = [item];
+  probe.fakerToasts = [item];
 };
 
 describe("游戏布局骨架", () => {
   beforeEach(() => {
-    probe.songToast = null;
-    probe.ceeToast = null;
+    probe.songToasts = [];
+    probe.ceeToasts = [];
     probe.ceeRequestLoginAt = 0;
     probe.fakerToasts = [];
   });

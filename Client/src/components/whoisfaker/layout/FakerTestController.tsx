@@ -48,7 +48,7 @@ export function FakerTestController() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const currentPhase = snapshot?.status.phase;
 
   // 所有控制都走真实指令，失败就报错，不再退回本地伪造状态：
@@ -61,10 +61,10 @@ export function FakerTestController() {
       try {
         await sendCommand(type, payload);
       } catch (error) {
-        addToast(errorText(error, "操作失败"), "error");
+        showToast(errorText(error, "操作失败"), "error");
       }
     },
-    [addToast, sendCommand]
+    [showToast, sendCommand]
   );
 
   const handleJumpPhase = useCallback(

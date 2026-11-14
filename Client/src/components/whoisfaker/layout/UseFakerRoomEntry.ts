@@ -17,7 +17,7 @@ export function useFakerRoomEntry(roomId: string) {
   const createRoom = useWhoIsFakerStore((s) => s.createRoom);
   const joinRoom = useWhoIsFakerStore((s) => s.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((s) => s.reconnectRoom);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const roomClosedAt = useWhoIsFakerStore((s) => s.roomClosedAt);
   const alreadyInRoom = storeRoomId === roomId && snapshot?.roomId === roomId;
 
@@ -92,16 +92,16 @@ export function useFakerRoomEntry(roomId: string) {
             setJoining(false);
           } catch (createErr) {
             if (signal.aborted) return;
-            addToast(errorText(createErr, "创建房间失败"), "error");
+            showToast(errorText(createErr, "创建房间失败"), "error");
             void navigate("/whoisfaker");
           }
         } else {
-          addToast(errorText(e, "加入房间失败"), "error");
+          showToast(errorText(e, "加入房间失败"), "error");
           void navigate("/whoisfaker");
         }
       }
     },
-    [roomId, joinRoom, createRoom, addToast, navigate]
+    [roomId, joinRoom, createRoom, showToast, navigate]
   );
 
   // 入房事务归属路由房间，而非 snapshot；取消后的 ACK 释放由 Store 负责。
@@ -116,7 +116,7 @@ export function useFakerRoomEntry(roomId: string) {
     if (!roomId || alreadyInRoom) return cleanup;
 
     if (!isValidRoomId(roomId)) {
-      addToast("房间号无效，请检查链接", "error");
+      showToast("房间号无效，请检查链接", "error");
       void navigate("/whoisfaker", { replace: true });
       return cleanup;
     }
@@ -128,7 +128,7 @@ export function useFakerRoomEntry(roomId: string) {
         await waitForConnection(8000);
       } catch {
         if (signal.aborted) return;
-        addToast("连接服务器超时，请刷新重试", "error");
+        showToast("连接服务器超时，请刷新重试", "error");
         void navigate("/whoisfaker");
         return;
       }
@@ -139,7 +139,7 @@ export function useFakerRoomEntry(roomId: string) {
         restored = await reconnectRoom(roomId, signal);
       } catch (error) {
         if (signal.aborted) return;
-        addToast(errorText(error, "恢复房间失败，请重试"), "error");
+        showToast(errorText(error, "恢复房间失败，请重试"), "error");
         void navigate("/whoisfaker");
         return;
       }
@@ -169,7 +169,7 @@ export function useFakerRoomEntry(roomId: string) {
   const handleConfirmName = useCallback(async () => {
     const name = nameDraft.trim();
     if (!name) {
-      addToast("请输入用户名", "error");
+      showToast("请输入用户名", "error");
       return;
     }
     saveUsername(name);
@@ -178,7 +178,7 @@ export function useFakerRoomEntry(roomId: string) {
     if (!signal || signal.aborted) return;
     await enterWithName(name, signal);
     if (signal.aborted) return;
-  }, [nameDraft, addToast, enterWithName]);
+  }, [nameDraft, showToast, enterWithName]);
 
   const handleConfirmPassword = useCallback(async () => {
     if (!pendingJoinName || !passwordDraft.trim()) return;

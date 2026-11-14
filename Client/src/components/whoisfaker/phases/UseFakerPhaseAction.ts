@@ -21,7 +21,7 @@ export interface PhaseExecOptions {
  */
 export function useFakerPhaseAction() {
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -49,12 +49,12 @@ export function useFakerPhaseAction() {
           await (payload === undefined ? sendCommand(type) : sendCommand(type, payload));
           onSuccess?.();
         } catch (error) {
-          addToast(errorText(error, fallback), "error");
+          showToast(errorText(error, fallback), "error");
         } finally {
           setPending(null);
         }
       }),
-    [run, sendCommand, addToast]
+    [run, sendCommand, showToast]
   );
   return { run, exec, busy, pending };
 }

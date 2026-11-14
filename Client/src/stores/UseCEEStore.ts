@@ -1,4 +1,5 @@
 import { resolveEndedRoom } from "./RoomEndedEvent";
+import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { create } from "zustand";
 import type {
   CEECommand,
@@ -52,7 +53,7 @@ export function clearCEEQueryCache() {
   ceeSubjectCharactersCache.clear();
 }
 
-export interface CEEStore {
+export interface CEEStore extends ToastState {
   connected: boolean;
   lobbyReady: boolean;
   originalAvailable: boolean;
@@ -63,11 +64,8 @@ export interface CEEStore {
   snapshot: CEERoomSnapshot | null;
   privateState: CEEPrivateState | null;
   roomClosedAt: number | null;
-  /** 单槽：新提示顶掉旧提示。 */
-  toast: { text: string; type: "info" | "error" | "success" } | null;
   /** 最近一次要求登录的时刻；CEELayout 监听它去打开登录弹窗。0 表示没有待办请求。 */
   requestLoginAt: number;
-  showToast: (text: string, type?: "info" | "error" | "success") => void;
   /** 统一处理命令/同步失败：按错误码取文案弹提示，LOGIN_REQUIRED 顺带请求打开登录弹窗。 */
   reportError: (error: unknown) => void;
   /** 请求打开登录弹窗（网页环境下客户端探测不到身份时由服务端拒绝触发）。 */
@@ -118,7 +116,6 @@ let syncDeferred = false;
  * 任何主动同步都会被原版会话校验拒绝。
  */
 let enteringRoom = false;
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionGeneration = 0;
 /**
  * 入房/恢复事务的作废代次。退房、房间关闭、被踢与会话接管都会让它前进：
@@ -251,13 +248,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     snapshot: null,
     privateState: null,
     roomClosedAt: null,
-    toast: null,
+    ...createToastSlice(set, { mode: "slot", defaultType: "error", defaultMs: 5000 }),
     requestLoginAt: 0,
-    showToast: (text, type = "error") => {
-      clearTimeout(toastTimer);
-      set({ toast: { text, type } });
-      toastTimer = setTimeout(() => set({ toast: null }), 5000);
-    },
     promptLogin: () => set({ requestLoginAt: Date.now() }),
     reportError: (error) => {
       get().showToast(ceeErrorMessage(error));

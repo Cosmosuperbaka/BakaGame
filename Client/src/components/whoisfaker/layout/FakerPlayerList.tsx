@@ -78,7 +78,7 @@ export function FakerPlayerList(props: PlayerListProps) {
     compact = false,
   } = props;
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
-  const addToast = useWhoIsFakerStore((state) => state.addToast);
+  const showToast = useWhoIsFakerStore((state) => state.showToast);
   const waitingPhase = phase === "waiting";
   const me = players.find((player) => player.id === myPlayerId);
   const isSpectator = me?.membership === "spectator";
@@ -118,10 +118,10 @@ export function FakerPlayerList(props: PlayerListProps) {
       try {
         await sendCommand(type, payload);
       } catch (error) {
-        addToast(errorText(error, "操作失败，请重试"), "error");
+        showToast(errorText(error, "操作失败，请重试"), "error");
       }
     },
-    [addToast, sendCommand]
+    [showToast, sendCommand]
   );
   const handleKick = (playerId: string) => void send("room.kick", { playerId });
   const handleTransferHost = (playerId: string) => void send("room.transferHost", { playerId });

@@ -205,13 +205,13 @@ describe("DescriptionPhase", () => {
     const sendCommand = vi.fn(
       () => new Promise((_, reject) => setTimeout(() => reject(new Error("阶段已变化")), 50))
     );
-    useWhoIsFakerStore.setState({ addToast: vi.fn() });
+    useWhoIsFakerStore.setState({ showToast: vi.fn() });
     mountWithTimer(NOW + 1_000, sendCommand);
     await advance(1_100);
     expect(submitCalls(sendCommand)).toHaveLength(1);
     await advance(30_000);
     expect(submitCalls(sendCommand)).toHaveLength(1);
-    expect(useWhoIsFakerStore.getState().addToast).toHaveBeenCalledTimes(1);
+    expect(useWhoIsFakerStore.getState().showToast).toHaveBeenCalledTimes(1);
   });
 
   it("到点时输入框为空则不提交", async () => {

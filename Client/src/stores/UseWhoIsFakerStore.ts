@@ -7,6 +7,7 @@ import type { GameSendCommand } from "@/lib/GameWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
 import { serverNow } from "./UseServerClock";
+import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
   isPermanentRoomError,
@@ -23,15 +24,9 @@ import type {
   EventPacket,
 } from "@bakagame/shared";
 
-export interface ToastItem {
-  id: number;
-  text: string;
-  type: "info" | "error" | "success";
-}
-
 type WhoIsFakerChatMessage = WhoIsFakerRoomSnapshot["chat"][number];
 
-export interface WhoIsFakerGameState {
+export interface WhoIsFakerGameState extends ToastState {
   connected: boolean;
   /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
   lobbyReady: boolean;
@@ -40,8 +35,6 @@ export interface WhoIsFakerGameState {
   sessionToken: string | null;
   snapshot: WhoIsFakerRoomSnapshot | null;
   privateState: WhoIsFakerPrivateState | null;
-  /** 队列：可同时显示多条，与猜歌 / CEE 的单槽提示相对。 */
-  toasts: ToastItem[];
   /**
    * 本机生成的频道切换提示（进入观战频道 / 返回公共频道）。
    * 与 `snapshot` 分开存：快照只放服务端下发的投影，本地提示混进去就分不清哪些是房间事实；
@@ -63,8 +56,6 @@ export interface WhoIsFakerGameState {
   clearRoomClosed: () => void;
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
-  addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
-  removeToast: (id: number) => void;
 
   // Async Business Actions
   subscribeLobby: () => Promise<void>;
@@ -98,7 +89,6 @@ type RoomEntryReceipt = WhoIsFakerRoomEnterAck & { previousToken?: string | null
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-let toastCounter = 0;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
@@ -246,7 +236,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     sessionToken: null,
     snapshot: null,
     privateState: null,
-    toasts: [],
+    ...createToastSlice(set, { mode: "queue", defaultType: "info", defaultMs: 3000 }),
     channelNotices: [],
     roomClosedAt: null,
 
@@ -304,14 +294,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         set(noticeUpdate(currentSnapshot, privateState.playerId));
       }
     },
-    addToast: (text, type = "info", durationMs = 3000) => {
-      const id = ++toastCounter;
-      set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
-      setTimeout(() => get().removeToast(id), durationMs);
-    },
-
-    removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
-
     subscribeLobby: async () => {
       await ws.send("lobby.subscribeRooms", {});
     },
@@ -345,7 +327,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
           const inThisRoom = current.roomId === roomId && current.sessionToken === token;
           if (inThisRoom) current.leaveRoomState();
           if (inThisRoom || roomIsGone(error)) current.markRoomClosed();
-          get().addToast(permanentRoomErrorMessage(error), "error");
+          get().showToast(permanentRoomErrorMessage(error), "error");
           return true;
         },
         signal
@@ -396,7 +378,7 @@ function endRoom(
   roomEntry.cancel();
   currentStore.leaveRoomState();
   currentStore.markRoomClosed();
-  currentStore.addToast(toastText, "error");
+  currentStore.showToast(toastText, "error");
 }
 
 /** 幂等门闩：重复调用 initWhoIsFakerWs 不应叠加第二路消息与状态订阅。 */
@@ -440,10 +422,10 @@ export function initWhoIsFakerWs() {
         }
         break;
       case "game.disconnectDecisionRequested":
-        currentStore.addToast("有玩家掉线，等待主持人处理", "info");
+        currentStore.showToast("有玩家掉线，等待主持人处理", "info");
         break;
       case "room.expiring":
-        currentStore.addToast("房间即将因超时关闭", "error");
+        currentStore.showToast("房间即将因超时关闭", "error");
         break;
       case "room.closed": {
         // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
@@ -466,7 +448,7 @@ export function initWhoIsFakerWs() {
         // onStatus 会带原 sessionToken 自动 reconnectRoom 回到原位；
         // 若那局已被丢弃（旧版本服务或停机过久），那一步会收到 SESSION_NOT_FOUND
         // 并走既有的失效分支。这里提前清票据才是真的回不去了。
-        currentStore.addToast(message, "error", 10000);
+        currentStore.showToast(message, "error", 10000);
         break;
       }
     }

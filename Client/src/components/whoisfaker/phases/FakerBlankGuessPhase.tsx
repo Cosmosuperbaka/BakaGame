@@ -104,7 +104,7 @@ export function BlankGuessButton() {
 function BlankGuessInput() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
   const { exec, busy: submitting } = useFakerPhaseAction();
@@ -128,11 +128,11 @@ function BlankGuessInput() {
     const a = wordA.trim();
     const b = wordB.trim();
     if (!a || !b) {
-      addToast("请输入两个词语", "error");
+      showToast("请输入两个词语", "error");
       return Promise.resolve();
     }
     return exec("game.submitBlankGuess", { words: [a, b] });
-  }, [exec, wordA, wordB, addToast]);
+  }, [exec, wordA, wordB, showToast]);
 
   // 阶段倒计时归零时，若两个词都已填则自动提交（与手动提交的口径一致）
   useFakerAutoSubmitOnTimeout({

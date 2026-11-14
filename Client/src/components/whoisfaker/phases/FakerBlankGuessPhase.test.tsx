@@ -27,7 +27,7 @@ function mount(endsAt: number, sendCommand: ReturnType<typeof vi.fn>) {
     snapshot,
     privateState,
     sendCommand: sendCommand as unknown as SendCommand,
-    addToast: vi.fn(),
+    showToast: vi.fn(),
   });
   render(<BlankGuessStage />);
   fireEvent.change(screen.getByLabelText("词语 A"), { target: { value: "苹果" } });
@@ -99,7 +99,7 @@ describe("白板猜词的交互", () => {
       snapshot: wifSnapshot(stage),
       privateState: wifPrivate(viewer, stage),
       sendCommand: sendCommand as unknown as SendCommand,
-      addToast: vi.fn(),
+      showToast: vi.fn(),
     });
     return sendCommand;
   };

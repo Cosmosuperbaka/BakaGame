@@ -38,13 +38,13 @@ import type {
 } from "@bakagame/shared";
 
 const notifyCopyFailed = () =>
-  useWhoIsFakerStore.getState().addToast("复制失败，请手动复制", "error");
+  useWhoIsFakerStore.getState().showToast("复制失败，请手动复制", "error");
 
 export function FakerWaitingPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
@@ -85,7 +85,7 @@ export function FakerWaitingPhase() {
         starting={starting}
         onStart={handleStart}
         sendCommand={sendCommand}
-        addToast={addToast}
+        showToast={showToast}
       />
     );
   }
@@ -98,7 +98,7 @@ export function FakerWaitingPhase() {
       {showProgress && (
         <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" />
       )}
-      <FakerSettings snapshot={snapshot} readOnly sendCommand={sendCommand} addToast={addToast} />
+      <FakerSettings snapshot={snapshot} readOnly sendCommand={sendCommand} showToast={showToast} />
       {me?.membership === "active" && (
         <div className="flex justify-center">
           <Button
@@ -133,7 +133,7 @@ interface HostWaitingPanelProps {
   starting?: boolean;
   onStart: () => void;
   sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
-  addToast: (text: string, type?: "info" | "error" | "success") => void;
+  showToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 
 function HostWaitingPanel({
@@ -145,7 +145,7 @@ function HostWaitingPanel({
   starting,
   onStart,
   sendCommand,
-  addToast,
+  showToast,
 }: HostWaitingPanelProps) {
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
@@ -161,7 +161,7 @@ function HostWaitingPanel({
         snapshot={snapshot}
         readOnly={false}
         sendCommand={sendCommand}
-        addToast={addToast}
+        showToast={showToast}
       />
 
       {/* 开始按钮 */}
@@ -200,7 +200,7 @@ interface FakerSettingsProps {
   snapshot: WhoIsFakerRoomSnapshot;
   readOnly: boolean;
   sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
-  addToast: (text: string, type?: "info" | "error" | "success") => void;
+  showToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 
 /** 当前快照里的设置：非房主直接读它，房主的草稿也从它起步。 */
@@ -218,7 +218,7 @@ const settingsOf = (snapshot: WhoIsFakerRoomSnapshot) => ({
  * 两组折叠设置：「身份设置」管阵营与揭露规则，「房间设置」管房间本身；两组共用一份草稿、一条防抖自动保存。
  * 非房主看到同一份结构，字段只显示取值，读的是当前快照而不是草稿。
  */
-function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSettingsProps) {
+function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSettingsProps) {
   const limits = snapshot.roleLimits;
   const [draft, setDraft] = useState(() => settingsOf(snapshot));
   const [rolesOpen, setRolesOpen] = useState(false);
@@ -255,7 +255,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
         !readOnly &&
         snapshot.status.phase === "waiting" &&
         (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
-      onError: (error) => addToast(errorText(error, "操作失败，请重试"), "error"),
+      onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
     }
   );
 

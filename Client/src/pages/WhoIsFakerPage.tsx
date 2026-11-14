@@ -29,7 +29,7 @@ export default function WhoIsFakerPage() {
   const createRoom = useWhoIsFakerStore((state) => state.createRoom);
   const joinRoom = useWhoIsFakerStore((state) => state.joinRoom);
   const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
-  const addToast = useWhoIsFakerStore((state) => state.addToast);
+  const showToast = useWhoIsFakerStore((state) => state.showToast);
 
   const {
     userName,
@@ -56,7 +56,7 @@ export default function WhoIsFakerPage() {
     createRoom,
     joinRoom,
     reconnectRoom,
-    showError: (message) => addToast(message, "error"),
+    showError: (message) => showToast(message, "error"),
     // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的房间设置套进新房间。
     onRoomCreated: (roomId, params) => {
       saveRoomCreateDefaults("faker", {

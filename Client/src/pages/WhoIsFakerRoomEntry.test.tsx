@@ -68,7 +68,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   listeners.length = 0;
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  useWhoIsFakerStore.setState({ ...initial, connected: true, addToast: vi.fn() }, true);
+  useWhoIsFakerStore.setState({ ...initial, connected: true, showToast: vi.fn() }, true);
   waitConnection.mockResolvedValue(undefined);
   send.mockImplementation(async (type: string) => {
     if (type === "room.leave") return undefined;
@@ -117,7 +117,7 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     await act(async () => ack.reject({ code: "ROOM_NOT_FOUND" }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(navigate).not.toHaveBeenCalled();
-    expect(useWhoIsFakerStore.getState().addToast).not.toHaveBeenCalled();
+    expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
   });
   it("创建沿用加入signal，晚ACK释放席位", async () => {
     const ack = deferred<ReturnType<typeof receipt>>();
@@ -238,7 +238,7 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
       const view = mount();
       await screen.findByLabelText("房间密码");
       expect(navigate).not.toHaveBeenCalled();
-      expect(useWhoIsFakerStore.getState().addToast).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().showToast).not.toHaveBeenCalled();
       view.unmount();
     });
     it("输对密码后入房", async () => {

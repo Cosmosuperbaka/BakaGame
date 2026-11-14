@@ -83,12 +83,12 @@ describe("usePhaseAction", () => {
 
   describe("exec", () => {
     const setup = (sendCommand: ReturnType<typeof vi.fn>) => {
-      const addToast = vi.fn();
+      const showToast = vi.fn();
       useWhoIsFakerStore.setState({
         sendCommand: sendCommand as never,
-        addToast,
+        showToast,
       });
-      return { addToast, hook: renderHook(useFakerPhaseAction) };
+      return { showToast, hook: renderHook(useFakerPhaseAction) };
     };
 
     it("发命令期间登记在等哪个命令，完成后清空并执行成功回调", async () => {
@@ -131,12 +131,12 @@ describe("usePhaseAction", () => {
 
     it("失败落成错误提示且不抛出、不执行成功回调，随后可重试", async () => {
       const send = vi.fn().mockRejectedValueOnce({ message: "阶段已变化" }).mockResolvedValue({});
-      const { hook, addToast } = setup(send);
+      const { hook, showToast } = setup(send);
       const onSuccess = vi.fn();
       await act(async () => {
         await hook.result.current.exec("game.advancePhase", undefined, { onSuccess });
       });
-      expect(addToast).toHaveBeenCalledExactlyOnceWith("阶段已变化", "error");
+      expect(showToast).toHaveBeenCalledExactlyOnceWith("阶段已变化", "error");
       expect(onSuccess).not.toHaveBeenCalled();
       expect(hook.result.current.pending).toBeNull();
       await act(async () => {
@@ -146,13 +146,13 @@ describe("usePhaseAction", () => {
     });
 
     it("错误没有文案时用兜底提示", async () => {
-      const { hook, addToast } = setup(vi.fn().mockRejectedValue({}));
+      const { hook, showToast } = setup(vi.fn().mockRejectedValue({}));
       await act(async () => {
         await hook.result.current.exec("game.advancePhase", undefined, {
           fallback: "返回房间失败",
         });
       });
-      expect(addToast).toHaveBeenCalledWith("返回房间失败", "error");
+      expect(showToast).toHaveBeenCalledWith("返回房间失败", "error");
     });
 
     it("在途时再发任何命令都被同一把锁挡住", async () => {

@@ -31,7 +31,7 @@ export default function WhoIsFakerRoomPage() {
   const connected = useWhoIsFakerStore((s) => s.connected);
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const channelNotices = useWhoIsFakerStore((s) => s.channelNotices);
   const chatMessages = useMemo(
@@ -44,12 +44,12 @@ export default function WhoIsFakerRoomPage() {
       try {
         await sendCommand("chat.send", { text });
       } catch (e) {
-        addToast(errorText(e, "操作失败，请重试"), "error");
+        showToast(errorText(e, "操作失败，请重试"), "error");
         // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
         throw e;
       }
     },
-    [sendCommand, addToast]
+    [sendCommand, showToast]
   );
 
   const stageRef = useRef<HTMLElement>(null);

@@ -24,7 +24,7 @@ export function FakerWordSubmissionPhase({
 }) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
   const { exec, busy } = useFakerPhaseAction();
   const isQuestioner = privateState?.isQuestioner ?? false;
 
@@ -110,7 +110,7 @@ export function FakerWordSubmissionPhase({
       return;
     }
     if (!isRandomRole && !manualRoleCountsValid) {
-      addToast("手动身份数量与房间配置不一致", "error");
+      showToast("手动身份数量与房间配置不一致", "error");
       return;
     }
     await exec("game.submitWords", {
@@ -127,7 +127,7 @@ export function FakerWordSubmissionPhase({
     isRandomRole,
     manualRoles,
     manualRoleCountsValid,
-    addToast,
+    showToast,
   ]);
 
   if (!isQuestioner) {
