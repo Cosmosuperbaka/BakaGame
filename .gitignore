@@ -84,6 +84,7 @@ Server/data/*.sqlite
 # 图床缓存（分片 SQLite + 清单）同样是构建产物：体积大且可由数据构建工具重跑。
 Server/data/images/
 Server/data/*.sqlite.backup
+Server/data/*.sqlite.backup.prev
 Server/data/*.sqlite.backup-journal
 Server/data/*.tagdiff.json
 
