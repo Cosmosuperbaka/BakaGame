@@ -12,6 +12,7 @@ import { createServerLogger } from "../src/infrastructure/logging/LoggerRuntime"
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeSentryScope, fakeWithScope } from "./support/Sentry";
 
 let exporter: OtlpExporter | undefined;
 let release: ReturnType<typeof spyOn>;
@@ -39,14 +40,13 @@ test("控制台 / 文件 / OTLP / Sentry 共用脱敏且保留错误 cause 诊�
   const logs = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
   const captures = spyOn(Sentry, "captureException").mockImplementation(() => "");
   let extras: Record<string, unknown> | undefined;
-  const scope = {
-    setTag: () => scope,
-    setExtras: (value: Record<string, unknown>) => {
+  const scope = fakeSentryScope({
+    setExtras(value) {
       extras = value;
       return scope;
     },
-  };
-  const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: any) => fn(scope)) as any);
+  });
+  const scoped = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(scope));
   try {
     initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as any);
     exporter = new OtlpExporter({
@@ -493,8 +493,7 @@ test("ERROR 系统日志只走异常事件一条路，不再同时写一条 Sent
   const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
   const errorLog = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
   const captures = spyOn(Sentry, "captureException").mockImplementation(() => "");
-  const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) =>
-    fn({ setTag: () => scoped, setExtras: () => scoped } as never)) as never);
+  const scoped = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(fakeSentryScope()));
   try {
     initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as never);
     const error = new Error("boom");
@@ -578,8 +577,7 @@ test("默认输出下一条 logger 记录恰好产出一条 Sentry 出口，且�
   const infoLog = spyOn(Sentry.logger, "info").mockImplementation(() => undefined);
   const captures = spyOn(Sentry, "captureException").mockImplementation(() => "");
   const messages = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
-  const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) =>
-    fn({ setTag: () => scoped, setExtras: () => scoped } as never)) as never);
+  const scoped = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(fakeSentryScope()));
   const consoleInfo = spyOn(console, "info").mockImplementation(() => undefined);
   const consoleWarn = spyOn(console, "warn").mockImplementation(() => undefined);
   const consoleError = spyOn(console, "error").mockImplementation(() => undefined);

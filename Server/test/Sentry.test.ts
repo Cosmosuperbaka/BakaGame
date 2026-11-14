@@ -23,6 +23,7 @@ import {
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
 } from "../src/infrastructure/Sentry";
+import { fakeSentryScope, fakeWithScope } from "./support/Sentry";
 
 // release 解析不依赖本机 Git/子进程权限；所有 SDK init 已由各例 mock。
 let gitSpy: ReturnType<typeof spyOn>;
@@ -83,7 +84,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("配置 sentryDsn 时成功调用 Sentry.init 并标记为已启用", () => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
       const env = createMockEnv({
         sentryDsn: "https://mock@o0.ingest.sentry.io/1",
         otelDeploymentEnvironment: "staging",
@@ -128,7 +129,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
   });
 
   it("生产环境已初始化时发送服务心跳检查", () => {
-    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
     initServerSentry(createMockEnv({ otelDeploymentEnvironment: "production" }));
     initSpy.mockRestore();
     const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
@@ -151,7 +152,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
   });
 
   it("非生产环境不上报心跳：本地实例既不能顶替生产，也不该凭空制造误报", () => {
-    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
     initServerSentry(createMockEnv({ otelDeploymentEnvironment: "development" }));
     initSpy.mockRestore();
     const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
@@ -173,7 +174,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   describe("已初始化状态的上下文注入与异常上报", () => {
     beforeEach(() => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
       initServerSentry(createMockEnv());
       initSpy.mockRestore();
     });
@@ -182,22 +183,18 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       const tags: Record<string, string> = {};
       let extras: Record<string, unknown> | undefined;
 
-      const mockScope = {
-        setTag: (k: string, v: string) => {
-          tags[k] = v;
+      const mockScope = fakeSentryScope({
+        setTag(key, value) {
+          tags[key] = String(value);
           return mockScope;
         },
-        setExtras: (ext: Record<string, unknown>) => {
-          extras = ext;
+        setExtras(input) {
+          extras = input;
           return mockScope;
         },
-      };
+      });
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
-        fn: (scope: unknown) => unknown
-      ) => {
-        return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
-      }) as any);
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(mockScope));
       const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
 
       const testError = new Error("Database connection timeout");
@@ -222,12 +219,8 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("captureServerException 在无 context 时安全上报", () => {
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
-        fn: (scope: unknown) => unknown
-      ) => {
-        const dummyScope = { setTag: () => dummyScope, setExtras: () => dummyScope };
-        return fn(dummyScope) as ReturnType<typeof Sentry.withScope>;
-      }) as any);
+      const dummyScope = fakeSentryScope();
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(dummyScope));
       const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
 
       const err = new Error("Simple error");
@@ -243,22 +236,18 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       const tags: Record<string, string> = {};
       let extras: Record<string, unknown> | undefined;
 
-      const mockScope = {
-        setTag: (k: string, v: string) => {
-          tags[k] = v;
+      const mockScope = fakeSentryScope({
+        setTag(key, value) {
+          tags[key] = String(value);
           return mockScope;
         },
-        setExtras: (ext: Record<string, unknown>) => {
-          extras = ext;
+        setExtras(input) {
+          extras = input;
           return mockScope;
         },
-      };
+      });
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
-        fn: (scope: unknown) => unknown
-      ) => {
-        return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
-      }) as any);
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(mockScope));
       const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
 
       captureServerMessage("High memory alert", "warning", {
@@ -277,7 +266,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
   describe("flushServerSentry & closeServerSentry 优雅停机排空", () => {
     beforeEach(() => {
-      const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
       initServerSentry(createMockEnv());
       initSpy.mockRestore();
     });
@@ -429,14 +418,13 @@ describe("服务端遥测统一脱敏出口", () => {
     const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
     const logs = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
     let extras: Record<string, unknown> | undefined;
-    const scope = {
-      setTag: () => scope,
-      setExtras: (input: Record<string, unknown>) => {
+    const scope = fakeSentryScope({
+      setExtras(input) {
         extras = input;
         return scope;
       },
-    };
-    const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: any) => fn(scope)) as any);
+    });
+    const scoped = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(scope));
     const exception = spyOn(Sentry, "captureException").mockImplementation(() => "");
     try {
       initServerSentry(createMockEnv());
@@ -671,7 +659,7 @@ it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () 
   const originalRelease = Bun.env.SENTRY_RELEASE,
     originalNodeEnv = Bun.env.NODE_ENV;
   const release = spyOn(Release, "resolveServerRelease").mockReturnValue(undefined);
-  const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
   const warning = spyOn(process.stderr, "write").mockImplementation((() => true) as any);
   try {
     Bun.env.SENTRY_RELEASE = "arbitrary-legacy-producer";
@@ -695,7 +683,7 @@ it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () 
 
 it("Sentry 只消费 Env 的环境标记并保持 canonical 七位 release", () => {
   const originalRelease = Bun.env.SENTRY_RELEASE;
-  const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
   try {
     Bun.env.SENTRY_RELEASE = "v2.0.0-rc1";
     initServerSentry(createMockEnv({ otelDeploymentEnvironment: "test" }));
@@ -717,7 +705,7 @@ describe("部署环境标记的安全态（缺省即失败，不静默切池）"
   });
 
   it("已配 SENTRY_DSN 但环境标记未显式注入时拒绝初始化", () => {
-    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
     const warning = spyOn(console, "warn").mockImplementation(() => {});
     try {
       expect(() => initServerSentry(createMockEnv({ deploymentMarkerExplicit: false }))).toThrow(
@@ -733,7 +721,7 @@ describe("部署环境标记的安全态（缺省即失败，不静默切池）"
   });
 
   it("标记显式注入才初始化；未配 DSN 时不存在采集面，不触发缺标拒绝", () => {
-    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
     const warning = spyOn(console, "warn").mockImplementation(() => {});
     try {
       initServerSentry(createMockEnv({ deploymentMarkerExplicit: true }));
@@ -781,7 +769,7 @@ describe("部署环境标记的安全态（缺省即失败，不静默切池）"
 
 describe("ignoreErrors 边界：采集链路自身故障不进忽略名单", () => {
   it("名单只保留可判别的客户端断开文案；隧道文案与宽子串一律移除", () => {
-    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
     const warning = spyOn(console, "warn").mockImplementation(() => {});
     try {
       initServerSentry(createMockEnv());
