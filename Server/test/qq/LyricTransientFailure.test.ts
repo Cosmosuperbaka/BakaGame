@@ -1,23 +1,27 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import qqmusic from "qqmusic-api-enhanced";
+import type { Response } from "qqmusic-api-enhanced";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import { amllTtmlFixture, LRC } from "./Fixtures";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = { song_detail: qqmusic.song_detail, lyric: qqmusic.lyric };
 afterEach(() => {
   Object.assign(qqmusic, originals);
 });
 
-const mockUpstream = (lyric: () => Promise<unknown>) => {
+const mockUpstream = (lyric: () => Promise<Response>) => {
   let detailCalls = 0;
-  qqmusic.song_detail = mock(async () => {
-    detailCalls += 1;
-    return {
-      status: 200,
-      body: { data: { track_info: { name: "歌", singer: [{ name: "歌手" }] } } },
-    };
-  }) as never;
-  qqmusic.lyric = mock(lyric) as never;
+  qqmusic.song_detail = qqStub.song_detail(
+    mock(async () => {
+      detailCalls += 1;
+      return {
+        status: 200,
+        body: { data: { track_info: { name: "歌", singer: [{ name: "歌手" }] } } },
+      };
+    })
+  );
+  qqmusic.lyric = qqStub.lyric(mock(lyric));
   return { detailCalls: () => detailCalls };
 };
 

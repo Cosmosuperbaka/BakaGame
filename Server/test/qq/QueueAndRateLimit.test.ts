@@ -2,6 +2,7 @@ import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
 import { offlineAmll } from "./Fixtures";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = {
   search: qqmusic.search,
@@ -23,12 +24,14 @@ describe("QQ音乐上游队列与限流退避", () => {
         rateLimitCooldownMs: 30,
         maxRateLimitCooldownMs: 30,
       });
-      qqmusic.search = mock(async () => {
-        calls += 1;
-        return calls === 1
-          ? { status: upstreamStatus, body: { code: upstreamStatus, message: "请求过于频繁" } }
-          : { status: 200, body: { songs: [] } };
-      }) as any;
+      qqmusic.search = qqStub.search(
+        mock(async () => {
+          calls += 1;
+          return calls === 1
+            ? { status: upstreamStatus, body: { code: upstreamStatus, message: "请求过于频繁" } }
+            : { status: 200, body: { songs: [] } };
+        })
+      );
 
       await expect(provider.search("首次限流")).rejects.toMatchObject({
         code: "MUSIC_API_RATE_LIMITED",
@@ -56,12 +59,14 @@ describe("QQ音乐上游队列与限流退避", () => {
       rateLimitCooldownMs: 30,
       maxRateLimitCooldownMs: 30,
     });
-    qqmusic.search = mock(async () => {
-      calls += 1;
-      return calls === 1
-        ? { status: 200, body: { code: 429, message: "请求过于频繁" } }
-        : { status: 200, body: { songs: [] } };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        calls += 1;
+        return calls === 1
+          ? { status: 200, body: { code: 429, message: "请求过于频繁" } }
+          : { status: 200, body: { songs: [] } };
+      })
+    );
 
     await expect(provider.search("body 限流")).rejects.toMatchObject({
       code: "MUSIC_API_RATE_LIMITED",
@@ -90,18 +95,20 @@ describe("QQ音乐上游队列与限流退避", () => {
       queueTimeoutMs: 15,
       ...offlineAmll,
     });
-    qqmusic.song_detail = mock(async () => {
-      calls += 1;
-      if (calls === 1) {
-        notifyFirstStarted();
-        await blocker;
-      }
-      return {
-        status: 200,
-        body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } },
-      };
-    }) as any;
-    qqmusic.lyric = mock(async () => ({ status: 200, body: {} })) as any;
+    qqmusic.song_detail = qqStub.song_detail(
+      mock(async () => {
+        calls += 1;
+        if (calls === 1) {
+          notifyFirstStarted();
+          await blocker;
+        }
+        return {
+          status: 200,
+          body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } },
+        };
+      })
+    );
+    qqmusic.lyric = qqStub.lyric(mock(async () => ({ status: 200, body: {} })));
 
     const active = provider.getSongMetadata("qq:busy1");
     await firstStarted;

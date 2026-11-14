@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = { search: qqmusic.search };
 const restore = () => Object.assign(qqmusic, originals);
@@ -10,10 +11,12 @@ describe("QQ音乐上游预热（契约对齐网易云 warmUp）", () => {
   it("预热只探测一次匿名上游，重复调用不再发请求", async () => {
     let probes = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.search = mock(async () => {
-      probes += 1;
-      return { status: 200, body: { songs: [] } };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        probes += 1;
+        return { status: 200, body: { songs: [] } };
+      })
+    );
 
     await provider.warmUp();
     await provider.warmUp();
@@ -30,11 +33,13 @@ describe("QQ音乐上游预热（契约对齐网易云 warmUp）", () => {
         warn: (message: string, meta: unknown) => warnings.push({ message, meta }),
       } as any,
     });
-    qqmusic.search = mock(async () => {
-      probes += 1;
-      if (!succeed) throw new Error("预热抖动");
-      return { status: 200, body: { songs: [{ mid: "m", title: "T" }] } };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        probes += 1;
+        if (!succeed) throw new Error("预热抖动");
+        return { status: 200, body: { songs: [{ mid: "m", title: "T" }] } };
+      })
+    );
 
     await expect(provider.warmUp()).resolves.toBeUndefined();
     expect(warnings).toHaveLength(1);

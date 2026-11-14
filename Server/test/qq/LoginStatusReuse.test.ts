@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = {
   login_status: qqmusic.login_status,
@@ -13,16 +14,18 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
   it("同一 Cookie 的登录态在复用窗口内只回源一次，且返回值不可污染缓存", async () => {
     let statusCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async () => {
-      statusCalls += 1;
-      return {
-        status: 200,
-        body: {
-          isLogin: true,
-          account: { userId: "7", nickname: "复用测试", vipLevel: 5 },
-        },
-      };
-    }) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => {
+        statusCalls += 1;
+        return {
+          status: 200,
+          body: {
+            isLogin: true,
+            account: { userId: "7", nickname: "复用测试", vipLevel: 5 },
+          },
+        };
+      })
+    );
 
     const first = await provider.getLoginStatus("qm_keyst=reuse");
     expect(first.account).toMatchObject({ nickname: "复用测试", vipLevel: 5 });
@@ -41,14 +44,16 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
     let seen: unknown;
     let statusCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async ({ cookie }: { cookie?: unknown }) => {
-      statusCalls += 1;
-      seen = cookie;
-      return {
-        status: 200,
-        body: { isLogin: true, account: { userId: "9", nickname: "组合" } },
-      };
-    }) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async ({ cookie } = {}) => {
+        statusCalls += 1;
+        seen = cookie;
+        return {
+          status: 200,
+          body: { isLogin: true, account: { userId: "9", nickname: "组合" } },
+        };
+      })
+    );
 
     await expect(
       provider.getLoginStatus({ qq: "qm_keyst=combo", netease: "MUSIC_U=x" })
@@ -61,17 +66,19 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
   it("轮换后的新 Cookie 也写入复用缓存，用新 Cookie 查询不再回源", async () => {
     let statusCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async () => {
-      statusCalls += 1;
-      return {
-        status: 200,
-        body: {
-          isLogin: true,
-          cookieStr: "qm_keyst=fresh",
-          account: { userId: "9", nickname: "已登录" },
-        },
-      };
-    }) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => {
+        statusCalls += 1;
+        return {
+          status: 200,
+          body: {
+            isLogin: true,
+            cookieStr: "qm_keyst=fresh",
+            account: { userId: "9", nickname: "已登录" },
+          },
+        };
+      })
+    );
 
     const session = await provider.getLoginStatus("qm_keyst=old");
     expect(session.cookie).toBe("qm_keyst=fresh");
@@ -84,11 +91,13 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
   it("同一 Cookie 的并发校验合并为一次回源，各调用方拿到互不污染的副本", async () => {
     let statusCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async () => {
-      statusCalls += 1;
-      await Bun.sleep(10);
-      return { status: 200, body: { isLogin: true, account: { userId: "5", nickname: "并发" } } };
-    }) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => {
+        statusCalls += 1;
+        await Bun.sleep(10);
+        return { status: 200, body: { isLogin: true, account: { userId: "5", nickname: "并发" } } };
+      })
+    );
 
     const [first, second] = await Promise.all([
       provider.getLoginStatus("qm_keyst=concurrent"),
@@ -102,15 +111,19 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
   it("并发的强制续期也合并，续期接口只被调用一次", async () => {
     let refreshCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async () => ({
-      status: 200,
-      body: { isLogin: true, account: { userId: "5", nickname: "续期" } },
-    })) as any;
-    qqmusic.login_refresh = mock(async () => {
-      refreshCalls += 1;
-      await Bun.sleep(10);
-      return { status: 200, body: { code: 200, cookieStr: "qm_keyst=renewed" } };
-    }) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => ({
+        status: 200,
+        body: { isLogin: true, account: { userId: "5", nickname: "续期" } },
+      }))
+    );
+    qqmusic.login_refresh = qqStub.login_refresh(
+      mock(async () => {
+        refreshCalls += 1;
+        await Bun.sleep(10);
+        return { status: 200, body: { code: 200, cookieStr: "qm_keyst=renewed" } };
+      })
+    );
 
     const sessions = await Promise.all([
       provider.getLoginStatus("qm_keyst=old", undefined, { forceRefresh: true }),
@@ -126,13 +139,17 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
   it("校验失败不缓存，失败的在途校验结束后下一次仍会回源", async () => {
     let statusCalls = 0;
     const provider = new QQMusicProvider();
-    qqmusic.login_status = mock(async () => {
-      statusCalls += 1;
-      return statusCalls === 1
-        ? { status: 200, body: { isLogin: false } }
-        : { status: 200, body: { isLogin: true, account: { userId: "1", nickname: "恢复" } } };
-    }) as any;
-    qqmusic.login_refresh = mock(async () => ({ status: 200, body: { code: 500 } })) as any;
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => {
+        statusCalls += 1;
+        return statusCalls === 1
+          ? { status: 200, body: { isLogin: false } }
+          : { status: 200, body: { isLogin: true, account: { userId: "1", nickname: "恢复" } } };
+      })
+    );
+    qqmusic.login_refresh = qqStub.login_refresh(
+      mock(async () => ({ status: 200, body: { code: 500 } }))
+    );
 
     await expect(provider.getLoginStatus("qm_keyst=flaky")).rejects.toMatchObject({
       code: "MUSIC_SESSION_INVALID",

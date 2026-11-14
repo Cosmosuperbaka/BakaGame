@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = {
   login_qr_create: qqmusic.login_qr_create,
@@ -14,26 +15,32 @@ describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", 
   it("并发扫码登录各自轮询拿到各自的凭证", async () => {
     let seq = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.login_qr_create = mock(async () => {
-      seq += 1;
-      return {
+    qqmusic.login_qr_create = qqStub.login_qr_create(
+      mock(async () => {
+        seq += 1;
+        return {
+          status: 200,
+          body: {
+            qrsig: `sig-${seq}`,
+            ptqrtoken: seq,
+            url: `https://qr/${seq}`,
+            qrimg: `data:qr${seq}`,
+          },
+        };
+      })
+    );
+    qqmusic.login_qr_check = qqStub.login_qr_check(
+      mock(async ({ qrsig } = {}) => ({
         status: 200,
-        body: {
-          qrsig: `sig-${seq}`,
-          ptqrtoken: seq,
-          url: `https://qr/${seq}`,
-          qrimg: `data:qr${seq}`,
-        },
-      };
-    }) as any;
-    qqmusic.login_qr_check = mock(async ({ qrsig }: { qrsig?: string }) => ({
-      status: 200,
-      body: { code: 200, cookieStr: `qm_keyst=done-${qrsig}` },
-    })) as any;
-    qqmusic.login_status = mock(async () => ({
-      status: 200,
-      body: { isLogin: true, account: { userId: "1", nickname: "扫码用户" } },
-    })) as any;
+        body: { code: 200, cookieStr: `qm_keyst=done-${qrsig}` },
+      }))
+    );
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => ({
+        status: 200,
+        body: { isLogin: true, account: { userId: "1", nickname: "扫码用户" } },
+      }))
+    );
 
     const qrA = await provider.createQrLogin("qq", "qq");
     // 后发起者不会覆盖前者的会话分桶
@@ -51,17 +58,23 @@ describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", 
 
   it("过期二维码返回 expired 且不触发登录态校验", async () => {
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.login_qr_create = mock(async () => ({
-      status: 200,
-      body: { qrsig: "sig", ptqrtoken: 1, url: "https://qr", qrimg: "data:qr" },
-    })) as any;
-    qqmusic.login_qr_check = mock(async () => ({
-      status: 200,
-      body: { code: 800, message: "二维码已失效" },
-    })) as any;
-    qqmusic.login_status = mock(async () => {
-      throw new Error("过期会话不应触发登录态校验");
-    }) as any;
+    qqmusic.login_qr_create = qqStub.login_qr_create(
+      mock(async () => ({
+        status: 200,
+        body: { qrsig: "sig", ptqrtoken: 1, url: "https://qr", qrimg: "data:qr" },
+      }))
+    );
+    qqmusic.login_qr_check = qqStub.login_qr_check(
+      mock(async () => ({
+        status: 200,
+        body: { code: 800, message: "二维码已失效" },
+      }))
+    );
+    qqmusic.login_status = qqStub.login_status(
+      mock(async () => {
+        throw new Error("过期会话不应触发登录态校验");
+      })
+    );
 
     const qr = await provider.createQrLogin("qq", "qq");
     await expect(provider.checkQrLogin(qr.key, "qq", "qq")).resolves.toMatchObject({

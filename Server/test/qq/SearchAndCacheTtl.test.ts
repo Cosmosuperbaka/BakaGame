@@ -2,6 +2,7 @@ import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
 import { offlineAmll } from "./Fixtures";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = {
   search: qqmusic.search,
@@ -20,11 +21,13 @@ describe("QQ音乐检索缓存（MusicCache 语义）", () => {
       finishFirstSearch = resolve;
     });
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.search = mock(async () => {
-      calls += 1;
-      if (calls === 1) await firstSearchBlocker;
-      return { status: 200, body: { songs: [{ mid: `m${calls}`, title: "歌曲" }] } };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        calls += 1;
+        if (calls === 1) await firstSearchBlocker;
+        return { status: 200, body: { songs: [{ mid: `m${calls}`, title: "歌曲" }] } };
+      })
+    );
 
     const concurrentPromise = Promise.all([
       provider.search("并发"),
@@ -44,13 +47,15 @@ describe("QQ音乐检索缓存（MusicCache 语义）", () => {
     let now = 1_000;
     let calls = 0;
     const provider = new QQMusicProvider({ now: () => now, minRequestIntervalMs: 0 });
-    qqmusic.search = mock(async ({ keywords }: { keywords?: string }) => {
-      calls += 1;
-      return {
-        status: 200,
-        body: { songs: keywords === "有结果" ? [{ mid: "m1", title: "命中" }] : [] },
-      };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async ({ keywords } = {}) => {
+        calls += 1;
+        return {
+          status: 200,
+          body: { songs: keywords === "有结果" ? [{ mid: "m1", title: "命中" }] : [] },
+        };
+      })
+    );
 
     await expect(provider.search("空结果")).resolves.toEqual([]);
     await expect(provider.search("空结果")).resolves.toEqual([]);
@@ -77,17 +82,21 @@ describe("QQ音乐检索缓存（MusicCache 语义）", () => {
   it("熔断期内缓存命中仍可服务，未命中的关键词才被拦截", async () => {
     let calls = 0;
     const provider = new QQMusicProvider({ now: () => 1_000, minRequestIntervalMs: 0 });
-    qqmusic.search = mock(async () => {
-      calls += 1;
-      return { status: 200, body: { songs: [{ mid: "warm", title: "已有缓存" }] } };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        calls += 1;
+        return { status: 200, body: { songs: [{ mid: "warm", title: "已有缓存" }] } };
+      })
+    );
     await provider.search("已缓存", 5);
     expect(calls).toBe(1);
 
-    qqmusic.search = mock(async () => {
-      calls += 1;
-      throw new Error("upstream down");
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async () => {
+        calls += 1;
+        throw new Error("upstream down");
+      })
+    );
     for (let index = 0; index < 3; index += 1) {
       await expect(provider.search(`失败${index}`, 5)).rejects.toThrow("upstream down");
     }
@@ -100,15 +109,19 @@ describe("QQ音乐检索缓存（MusicCache 语义）", () => {
   it("播放地址按 Cookie 指纹分键，不同账号不共享直链缓存", async () => {
     let audioCalls = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0, ...offlineAmll });
-    qqmusic.song_detail = mock(async () => ({
-      status: 200,
-      body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } },
-    })) as any;
-    qqmusic.lyric = mock(async () => ({ status: 200, body: {} })) as any;
-    qqmusic.song_url = mock(async () => {
-      audioCalls += 1;
-      return { status: 200, body: { data: [{ url: `https://cdn.example/${audioCalls}.mp3` }] } };
-    }) as any;
+    qqmusic.song_detail = qqStub.song_detail(
+      mock(async () => ({
+        status: 200,
+        body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } },
+      }))
+    );
+    qqmusic.lyric = qqStub.lyric(mock(async () => ({ status: 200, body: {} })));
+    qqmusic.song_url = qqStub.song_url(
+      mock(async () => {
+        audioCalls += 1;
+        return { status: 200, body: { data: [{ url: `https://cdn.example/${audioCalls}.mp3` }] } };
+      })
+    );
 
     await expect(provider.getSong("qq:audio1", "uin=1; qm_keyst=a")).resolves.toMatchObject({
       audioUrl: "https://cdn.example/1.mp3",
@@ -132,13 +145,15 @@ describe("QQ音乐歌手检索：缓存与条数钳制", () => {
   it("同一关键词的歌手检索命中缓存，条数上限被钳制", async () => {
     const seenLimits: unknown[] = [];
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.search = mock(async ({ limit }: { limit?: number }) => {
-      seenLimits.push(limit);
-      return {
-        status: 200,
-        body: { data: { body: { singer: [{ singerMID: "s1", singerName: "歌手甲" }] } } },
-      };
-    }) as any;
+    qqmusic.search = qqStub.search(
+      mock(async ({ limit } = {}) => {
+        seenLimits.push(limit);
+        return {
+          status: 200,
+          body: { data: { body: { singer: [{ singerMID: "s1", singerName: "歌手甲" }] } } },
+        };
+      })
+    );
 
     const first = await provider.searchArtists("歌手甲", 9_999);
     const second = await provider.searchArtists("歌手甲", 9_999);
@@ -149,13 +164,15 @@ describe("QQ音乐歌手检索：缓存与条数钳制", () => {
   it("歌手曲目命中缓存，不重复回源", async () => {
     let calls = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.artist_songs = mock(async () => {
-      calls += 1;
-      return {
-        status: 200,
-        body: { songs: [{ mid: "m1", name: "轨迹", singer: [{ name: "歌手甲" }] }] },
-      };
-    }) as any;
+    qqmusic.artist_songs = qqStub.artist_songs(
+      mock(async () => {
+        calls += 1;
+        return {
+          status: 200,
+          body: { songs: [{ mid: "m1", name: "轨迹", singer: [{ name: "歌手甲" }] }] },
+        };
+      })
+    );
 
     await provider.getArtistSongs("qq:s1");
     await provider.getArtistSongs("qq:s1");

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import { qqStub } from "../support/Qqmusic";
 
 const originals = {
   playlist_detail: qqmusic.playlist_detail,
@@ -22,15 +23,19 @@ describe("QQ音乐歌单翻页（对齐网易云口径）", () => {
     const all = Array.from({ length: total }, (_, index) => track(index));
     const offsets: number[] = [];
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.playlist_detail = mock(async () => ({
-      status: 200,
-      body: { dirinfo: { title: "超长歌单" } },
-    })) as any;
-    qqmusic.playlist_track_all = mock(async ({ offset }: { offset?: number }) => {
-      const start = Number(offset ?? 0);
-      offsets.push(start);
-      return { status: 200, body: { songs: all.slice(start, start + 1000), total } };
-    }) as any;
+    qqmusic.playlist_detail = qqStub.playlist_detail(
+      mock(async () => ({
+        status: 200,
+        body: { dirinfo: { title: "超长歌单" } },
+      }))
+    );
+    qqmusic.playlist_track_all = qqStub.playlist_track_all(
+      mock(async ({ offset } = {}) => {
+        const start = Number(offset ?? 0);
+        offsets.push(start);
+        return { status: 200, body: { songs: all.slice(start, start + 1000), total } };
+      })
+    );
 
     const result = await provider.getPlaylistSongs("901211232");
     expect(result.info).toEqual({ id: "qq:901211232", name: "超长歌单", songCount: total });
@@ -44,14 +49,18 @@ describe("QQ音乐歌单翻页（对齐网易云口径）", () => {
   it("歌单翻页中途失败时保留已取到的曲目", async () => {
     const firstPage = Array.from({ length: 1000 }, (_, index) => track(index));
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.playlist_detail = mock(async () => ({
-      status: 200,
-      body: { dirinfo: { title: "半途" } },
-    })) as any;
-    qqmusic.playlist_track_all = mock(async ({ offset }: { offset?: number }) => {
-      if (Number(offset ?? 0) > 0) throw new Error("上游翻页失败");
-      return { status: 200, body: { songs: firstPage, total: 1201 } };
-    }) as any;
+    qqmusic.playlist_detail = qqStub.playlist_detail(
+      mock(async () => ({
+        status: 200,
+        body: { dirinfo: { title: "半途" } },
+      }))
+    );
+    qqmusic.playlist_track_all = qqStub.playlist_track_all(
+      mock(async ({ offset } = {}) => {
+        if (Number(offset ?? 0) > 0) throw new Error("上游翻页失败");
+        return { status: 200, body: { songs: firstPage, total: 1201 } };
+      })
+    );
 
     const result = await provider.getPlaylistSongs("901211232");
     expect(result.info.songCount).toBe(1201);
@@ -62,15 +71,19 @@ describe("QQ音乐歌单翻页（对齐网易云口径）", () => {
     let trackCalls = 0;
     const repeated = [track(0), track(1)];
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.playlist_detail = mock(async () => ({
-      status: 200,
-      body: { dirinfo: { title: "两首" } },
-    })) as any;
-    qqmusic.playlist_track_all = mock(async () => {
-      trackCalls += 1;
-      // 不带 total，且每页都返回同一份曲目：只能靠“本页没有新增”终止翻页
-      return { status: 200, body: { songs: repeated } };
-    }) as any;
+    qqmusic.playlist_detail = qqStub.playlist_detail(
+      mock(async () => ({
+        status: 200,
+        body: { dirinfo: { title: "两首" } },
+      }))
+    );
+    qqmusic.playlist_track_all = qqStub.playlist_track_all(
+      mock(async () => {
+        trackCalls += 1;
+        // 不带 total，且每页都返回同一份曲目：只能靠“本页没有新增”终止翻页
+        return { status: 200, body: { songs: repeated } };
+      })
+    );
 
     const result = await provider.getPlaylistSongs("901211232");
     expect(result.songs.map((song) => song.id)).toEqual(["qq:m0", "qq:m1"]);
