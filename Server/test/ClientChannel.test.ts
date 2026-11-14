@@ -16,6 +16,7 @@ import {
 import {
   CLIENT_DEVICE_IDLE_RETENTION_MS,
   CLIENT_DEVICE_PURGE_INTERVAL_MS,
+  CLIENT_UNTRUSTED_WARN_INTERVAL_MS,
 } from "../src/config/Constants";
 import { compareDottedVersion } from "../src/shared/ModelValues";
 import type { AndroidAttestationChecker } from "../src/infrastructure/AndroidAttestation";
@@ -57,15 +58,17 @@ function harness(
 ) {
   const clock = options.clock ?? { value: 1_000_000 };
   const warnings: string[] = [];
+  const infos: Array<{ message: string; context?: Record<string, unknown> }> = [];
   const store = new InMemoryClientChannelStore();
   const channel = new ClientChannel({
     store,
     now: () => clock.value,
     minimumVersion: () => options.minimum ?? "",
     onWarn: (message) => warnings.push(message),
+    onInfo: (message, context) => infos.push({ message, context }),
     attestation: options.attestation,
   });
-  return { channel, clock, store, warnings };
+  return { channel, clock, store, warnings, infos };
 }
 
 describe("客户端通道判定", () => {
@@ -408,6 +411,34 @@ describe("客户端通道换票", () => {
     ).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
     expect(await store.find(device.clientId)).toBeUndefined();
     expect(warnings).toEqual(["客户端完整性校验未通过"]);
+  });
+  test("同一设备反复自检不过：窗口内只留一条告警，其余降为信息级，拒绝照旧", async () => {
+    const { channel, clock, warnings, infos } = harness();
+    const { device } = desktopDevice();
+    const other = desktopDevice().device;
+    const attempt = (publicKey: string) =>
+      channel.register({
+        clientType: "desktop",
+        platform: "windows",
+        clientVersion: "1.0.0",
+        keyAlgorithm: "ed25519",
+        publicKey,
+        selfCheck: { ...clean, hardFail: ["ldr_list_mismatch"] },
+      });
+    for (let i = 0; i < 3; i += 1)
+      await expect(attempt(device.publicKey)).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
+    expect(warnings).toEqual(["客户端完整性校验未通过"]);
+    expect(infos.map((entry) => entry.message)).toEqual([
+      "客户端完整性校验未通过",
+      "客户端完整性校验未通过",
+    ]);
+    // 换一台设备是新的安全信号，仍然告警。
+    await expect(attempt(other.publicKey)).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
+    expect(warnings).toHaveLength(2);
+    // 窗口过去后同一设备再次告警。
+    clock.value += CLIENT_UNTRUSTED_WARN_INTERVAL_MS + 1;
+    await expect(attempt(device.publicKey)).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
+    expect(warnings).toHaveLength(3);
   });
   test("换票阶段自检不过不给票，并记下原因供排查", async () => {
     const { channel, warnings } = harness();

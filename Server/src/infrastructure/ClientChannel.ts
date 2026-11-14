@@ -2,9 +2,11 @@ import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import {
   CLIENT_DEVICE_IDLE_RETENTION_MS,
   CLIENT_DEVICE_PURGE_INTERVAL_MS,
+  CLIENT_UNTRUSTED_WARN_INTERVAL_MS,
 } from "../config/Constants";
 import { AppError } from "../domain/Errors";
 import { describeError } from "./EventLogger";
+import { SlidingWindowRateLimiter } from "./RateLimiter";
 import { compareDottedVersion } from "../shared/ModelValues";
 import type { ClientChannelProof } from "../shared/Model";
 import type { AndroidAttestationChecker } from "./AndroidAttestation";
@@ -235,6 +237,8 @@ export interface ClientChannelOptions {
   /** 最低支持版本按平台给：协议破坏性变更时抬这一档就能强制旧壳升级。 */
   minimumVersion: (clientType: ClientChannelProof["clientType"]) => string;
   onWarn?: (message: string, context?: Record<string, unknown>) => void;
+  /** 被限频压下的重复告警降到这里（信息级）；不注入则丢弃。 */
+  onInfo?: (message: string, context?: Record<string, unknown>) => void;
   /**
    * Android Key Attestation 校验器。未注入时带链注册只记 `degraded`：
    * 服务端没配期望包名不该把真实设备挡在门外，但也不能当作「验过了」。
@@ -247,6 +251,12 @@ export class ClientChannel {
   private readonly now: () => number;
   private readonly minimumVersion: ClientChannelOptions["minimumVersion"];
   private readonly onWarn: (message: string, context?: Record<string, unknown>) => void;
+  private readonly onInfo: (message: string, context?: Record<string, unknown>) => void;
+  /** 完整性未通过的告警按设备限频：同一设备反复失败只告警一次，不淹没真正的新信号。 */
+  private readonly untrustedWarnLimiter = new SlidingWindowRateLimiter({
+    windowMs: CLIENT_UNTRUSTED_WARN_INTERVAL_MS,
+    maxRequests: 1,
+  });
   private readonly attestation: AndroidAttestationChecker | undefined;
   private lastPurgeAt: number | undefined;
   private readonly challenges = new Map<string, { clientId: string; expiresAt: number }>();
@@ -259,6 +269,7 @@ export class ClientChannel {
     this.now = options.now ?? (() => Date.now());
     this.minimumVersion = options.minimumVersion;
     this.onWarn = options.onWarn ?? (() => {});
+    this.onInfo = options.onInfo ?? (() => {});
     this.attestation = options.attestation;
   }
   isOutdated(clientType: ClientChannelProof["clientType"], clientVersion: string): boolean {
@@ -272,6 +283,7 @@ export class ClientChannel {
   private requireTrusted(
     selfCheck: ClientSelfCheckReport,
     stage: "register" | "attest",
+    clientId: string,
     attestationLevel?: ClientAttestationLevel
   ): "clean" | "suspect" {
     // 服务端验出来的档位覆盖壳自报的：自报只可能对自己不利，改一句代码就能声明 trusted。
@@ -279,7 +291,10 @@ export class ClientChannel {
       attestationLevel === undefined ? selfCheck : { ...selfCheck, attestationLevel }
     );
     if (!verdict.trusted) {
-      this.onWarn("客户端完整性校验未通过", { stage, reason: verdict.reason });
+      const report = this.untrustedWarnLimiter.consume(clientId, this.now()).allowed
+        ? this.onWarn
+        : this.onInfo;
+      report("客户端完整性校验未通过", { stage, reason: verdict.reason });
       throw new AppError("CLIENT_UNTRUSTED", "客户端完整性校验未通过");
     }
     return verdict.integrity;
@@ -317,7 +332,11 @@ export class ClientChannel {
     } catch {
       throw new AppError("INVALID_PUBLIC_KEY", "设备公钥无法解析");
     }
-    const integrity = this.requireTrusted(input.selfCheck, "register");
+    const integrity = this.requireTrusted(
+      input.selfCheck,
+      "register",
+      clientIdOfPublicKey(input.publicKey)
+    );
     if (integrity === "suspect")
       this.onWarn("客户端以可疑状态注册", {
         clientType: input.clientType,
@@ -395,7 +414,12 @@ export class ClientChannel {
     if (!device) throw new AppError("CLIENT_UNKNOWN", "该客户端尚未注册");
     if (!verifyClientSignature(device, input.challenge, input.signature))
       throw new AppError("CLIENT_UNTRUSTED", "客户端签名校验失败");
-    const integrity = this.requireTrusted(input.selfCheck, "attest", device.attestationLevel);
+    const integrity = this.requireTrusted(
+      input.selfCheck,
+      "attest",
+      device.clientId,
+      device.attestationLevel
+    );
     if (device.clientType !== input.clientType)
       throw new AppError("CLIENT_UNTRUSTED", "客户端类型与注册记录不符");
     const ticket = randomBytes(24).toString("base64url");

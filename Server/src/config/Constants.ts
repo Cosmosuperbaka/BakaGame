@@ -97,6 +97,8 @@ export const WS_IN_FLIGHT_MAX_ENTRIES = 4096;
  */
 export const CLIENT_DEVICE_IDLE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 export const CLIENT_DEVICE_PURGE_INTERVAL_MS = 60 * 60 * 1000;
+/** 同一设备反复自检不过时，告警级日志的间隔：窗口内只记一条，其余降为信息级。 */
+export const CLIENT_UNTRUSTED_WARN_INTERVAL_MS = 60 * 60 * 1000;
 /** 握手名额租约的确认时限：占位后这么久还没等到连接打开，就当升级已经失败并自动归还。 */
 export const WS_HANDSHAKE_LEASE_MS = 10_000;
 /** 公开状态页实时通道的单来源在途连接上限：一个页面只需要一条，远小于游戏通道的额度。 */

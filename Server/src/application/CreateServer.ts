@@ -472,6 +472,8 @@ const createClientDistribution = (options: {
           scope: "安全",
         }
       ),
+    // 同一设备重复的完整性失败降为信息级，仍留在日志里供排查，只是不占告警量。
+    onInfo: (message, detail) => logger.info(message, { ...detail, scope: "安全" }),
     // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
     attestation: env.androidAttestationPackage
       ? createAndroidAttestationChecker({
