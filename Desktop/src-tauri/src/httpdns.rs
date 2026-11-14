@@ -512,34 +512,39 @@ impl ReqwestResolver {
     }
 }
 
+type DnsError = Box<dyn std::error::Error + Send + Sync>;
+
+fn dns_error(kind: std::io::ErrorKind, message: impl ToString) -> DnsError {
+    Box::new(std::io::Error::new(kind, message.to_string()))
+}
+
 impl reqwest::dns::Resolve for ReqwestResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_string();
         let inner = self.inner.clone();
         Box::pin(async move {
-            match inner.resolve(&host, 0) {
-                Ok(resolution) => {
-                    let addrs: Vec<SocketAddr> = resolution
-                        .addrs
-                        .into_iter()
-                        .map(|mut addr| {
-                            addr.set_port(0);
-                            addr
-                        })
-                        .collect();
-                    if addrs.is_empty() {
-                        return Err(Box::new(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            "HTTPDNS 没有返回地址",
-                        )) as Box<dyn std::error::Error + Send + Sync>);
-                    }
-                    Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
-                }
-                Err(err) => Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    err,
-                )) as Box<dyn std::error::Error + Send + Sync>),
+            // `HttpDnsResolver::resolve` 是为线程模型的回环隧道写的同步实现：缓存过期时会持
+            // 查询闸门做一次最长数秒的 TCP/TLS 往返。直接在这里调用会占住轮询本 Future 的
+            // 反应堆线程，同线程上的其它请求跟着卡住，所以整个解析交给阻塞线程池。
+            let joined = tauri::async_runtime::spawn_blocking(move || inner.resolve(&host, 0))
+                .await
+                .map_err(|err| dns_error(std::io::ErrorKind::Other, err))?;
+            let resolution = joined.map_err(|err| dns_error(std::io::ErrorKind::Other, err))?;
+            let addrs: Vec<SocketAddr> = resolution
+                .addrs
+                .into_iter()
+                .map(|mut addr| {
+                    addr.set_port(0);
+                    addr
+                })
+                .collect();
+            if addrs.is_empty() {
+                return Err(dns_error(
+                    std::io::ErrorKind::NotFound,
+                    "HTTPDNS 没有返回地址",
+                ));
             }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
         })
     }
 }
@@ -565,6 +570,7 @@ pub fn shared() -> Option<Arc<HttpDnsResolver>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const KEY: &str = "0123456789abcdef";
@@ -621,6 +627,11 @@ mod tests {
     }
 
     fn mock_httpdns(answer: &str, hits: Arc<AtomicUsize>) -> String {
+        mock_httpdns_with_delay(answer, hits, Duration::ZERO)
+    }
+
+    /// 收到请求后先等 `delay` 再回应，用来模拟慢的 HTTPDNS 往返
+    fn mock_httpdns_with_delay(answer: &str, hits: Arc<AtomicUsize>, delay: Duration) -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let answer = answer.to_string();
@@ -630,6 +641,7 @@ mod tests {
                 hits.fetch_add(1, Ordering::SeqCst);
                 let mut request = [0u8; 4096];
                 let _ = stream.read(&mut request);
+                std::thread::sleep(delay);
                 let encrypted = encrypt_domain(&answer, KEY).unwrap();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -693,5 +705,42 @@ mod tests {
         let resolution = resolver.resolve("localhost", 80).unwrap();
         assert_eq!(resolution.source, ResolutionSource::System);
         assert!(resolution.degraded.is_none());
+    }
+
+    /// 给 reqwest 的适配器不能在轮询它的线程上同步做 HTTPDNS 往返：
+    /// 同一反应堆上的其它请求会被一并卡住。首次轮询必须立刻让出（Pending），
+    /// 往返放到阻塞线程池里做，最终仍能拿到结果。
+    #[test]
+    fn reqwest_resolver_does_not_block_the_polling_thread() {
+        use reqwest::dns::Resolve;
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let endpoint =
+            mock_httpdns_with_delay("203.0.113.10,120", hits.clone(), Duration::from_millis(600));
+        let adapter = ReqwestResolver::new(Arc::new(resolver(
+            endpoint,
+            vec!["game.example.com"],
+            Duration::from_secs(3),
+        )));
+        let name: reqwest::dns::Name = "game.example.com".parse().unwrap();
+
+        let mut pending = adapter.resolve(name);
+        let started = Instant::now();
+        let first = Pin::new(&mut pending).poll(&mut Context::from_waker(Waker::noop()));
+        assert!(
+            started.elapsed() < Duration::from_millis(300),
+            "首次轮询在同步等 HTTPDNS 往返：{:?}",
+            started.elapsed()
+        );
+        assert!(matches!(first, Poll::Pending), "慢往返期间应当返回 Pending");
+
+        let addrs = tauri::async_runtime::block_on(pending).expect("往返完成后应解析成功");
+        let addrs: Vec<SocketAddr> = addrs.collect();
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0].ip(), "203.0.113.10".parse::<IpAddr>().unwrap());
+        assert_eq!(addrs[0].port(), 0, "端口由 hyper 按 URL 方案补全");
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
     }
 }
