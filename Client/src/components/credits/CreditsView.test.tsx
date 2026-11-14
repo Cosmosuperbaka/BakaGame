@@ -288,6 +288,14 @@ describe("CreditsView", () => {
     expect(screen.getByText(/目前没有自助导出或删除账号的入口/)).toBeInTheDocument();
   });
 
+  it("开源致谢里有非官方声明，反馈入口就在声明里", () => {
+    renderView({ initialTab: "credits" });
+
+    const notice = screen.getByRole("region", { name: "声明" });
+    expect(notice).toHaveTextContent("没有官方关系");
+    expect(within(notice).getByRole("button", { name: "反馈" })).toBeInTheDocument();
+  });
+
   it("用户条款标签渲染同一份正文", () => {
     renderView({ initialTab: "terms" });
 

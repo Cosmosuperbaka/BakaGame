@@ -2,7 +2,7 @@ import { TriangleAlert } from "lucide-react";
 import { LegalSection } from "@/components/common/LegalSection";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的用户条款标签页渲染。 */
-export const TERMS_UPDATED_AT = "2026-10-22";
+export const TERMS_UPDATED_AT = "2026-11-15";
 
 export function TermsBody() {
   return (
@@ -33,7 +33,7 @@ export function TermsBody() {
         <ul className="list-disc space-y-2 pl-5">
           <li>本站提供 Who is Faker、SongGuessr、CEE 等在线小游戏，按现状免费提供。</li>
           <li>
-            本站与网易云音乐、QQ 音乐、Bangumi
+            本站是爱好者作品，与游戏涉及作品的版权方以及网易云音乐、QQ 音乐、Bangumi
             等第三方平台没有隶属或代理关系，相关内容与服务的可用性由对应平台决定。
           </li>
           <li>本站可以随时调整玩法、功能与开放范围，无需事先通知。</li>
@@ -102,7 +102,9 @@ export function TermsBody() {
       </LegalSection>
 
       <LegalSection title="九、联系我们">
-        <p>登录后可通过页面右上角的站内反馈联系我们，也可以通过页脚列出的社区入口找到运营者。</p>
+        <p>
+          可以通过站内的「反馈」入口联系我们，游客也能匿名提交，登录后提交的反馈可以在站内看到回复；也可以通过首页页脚列出的社区入口找到运营者。
+        </p>
       </LegalSection>
     </>
   );

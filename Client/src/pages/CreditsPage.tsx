@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Navigate, useSearchParams } from "react-router";
+import { AccountDialogs } from "@/components/account/AccountEntry";
 import { Seo } from "@/components/common/Seo";
 import { CreditsView, type CreditsTab } from "@/components/credits/CreditsView";
 import changelogData from "@/data/changelog.json";
@@ -59,6 +60,8 @@ function CreditsPage() {
         commits={commitHistory.commits}
         loadLicense={loadCreditsLicense}
       />
+      {/* 开源致谢里的声明带反馈入口，弹窗挂在这一页。 */}
+      <AccountDialogs />
     </>
   );
 }
