@@ -499,6 +499,11 @@ export interface WhoIsFakerPrivateState {
   playerId: string;
   sessionToken: string;
   /**
+   * 现在是否轮到本人操作。玩法规则只在服务端算一次，客户端不再按阶段自行推导；
+   * 「页面被托管时不提醒」属于本地状态，由客户端在这个值之外另行叠加。
+   */
+  canAct?: boolean;
+  /**
    * 本人今晚是否有夜间行动资格（存活的平民或卧底）。平民与卧底都不知道自己是哪一边，
    * 所以私有帧里不下发本人的角色与阵营，只给这个对两边取值相同的能力位；缺省按 false 处理。
    */
@@ -530,6 +535,8 @@ export interface WhoIsFakerPrivateState {
   myCurrentVoteTargetId?: string;
   /** 当前玩家本次夜晚已选择的目标玩家 ID；已提交但选择「不行动」时为 undefined。 */
   myCurrentNightTargetId?: string;
+  /** 出词阶段出题人需要凑齐的各身份人数，由房间配置与参赛名单算出；其余阶段与座位不下发。 */
+  requiredRoleCounts?: Record<WhoIsFakerRole, number>;
   questionerView?: Array<{
     playerId: string;
     role: WhoIsFakerRole;

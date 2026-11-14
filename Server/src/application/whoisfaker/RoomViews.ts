@@ -7,6 +7,7 @@ import {
   type RoundFeedback,
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerPrivateState,
+  type WhoIsFakerRole,
   type WhoIsFakerRoomRecord,
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
@@ -94,19 +95,22 @@ const publicFeedback = (room: WhoIsFakerRoomRecord): RoundFeedback | undefined =
 
 const buildStatusView = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSnapshot["status"] => {
   const speechState = room.round ? getCurrentSpeechState(room.round) : undefined;
+  const phase = room.round?.phase ?? "waiting";
   const activeBlankGuess =
     room.round?.phase === "blankGuess" ? room.round.blankGuessContext : undefined;
   return {
-    phase: room.round?.phase ?? "waiting",
+    phase,
     roundId: room.round?.id,
-    speechMode: room.round?.speechMode,
+    // 发言模式与两份名单在任何阶段都下发，取值与客户端原先「按阶段回退」的结果一致，
+    // 客户端因此不必再自己判断当前算哪种发言。
+    speechMode: room.round?.speechMode ?? (phase === "tieBreak" ? "tieBreak" : "normal"),
     speechResumePhase: room.round?.supplement?.resumePhase,
     supplementIndex: room.round?.supplement?.index,
     started: Boolean(room.round),
     day: room.round?.day ?? 0,
     descriptionOrder: room.round?.descriptionOrder,
-    speechOrder: speechState ? [...speechState.order] : undefined,
-    submittedSpeechPlayerIds: speechState ? [...speechState.submittedPlayerIds] : undefined,
+    speechOrder: speechState ? [...speechState.order] : [],
+    submittedSpeechPlayerIds: speechState ? [...speechState.submittedPlayerIds] : [],
     questionerPlayerId: room.round?.questionerPlayerId,
     tieBreakStage: room.round?.tieBreak?.stage,
     tieBreakIndex: room.round?.tieBreak ? room.round.tieBreakCount : undefined,
@@ -217,7 +221,31 @@ const buildWaitingPrivateState = (player: WhoIsFakerPlayerRecord): WhoIsFakerPri
   nightActionSubmitted: false,
 });
 
+/** 出词阶段出题人要凑齐的各身份人数：正式玩家去掉出题人自己，再按房间配置摊到四个身份。 */
+const requiredRoleCountsFor = (
+  room: WhoIsFakerRoomRecord,
+  round: GameRound,
+  player: WhoIsFakerPlayerRecord
+): Record<WhoIsFakerRole, number> | undefined => {
+  if (round.phase !== "wordSubmission" || round.questionerPlayerId !== player.id) return undefined;
+  const { roleConfig } = room.settings;
+  const participantCount = Object.values(room.players).filter(
+    (item) => item.membership === "active" && item.id !== round.questionerPlayerId
+  ).length;
+  return {
+    civilian:
+      participantCount -
+      roleConfig.undercoverCount -
+      (roleConfig.hasAngel ? 1 : 0) -
+      (roleConfig.hasBlank ? 1 : 0),
+    undercover: roleConfig.undercoverCount,
+    angel: roleConfig.hasAngel ? 1 : 0,
+    blank: roleConfig.hasBlank ? 1 : 0,
+  };
+};
+
 const buildPrivilegedPrivateState = (
+  room: WhoIsFakerRoomRecord,
   round: GameRound,
   player: WhoIsFakerPlayerRecord
 ): WhoIsFakerPrivateState => ({
@@ -228,6 +256,7 @@ const buildPrivilegedPrivateState = (
   canSubmitBlankGuess: false,
   blankGuessUsed: round.blankGuessUsed,
   nightActionSubmitted: false,
+  requiredRoleCounts: requiredRoleCountsFor(room, round, player),
   globalWords: round.words
     ? {
         civilianWord: round.words.civilianWord,
@@ -283,7 +312,51 @@ const buildParticipantPrivateState = (
   };
 };
 
-export const buildPrivateState = (
+/**
+ * 「现在轮到我了」的玩法规则，逐阶段与客户端原先的推导同值：
+ * 发言看名单与已提交，投票看是否已投且不是 PK 候选，夜晚看行动资格与是否已提交。
+ * 读的就是本次要下发的公开快照与私有态，两者天然同源，不会各算一套。
+ */
+const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: WhoIsFakerPrivateState): boolean => {
+  const { status } = snapshot;
+  const me = snapshot.players.find((player) => player.id === state.playerId);
+  const alive = me?.roundStatus === "alive" && !state.isQuestioner;
+  const order = status.speechOrder ?? [];
+  const submitted = new Set(status.submittedSpeechPlayerIds ?? []);
+  const spoken = !submitted.has(state.playerId);
+  const canVote = (inTieBreak: boolean) =>
+    alive &&
+    !state.myCurrentVoteTargetId &&
+    (!inTieBreak || !(status.tieBreakCandidateIds ?? []).includes(state.playerId));
+
+  switch (status.phase) {
+    case "assigningQuestioner":
+      return me?.isHost === true;
+    case "wordSubmission":
+      return state.isQuestioner;
+    case "description":
+      // 补充发言只等被点名的人，普通描述等所有还没交的存活参与者。
+      return (
+        alive && spoken && (status.speechMode !== "supplement" || order.includes(state.playerId))
+      );
+    case "tieBreak":
+      return status.tieBreakStage === "vote"
+        ? canVote(true)
+        : alive && spoken && order.includes(state.playerId);
+    case "voting":
+      return canVote(false);
+    case "night":
+      return Boolean(alive && state.canActAtNight && !state.nightActionSubmitted);
+    case "blankGuess":
+      return state.canSubmitBlankGuess && status.blankGuessPendingReview !== true;
+    case "feedback":
+      return state.isQuestioner || snapshot.testMode;
+    default:
+      return false;
+  }
+};
+
+const buildSeatPrivateState = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   player: WhoIsFakerPlayerRecord
@@ -302,8 +375,19 @@ export const buildPrivateState = (
       room.settings.spectatorsSeeAnswers ?? false
     );
   if (round.questionerPlayerId === player.id || spectatorSeesAnswers)
-    return buildPrivilegedPrivateState(round, player);
+    return buildPrivilegedPrivateState(room, round, player);
   return buildParticipantPrivateState(ctx, room, round, player);
+};
+
+export const buildPrivateState = (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord,
+  player: WhoIsFakerPlayerRecord,
+  snapshot: WhoIsFakerRoomSnapshot
+): WhoIsFakerPrivateState => {
+  const state = buildSeatPrivateState(ctx, room, player);
+  state.canAct = canActNow(snapshot, state);
+  return state;
 };
 
 const canViewerAccessGhostChat = (

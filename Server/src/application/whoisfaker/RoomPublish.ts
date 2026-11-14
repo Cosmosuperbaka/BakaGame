@@ -28,7 +28,7 @@ const fanOutRoom = (
       snapshotEvent: whoIsFakerShape.events.snapshot,
       privateEvent: whoIsFakerShape.events.privateState,
       snapshotFor: createRoomSnapshotViewSelector(room, snapshot),
-      privateFor: (player) => buildPrivateState(ctx, room, player),
+      privateFor: (player) => buildPrivateState(ctx, room, player, snapshot),
     },
     mode
   );

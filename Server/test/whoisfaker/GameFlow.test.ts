@@ -225,7 +225,7 @@ describe("对局流程", () => {
     );
     supplementSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
     expect(supplementSnapshot?.status.phase).toBe("voting");
-    expect(supplementSnapshot?.status.speechMode).toBeUndefined();
+    expect(supplementSnapshot?.status.speechMode).toBe("normal");
     expect(supplementSnapshot?.status.supplementIndex).toBeUndefined();
     expect(questionerState?.privilegedActionPreview?.votes).toHaveLength(4);
     expect(
