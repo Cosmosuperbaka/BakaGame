@@ -55,18 +55,11 @@ describe("隐私开关与 Agent 接管", () => {
     });
 
     // 淘汰一名玩家（如 bot_1）
-    const room = (
-      service as unknown as {
-        rooms: Map<
-          string,
-          { round: { assignments: Record<string, { alive: boolean; role: WhoIsFakerRole }> } }
-        >;
-      }
-    ).rooms.get("Oblivionis")!;
-    const victimId = Object.keys(room.round.assignments).find(
+    const assignments = service.rooms.get("Oblivionis")!.round!.assignments;
+    const victimId = Object.keys(assignments).find(
       (id) => id !== p1.joinResult.playerId && id !== host.record.playerId!
     )!;
-    room.round.assignments[victimId].alive = false;
+    assignments[victimId].alive = false;
 
     // 触发状态下发
     await execute(service, host, {
@@ -93,7 +86,7 @@ describe("隐私开关与 Agent 接管", () => {
       "room.snapshot"
     );
     const finalVictimView = gameOverSnapshot?.players.find((p) => p.id === victimId);
-    expect(finalVictimView?.revealedRole).toBe(room.round.assignments[victimId].role);
+    expect(finalVictimView?.revealedRole).toBe(assignments[victimId].role);
   });
 
   test("阶段精简播报、观战频道流转时机与发言顺序序号验证", async () => {
@@ -483,12 +476,7 @@ describe("隐私开关与 Agent 接管", () => {
     expect(frame).not.toHaveProperty("side");
 
     // 出局后即使角色仍是平民，也不再有夜间行动资格。
-    const room = (
-      service as unknown as {
-        rooms: Map<string, { round: { assignments: Record<string, { alive: boolean }> } }>;
-      }
-    ).rooms.get("Oblivionis")!;
-    room.round.assignments[player.joinResult.playerId].alive = false;
+    service.rooms.get("Oblivionis")!.round!.assignments[player.joinResult.playerId].alive = false;
     await execute(service, host, { id: "touch", type: "chat.send", payload: { text: "刷新" } });
     frame = getLastEventPayload<WhoIsFakerPrivateState>(player.connection, "game.privateState");
     expect(frame?.canActAtNight).toBe(false);

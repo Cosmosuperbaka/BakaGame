@@ -114,7 +114,7 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { spectator: true },
     });
-    const room = (service as any).rooms.get("1234")!;
+    const room = service.rooms.get("1234")!;
     expect(room.players[specState.playerId]).toBeDefined();
 
     // 刷新：连接断开后席位还在，新连接凭原票据回到旁观席。
@@ -155,7 +155,7 @@ describe("SonGuessrService", () => {
     await startRound(service, host, guest, hostState.playerId);
     const lateState = await joinRoom(service, lateJoiner, "离线预约者");
     // 给该旁观者设置分数，确保不会作为0分旁观者在掉线时被立即移除
-    (service as any).rooms.get("1234")!.players[lateState.playerId]!.score = 5;
+    service.rooms.get("1234")!.players[lateState.playerId]!.score = 5;
     await execute(service, lateJoiner, {
       id: "queue-active-while-playing",
       type: "song.player.setSpectator",

@@ -3,7 +3,6 @@ import type {
   WhoIsFakerClientMessage,
   WhoIsFakerPrivateState,
   WhoIsFakerRoomSnapshot,
-  WhoIsFakerRoomRecord,
   WhoIsFakerRole,
 } from "../src/shared/Index";
 import {
@@ -237,9 +236,7 @@ for (const draft of [
     expect(
       getLastEventPayload<WhoIsFakerPrivateState>(f.blank, "game.privateState")!.blankGuessUsed
     ).toBe(true);
-    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(
-      "8920"
-    )!;
+    const room = f.service.rooms.get("8920")!;
     expect(room.round!.blankGuessRecords).toHaveLength(1);
     expect(room.round!.blankGuessRecords[0].success).toBe(success);
     await f.service.runHousekeeping();
@@ -300,9 +297,7 @@ test("真正残局白板猜错并判错按延后赢家结算，计分与上下�
   await f.settle();
   expect(f.snapshot().status.phase).toBe("blankGuess");
   expect(f.snapshot().status.blankGuessReason).toBe("finale");
-  const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(
-    "8920"
-  )!;
+  const room = f.service.rooms.get("8920")!;
   expect(room.round!.blankGuessContext!.deferredWinner).toBe("good");
   await f.command(f.blank, { type: "game.submitBlankGuess", payload: { words: ["西瓜", "菠萝"] } });
   expect(f.snapshot().status.blankGuessPendingReview).toBe(true);
@@ -401,9 +396,7 @@ for (const phase of [
         payload: { targetId: f.participants[3].record.playerId! },
       });
     }
-    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(
-      "8920"
-    )!;
+    const room = f.service.rooms.get("8920")!;
     const original = {
       phase: room.round!.phase,
       mode: room.round!.speechMode,
@@ -453,9 +446,7 @@ for (const phase of ["description", "supplement", "tieBreak"] as const) {
       await f.advance();
       await f.settle();
     }
-    const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(
-      "8920"
-    )!;
+    const room = f.service.rooms.get("8920")!;
     // 仅在隔离测试里模拟运行时名册缺席，锁定已有超时占位作者契约。
     delete room.players[victim];
     await f.startTimer();
@@ -725,9 +716,7 @@ test("夜晚反馈不公开凶手，结算历史公开每人的夜晚行动", as
   ).rejects.toMatchObject({ code: "UNSUPPORTED_COMMAND" });
   // 结束本局查看历史：出题人以中止方式离开会直接结算。
   await f.command(f.questioner, { type: "room.leave", payload: {} });
-  const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(
-    "8920"
-  )!;
+  const room = f.service.rooms.get("8920")!;
   const night = room.round!.summary!.history!.find((entry) => entry.kind === "night");
   expect(night).toMatchObject({ kind: "night", eliminatedPlayerIds: [victim] });
   expect(

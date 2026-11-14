@@ -57,7 +57,7 @@ describe("清理与聊天", () => {
       payload: { spectator: true },
     });
 
-    const room = (service as any).rooms.get("3333")!;
+    const room = service.rooms.get("3333")!;
     expect(room.players[joinResult.playerId]).toBeDefined();
 
     // 刷新：连接断开后席位还在，新连接凭原票据回到旁观席。
@@ -99,7 +99,7 @@ describe("清理与聊天", () => {
       payload: { userName: "有分玩家" },
     })) as { playerId: string };
 
-    const room = (service as any).rooms.get("4444")!;
+    const room = service.rooms.get("4444")!;
     room.players[joinResult.playerId]!.score = 10;
 
     await execute(service, playerConn, {
@@ -122,7 +122,7 @@ describe("清理与聊天", () => {
       payload: { userName: "掉线玩家" },
     })) as { playerId: string };
 
-    const room = (service as any).rooms.get("5555")!;
+    const room = service.rooms.get("5555")!;
     await service.unregisterConnection(playerConn.record.id);
     expect(room.players[joinResult.playerId]).toBeDefined();
     expect(room.players[joinResult.playerId]?.online).toBe(false);
@@ -149,7 +149,7 @@ describe("清理与聊天", () => {
       payload: { userName: "接任房主" },
     })) as { playerId: string };
 
-    const room = (service as any).rooms.get("6666")!;
+    const room = service.rooms.get("6666")!;
     expect(room.hostPlayerId).toBe(hostResult.playerId);
 
     await service.unregisterConnection(host.record.id);
@@ -226,8 +226,8 @@ describe("清理与聊天", () => {
       payload: { words: ["苹果", "香蕉"] },
     });
 
-    const room = (service as any).rooms.get("7777")!;
-    expect(room.round.phase).toBe("description");
+    const room = service.rooms.get("7777")!;
+    expect(room.round!.phase).toBe("description");
 
     // 正常存活玩家发言
     await execute(service, host, {
@@ -247,7 +247,7 @@ describe("清理与聊天", () => {
 
     // 模拟其中一位玩家死亡
     const deadPlayerId = joined[1].joinResult.playerId;
-    room.round.assignments[deadPlayerId].alive = false;
+    room.round!.assignments[deadPlayerId].alive = false;
 
     // 死亡玩家发言
     await execute(service, joined[1].connection, {
@@ -339,7 +339,7 @@ describe("清理与聊天", () => {
     advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS + 1_000);
     await service.runHousekeeping();
 
-    const remaining = [...(service as any).rooms.keys()] as string[];
+    const remaining = [...service.rooms.keys()];
     expect(remaining).toEqual(["1111"]);
   });
 

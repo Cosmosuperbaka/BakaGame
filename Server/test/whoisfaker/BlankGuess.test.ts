@@ -165,31 +165,17 @@ describe("白板猜词打断", () => {
     // 设置 player 为白板，并确保其他机器人有卧底和平民存活（1卧底 + 2平民）
     await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
-    const room = (
-      service as unknown as {
-        rooms: Map<
-          string,
-          {
-            round: {
-              assignments: Record<string, { role: string; side: string; alive: boolean }>;
-              tieBreak: { candidateIds: string[] };
-            };
-          }
-        >;
-      }
-    ).rooms.get("Oblivionis")!;
-    const botIds = Object.keys(room.round.assignments).filter(
-      (id) => id !== player.joinResult.playerId
-    );
-    room.round.assignments[botIds[0]].role = "undercover";
-    room.round.assignments[botIds[0]].side = "undercover";
-    room.round.assignments[botIds[0]].alive = true;
-    room.round.assignments[botIds[1]].role = "civilian";
-    room.round.assignments[botIds[1]].side = "good";
-    room.round.assignments[botIds[1]].alive = true;
-    room.round.assignments[botIds[2]].role = "civilian";
-    room.round.assignments[botIds[2]].side = "good";
-    room.round.assignments[botIds[2]].alive = true;
+    const round = service.rooms.get("Oblivionis")!.round!;
+    const botIds = Object.keys(round.assignments).filter((id) => id !== player.joinResult.playerId);
+    round.assignments[botIds[0]].role = "undercover";
+    round.assignments[botIds[0]].side = "undercover";
+    round.assignments[botIds[0]].alive = true;
+    round.assignments[botIds[1]].role = "civilian";
+    round.assignments[botIds[1]].side = "good";
+    round.assignments[botIds[1]].alive = true;
+    round.assignments[botIds[2]].role = "civilian";
+    round.assignments[botIds[2]].side = "good";
+    round.assignments[botIds[2]].alive = true;
 
     // 跳转到 tieBreak 阶段（平票 PK）
     await execute(service, host, {
@@ -203,8 +189,8 @@ describe("白板猜词打断", () => {
 
     // 让平票候选人强制包含 player 与另一个存活玩家
     const otherCandidateId =
-      room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
-    room.round.tieBreak.candidateIds = [player.joinResult.playerId, otherCandidateId];
+      round.tieBreak!.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+    round.tieBreak!.candidateIds = [player.joinResult.playerId, otherCandidateId];
 
     // 白板在平票阶段主动进入猜词
     await execute(service, player.connection, {
@@ -263,14 +249,10 @@ describe("白板猜词打断", () => {
     });
 
     // 候选人固定为白板与另一名存活玩家，保证白板掉线后平票上下文仍然成立。
-    const room = (
-      service as unknown as {
-        rooms: Map<string, { round: { tieBreak: { candidateIds: string[] } } }>;
-      }
-    ).rooms.get("Oblivionis")!;
+    const tieBreak = service.rooms.get("Oblivionis")!.round!.tieBreak!;
     const otherCandidateId =
-      room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
-    room.round.tieBreak.candidateIds = [player.joinResult.playerId, otherCandidateId];
+      tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+    tieBreak.candidateIds = [player.joinResult.playerId, otherCandidateId];
 
     await execute(service, player.connection, {
       id: "enter-blank-guess",
@@ -316,33 +298,19 @@ describe("白板猜词打断", () => {
       type: "test.jumpToPhase",
       payload: { phase: "tieBreak" },
     });
-    const room = (
-      service as unknown as {
-        rooms: Map<
-          string,
-          {
-            round: {
-              tieBreak: { candidateIds: string[] };
-              assignments: Record<string, { role: string; side: string; alive: boolean }>;
-            };
-          }
-        >;
-      }
-    ).rooms.get("Oblivionis")!;
+    const round = service.rooms.get("Oblivionis")!.round!;
     // 固定成一卧底加多名平民，保证候选被移出后胜负未分、房间进入夜晚而不是结算。
-    const others = Object.keys(room.round.assignments).filter(
-      (id) => id !== player.joinResult.playerId
-    );
+    const others = Object.keys(round.assignments).filter((id) => id !== player.joinResult.playerId);
     others.forEach((id, index) => {
-      room.round.assignments[id] = {
+      round.assignments[id] = {
         role: index === 0 ? "undercover" : "civilian",
         side: index === 0 ? "undercover" : "good",
         alive: true,
       };
     });
     const other =
-      room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
-    room.round.tieBreak.candidateIds = [player.joinResult.playerId, other];
+      round.tieBreak!.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+    round.tieBreak!.candidateIds = [player.joinResult.playerId, other];
 
     await execute(service, host, {
       id: "start-timer",
@@ -382,32 +350,18 @@ describe("白板猜词打断", () => {
     await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
     // 白板以外的某位后序玩家先交了发言：按规则要等前序都交完才公开。
-    const room = (
-      service as unknown as {
-        rooms: Map<
-          string,
-          {
-            round: {
-              descriptionOrder: string[];
-              descriptionSubmittedBy: string[];
-              descriptionCycle: number;
-              descriptions: Array<Record<string, unknown>>;
-            };
-          }
-        >;
-      }
-    ).rooms.get("Oblivionis")!;
-    const order = room.round.descriptionOrder;
+    const round = service.rooms.get("Oblivionis")!.round!;
+    const order = round.descriptionOrder;
     const early = order.filter((id) => id !== player.joinResult.playerId).at(-1)!;
-    room.round.descriptionSubmittedBy = [early];
-    room.round.descriptions = [
+    round.descriptionSubmittedBy = [early];
+    round.descriptions = [
       {
         id: "hidden-1",
         playerId: early,
         playerName: "后序玩家",
         text: "还不该公开的发言",
         kind: "description",
-        cycle: room.round.descriptionCycle,
+        cycle: round.descriptionCycle,
         order: order.indexOf(early) + 1,
         createdAt: 0,
       },

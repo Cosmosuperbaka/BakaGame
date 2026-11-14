@@ -221,15 +221,7 @@ describe("卧底：标签页身份即玩家", () => {
       payload: { words: ["苹果", "香蕉"] },
     });
     // 这名玩家恰好是卧底时离场就直接结算了：换成平民，才测得到「局还在继续」的分支。
-    const room = (
-      service as unknown as {
-        rooms: Map<
-          string,
-          { round: { assignments: Record<string, { alive: boolean; side: string }> } }
-        >;
-      }
-    ).rooms.get("Oblivionis")!;
-    const assignments = room.round.assignments;
+    const assignments = service.rooms.get("Oblivionis")!.round!.assignments;
     const civilian = Object.entries(assignments).find(([, item]) => item.side === "good")?.[1];
     const mine = assignments[seat.playerId];
     if (civilian && mine && mine.side !== "good") {
