@@ -207,6 +207,23 @@ describe("MusicCache peek 与维护", () => {
     expect(calls).toBe(2);
   });
 
+  test("上游忙态时连空闲淘汰也暂缓，条目原样留着", async () => {
+    let now = 0;
+    let busy = false;
+    const { cache, maintenance } = createCache({ now: () => now, isUpstreamBusy: () => busy });
+    const ttl = 60 * 60_000;
+
+    await cache.cached("idle", ttl, async () => ({ v: 1 }));
+    now = 31 * 60_000;
+    busy = true;
+    await maintenance();
+    expect(cache.peek("idle")).toEqual({ v: 1 });
+
+    busy = false;
+    await maintenance();
+    expect(cache.peek("idle")).toBeUndefined();
+  });
+
   test("活跃期内维护刷新软过期条目，上游忙态时整段跳过", async () => {
     let now = 0;
     let calls = 0;
