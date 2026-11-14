@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { CEEMarks } from "./CEEMarks";
+import { CEEMarks } from "@/components/cee/CEEMarks";
 import { PlayerRow } from "./PlayerRow";
 import { TeamSection } from "./TeamSection";
 
