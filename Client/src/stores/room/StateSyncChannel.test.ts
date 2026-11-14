@@ -176,4 +176,30 @@ describe("StateSyncChannel", () => {
       name: "恢复",
     });
   });
+
+  it("clearRevisions 对私有态通道同样生效", () => {
+    const { channel, requestFull } = setup();
+    channel.privateState.consume(full(privateState, 1));
+    channel.clearRevisions();
+    expect(
+      channel.privateState.consume({
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/playerId", value: "p2" }],
+      })
+    ).toBeNull();
+    expect(requestFull).toHaveBeenCalledTimes(1);
+    expect(channel.privateState.baseline()).toEqual(privateState);
+  });
+
+  it("reset 连没取走的欠账与私有态基线一起清掉", () => {
+    const { channel } = setup(() => true);
+    channel.privateState.consume(full(privateState, 1));
+    expect(channel.snapshot.consume(patch(0, 1, "错位"))).toBeNull();
+
+    channel.reset();
+    expect(channel.privateState.baseline()).toBeNull();
+    expect(channel.takeDeferred()).toBe(false);
+  });
 });

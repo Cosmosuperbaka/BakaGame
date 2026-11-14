@@ -1020,6 +1020,107 @@ describe("状态同步", () => {
     expect(useSonGuessrStore.getState().snapshot?.roundNumber).toBe(1);
     expect(requestSyncCalls()).toHaveLength(1);
   });
+
+  it("没有房间可恢复时断线重连，修订号同样作废", () => {
+    wsMock.send.mockResolvedValue({});
+    dispose = initSonGuessrWs();
+    // 只有快照、没有带凭据的私有态：本机还没有房间身份，重连后不会走恢复入房那条重置。
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    emitStatus(false);
+    emitStatus(true);
+
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("音乐房间");
+  });
+
+  describe("入房往返期间收到过别的房间的推送", () => {
+    let resolveAck!: (value: unknown) => void;
+    let joined: Promise<unknown>;
+    const stalePatch = (event: string, path: string, value: unknown) => ({
+      type: "event" as const,
+      event,
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace" as const, path, value }],
+      },
+    });
+
+    beforeEach(() => {
+      wsMock.send.mockImplementation((type: string) =>
+        type === "song.room.join"
+          ? new Promise((resolve) => {
+              resolveAck = resolve;
+            })
+          : Promise.resolve({})
+      );
+      dispose = initSonGuessrWs();
+      joined = useSonGuessrStore.getState().joinRoom("5678", "玩家");
+      emitMessage({
+        type: "event",
+        event: "song.room.snapshot",
+        payload: { mode: "full", revision: 1, state: snapshot },
+      });
+      emitMessage({
+        type: "event",
+        event: "song.game.privateState",
+        payload: {
+          mode: "full",
+          revision: 1,
+          state: { ...privateState, playerId: "old-player", sessionToken: "old-token" },
+        },
+      });
+    });
+
+    // 旧房的修订号对新房没有意义：基线不换掉的话，编号碰巧接得上的补丁会把旧房态改一改再摆上来。
+    it("带首屏状态的 ACK 把两条基线都换成新房的，旧修订号的补丁改走全量", async () => {
+      resolveAck({
+        roomId: "5678",
+        sessionToken: "entry-token",
+        snapshot: { ...snapshot, roomId: "5678", name: "新房间" },
+        privateState: { ...privateState, sessionToken: "entry-token" },
+      });
+      await joined;
+      expect(useSonGuessrStore.getState().snapshot?.name).toBe("新房间");
+
+      emitMessage(stalePatch("song.room.snapshot", "/name", "错位"));
+      emitMessage(stalePatch("song.game.privateState", "/remainingGuesses", 1));
+      expect(requestSyncCalls()).toHaveLength(1);
+      expect(useSonGuessrStore.getState().snapshot).toMatchObject({
+        roomId: "5678",
+        name: "新房间",
+      });
+      expect(useSonGuessrStore.getState().privateState).toMatchObject({
+        playerId: "player-1",
+        remainingGuesses: 5,
+      });
+    });
+
+    it("无状态 ACK 把旧房留下的基线整套作废，旧修订号的补丁改走全量", async () => {
+      resolveAck({ roomId: "5678", sessionToken: "entry-token" });
+      await joined;
+      expect(useSonGuessrStore.getState()).toMatchObject({ roomId: "5678", snapshot: null });
+
+      emitMessage(stalePatch("song.room.snapshot", "/name", "错位"));
+      expect(requestSyncCalls()).toHaveLength(1);
+      expect(useSonGuessrStore.getState()).toMatchObject({ roomId: "5678", snapshot: null });
+    });
+  });
 });
 
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {

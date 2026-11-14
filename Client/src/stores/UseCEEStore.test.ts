@@ -554,6 +554,82 @@ describe("CEE 状态同步通道行为", () => {
     // 没有欠账：ACK 后不再补发。
     expect(requestSyncCalls(send)).toHaveLength(1);
   });
+
+  it("没有推送赶在 ACK 之前时，ACK 的首屏状态直接装成展示态", async () => {
+    vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      Promise.resolve(
+        command === "cee.room.join"
+          ? {
+              roomId: "1234",
+              source: "native",
+              sessionToken: "tok",
+              snapshot,
+              privateState: { playerId: "p1" },
+            }
+          : {}
+      )
+    );
+    await useCEEStore.getState().joinRoom("1234", "甲");
+    expect(useCEEStore.getState().snapshot).toEqual(snapshot);
+    expect(useCEEStore.getState().privateState).toEqual({ playerId: "p1" });
+  });
+
+  it("ACK 落定时重置同步：入房期间悬着的全量请求不压住进房后的缺口", async () => {
+    writeCEESession("1234", "old-token");
+    useCEEStore.setState({ roomId: "1234", sessionToken: "old-token" });
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
+      if (command === "cee.room.requestSync") return new Promise<never>(() => {});
+      if (command !== "cee.room.reconnect") return Promise.resolve({});
+      return new Promise<Record<string, unknown>>((resolve) => {
+        resolveAck = resolve;
+      });
+    });
+    const gap = (revision: number) => ({
+      type: "event" as const,
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 2,
+        revision,
+        operations: [{ op: "replace" as const, path: "/name", value: "错位" }],
+      },
+    });
+    const restoring = useCEEStore.getState().reconnectRoom("1234");
+    // 等恢复请求真正发出再推缺口：入房开头那次重置已经过去，后面只剩 ACK 落定时那一次。
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith("cee.room.reconnect", expect.anything(), expect.anything())
+    );
+    handleCEEMessage(gap(3));
+    await vi.waitFor(() => expect(requestSyncCalls(send)).toHaveLength(1));
+
+    resolveAck({
+      roomId: "1234",
+      source: "native",
+      sessionToken: "new-token",
+      snapshot,
+      privateState: null,
+    });
+    await restoring;
+    handleCEEMessage(gap(4));
+    await vi.waitFor(() => expect(requestSyncCalls(send)).toHaveLength(2));
+  });
+
+  it("全量请求失败按统一口径报成提示", async () => {
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({
+      code: "ROOM_NOT_FOUND",
+      message: "房间不存在",
+    });
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { name: "无版本号的裸状态" },
+    });
+    await vi.waitFor(() =>
+      expect(useCEEStore.getState().toasts.map((toast) => toast.text)).toEqual(["房间不存在"])
+    );
+  });
 });
 
 it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", async () => {
