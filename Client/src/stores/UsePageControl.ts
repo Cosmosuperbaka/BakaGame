@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
 import type { SitePageAction } from "@bakagame/shared";
+import { createExternalStore } from "@/lib/ExternalStore";
 
 /**
  * 本标签页的接管状态。
@@ -38,39 +38,16 @@ export interface PageControlNotice {
   seq: number;
 }
 
-interface Signal<T> {
-  get: () => T;
-  set: (next: T) => void;
-  subscribe: (listener: () => void) => () => void;
-}
-
-const createSignal = <T>(initial: T): Signal<T> => {
-  let value = initial;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => value,
-    set: (next) => {
-      value = next;
-      for (const listener of listeners) listener();
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  };
-};
-
 const OFF: PageControlState = { status: "off" };
 
-const control = createSignal<PageControlState>(OFF);
-const focus = createSignal<AgentFocus | null>(null);
-const notice = createSignal<PageControlNotice | null>(null);
+const control = createExternalStore<PageControlState>(OFF);
+const focus = createExternalStore<AgentFocus | null>(null);
+const notice = createExternalStore<PageControlNotice | null>(null);
 
 export const getPageControl = control.get;
 export const setPageControl = control.set;
 export const resetPageControl = (): void => control.set(OFF);
-export const usePageControl = (): PageControlState =>
-  useSyncExternalStore(control.subscribe, control.get, () => OFF);
+export const usePageControl = control.use;
 
 export const getAgentFocus = focus.get;
 export const setAgentFocus = (next: Omit<AgentFocus, "seq">): void =>
@@ -80,11 +57,9 @@ export const markAgentIdle = (): void => {
   if (current) focus.set({ ...current, idle: true });
 };
 export const clearAgentFocus = (): void => focus.set(null);
-export const useAgentFocus = (): AgentFocus | null =>
-  useSyncExternalStore(focus.subscribe, focus.get, () => null);
+export const useAgentFocus = focus.use;
 
 export const showPageNotice = (text: string): void =>
   notice.set({ text, seq: (notice.get()?.seq ?? 0) + 1 });
 export const clearPageNotice = (): void => notice.set(null);
-export const usePageNotice = (): PageControlNotice | null =>
-  useSyncExternalStore(notice.subscribe, notice.get, () => null);
+export const usePageNotice = notice.use;
