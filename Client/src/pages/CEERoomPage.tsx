@@ -11,6 +11,8 @@ import { CEEGameArea } from "@/components/cee/CEEGameArea";
 import { useCEESecureScreen } from "@/components/cee/UseCEESecureScreen";
 import { CEE_PASSWORD_ERROR_CODES, useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
 import { useCEERoundHistory } from "@/hooks/UseCEERoundHistory";
+import { useMinWidth } from "@/hooks/UseMinWidth";
+import { useUnreadCount } from "@/hooks/UseUnreadCount";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { isCeeReplayEnabled } from "@/lib/CeeReplay";
 import { CEE_SOURCE_LABELS, ceeDisplayRound, ceePerspective, ceeRoomPath } from "@/lib/CEESession";
@@ -32,6 +34,12 @@ export default function CEERoomPage() {
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
   // 反作弊房要挡录屏与投屏：只在确认进了该房间后开启，断线清空视图、换房与离开都会恢复。
   useCEESecureScreen(Boolean(ready && snapshot.bakaAntiCheat));
+  // 聊天在宽屏常驻、窄屏收进抽屉；抽屉关着时攒下的未读数挂在入口上。
+  const chatDocked = useMinWidth("xl");
+  const unreadChat = useUnreadCount(ready ? snapshot.chat : undefined, {
+    open: chatDocked || panel === "chat",
+    selfPlayerId: privateState?.playerId,
+  });
 
   const seo = (
     <Seo
@@ -153,6 +161,7 @@ export default function CEERoomPage() {
             side: "right",
             title: "聊天",
             closeFrom: "xl",
+            badge: unreadChat,
             content: chatPanel,
           },
         ]}

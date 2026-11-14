@@ -154,6 +154,42 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     vi.restoreAllMocks();
   });
 
+  it("窄屏聊天抽屉关着时只为别人说的话计未读，频道提示不算，打开抽屉清零", async () => {
+    stubMatchMedia(false);
+    try {
+      renderRoomPage();
+      const toggle = screen.getByRole("button", { name: "聊天" });
+      expect(toggle).not.toHaveAccessibleDescription();
+
+      const message = (id: string, playerId: string, system = false) => ({
+        id,
+        playerId,
+        playerName: playerId,
+        text: "来了",
+        createdAt: Date.now(),
+        system,
+      });
+      act(() =>
+        useWhoIsFakerStore.setState((state) => ({
+          snapshot: {
+            ...state.snapshot!,
+            chat: [...state.snapshot!.chat, message("c1", "player-2")],
+          },
+          channelNotices: [message("n1", "system", true)],
+        }))
+      );
+      expect(toggle).toHaveAccessibleDescription("1 条未读");
+
+      fireEvent.click(toggle);
+      const dialog = await screen.findByRole("dialog", { name: "聊天" });
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "聊天" })).not.toHaveAccessibleDescription();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("房主没开 MCP 时，顶栏设置面板里的接管开关禁用并说明原因", async () => {
     renderRoomPage();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));

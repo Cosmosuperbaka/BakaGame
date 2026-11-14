@@ -31,6 +31,7 @@ import {
   registerRoomPageHooks,
 } from "@/test/SonGuessrRoomPageFixtures";
 import SonGuessrRoomPage from "@/pages/SonGuessrRoomPage";
+import { stubMatchMedia } from "@/test/MatchMedia";
 
 describe("SonGuessrRoomPage 页面级集成测试", () => {
   registerRoomPageHooks();
@@ -54,6 +55,41 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 玩家列表
     expect(screen.getByText("房主小明")).toBeInTheDocument();
     expect(screen.getByText("玩家小红")).toBeInTheDocument();
+  });
+
+  it("窄屏聊天收在抽屉里：关着时别人发来的消息在入口上计数，打开抽屉清零", async () => {
+    stubMatchMedia(false);
+    try {
+      renderRoomPage();
+      const toggle = screen.getByRole("button", { name: "聊天" });
+      expect(toggle).not.toHaveAccessibleDescription();
+
+      const say = (id: string, playerId: string, system = false) => ({
+        id,
+        playerId,
+        playerName: playerId,
+        text: "来了",
+        createdAt: Date.now(),
+        system,
+      });
+      act(() =>
+        useSonGuessrStore.setState((state) => ({
+          snapshot: {
+            ...state.snapshot!,
+            chat: [...state.snapshot!.chat, say("c1", "player-2"), say("c2", "", true)],
+          },
+        }))
+      );
+      expect(toggle).toHaveAccessibleDescription("1 条未读");
+
+      fireEvent.click(toggle);
+      await screen.findByRole("dialog", { name: "聊天" });
+      fireEvent.keyDown(screen.getByRole("dialog", { name: "聊天" }), { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "聊天" })).not.toHaveAccessibleDescription();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("单人模式隐藏玩家栏与聊天栏，只保留自动出题与开始入口", () => {

@@ -5,6 +5,7 @@ import { normalizeRoomId } from "@/lib/Storage";
 import { errorText } from "@/lib/ErrorMessage";
 import { useMinWidth } from "@/hooks/UseMinWidth";
 import { useRoomEntryFlow } from "@/hooks/UseRoomEntryFlow";
+import { useUnreadCount } from "@/hooks/UseUnreadCount";
 import { Seo } from "@/components/common/Seo";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import { FakerPlayerList } from "@/components/whoisfaker/layout/FakerPlayerList";
@@ -125,6 +126,16 @@ export default function WhoIsFakerRoomPage() {
     onDrawerChange,
   } = useFakerHistoryPanel({ roundId, historyAvailable, desktopSidebar });
 
+  // 聊天在宽屏常驻、窄屏收进抽屉；抽屉关着时攒下的未读数挂在入口上。
+  const chatDocked = useMinWidth("xl");
+  const inRoom = Boolean(
+    !joining && !needsName && !needsPassword && snapshot && snapshot.roomId === roomId
+  );
+  const unreadChat = useUnreadCount(inRoom ? chatMessages : undefined, {
+    open: chatDocked || openDrawer === "chat",
+    selfPlayerId: privateState?.playerId,
+  });
+
   // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
   const seoNode = (
@@ -137,7 +148,7 @@ export default function WhoIsFakerRoomPage() {
   );
 
   // 加载中、等待加入，或等用户填名字
-  if (joining || needsName || needsPassword || !snapshot || snapshot.roomId !== roomId) {
+  if (!inRoom || !snapshot) {
     return (
       <RoomJoinGate
         roomId={roomId}
@@ -273,6 +284,7 @@ export default function WhoIsFakerRoomPage() {
             side: "right",
             title: "聊天",
             closeFrom: "xl",
+            badge: unreadChat,
             content: (
               <ChatPanel
                 messages={chatMessages}

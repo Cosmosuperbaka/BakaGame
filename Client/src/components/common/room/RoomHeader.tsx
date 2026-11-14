@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, WifiOff, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -19,9 +19,78 @@ export interface RoomHeaderToggle {
   triggerRef?: Ref<HTMLButtonElement>;
   /** 该入口可见的最大断点：玩家面板 `md` 起常驻，聊天面板 `xl` 起常驻 */
   hideFrom: "md" | "xl";
+  /** 未读条数；传了（含 0）才挂读屏播报区，大于 0 时显示角标 */
+  badge?: number;
 }
 
 const HIDE_FROM = { md: "md:hidden", xl: "xl:hidden" } as const;
+
+/** 角标最多显示两位数，再多写成「99+」；读屏照读真实条数。 */
+const BADGE_MAX = 99;
+
+/**
+ * 顶栏入口的未读角标：与反馈入口的未读数同一种实心小胶囊，描一圈页面底色与图标分开。
+ * 数字只给眼睛看（对读屏隐藏），条数由按钮的描述与播报区读出。
+ */
+function ToggleBadge({ count }: { count: number }) {
+  return (
+    <AnimatePresence initial={false}>
+      {count > 0 ? (
+        <motion.span
+          key="badge"
+          variants={popover}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-0 min-w-4 rounded-full bg-destructive-solid px-1 text-center font-sans text-2xs leading-4 text-destructive-foreground tabular-nums ring-2 ring-background"
+        >
+          {count > BADGE_MAX ? `${BADGE_MAX}+` : count}
+        </motion.span>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+/** 顶栏移动端入口：按钮本身的可访问名不随未读变化（Agent 与测试按名找它），条数挂在描述上。 */
+function HeaderToggle({
+  toggle: { icon: Icon, label, expanded, onClick, hideFrom, triggerRef, badge },
+}: {
+  toggle: RoomHeaderToggle;
+}) {
+  const descriptionId = useId();
+  const unread = badge ?? 0;
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        variant="ghost"
+        size="icon"
+        className={cn("relative h-9 w-9", HIDE_FROM[hideFrom])}
+        aria-label={label}
+        aria-describedby={unread > 0 ? descriptionId : undefined}
+        aria-expanded={expanded}
+        onClick={onClick}
+      >
+        <Icon className="h-5 w-5" />
+        {badge === undefined ? null : <ToggleBadge count={unread} />}
+      </Button>
+      {badge === undefined ? null : (
+        <>
+          {unread > 0 ? (
+            <span id={descriptionId} className="sr-only">
+              {unread} 条未读
+            </span>
+          ) : null}
+          {/* 抽屉关着时聊天不在页面上，读屏听不到新消息；未读数变化在这里礼貌播报，不抢焦点。 */}
+          <span role="status" className={cn("sr-only", HIDE_FROM[hideFrom])}>
+            {unread > 0 ? `${label}，${unread} 条未读` : ""}
+          </span>
+        </>
+      )}
+    </>
+  );
+}
 
 /**
  * 顶栏中间的身份徽章（主持人、出题人、旁观等），只写身份名，不加「视角」后缀。
@@ -196,19 +265,8 @@ export function RoomHeader({
           ) : null}
         </AnimatePresence>
         {actions}
-        {toggles.map(({ key, icon: Icon, label, expanded, onClick, hideFrom, triggerRef }) => (
-          <Button
-            key={key}
-            ref={triggerRef}
-            variant="ghost"
-            size="icon"
-            className={cn("h-9 w-9", HIDE_FROM[hideFrom])}
-            aria-label={label}
-            aria-expanded={expanded}
-            onClick={onClick}
-          >
-            <Icon className="h-5 w-5" />
-          </Button>
+        {toggles.map((toggle) => (
+          <HeaderToggle key={toggle.key} toggle={toggle} />
         ))}
       </div>
     </header>

@@ -12,6 +12,8 @@ import { sendSongChoice } from "@/components/songuessr/SongSubmission";
 import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
+import { useMinWidth } from "@/hooks/UseMinWidth";
+import { useUnreadCount } from "@/hooks/UseUnreadCount";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoom } from "@/components/songuessr/UseSongRoom";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
@@ -90,6 +92,22 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     });
 
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
+
+  // 聊天在宽屏常驻、窄屏收进抽屉；抽屉关着时攒下的未读数挂在入口上。单人模式没有聊天。
+  const chatDocked = useMinWidth("xl");
+  const inRoom = Boolean(
+    !solo &&
+    !joining &&
+    !needsName &&
+    !needsPassword &&
+    snapshot &&
+    privateState &&
+    snapshot.roomId === roomId
+  );
+  const unreadChat = useUnreadCount(inRoom ? (snapshot?.chat ?? []) : undefined, {
+    open: chatDocked || mobilePanel === "chat",
+    selfPlayerId: privateState?.playerId,
+  });
 
   const handleSendChatMessage = useCallback(
     async (chatText: string) => {
@@ -261,6 +279,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   side: "right",
                   title: "聊天",
                   closeFrom: "xl",
+                  badge: unreadChat,
                   content: chatPanel,
                 },
               ]

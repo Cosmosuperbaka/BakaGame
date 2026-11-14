@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Users } from "lucide-react";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { roomEntrance, roomEntranceMs } from "@/lib/motion/NamedMoves";
 import { stubMatchMedia } from "@/test/MatchMedia";
@@ -144,5 +144,68 @@ describe("RoomShell 栏的挂载", () => {
     view.rerender(chatDrawer(null));
     act(() => media.crossBreakpoint(true));
     expect(screen.getByRole("combobox", { name: "聊天消息" })).toHaveValue("打了一半");
+  });
+});
+
+describe("RoomShell 抽屉入口的未读角标", () => {
+  const shell = (badge: number | undefined, openDrawer: string | null = null) => (
+    <RoomShell
+      onLeave={() => {}}
+      title="测试房间"
+      game={<p>游戏区</p>}
+      openDrawer={openDrawer}
+      drawers={[
+        {
+          key: "players",
+          icon: Users,
+          label: "玩家列表",
+          side: "left",
+          title: "玩家",
+          closeFrom: "md",
+          content: <p>玩家</p>,
+        },
+        {
+          key: "chat",
+          icon: MessageSquare,
+          label: "聊天",
+          side: "right",
+          title: "聊天",
+          closeFrom: "xl",
+          badge,
+          content: <p>聊天内容</p>,
+        },
+      ]}
+    />
+  );
+  beforeEach(() => stubMatchMedia(false));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("有未读时入口显示条数，可访问名不变，条数挂在描述上并礼貌播报", () => {
+    render(shell(3));
+    const toggle = screen.getByRole("button", { name: "聊天" });
+    expect(toggle).toHaveAccessibleDescription("3 条未读");
+    expect(within(toggle).getByText("3")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("聊天，3 条未读");
+  });
+
+  it("超过两位数写成 99+，读屏照读真实条数", () => {
+    render(shell(120));
+    const toggle = screen.getByRole("button", { name: "聊天" });
+    expect(within(toggle).getByText("99+")).toBeInTheDocument();
+    expect(toggle).toHaveAccessibleDescription("120 条未读");
+  });
+
+  it("没有未读时不显示角标，播报区留空", () => {
+    render(shell(0));
+    const toggle = screen.getByRole("button", { name: "聊天" });
+    expect(toggle).not.toHaveAccessibleDescription();
+    expect(toggle).toHaveTextContent("");
+    expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("没传角标的入口不挂播报区", () => {
+    render(shell(undefined));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "玩家列表" })).not.toHaveAccessibleDescription();
   });
 });

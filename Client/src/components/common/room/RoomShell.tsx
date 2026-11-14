@@ -25,6 +25,8 @@ export interface RoomDrawerSpec {
   closeFrom: "md" | "xl";
   /** 尺寸类；省略时左侧 `w-72`、右侧 `w-80` */
   className?: string;
+  /** 入口按钮上的未读角标；传了数字（含 0）才挂读屏播报区，见 RoomHeader */
+  badge?: number;
   content: ReactNode;
 }
 
@@ -173,6 +175,7 @@ export function RoomShell({
             expanded: openDrawer === drawer.key,
             onClick: () => onDrawerChange?.(openDrawer === drawer.key ? null : drawer.key),
             hideFrom: drawer.closeFrom,
+            badge: drawer.badge,
           }))}
         />
 

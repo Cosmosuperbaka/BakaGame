@@ -30,6 +30,7 @@ import {
   waitForLyrics,
   waitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
@@ -437,6 +438,39 @@ export const MobileChat: Story = {
     const toggle = within(canvasElement).getByRole("button", { name: "聊天" });
     await userEvent.click(toggle);
     await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "true"));
+    dropFocus();
+  },
+};
+
+/** 抽屉关着时有人连发几条：入口按钮挂出未读角标，打开抽屉才清零。 */
+export const MobileChatUnread: Story = {
+  name: "移动端 · 聊天未读",
+  tags: ["mobile"],
+  globals: MOBILE,
+  beforeEach: () => presetSongRoom(playingSnapshot(), guesserPrivate(fromNow(47_000))),
+  play: async ({ canvasElement }) => {
+    await waitForLyrics(canvasElement);
+    const store = useSonGuessrStore.getState();
+    const snapshot = store.snapshot!;
+    const speaker = snapshot.players.find((player) => player.id !== store.privateState?.playerId)!;
+    useSonGuessrStore.setState({
+      snapshot: {
+        ...snapshot,
+        chat: [
+          ...snapshot.chat,
+          ...Array.from({ length: 12 }, (_, index) => ({
+            id: `story-unread-${index}`,
+            playerId: speaker.id,
+            playerName: speaker.name,
+            text: "抽屉关着的时候说的话",
+            createdAt: Date.now() + index,
+            system: false,
+          })),
+        ],
+      },
+    });
+    const toggle = within(canvasElement).getByRole("button", { name: "聊天" });
+    await waitFor(() => expect(toggle).toHaveAccessibleDescription("12 条未读"));
     dropFocus();
   },
 };

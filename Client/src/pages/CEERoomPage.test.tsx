@@ -12,6 +12,7 @@ import {
   ceeSnapshot,
 } from "@/stories/fixtures/CEE";
 import { CEE_REPLAY_STORAGE_KEY } from "@/lib/CeeReplay";
+import { stubMatchMedia } from "@/test/MatchMedia";
 import CEERoomPage from "./CEERoomPage";
 
 // 房间页的入房流程由 UseCEERoomLifecycle 的测试负责；这里只关心「在房间里」时页面对壳做了什么。
@@ -145,6 +146,44 @@ describe("CEE 房间页的猜测回放数据", () => {
     settle();
     mount();
     expect(lastRounds()).toHaveLength(1);
+  });
+});
+
+describe("CEE 房间页聊天入口的未读角标", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("窄屏聊天抽屉关着时别人发来的消息计入未读，打开抽屉清零", async () => {
+    stubMatchMedia(false);
+    enterRoom(false);
+    mount();
+    const toggle = screen.getByRole("button", { name: "聊天" });
+    expect(toggle).not.toHaveAccessibleDescription();
+
+    act(() =>
+      useCEEStore.setState((state) => ({
+        snapshot: {
+          ...state.snapshot!,
+          chat: [
+            ...state.snapshot!.chat,
+            {
+              id: "c1",
+              playerId: "someone-else",
+              playerName: "别人",
+              text: "来了",
+              createdAt: Date.now(),
+              system: false,
+            },
+          ],
+        },
+      }))
+    );
+    expect(toggle).toHaveAccessibleDescription("1 条未读");
+
+    fireEvent.click(toggle);
+    const dialog = await screen.findByRole("dialog", { name: "聊天" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "聊天" })).not.toHaveAccessibleDescription();
   });
 });
 

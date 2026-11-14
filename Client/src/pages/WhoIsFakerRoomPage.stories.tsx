@@ -530,6 +530,38 @@ export const MobileHistory: Story = {
   },
 };
 
+/** 抽屉关着时有人连发几条：入口按钮挂出未读角标，打开抽屉才清零。 */
+export const MobileChatUnread: Story = {
+  name: "移动端 · 聊天未读",
+  tags: ["mobile"],
+  globals: MOBILE,
+  beforeEach: () => presetWifRoom(wifSnapshot("day2"), asMe),
+  play: async ({ canvasElement }) => {
+    const store = useWhoIsFakerStore.getState();
+    const snapshot = store.snapshot!;
+    const speaker = snapshot.players.find((player) => player.id !== store.privateState?.playerId)!;
+    useWhoIsFakerStore.setState({
+      snapshot: {
+        ...snapshot,
+        chat: [
+          ...snapshot.chat,
+          ...Array.from({ length: 3 }, (_, index) => ({
+            id: `story-unread-${index}`,
+            playerId: speaker.id,
+            playerName: speaker.name,
+            text: "抽屉关着的时候说的话",
+            createdAt: Date.now() + index,
+            system: false,
+          })),
+        ],
+      },
+    });
+    const toggle = within(canvasElement).getByRole("button", { name: "聊天" });
+    await waitFor(() => expect(toggle).toHaveAccessibleDescription("3 条未读"));
+    dropFocus();
+  },
+};
+
 // ==================== 掉线待决 ====================
 
 /** 投票中有玩家掉线：待决块挂在阶段之上，主持人选择等待或淘汰。 */

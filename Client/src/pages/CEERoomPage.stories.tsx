@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, userEvent, waitFor, within } from "storybook/test";
+import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import CEERoomPage from "./CEERoomPage";
 import { presetCEE } from "@/stories/StorePresets";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -443,6 +443,38 @@ export const MobileChat: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "聊天" }));
     await screen.findByRole("dialog", { name: "聊天" });
+    dropFocus();
+  },
+};
+
+/** 抽屉关着时有人连发几条：入口按钮挂出未读角标，打开抽屉才清零。 */
+export const MobileChatUnread: Story = {
+  name: "手机 · 聊天未读",
+  tags: ["mobile"],
+  globals: { viewport: { value: "mobile", isRotated: false } },
+  beforeEach: () => inRoom(ceeGuessingRoom("player")),
+  play: async ({ canvasElement }) => {
+    const store = useCEEStore.getState();
+    const snapshot = store.snapshot!;
+    const speaker = snapshot.players.find((player) => player.id !== store.privateState?.playerId)!;
+    useCEEStore.setState({
+      snapshot: {
+        ...snapshot,
+        chat: [
+          ...snapshot.chat,
+          ...Array.from({ length: 120 }, (_, index) => ({
+            id: `story-unread-${index}`,
+            playerId: speaker.id,
+            playerName: speaker.name,
+            text: "抽屉关着的时候说的话",
+            createdAt: Date.now() + index,
+            system: false,
+          })),
+        ],
+      },
+    });
+    const toggle = within(canvasElement).getByRole("button", { name: "聊天" });
+    await waitFor(() => expect(toggle).toHaveAccessibleDescription("120 条未读"));
     dropFocus();
   },
 };
