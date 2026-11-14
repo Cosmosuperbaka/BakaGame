@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::secret::{wipe, Secret};
 use crate::selfcheck::{KeyProtection, SelfCheckReport};
 
 pub const CLIENT_TYPE: &str = "desktop";
@@ -143,12 +144,12 @@ fn dpapi_protect(_data: &[u8]) -> Option<Vec<u8>> {
 }
 
 #[cfg(target_os = "windows")]
-fn dpapi_unprotect(data: &[u8]) -> Option<Vec<u8>> {
+fn dpapi_unprotect(data: &[u8]) -> Option<Secret> {
     crate::winapi::dpapi_unprotect(data, DPAPI_ENTROPY)
 }
 
 #[cfg(not(target_os = "windows"))]
-fn dpapi_unprotect(_data: &[u8]) -> Option<Vec<u8>> {
+fn dpapi_unprotect(_data: &[u8]) -> Option<Secret> {
     None
 }
 
@@ -217,7 +218,7 @@ enum OpenError {
 
 /// DPAPI 的两个动作，抽成特征是为了让「解不开」与「DPAPI 不可用」的判据能脱离系统接口单测
 trait KeyWrap {
-    fn unprotect(&self, wrapped: &[u8]) -> Option<Vec<u8>>;
+    fn unprotect(&self, wrapped: &[u8]) -> Option<Secret>;
     /// DPAPI 此刻能否正常加解密一段探测数据
     fn is_functional(&self) -> bool;
 }
@@ -225,7 +226,7 @@ trait KeyWrap {
 struct SystemKeyWrap;
 
 impl KeyWrap for SystemKeyWrap {
-    fn unprotect(&self, wrapped: &[u8]) -> Option<Vec<u8>> {
+    fn unprotect(&self, wrapped: &[u8]) -> Option<Secret> {
         dpapi_unprotect(wrapped)
     }
 
@@ -233,7 +234,7 @@ impl KeyWrap for SystemKeyWrap {
         const PROBE: &[u8] = b"bakagame-key-probe";
         dpapi_protect(PROBE)
             .and_then(|wrapped| dpapi_unprotect(&wrapped))
-            .is_some_and(|back| back == PROBE)
+            .is_some_and(|back| &back[..] == PROBE)
     }
 }
 
@@ -248,9 +249,11 @@ fn open_stored(
             record.v
         )));
     }
-    let raw = B64
-        .decode(record.key.as_bytes())
-        .map_err(|e| OpenError::Corrupt(format!("密钥文件损坏：{e}")))?;
+    // 软件保护档位下这就是种子明文，用 Secret 持有以便离开作用域时清零
+    let raw = Secret::new(
+        B64.decode(record.key.as_bytes())
+            .map_err(|e| OpenError::Corrupt(format!("密钥文件损坏：{e}")))?,
+    );
     match record.protection.as_str() {
         "dpapi" => {
             let mut seed = None;
@@ -329,12 +332,14 @@ fn replace_corrupt_key(dir: &Path, path: &Path, reason: &str) -> Result<Device, 
 /// 生成新密钥并原子落盘。新密钥对应新的 `clientId`，上一把密钥缓存下来的 id 随之作废。
 fn generate_and_store(dir: &Path, path: &Path) -> Result<Device, String> {
     let signing = SigningKey::generate(&mut OsRng);
-    let seed = signing.to_bytes();
+    let mut seed_bytes = signing.to_bytes();
+    let seed = Secret::new(seed_bytes.to_vec());
+    wipe(&mut seed_bytes);
     let (protection, stored) = match dpapi_protect(&seed) {
-        Some(wrapped) => (KeyProtection::Hardware, wrapped),
+        Some(wrapped) => (KeyProtection::Hardware, Secret::new(wrapped)),
         None => {
             // DPAPI 不可用：降级为软件保护，明确记录档位，不因此拒绝启动
-            (KeyProtection::Software, seed.to_vec())
+            (KeyProtection::Software, Secret::new(seed.to_vec()))
         }
     };
     let record = StoredKey {
@@ -343,7 +348,7 @@ fn generate_and_store(dir: &Path, path: &Path) -> Result<Device, String> {
             KeyProtection::Hardware => "dpapi".to_string(),
             KeyProtection::Software => "software".to_string(),
         },
-        key: B64.encode(&stored),
+        key: B64.encode(&stored[..]),
     };
     let text = serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?;
     write_atomic(path, text.as_bytes()).map_err(|e| format!("无法写入密钥文件：{e}"))?;
@@ -375,10 +380,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn device_from_seed(seed: &[u8], protection: KeyProtection) -> Result<Device, String> {
-    let bytes: [u8; 32] = seed
+    let mut bytes: [u8; 32] = seed
         .try_into()
         .map_err(|_| format!("私钥种子长度不是 32 字节（实际 {}）", seed.len()))?;
     let signing = SigningKey::from_bytes(&bytes);
+    wipe(&mut bytes);
     let public_key: [u8; 32] = ed25519_dalek::VerifyingKey::from(&signing).to_bytes();
     Ok(Device {
         signing,
@@ -615,10 +621,10 @@ mod tests {
     }
 
     impl KeyWrap for FakeWrap {
-        fn unprotect(&self, _wrapped: &[u8]) -> Option<Vec<u8>> {
+        fn unprotect(&self, _wrapped: &[u8]) -> Option<Secret> {
             let call = self.calls.get() + 1;
             self.calls.set(call);
-            (call > self.fail_first).then(|| vec![5u8; 32])
+            (call > self.fail_first).then(|| Secret::new(vec![5u8; 32]))
         }
 
         fn is_functional(&self) -> bool {

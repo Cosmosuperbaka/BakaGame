@@ -263,9 +263,12 @@ fn blob(bytes: &[u8]) -> Option<DATA_BLOB> {
     })
 }
 
+/// 把 API 分配的输出缓冲复制出来并释放。释放前先把原缓冲写零：解密输出里是私钥种子明文，
+/// 文档要求用完敏感数据后清零（`SecureZeroMemory`），否则明文会留在已释放的堆里。
 fn take_owned(out: DATA_BLOB) -> Vec<u8> {
-    let copied =
-        unsafe { std::slice::from_raw_parts(out.pb_data, out.cb_data as usize).to_vec() };
+    let buffer = unsafe { std::slice::from_raw_parts_mut(out.pb_data, out.cb_data as usize) };
+    let copied = buffer.to_vec();
+    crate::secret::wipe(buffer);
     unsafe { LocalFree(out.pb_data as *mut c_void) };
     copied
 }
@@ -299,8 +302,8 @@ pub fn dpapi_protect(data: &[u8], entropy: &[u8]) -> Option<Vec<u8>> {
     Some(take_owned(out))
 }
 
-/// DPAPI 解密。失败即密文不属于当前用户或 DPAPI 不可用。
-pub fn dpapi_unprotect(data: &[u8], entropy: &[u8]) -> Option<Vec<u8>> {
+/// DPAPI 解密。失败即密文不属于当前用户或 DPAPI 不可用。返回值离开作用域时清零。
+pub fn dpapi_unprotect(data: &[u8], entropy: &[u8]) -> Option<crate::secret::Secret> {
     if data.is_empty() {
         return None;
     }
@@ -310,11 +313,12 @@ pub fn dpapi_unprotect(data: &[u8], entropy: &[u8]) -> Option<Vec<u8>> {
         cb_data: 0,
         pb_data: std::ptr::null_mut(),
     };
-    let mut descr: LPWSTR = std::ptr::null_mut();
+    // 描述串参数传空：只要传了非空指针，成功后那段由 API 分配的字符串就必须 LocalFree，
+    // 我们并不需要它，所以直接不要，免去每次解密泄漏一小段内存
     let ok = unsafe {
         CryptUnprotectData(
             &in_blob,
-            &mut descr,
+            std::ptr::null_mut(),
             ent.as_ref().unwrap_or(&NULL_BLOB),
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -325,7 +329,7 @@ pub fn dpapi_unprotect(data: &[u8], entropy: &[u8]) -> Option<Vec<u8>> {
     if ok != TRUE || out.pb_data.is_null() {
         return None;
     }
-    Some(take_owned(out))
+    Some(crate::secret::Secret::new(take_owned(out)))
 }
 
 /// 「不传可选熵」时使用的零长度块（避免把空切片的悬垂指针交给 API）
@@ -333,3 +337,22 @@ const NULL_BLOB: DATA_BLOB = DATA_BLOB {
     cb_data: 0,
     pb_data: std::ptr::null_mut(),
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DPAPI 往返：解密描述串参数传空之后仍要能正常解开；熵不对必须解不开
+    #[test]
+    fn dpapi_roundtrip_and_entropy_binding() {
+        let secret = b"0123456789abcdef0123456789abcdef";
+        let wrapped = dpapi_protect(secret, b"entropy-a").expect("DPAPI 应可用");
+        assert_ne!(&wrapped[..], &secret[..], "密文不能等于明文");
+        for _ in 0..50 {
+            let back = dpapi_unprotect(&wrapped, b"entropy-a").expect("同一熵应能解开");
+            assert_eq!(&back[..], &secret[..]);
+        }
+        assert!(dpapi_unprotect(&wrapped, b"entropy-b").is_none(), "熵不同不得解开");
+        assert!(dpapi_unprotect(&[1, 2, 3, 4], b"entropy-a").is_none(), "乱数据不得解开");
+    }
+}

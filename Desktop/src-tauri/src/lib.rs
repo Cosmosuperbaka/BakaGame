@@ -15,6 +15,7 @@ mod http;
 mod httpdns;
 mod notice;
 mod peb;
+mod secret;
 mod selfcheck;
 #[cfg(test)]
 mod test_support;
@@ -274,7 +275,7 @@ fn probe_dpapi() -> selfcheck::KeyProtection {
         let wrapped = winapi::dpapi_protect(MARK, b"bakagame-probe");
         let back = wrapped.and_then(|bytes| winapi::dpapi_unprotect(&bytes, b"bakagame-probe"));
         match back {
-            Some(unwrapped) if unwrapped == MARK => selfcheck::KeyProtection::Hardware,
+            Some(unwrapped) if &unwrapped[..] == MARK => selfcheck::KeyProtection::Hardware,
             _ => selfcheck::KeyProtection::Software,
         }
     }
