@@ -36,7 +36,7 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 改完 `Cargo.toml` 要重跑一次 `cargo check` 把 lock 一起更新再提交，否则带 `--locked` 的构建会直接失败。
 
 壳按远程地址加载页面，`frontendDist` 非 https 会被 `config.rs` 拒绝并退回默认站点，因此 release 构建必须能
-访问那个站点。**开发构建（`debug_assertions`）例外**：没设 `BAKA_SITE_URL` 时默认加载
+访问那个站点，且**不读取** `BAKA_SITE_URL` / `BAKA_API_BASE`（进程环境改不了壳往哪发数据）。**开发构建（`debug_assertions`）例外**：没设 `BAKA_SITE_URL` 时默认加载
 `http://localhost:5173`（`pnpm dev:client` 起的 Vite 服务器），并且只对回环 http（主机为 `localhost` /
 `127.0.0.1`，端口不限）放行；换端口用 `BAKA_SITE_URL` 注入，桥接命令的远程白名单在
 `capabilities/dev/dev-local-bridge.json`，两处要一起改。release 产物里既没有这条放行分支、也没有本地默认值，

@@ -1,7 +1,8 @@
 //! 运行期配置：站点/接口基址、版本号与构建身份。
 //!
-//! 环境变量只在开发机上用（`BAKA_SITE_URL` / `BAKA_API_BASE`），发布构建必须留空——
-//! 任何非 https 的地址都会被拒绝并退回默认值，不给「把签名发到假站」留口子。
+//! 环境变量只在开发构建里读（`BAKA_SITE_URL` / `BAKA_API_BASE`）：发布构建根本不读取它们，
+//! 站点与接口基址只取编译期默认值，进程环境改不了壳往哪发设备公钥与自检结果。
+//! 开发构建里任何非 https 的地址（回环 http 除外）也会被拒绝并退回默认值。
 //!
 //! 唯一的例外是**开发构建**（`debug_assertions`）里的回环 http：本地 Vite 开发服务器
 //! 没有证书，只放行主机为 `localhost` / `127.0.0.1` 的明文地址。这段判断与开发默认站点
@@ -17,6 +18,10 @@ const FALLBACK_SITE_URL: &str = if cfg!(debug_assertions) {
 } else {
     DEFAULT_SITE_URL
 };
+
+/// 环境变量是否允许改写站点与接口基址：只有开发构建允许。
+/// 编译期决定，发布产物里没有任何运行期开关能把它打开。
+const ENV_OVERRIDES_ENABLED: bool = cfg!(debug_assertions);
 
 /// 窗口标题
 pub const WINDOW_TITLE: &str = "BakaGame";
@@ -70,12 +75,20 @@ fn acceptable(candidate: &str) -> bool {
     candidate.starts_with("https://") || loopback_http(candidate)
 }
 
-/// 壳加载的站点地址：必须是 https（开发构建额外接受回环 http），否则退回默认值
-pub fn site_url() -> String {
-    let candidate = std::env::var("BAKA_SITE_URL")
+/// 读取基址环境变量：不允许改写时（发布构建）一律当没设；设了但为空白同样当没设
+fn env_base(name: &str, overrides_enabled: bool) -> Option<String> {
+    if !overrides_enabled {
+        return None;
+    }
+    std::env::var(name)
         .ok()
         .map(|v| v.trim().trim_end_matches('/').to_string())
         .filter(|v| !v.is_empty())
+}
+
+/// 壳加载的站点地址：必须是 https（开发构建额外接受回环 http），否则退回默认值
+pub fn site_url() -> String {
+    let candidate = env_base("BAKA_SITE_URL", ENV_OVERRIDES_ENABLED)
         .unwrap_or_else(|| FALLBACK_SITE_URL.to_string());
     if !acceptable(&candidate) {
         eprintln!(
@@ -89,11 +102,7 @@ pub fn site_url() -> String {
 /// 接口基址：注册与通道证明三趟往返（`/api/client/register`、`challenge`、`attest`）共用。
 /// 默认与站点同源（服务端把这些路由挂在同一入口）。
 pub fn api_base() -> String {
-    let candidate = std::env::var("BAKA_API_BASE")
-        .ok()
-        .map(|v| v.trim().trim_end_matches('/').to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(site_url);
+    let candidate = env_base("BAKA_API_BASE", ENV_OVERRIDES_ENABLED).unwrap_or_else(site_url);
     if !acceptable(&candidate) {
         eprintln!(
             "BAKA_API_BASE 不是可用基址（只认 https；开发构建额外认回环 http），已忽略并按站点同源：{}",
@@ -135,6 +144,31 @@ mod tests {
         assert!(!acceptable("http://[::1]:5173"));
         assert!(!acceptable("http://192.168.1.10:5173"));
         assert!(!acceptable("ftp://localhost:5173"));
+    }
+
+    /// 发布构建不读基址环境变量：即使进程环境里设了 https 地址，也不能改写站点与接口基址。
+    /// 开发构建（允许改写）才读，空白值当没设并去掉结尾斜杠
+    #[test]
+    fn env_base_is_ignored_when_overrides_are_disabled() {
+        let name = "BAKA_TEST_BASE_OVERRIDE";
+        // 变量名只有本测试使用，不会和并行的其它用例互相干扰
+        std::env::set_var(name, "https://evil.example/");
+        assert_eq!(env_base(name, false), None, "发布构建不得读取环境变量");
+        assert_eq!(
+            env_base(name, true).as_deref(),
+            Some("https://evil.example"),
+            "开发构建应读取并去掉结尾斜杠"
+        );
+        std::env::set_var(name, "   ");
+        assert_eq!(env_base(name, true), None, "空白值当没设");
+        std::env::remove_var(name);
+        assert_eq!(env_base(name, true), None);
+    }
+
+    /// 环境变量改写开关跟着构建档位走：release 里恒为关
+    #[test]
+    fn env_overrides_follow_build_profile() {
+        assert_eq!(ENV_OVERRIDES_ENABLED, cfg!(debug_assertions));
     }
 
     /// https 与开发构建无关，恒可
