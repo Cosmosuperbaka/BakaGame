@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { fireEvent, fn } from "storybook/test";
+import { fireEvent, fn, screen } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS, storyChat } from "@/stories/fixtures/Common";
 import type { ChatMessage } from "@bakagame/shared";
@@ -187,7 +187,8 @@ export const PickerOpen: Story = {
   play: async ({ canvas }) => {
     // 只派发 click：打开面板靠 onClick，脚本聚焦会在按钮上留下键盘焦点环。
     await fireEvent.click(canvas.getByRole("button", { name: "发送表情" }));
-    await canvas.findByRole("tablist", { name: "表情包分类" }, { timeout: 10_000 });
+    // 面板由 Portal 挂在 body 上，canvas 只覆盖故事根节点，在里面查不到标签栏。
+    await screen.findByRole("tablist", { name: "表情包分类" }, { timeout: 10_000 });
   },
 };
 

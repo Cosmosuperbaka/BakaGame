@@ -22,7 +22,8 @@
     "preview": "vite preview",
     "storybook": "storybook dev --port 6006 --no-open --no-version-updates",
     "build-storybook": "storybook build --output-dir storybook-static",
-    "storybook:shots": "node scripts/storybook-shots.mjs"
+    "storybook:shots": "node scripts/storybook-shots.mjs",
+    "storybook:health": "node scripts/storybook-health.mjs"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",

@@ -1,7 +1,7 @@
 import { useState, type ComponentProps } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, screen } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
 import { EmojiPicker } from "./EmojiPicker";
 
@@ -15,8 +15,9 @@ const meta = {
     onSelect: fn(),
   },
   // 清单在打开后异步载入：等标签栏出现再截图，避免拍到载入中的占位。
-  play: async ({ canvas }) => {
-    await canvas.findByRole("tablist", { name: "表情包分类" }, { timeout: 10_000 });
+  // 面板由 Portal 挂在 body 上，canvas 只覆盖故事根节点，在里面查不到标签栏。
+  play: async () => {
+    await screen.findByRole("tablist", { name: "表情包分类" }, { timeout: 10_000 });
   },
 } satisfies Meta<typeof EmojiPicker>;
 

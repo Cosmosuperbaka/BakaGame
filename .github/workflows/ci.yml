@@ -344,6 +344,15 @@ jobs:
       - name: Build Storybook
         run: pnpm --filter client build-storybook
 
+      # 构建只证明故事能编译，渲染报错、play 失败与空渲染要真浏览器跑一遍才看得见。
+      # 浏览器与 e2e 作业用同一个办法装（同一枚 Playwright 的 chromium），不另起一套。
+      - name: Install Playwright browsers
+        working-directory: Client
+        run: npx playwright install --with-deps chromium
+
+      - name: Check Storybook story health
+        run: pnpm --filter client storybook:health
+
       - name: Upload client coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
