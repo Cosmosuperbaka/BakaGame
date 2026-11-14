@@ -3,6 +3,7 @@ import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { errorCode, errorText } from "@/lib/ErrorMessage";
 import { randomRoomId } from "@/lib/Random";
+import { ROOM_ID_TAKEN_CODES } from "@/lib/RoomProtocolCodes";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 
 /** 密码弹窗里的加入失败：写在密码框下方，`invalid` 只在确属密码错误时标红输入框。 */
@@ -52,8 +53,6 @@ export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
   onRoomCreated?: (roomId: string, params: CreateRoomParams) => void;
 }
 
-/** 房号已被占用的服务端错误码：卧底与猜歌、增强房目前各回各的，大厅统一按这一组识别。 */
-const ROOM_ID_TAKEN_CODES: ReadonlySet<string> = new Set(["ROOM_EXISTS", "ROOM_ALREADY_EXISTS"]);
 /** 撞号后最多换几次号：九千个四位号在现有规模下连撞几次已属极端。 */
 const MAX_ROOM_ID_RETRIES = 3;
 
