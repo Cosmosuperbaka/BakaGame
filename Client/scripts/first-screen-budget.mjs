@@ -15,8 +15,8 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 export const BUDGETS = {
   /** 渲染阻塞样式表：实测 23.1KB gz。中文字体声明（占原先 82%）已移到非阻塞的 fonts.css，不要再把它们放回主样式表。 */
   entryCssGzBytes: 24_500,
-  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 215.5KB gz（Sentry SDK 改空闲时加载后 −90KB）。 */
-  entryJsGraphGzBytes: 226_000,
+  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 211.2KB gz（Sentry SDK 改空闲时加载后 −90KB，去掉 Helmet 后 −5.5KB）。 */
+  entryJsGraphGzBytes: 221_500,
   /** 单个路由分片：实测最大 SonGuessrRoomPage 约 136.9KB gz。 */
   largestChunkGzBytes: 139_000,
   /** 渲染阻塞样式表里的 @font-face 条数：中文字体声明已移到非阻塞的 fonts.css，这里只剩拉丁字体的少数几条。 */
@@ -32,7 +32,7 @@ export const BUDGETS = {
    */
   maxFontFileBytes: 800_000,
   /** 入口 HTML 直取与 modulepreload 的 JS 图、渲染阻塞样式表的原始（未压缩）体积：gzip 之外再守解析与执行成本。 */
-  entryJsGraphRawBytes: 685_000,
+  entryJsGraphRawBytes: 667_000,
   entryCssRawBytes: 140_000,
   /** 整个 dist 的总字节、图片总字节、内容逐字节相同的重复文件所占字节（表情图公共路径与哈希路径各存一份）。 */
   distTotalBytes: 39_500_000,
