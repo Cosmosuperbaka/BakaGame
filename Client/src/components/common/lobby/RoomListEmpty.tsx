@@ -1,7 +1,7 @@
 import type { Ref } from "react";
 import { motion } from "framer-motion";
 import { DoorOpen } from "lucide-react";
-import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
+import { RoomCardSkeleton } from "@/components/common/lobby/RoomCardSkeleton";
 import { listItem, listItemExit } from "@/lib/motion/Choreography";
 
 /**

@@ -8,7 +8,7 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
-import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
+import { RoomCardSkeleton } from "@/components/common/lobby/RoomCardSkeleton";
 import {
   usePageLinkClick,
   usePageTransitionEnds,
