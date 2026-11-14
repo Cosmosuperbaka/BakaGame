@@ -4,6 +4,7 @@ import {
   avatarOf,
   button,
   control,
+  gameSender,
   inputPrefixOf,
   isHostOf,
   isRecord,
@@ -389,8 +390,7 @@ function buildCeeScreen(context: UiContext): UiScreen {
   );
 }
 
-const send = (context: UiContext, type: string, payload: Record<string, unknown> = {}) =>
-  context.client.sendInRoom("cee", type, payload, { timeoutMs: 120_000 });
+const send = gameSender("cee");
 
 const defaultModeFor = (context: UiContext, prefix: string): "character" | "subject" => {
   const search = context.state.search;

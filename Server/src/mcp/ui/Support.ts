@@ -1,6 +1,7 @@
 import type { GameId } from "../GameClient";
 import type { UiControl, UiPart, UiScreen, UiSection } from "./Types";
 import { isRecord } from "../../shared/Json";
+import { GAME_COMMAND_TIMEOUT_MS } from "../Timeouts";
 
 export { isRecord };
 
@@ -137,6 +138,12 @@ export const playerName = (snapshot: Record<string, unknown>, id: unknown): stri
   const found = recordList(snapshot.players).find((player) => player.id === id);
   return str(found?.name) ?? "该玩家";
 };
+
+/** 某款游戏的命令发送：房间内命令，超时取自按游戏声明的超时表。 */
+export const gameSender =
+  (game: GameId) =>
+  (context: UiContext, type: string, payload: Record<string, unknown> = {}) =>
+    context.client.sendInRoom(game, type, payload, { timeoutMs: GAME_COMMAND_TIMEOUT_MS[game] });
 
 /** 当前座位的玩家编号：命令上下文里带的优先，退回私有状态。 */
 export const seatIdOf = (context: UiContext): unknown =>

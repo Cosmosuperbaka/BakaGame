@@ -5,6 +5,7 @@ import {
   avatarOf,
   button,
   control,
+  gameSender,
   isRecord,
   list,
   playerName,
@@ -408,8 +409,7 @@ const needDraft = (context: UiContext, id: string, label: string): string => {
   return value;
 };
 
-const send = (context: UiContext, type: string, payload: Record<string, unknown> = {}) =>
-  context.client.sendInRoom("faker", type, payload);
+const send = gameSender("faker");
 
 const submitFakerWords = async (context: UiContext): Promise<string> => {
   const hasBlank =

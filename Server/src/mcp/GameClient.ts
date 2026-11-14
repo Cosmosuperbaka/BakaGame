@@ -4,6 +4,7 @@ import { isRecord } from "../shared/Json";
 import { mergeChatWindow, type ChatWindowEntry } from "../shared/ChatWindow";
 import { isPermanentRoomError } from "../shared/Model";
 import { GAME_IDS, type GameId } from "../shared/Protocol";
+import { COMMAND_TIMEOUT_MS, LONG_COMMAND_TIMEOUT_MS } from "./Timeouts";
 import { SeatUi } from "./ui/SeatUi";
 
 export type { GameId };
@@ -62,9 +63,6 @@ const GAME_META: Record<
 export const AGENT_WS_PATH = "/api/ws";
 
 const CONNECT_TIMEOUT_MS = 6_000;
-/** 普通命令 20s；出题/开局/下一轮这类上游装配是长任务，由调用方显式放宽。 */
-const COMMAND_TIMEOUT_MS = 20_000;
-const LONG_COMMAND_TIMEOUT_MS = 180_000;
 const EVENT_TIMEOUT_MS = 8_000;
 /** 站点焦点是广播用增强信息：超时与失败都不能拖慢工具本身的返回。 */
 const SITE_FOCUS_TIMEOUT_MS = 3_000;

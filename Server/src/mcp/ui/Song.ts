@@ -4,6 +4,7 @@ import {
   avatarOf,
   button,
   control,
+  gameSender,
   inputPrefixOf,
   isHostOf,
   isRecord,
@@ -460,8 +461,7 @@ function buildSongScreen(context: UiContext): UiScreen {
   );
 }
 
-const send = (context: UiContext, type: string, payload: Record<string, unknown> = {}) =>
-  context.client.sendInRoom("song", type, payload, { timeoutMs: 180_000 });
+const send = gameSender("song");
 
 const startSearch = (
   context: UiContext,
