@@ -1143,6 +1143,33 @@ describe("状态同步", () => {
     expect(useSonGuessrStore.getState().snapshot?.name).toBe("音乐房间");
   });
 
+  it("重连不作废在途的全量请求：缺口补丁不重复发", () => {
+    // 全量请求挂住不回包，模拟重连时上一次请求仍在途。
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.requestSync" ? new Promise(() => {}) : Promise.resolve({})
+    );
+    dispose = initSonGuessrWs();
+    const gapPatch = {
+      type: "event" as const,
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 9,
+        revision: 10,
+        operations: [{ op: "replace" as const, path: "/name", value: "缺口" }],
+      },
+    };
+    emitMessage(gapPatch);
+    expect(requestSyncCalls()).toHaveLength(1);
+
+    emitStatus(false);
+    emitStatus(true);
+    emitMessage(gapPatch);
+
+    // 猜歌连上只作废修订号，在途去重标记留着：同一份欠账不因重连再发一次。
+    expect(requestSyncCalls()).toHaveLength(1);
+  });
+
   describe("入房往返期间收到过别的房间的推送", () => {
     let resolveAck!: (value: unknown) => void;
     let joined: Promise<unknown>;
