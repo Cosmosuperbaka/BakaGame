@@ -13,6 +13,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /** 隧道用到的解析能力；抽成接口是为了让回环隧道能脱离 HTTPDNS 与网络单独测试。 */
@@ -32,10 +33,14 @@ interface TunnelResolver {
 class DnsProxyServer private constructor(
     private val resolver: TunnelResolver,
     private val server: ServerSocket,
+    private val maxConnections: Int,
 ) {
     val port: Int = server.localPort
 
     private val running = AtomicBoolean(true)
+
+    /** 同时存在的连接数（含读头阶段与已建立的隧道）。 */
+    private val active = AtomicInteger(0)
 
     init {
         thread(name = "baka-dns-proxy-accept", isDaemon = true) {
@@ -46,8 +51,22 @@ class DnsProxyServer private constructor(
                     if (running.get()) Log.w(TAG, "接受连接失败：${err.message}")
                     break
                 }
+                // 名额在接受线程里同步占位：连接数在处理线程起来之前就已计入
+                if (active.incrementAndGet() > maxConnections) {
+                    active.decrementAndGet()
+                    respond(client, "503 Service Unavailable")
+                    try {
+                        client.close()
+                    } catch (_: Exception) {
+                    }
+                    continue
+                }
                 thread(name = "baka-dns-proxy-conn", isDaemon = true) {
-                    handle(client)
+                    try {
+                        handle(client)
+                    } finally {
+                        active.decrementAndGet()
+                    }
                 }
             }
         }
@@ -185,14 +204,20 @@ class DnsProxyServer private constructor(
         private const val HEADER_TIMEOUT_MS = 10_000
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val MAX_HEADER_BYTES = 8 * 1024
+
+        /**
+         * 同时存在的连接数上限。Chromium 对单个代理的并发连接本身就有限（量级几十），
+         * 留 4 倍余量，页面正常使用不会碰到，只挡失控的本机连接；与桌面壳取同一个值。
+         */
+        private const val MAX_CONNECTIONS = 128
         private const val BUFFER_BYTES = 16 * 1024
         private const val TUNNEL_DRAIN_MS = 2_000L
 
-        fun start(resolver: TunnelResolver): DnsProxyServer {
+        fun start(resolver: TunnelResolver, maxConnections: Int = MAX_CONNECTIONS): DnsProxyServer {
             val server = ServerSocket()
             server.reuseAddress = true
             server.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
-            return DnsProxyServer(resolver, server)
+            return DnsProxyServer(resolver, server, maxConnections)
         }
 
         private fun splitTarget(value: String): Pair<String, Int>? {

@@ -103,4 +103,48 @@ class DnsProxyServerTest {
         }
         assertEquals("PING", String(reply, Charsets.ISO_8859_1))
     }
+
+    private fun readAll(socket: Socket): String =
+        try {
+            String(socket.getInputStream().readBytes(), Charsets.ISO_8859_1)
+        } catch (_: java.net.SocketException) {
+            "" // 服务端带着未读数据关闭时按 RST 处理，也算已断开
+        }
+
+    @Test fun oversizedHeaderWithoutNewlineIsRejected() {
+        val proxy = startProxy()
+        val client = connectToProxy(proxy)
+        runCatching {
+            client.getOutputStream().write(ByteArray(32 * 1024) { 'a'.code.toByte() })
+            client.getOutputStream().flush()
+        }
+        // 读到 EOF（服务端断开）而不是读超时，说明没有无界等待
+        val response = readAll(client)
+        assertTrue(response, response.isEmpty() || response.startsWith("HTTP/1.1 4"))
+    }
+
+    @Test fun connectionsBeyondTheLimitAreRefusedAndReleased() {
+        val proxy = DnsProxyServer.start(loopbackResolver, maxConnections = 2)
+        closers += { proxy.close() }
+        val held = (0 until 2).map { connectToProxy(proxy) }
+        val refused = connectToProxy(proxy)
+        val response = readAll(refused)
+        assertTrue(response, response.startsWith("HTTP/1.1 503"))
+
+        // 放掉一条占用后重新接受（处理线程退出需要一点时间，轮询等待）
+        held.first().close()
+        var accepted = false
+        repeat(30) {
+            if (accepted) return@repeat
+            val probe = connectToProxy(proxy)
+            probe.soTimeout = 200
+            val text = try {
+                String(probe.getInputStream().readBytes(), Charsets.ISO_8859_1)
+            } catch (_: java.net.SocketTimeoutException) {
+                "" // 读超时：连接被接受并在等请求头
+            }
+            if (!text.startsWith("HTTP/1.1 503")) accepted = true
+        }
+        assertTrue("释放占用后仍在返回 503", accepted)
+    }
 }
