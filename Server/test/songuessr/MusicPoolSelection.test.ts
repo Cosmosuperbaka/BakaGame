@@ -14,6 +14,7 @@ import {
   songs,
   startRound,
 } from "./Fixtures";
+import { until } from "../support/Until";
 import { createAggregatedProvider } from "../support/AggregatedProviders";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
@@ -149,9 +150,10 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { keyword: "在途" },
     });
-    for (let attempt = 0; attempt < 200 && !releaseSearch; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
+    await until("搜索请求没有进入上游", () => releaseSearch !== undefined, {
+      timeoutMs: 200,
+      intervalMs: 1,
+    });
     expect(releaseSearch).toBeDefined();
     expect(usedCookies.at(-1)).toEqual({ netease: "MUSIC_U=guest-cookie" });
 

@@ -2,6 +2,7 @@ import { AppError } from "../../src/domain/Errors";
 import { SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { describe, expect, test } from "bun:test";
 import { connection, createRoom, execute, joinRoom, lastEvent, provider, songs } from "./Fixtures";
+import { until } from "../support/Until";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   type MusicCookieInput,
@@ -23,9 +24,10 @@ describe("账号池单号并发", () => {
   };
 
   const waitCalls = async (usedCookies: unknown[], count: number) => {
-    for (let attempt = 0; attempt < 400 && usedCookies.length < count; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
+    await until("并发调用没有全部进入上游", () => usedCookies.length >= count, {
+      timeoutMs: 400,
+      intervalMs: 1,
+    });
     expect(usedCookies.length).toBe(count);
   };
 

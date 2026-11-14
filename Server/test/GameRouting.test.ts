@@ -6,6 +6,7 @@ import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { GAME_IDS, type GameId } from "../src/shared/Protocol";
 import { createTestApp } from "./AppFixtures";
+import { until } from "./support/Until";
 
 /**
  * 统一入口对三款游戏的按款路由：连接登记与注销、站点页准入与发布。
@@ -84,11 +85,6 @@ const closeSocket = (socket: WebSocket) =>
     socket.close();
   });
 
-const until = async (condition: () => boolean, ms = 2_000) => {
-  const deadline = Date.now() + ms;
-  while (!condition() && Date.now() < deadline) await Bun.sleep(10);
-};
-
 /** 一张标签页：站点连接领取身份，游戏连接挂上同一身份。 */
 const openTab = async (port: number) => {
   const site = await openSocket(port);
@@ -147,7 +143,11 @@ for (const game of GAME_IDS) {
       expect((await request(socket, LOBBY[game], {})).type).toBe("ack");
       expect(counts()).toEqual({ faker: 0, song: 0, cee: 0, [game]: 1 });
       await closeSocket(socket);
-      await until(() => Object.values(counts()).every((count) => count === 0));
+      await until(
+        "断开后连接没从本款注销",
+        () => Object.values(counts()).every((count) => count === 0),
+        { timeoutMs: 2_000 }
+      );
       expect(counts()).toEqual({ faker: 0, song: 0, cee: 0 });
     } finally {
       await stop();

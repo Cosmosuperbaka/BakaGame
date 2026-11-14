@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createDatabase } from "../src/infrastructure/db/Database";
 import { splitStatements } from "../scripts/RunOneOffSql";
+import { until } from "./support/Until";
 
 // 端口 1 必然被拒，连接失败是瞬时的：既能触发重试，又不会拖慢用例。
 const UNREACHABLE_URL = "mysql://user:pass@127.0.0.1:1/bakagame";
@@ -119,8 +120,7 @@ describe("Database（启动连通性检查的失败语义）", () => {
       expect(fired).toBe(0);
       healthy = true;
       // 没有任何请求访问 ready，后台重试也要把启动补齐的回调等到。
-      const deadline = Date.now() + 1_000;
-      while (fired === 0 && Date.now() < deadline) await Bun.sleep(10);
+      await until("启动补齐回调没有被等到", () => fired > 0, { timeoutMs: 1_000 });
       expect(fired).toBe(1);
       await database.ready;
       await Bun.sleep(40);

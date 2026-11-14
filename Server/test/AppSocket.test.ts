@@ -19,6 +19,7 @@ import {
   startTestServer,
   upgradeStatusLine,
 } from "./support/AppServer";
+import { until } from "./support/Until";
 
 test("WebSocket 不协商 permessage-deflate", async () => {
   const { port, stop } = startTestServer();
@@ -106,13 +107,14 @@ test("WebSocket 握手按来源地址配额：在途连接超限回 429，断开
     await closed;
 
     // 服务端观察断开是异步的：允许在有限次数内重试，最终必须重新放行。
-    let status = "";
-    for (let attempt = 0; attempt < 20 && !status.includes("101"); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      status = await upgradeStatusLine(port);
-      if (status.includes("429")) continue;
-      break;
-    }
+    const status = await until(
+      "断开后握手配额没有重新放行",
+      async () => {
+        const line = await upgradeStatusLine(port);
+        return line.includes("429") ? undefined : line;
+      },
+      { timeoutMs: 500, intervalMs: 25 }
+    );
     expect(status).toContain("101");
   } finally {
     for (const socket of sockets) socket.close();
@@ -327,13 +329,11 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
     socket.send(JSON.stringify(req));
 
     // 等待两次回应
-    const start = Date.now();
-    while (
-      messages.filter((m) => m.id === "req-dedup-concurrency").length < 2 &&
-      Date.now() - start < 3000
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await until(
+      "重传的两个请求没有都收到回执",
+      () => messages.filter((m) => m.id === "req-dedup-concurrency").length >= 2,
+      { timeoutMs: 3_000, intervalMs: 20 }
+    );
 
     const acks = messages.filter((m) => m.type === "ack" && m.id === "req-dedup-concurrency");
     // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃

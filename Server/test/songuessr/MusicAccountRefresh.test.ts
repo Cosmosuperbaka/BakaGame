@@ -10,6 +10,7 @@ import { AppError } from "../../src/domain/Errors";
 import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
 import { TestConnection, connection, createRoom, execute, joinRoom, provider } from "./Fixtures";
+import { until } from "../support/Until";
 import { createAggregatedProvider } from "../support/AggregatedProviders";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
@@ -735,10 +736,9 @@ describe("账号池凭据与开关的竞态边界", () => {
 
 /** 后台续期是 fire-and-forget：有界轮询号主是否收到新凭据，而不是睡一个猜出来的时长。 */
 async function sessionPushed(owner: TestConnection): Promise<void> {
-  for (let tick = 0; tick < 200; tick += 1) {
-    if (owner.sent.some((item) => item.type === "event" && item.event === "song.auth.session"))
-      return;
-    await new Promise<void>((resolve) => setTimeout(resolve, 1));
-  }
-  throw new Error("后台续期没有把新凭据推给号主");
+  await until(
+    "后台续期没有把新凭据推给号主",
+    () => owner.sent.some((item) => item.type === "event" && item.event === "song.auth.session"),
+    { timeoutMs: 200, intervalMs: 1 }
+  );
 }

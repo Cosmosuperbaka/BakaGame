@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { AgentGameClient, applyStateSync, gameOfEvent } from "../src/mcp/GameClient";
+import { until } from "./support/Until";
 
 interface Inbound {
   id?: string;
@@ -88,26 +89,8 @@ const startMockSocket = async (): Promise<MockSocket> => {
   };
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** 轮询到条件成立为止；事件帧的到达不靠固定时长赌，等不到就显式失败。 */
-const until = async (label: string, settled: () => boolean): Promise<void> => {
-  for (let tick = 0; tick < 400; tick++) {
-    if (settled()) return;
-    await sleep(10);
-  }
-  throw new Error(`${label}：等待 4 秒仍未成立`);
-};
-
-/** 同 `until`，但把每轮的观测值带回来。 */
-const untilValue = async <T>(label: string, probe: () => Promise<T | undefined>): Promise<T> => {
-  for (let tick = 0; tick < 200; tick++) {
-    const value = await probe();
-    if (value !== undefined) return value;
-    await sleep(20);
-  }
-  throw new Error(`${label}：等待 4 秒仍未成立`);
-};
+const untilValue = <T>(label: string, probe: () => Promise<T | undefined>) =>
+  until(label, probe, { intervalMs: 20 });
 
 /**
  * 掉线后的第一条命令可能落在客户端还没察觉的旧连接上，因此按短超时重试，

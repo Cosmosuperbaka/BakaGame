@@ -8,6 +8,7 @@ import type { Auth } from "../src/infrastructure/auth/Auth";
 import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createAccountTestApp, createNapCatFetcher } from "./AccountFixtures";
+import { until } from "./support/Until";
 
 const ADMIN_QQ = "90001";
 
@@ -21,11 +22,8 @@ const setup = async (options: Parameters<typeof createAccountTestApp>[0] = {}) =
   return { ...ctx, adminCookie: admin.cookie, userOf };
 };
 
-/** `me()` 的昵称刷新不阻塞响应，轮询等它落库。 */
-const waitFor = async (check: () => boolean) => {
-  for (let attempt = 0; attempt < 50 && !check(); attempt += 1) await Bun.sleep(5);
-  expect(check()).toBe(true);
-};
+const waitFor = (label: string, check: () => boolean) =>
+  until(label, check, { timeoutMs: 250, intervalMs: 5 });
 
 const clientOf = () => {
   const { fetcher, state } = createNapCatFetcher();
@@ -216,7 +214,7 @@ describe("昵称查询与同步", () => {
     const { cookie } = await signIn("20002");
     expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "请先" });
     // 发码阶段刚查过：首次访问用缓存落库，不再请求
-    await waitFor(() => userOf("20002")?.qqName === "请先");
+    await waitFor("昵称刷新落库", () => userOf("20002")?.qqName === "请先");
     expect(napcat.state.calls).toEqual([["90001"], ["20002"]]);
 
     await rpc("account/me", undefined, cookie);
@@ -226,7 +224,7 @@ describe("昵称查询与同步", () => {
     clock += QQ_NAME_REFRESH_INTERVAL_MS + 11 * 60 * 1000;
     napcat.state.names.set("20002", "新名");
     await rpc("account/me", undefined, cookie);
-    await waitFor(() => userOf("20002")?.qqName === "新名");
+    await waitFor("昵称刷新落库", () => userOf("20002")?.qqName === "新名");
     expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "新名" });
     expect(napcat.state.calls).toEqual([["90001"], ["20002"], ["20002"]]);
   });

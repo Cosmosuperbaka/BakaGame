@@ -6,6 +6,7 @@ import type { AppEnv } from "../src/config/Env";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/HttpOperation";
 import { createTestApp } from "./AppFixtures";
+import { until } from "./support/Until";
 
 /**
  * 全局中间件（追踪号、安全头、跨域、错误信封、响应头补齐、操作日志）对每一类路由都要生效。
@@ -274,8 +275,14 @@ test("操作日志：每一类 HTTP 路由都记一条，未注册路径落固�
       ["/no-such-route", undefined, UNROUTED_HTTP_ACTION, 404],
     ];
     for (const [path, init] of cases) await (await fetch(server.url(path), init)).arrayBuffer();
-    for (let attempt = 0; attempt < 40 && operations.mock.calls.length < cases.length; attempt += 1)
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    await until(
+      "操作日志条数与请求数没有对齐",
+      () => operations.mock.calls.length >= cases.length,
+      {
+        timeoutMs: 1_000,
+        intervalMs: 25,
+      }
+    );
     const recorded = operations.mock.calls.map(([entry]) => `${entry.action} ${entry.status}`);
     for (const [, , action, status] of cases) expect(recorded).toContain(`${action} ${status}`);
     for (const [entry] of operations.mock.calls) {

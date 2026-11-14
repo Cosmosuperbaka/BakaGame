@@ -10,6 +10,7 @@ import {
   MemoryRegistrationRepository,
 } from "./AccountFixtures";
 import { createTestApp } from "./AppFixtures";
+import { until } from "./support/Until";
 
 const QQ = "123456789";
 const EMAIL = `${QQ}@qq.com`;
@@ -503,19 +504,21 @@ describe("游戏内账号身份", () => {
         },
       })
     );
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline) {
-      const snapshot = messages.find(
-        (item) => item.event === "room.snapshot" && item.payload?.mode === "full"
+    try {
+      const snapshot = await until(
+        "房间快照没有下发",
+        () =>
+          messages.find((item) => item.event === "room.snapshot" && item.payload?.mode === "full"),
+        { timeoutMs: 3_000, intervalMs: 20 }
       );
-      if (snapshot) {
-        socket.close();
-        return snapshot.payload!.state!.players![0]!;
-      }
-      await Bun.sleep(20);
+      return snapshot.payload!.state!.players![0]!;
+    } catch (error) {
+      throw new Error(`等待房间快照超时: ${JSON.stringify(messages).slice(0, 300)}`, {
+        cause: error,
+      });
+    } finally {
+      socket.close();
     }
-    socket.close();
-    throw new Error(`等待房间快照超时: ${JSON.stringify(messages).slice(0, 300)}`);
   };
 
   test("登录玩家的房间快照只带用户 ID 与站内头像，游客不带账号", async () => {

@@ -9,6 +9,7 @@ import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/HttpOperation";
 import { createTestApp as createApp } from "./AppFixtures";
 import { createSocketCollector, openSocket, startTestServer } from "./support/AppServer";
+import { until } from "./support/Until";
 
 test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async () => {
   const env: AppEnv = {
@@ -273,8 +274,10 @@ test("客户端完整性拒绝只产生一条告警级日志，4xx 与扫描探�
     // afterResponse 在响应发送后才排队执行：等两条请求的操作日志都落下再断言。
     const operations = () =>
       records.filter((record) => record.attributes["log.kind"] === "operation");
-    for (let attempt = 0; attempt < 40 && operations().length < 2; attempt += 1)
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    await until("两条请求的操作日志没有落下", () => operations().length >= 2, {
+      timeoutMs: 1_000,
+      intervalMs: 25,
+    });
     expect(operations()).toHaveLength(2);
 
     const warnings = records.filter((record) => record.severityText === "WARN");
@@ -317,9 +320,10 @@ test("未注册路径的 HTTP 操作日志只落固定桶，已注册路由仍�
       actions.mock.calls
         .map((call) => call[0].action)
         .filter((action) => action.startsWith("HTTP"));
-    for (let attempt = 0; attempt < 40 && httpActionsOf().length < paths.length; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+    await until("HTTP 操作数没有与请求数对齐", () => httpActionsOf().length >= paths.length, {
+      timeoutMs: 1_000,
+      intervalMs: 25,
+    });
     const httpActions = httpActionsOf();
     expect(httpActions).toHaveLength(paths.length);
     // 随机路径不出现在任何操作名里：指标序列与事务名的基数只落在固定集合。

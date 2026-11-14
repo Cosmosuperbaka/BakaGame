@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { BangumiDataWorkerClient } from "../src/infrastructure/BangumiDataWorkerClient";
+import { until } from "./support/Until";
 
 /** 可控的假 Worker：每次 `new Worker` 产生一个新实例，崩溃与回包全由测试驱动。 */
 class FakeWorker {
@@ -45,13 +46,6 @@ const createClient = (recovery = fast) => {
   return client;
 };
 const latest = () => FakeWorker.instances[FakeWorker.instances.length - 1]!;
-const until = async (predicate: () => boolean, timeoutMs = 1_000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error("等待条件超时");
-    await Bun.sleep(2);
-  }
-};
 
 beforeEach(() => {
   FakeWorker.instances = [];
@@ -86,12 +80,25 @@ describe("数据 Worker 崩溃恢复", () => {
     await expect(client.request(QUERY)).rejects.toMatchObject({ code: "BANGUMI_DATA_UNAVAILABLE" });
 
     // 退避结束：起了第二个线程，并向它重放了 init。
-    await until(() => FakeWorker.instances.length === 2);
+    await until("重启线程没有出现", () => FakeWorker.instances.length === 2, {
+      timeoutMs: 1_000,
+      intervalMs: 2,
+    });
     FakeWorker.autoReply = true;
-    await until(() => FakeWorker.instances[1]!.received.some((m) => m.method === "init"));
+    await until(
+      "init 没有被重放",
+      () => FakeWorker.instances[1]!.received.some((m) => m.method === "init"),
+      {
+        timeoutMs: 1_000,
+        intervalMs: 2,
+      }
+    );
     expect(FakeWorker.instances[0]!.terminated).toBe(true);
     // 重放完成后下一次请求成功。
-    await until(() => FakeWorker.instances[1]!.received.length >= 1);
+    await until("重放线程没有记录请求", () => FakeWorker.instances[1]!.received.length >= 1, {
+      timeoutMs: 1_000,
+      intervalMs: 2,
+    });
     await Bun.sleep(5);
     await expect(client.request(QUERY)).resolves.toBe(true);
   });
@@ -101,10 +108,16 @@ describe("数据 Worker 崩溃恢复", () => {
     await client.init(INIT);
     FakeWorker.autoInit = false;
     latest().crash();
-    await until(() => FakeWorker.instances.length === 2);
+    await until("重启线程没有出现", () => FakeWorker.instances.length === 2, {
+      timeoutMs: 1_000,
+      intervalMs: 2,
+    });
     const second = FakeWorker.instances[1]!;
     // 线程已起但 init 还没回包：此时发起的请求必须压住。
-    await until(() => second.received.some((m) => m.method === "init"));
+    await until("init 没有被发到新线程", () => second.received.some((m) => m.method === "init"), {
+      timeoutMs: 1_000,
+      intervalMs: 2,
+    });
     const query = client.request(QUERY);
     await Bun.sleep(20);
     expect(second.received.map((m) => m.method)).toEqual(["init"]);
@@ -122,9 +135,19 @@ describe("数据 Worker 崩溃恢复", () => {
       () => "rejected"
     );
     latest().crash();
-    await until(() => FakeWorker.instances.length === 2);
+    await until("重启线程没有出现", () => FakeWorker.instances.length === 2, {
+      timeoutMs: 1_000,
+      intervalMs: 2,
+    });
     FakeWorker.autoInit = true;
-    await until(() => FakeWorker.instances[1]!.received.some((m) => m.method === "init"));
+    await until(
+      "init 没有被重放",
+      () => FakeWorker.instances[1]!.received.some((m) => m.method === "init"),
+      {
+        timeoutMs: 1_000,
+        intervalMs: 2,
+      }
+    );
     FakeWorker.instances[1]!.reply(FakeWorker.instances[1]!.received[0]!.id);
     expect(await outcome).toBe("ready");
   });
@@ -135,7 +158,10 @@ describe("数据 Worker 崩溃恢复", () => {
     // 上限 3 次：前三次崩溃各自重启，第四次崩溃进入停摆。
     for (let round = 1; round <= 3; round += 1) {
       latest().crash();
-      await until(() => FakeWorker.instances.length === round + 1);
+      await until(`第 ${round} 次重启没有起线程`, () => FakeWorker.instances.length === round + 1, {
+        timeoutMs: 1_000,
+        intervalMs: 2,
+      });
     }
     latest().crash();
     await Bun.sleep(80);

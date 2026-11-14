@@ -8,6 +8,7 @@ import {
   scheduleTagDiffSync,
   syncTagDiff,
 } from "../src/infrastructure/TagDiffSync";
+import { until } from "./support/Until";
 
 /** 差分是「相对上一版」的增量：基线对不上时宁可不应用，也不能静默漏掉中间轮次。 */
 test("基线不匹配判为 stale，绝不套用增量", () => {
@@ -120,8 +121,10 @@ test("定时同步：首跑延后一分钟，之后每 6 小时一轮，stop 后
       const ticksBeforeRun = spy.mock.calls.length;
       (spy.mock.calls.at(-1)![0] as () => void)();
       // 计时回调是同步外壳，本轮同步跑完才排下一次；等那条 6 小时排程出现再断言。
-      for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1)
-        await Bun.sleep(1);
+      await until("下一轮排程没有出现", () => spy.mock.calls.length > ticksBeforeRun, {
+        timeoutMs: 50,
+        intervalMs: 1,
+      });
       expect(applied).toBe(1);
       expect(info[0]).toContain("角色标签增量已应用");
       expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);
@@ -405,8 +408,10 @@ test("某一轮拉取挂起被超时中止后，定时链仍会续排下一轮",
     });
     const ticksBeforeRun = spy.mock.calls.length;
     (spy.mock.calls.at(-1)![0] as () => void)();
-    for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1)
-      await Bun.sleep(1);
+    await until("失败后下一轮排程没有出现", () => spy.mock.calls.length > ticksBeforeRun, {
+      timeoutMs: 50,
+      intervalMs: 1,
+    });
     expect(results[0]).toMatchObject({ ok: false, summary: "增量同步失败" });
     // 失败之后必须仍排上了下一轮（6 小时）。
     expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);
@@ -436,8 +441,10 @@ test("回调自身抛错也不会断掉定时链", async () => {
     });
     const ticksBeforeRun = spy.mock.calls.length;
     (spy.mock.calls.at(-1)![0] as () => void)();
-    for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1)
-      await Bun.sleep(1);
+    await until("异常后下一轮排程没有出现", () => spy.mock.calls.length > ticksBeforeRun, {
+      timeoutMs: 50,
+      intervalMs: 1,
+    });
     expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);
     stop();
   } finally {
