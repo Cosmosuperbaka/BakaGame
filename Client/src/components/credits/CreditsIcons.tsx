@@ -298,8 +298,6 @@ export function DependencyGlyph({
  */
 const GENERIC_THANKS_ICONS = {
   database: Database,
-  // Bangumi 没有许可允许再分发的官方标识，按资料库性质取通用图标。
-  bangumi: Database,
   wiki: BookOpenText,
   music: Music,
   code: Package,

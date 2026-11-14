@@ -285,7 +285,7 @@ export const SPECIAL_THANKS: readonly SpecialThanksEntry[] = [
     name: "Bangumi 番组计划",
     description: "提供了番剧、角色、歌曲多元关系的开放API",
     url: "https://bgm.tv/",
-    icon: "bangumi",
+    icon: "database",
   },
   {
     name: "萌娘百科",

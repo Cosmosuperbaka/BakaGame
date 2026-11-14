@@ -275,8 +275,8 @@ describe("鸣谢条目的位图", () => {
     expect(rasters).toEqual(["moegirl.jpg"]);
   });
 
-  it("Bangumi 条目用通用的资料库图标，不再引用位图", () => {
-    const { container } = render(<ThanksGlyph icon="bangumi" />);
+  it("资料库来源用通用图标，不再引用位图", () => {
+    const { container } = render(<ThanksGlyph icon="database" />);
     expect(container.querySelector("img")).toBeNull();
     const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
