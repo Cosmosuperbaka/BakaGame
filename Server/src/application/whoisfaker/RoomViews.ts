@@ -92,15 +92,47 @@ const publicFeedback = (room: WhoIsFakerRoomRecord): RoundFeedback | undefined =
   return { ...feedback, next: "continue" };
 };
 
+const buildStatusView = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSnapshot["status"] => {
+  const speechState = room.round ? getCurrentSpeechState(room.round) : undefined;
+  const activeBlankGuess =
+    room.round?.phase === "blankGuess" ? room.round.blankGuessContext : undefined;
+  return {
+    phase: room.round?.phase ?? "waiting",
+    roundId: room.round?.id,
+    speechMode: room.round?.speechMode,
+    speechResumePhase: room.round?.supplement?.resumePhase,
+    supplementIndex: room.round?.supplement?.index,
+    started: Boolean(room.round),
+    day: room.round?.day ?? 0,
+    descriptionOrder: room.round?.descriptionOrder,
+    speechOrder: speechState ? [...speechState.order] : undefined,
+    submittedSpeechPlayerIds: speechState ? [...speechState.submittedPlayerIds] : undefined,
+    questionerPlayerId: room.round?.questionerPlayerId,
+    tieBreakStage: room.round?.tieBreak?.stage,
+    tieBreakIndex: room.round?.tieBreak ? room.round.tieBreakCount : undefined,
+    tieBreakCandidateIds: room.round?.tieBreak?.candidateIds,
+    pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
+    questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
+    // 反馈阶段仍保留猜词上下文供续接使用，但对外只在猜词阶段公开。
+    blankGuessPlayerId: activeBlankGuess?.playerId,
+    blankGuessReason: activeBlankGuess?.reason,
+    blankGuessDraft: activeBlankGuess?.pendingReview?.words ?? activeBlankGuess?.draft,
+    blankGuessPendingReview: activeBlankGuess?.pendingReview ? true : undefined,
+    pendingSupplementPlayerIds: room.round?.supplement
+      ? room.round.supplement.requestedPlayerIds.filter(
+          (id) => !room.round!.supplement!.donePlayers.includes(id)
+        )
+      : undefined,
+    phaseTimer: room.round?.phaseTimer,
+    feedback: publicFeedback(room),
+  };
+};
+
 export const buildRoomSnapshot = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): WhoIsFakerRoomSnapshot => {
   // 快照是前端渲染主数据源，尽量保证“一包就够渲染当前房间”。
-  const speechState = room.round ? getCurrentSpeechState(room.round) : undefined;
-
-  const activeBlankGuess =
-    room.round?.phase === "blankGuess" ? room.round.blankGuessContext : undefined;
   return {
     roomId: room.id,
     name: room.settings.name,
@@ -116,36 +148,7 @@ export const buildRoomSnapshot = (
       spectatorsSeeAnswers: room.settings.spectatorsSeeAnswers ?? false,
       allowAgents: room.settings.allowAgents === true,
     },
-    status: {
-      phase: room.round?.phase ?? "waiting",
-      roundId: room.round?.id,
-      speechMode: room.round?.speechMode,
-      speechResumePhase: room.round?.supplement?.resumePhase,
-      supplementIndex: room.round?.supplement?.index,
-      started: Boolean(room.round),
-      day: room.round?.day ?? 0,
-      descriptionOrder: room.round?.descriptionOrder,
-      speechOrder: speechState ? [...speechState.order] : undefined,
-      submittedSpeechPlayerIds: speechState ? [...speechState.submittedPlayerIds] : undefined,
-      questionerPlayerId: room.round?.questionerPlayerId,
-      tieBreakStage: room.round?.tieBreak?.stage,
-      tieBreakIndex: room.round?.tieBreak ? room.round.tieBreakCount : undefined,
-      tieBreakCandidateIds: room.round?.tieBreak?.candidateIds,
-      pendingDisconnectPlayerId: room.round?.pendingDisconnectPlayerIds[0],
-      questionerReconnectDeadlineAt: room.round?.questionerReconnectDeadlineAt,
-      // 反馈阶段仍保留猜词上下文供续接使用，但对外只在猜词阶段公开。
-      blankGuessPlayerId: activeBlankGuess?.playerId,
-      blankGuessReason: activeBlankGuess?.reason,
-      blankGuessDraft: activeBlankGuess?.pendingReview?.words ?? activeBlankGuess?.draft,
-      blankGuessPendingReview: activeBlankGuess?.pendingReview ? true : undefined,
-      pendingSupplementPlayerIds: room.round?.supplement
-        ? room.round.supplement.requestedPlayerIds.filter(
-            (id) => !room.round!.supplement!.donePlayers.includes(id)
-          )
-        : undefined,
-      phaseTimer: room.round?.phaseTimer,
-      feedback: publicFeedback(room),
-    },
+    status: buildStatusView(room),
     players: buildPublicPlayers(ctx, room),
     descriptions: buildPublicDescriptions(room.round),
     chat: room.chat,
@@ -153,122 +156,107 @@ export const buildRoomSnapshot = (
   };
 };
 
-const buildPublicPlayers = (
-  ctx: WhoIsFakerContext,
-  room: WhoIsFakerRoomRecord
-): PublicPlayerView[] => {
-  return Object.values(room.players)
-    .sort((left, right) => left.joinedAt - right.joinedAt)
-    .map((player) => {
-      const roundState = room.round?.assignments[player.id];
-      const isQuestioner = room.round?.questionerPlayerId === player.id;
-
-      let roundStatus: PublicPlayerView["roundStatus"] = "waiting";
-
-      if (player.membership === "kicked") {
-        roundStatus = "kicked";
-      } else if (isQuestioner) {
-        // 出题人身份凌驾于 active / spectator：旁观者也可以被指定出题。
-        roundStatus = "questioner";
-      } else if (player.membership === "spectator") {
-        roundStatus = "spectator";
-      } else if (roundState) {
-        roundStatus = roundState.alive ? "alive" : "dead";
-      }
-
-      return {
-        id: player.id,
-        name: player.name,
-        score: player.score,
-        membership: player.membership,
-        online: player.online,
-        // 房主没有准备态，视图里恒为已准备，与另外两个游戏同口径；存储字段不动，转让后自然回到真实状态。
-        isReady:
-          player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
-        isBot: player.isBot,
-        ...(player.isAgent ? { isAgent: true } : {}),
-        ...(ctx.connectionRegistry.isAgentDriven(player.connectionId)
-          ? { mcpControlled: true }
-          : {}),
-        isHost: room.hostPlayerId === player.id,
-        account: player.account,
-        roundStatus,
-        eliminatedAt: roundState && !roundState.alive ? roundState.eliminatedAt : undefined,
-        revealedRole:
-          roundState &&
-          ((!roundState.alive && (room.settings.revealRoleOnDeath ?? true)) ||
-            room.round?.phase === "gameOver")
-            ? roundState.role
-            : undefined,
-      };
-    });
+const roundStatusOf = (
+  room: WhoIsFakerRoomRecord,
+  player: WhoIsFakerPlayerRecord
+): PublicPlayerView["roundStatus"] => {
+  if (player.membership === "kicked") return "kicked";
+  // 出题人身份凌驾于 active / spectator：旁观者也可以被指定出题。
+  if (room.round?.questionerPlayerId === player.id) return "questioner";
+  if (player.membership === "spectator") return "spectator";
+  const roundState = room.round?.assignments[player.id];
+  if (roundState) return roundState.alive ? "alive" : "dead";
+  return "waiting";
 };
 
-export const buildPrivateState = (
+const buildPublicPlayer = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   player: WhoIsFakerPlayerRecord
-): WhoIsFakerPrivateState => {
-  // 房间公共快照永远不包含秘密信息，私有视图单独按连接发放。
-  const round = room.round;
-  const state = round?.assignments[player.id];
-  const isQuestioner = Boolean(round && round.questionerPlayerId === player.id);
-  // 旁观者的上帝视角与「允许旁观」是两件事：进场资格由 allowSpectators 决定，
-  // 进场后能看到多少由 spectatorsSeeAnswers 决定。开关关闭时局中只按普通连接发放，
-  // 结算后答案随公开快照（summary 与 revealedRole）全房可见，这里不再收紧。
-  const spectatorSeesAnswers =
-    player.membership === "spectator" &&
-    canSeeRoundSecrets(
-      { setsRound: false, spectator: true },
-      isRoundActive(room),
-      room.settings.spectatorsSeeAnswers ?? false
-    );
-  const hasPrivilegedIdentityView = Boolean(round && (isQuestioner || spectatorSeesAnswers));
-
-  if (!round) {
-    return {
-      playerId: player.id,
-      sessionToken: player.sessionToken,
-      canActAtNight: false,
-      isQuestioner: false,
-      canSubmitBlankGuess: false,
-      blankGuessUsed: false,
-      nightActionSubmitted: false,
-    };
-  }
-
-  if (hasPrivilegedIdentityView) {
-    return {
-      playerId: player.id,
-      sessionToken: player.sessionToken,
-      canActAtNight: false,
-      isQuestioner: round.questionerPlayerId === player.id,
-      canSubmitBlankGuess: false,
-      blankGuessUsed: round.blankGuessUsed,
-      nightActionSubmitted: false,
-      globalWords: round.words
-        ? {
-            civilianWord: round.words.civilianWord,
-            undercoverWord: round.words.undercoverWord,
-            blankHint: round.words.blankHint,
-          }
+): PublicPlayerView => {
+  const roundState = room.round?.assignments[player.id];
+  return {
+    id: player.id,
+    name: player.name,
+    score: player.score,
+    membership: player.membership,
+    online: player.online,
+    // 房主没有准备态，视图里恒为已准备，与另外两个游戏同口径；存储字段不动，转让后自然回到真实状态。
+    isReady: player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
+    isBot: player.isBot,
+    ...(player.isAgent ? { isAgent: true } : {}),
+    ...(ctx.connectionRegistry.isAgentDriven(player.connectionId) ? { mcpControlled: true } : {}),
+    isHost: room.hostPlayerId === player.id,
+    account: player.account,
+    roundStatus: roundStatusOf(room, player),
+    eliminatedAt: roundState && !roundState.alive ? roundState.eliminatedAt : undefined,
+    revealedRole:
+      roundState &&
+      ((!roundState.alive && (room.settings.revealRoleOnDeath ?? true)) ||
+        room.round?.phase === "gameOver")
+        ? roundState.role
         : undefined,
-      questionerView: Object.entries(round.assignments).map(([playerId, item]) => ({
-        playerId,
-        role: item.role,
-        side: item.side,
-        alive: item.alive,
-      })),
-      privilegedActionPreview: {
-        votes: round.phase === "tieBreak" ? (round.tieBreak?.votes ?? []) : round.votes,
-        nightActions: round.nightActions.map(({ actorId, targetId }) => ({
-          actorId,
-          targetId,
-        })),
-      },
-    };
-  }
+  };
+};
 
+const buildPublicPlayers = (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord
+): PublicPlayerView[] =>
+  Object.values(room.players)
+    .sort((left, right) => left.joinedAt - right.joinedAt)
+    .map((player) => buildPublicPlayer(ctx, room, player));
+
+const buildWaitingPrivateState = (player: WhoIsFakerPlayerRecord): WhoIsFakerPrivateState => ({
+  playerId: player.id,
+  sessionToken: player.sessionToken,
+  canActAtNight: false,
+  isQuestioner: false,
+  canSubmitBlankGuess: false,
+  blankGuessUsed: false,
+  nightActionSubmitted: false,
+});
+
+const buildPrivilegedPrivateState = (
+  round: GameRound,
+  player: WhoIsFakerPlayerRecord
+): WhoIsFakerPrivateState => ({
+  playerId: player.id,
+  sessionToken: player.sessionToken,
+  canActAtNight: false,
+  isQuestioner: round.questionerPlayerId === player.id,
+  canSubmitBlankGuess: false,
+  blankGuessUsed: round.blankGuessUsed,
+  nightActionSubmitted: false,
+  globalWords: round.words
+    ? {
+        civilianWord: round.words.civilianWord,
+        undercoverWord: round.words.undercoverWord,
+        blankHint: round.words.blankHint,
+      }
+    : undefined,
+  questionerView: Object.entries(round.assignments).map(([playerId, item]) => ({
+    playerId,
+    role: item.role,
+    side: item.side,
+    alive: item.alive,
+  })),
+  privilegedActionPreview: {
+    votes: round.phase === "tieBreak" ? (round.tieBreak?.votes ?? []) : round.votes,
+    nightActions: round.nightActions.map(({ actorId, targetId }) => ({
+      actorId,
+      targetId,
+    })),
+  },
+});
+
+const buildParticipantPrivateState = (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord,
+  round: GameRound,
+  player: WhoIsFakerPlayerRecord
+): WhoIsFakerPrivateState => {
+  const state = round.assignments[player.id];
   return {
     playerId: player.id,
     sessionToken: player.sessionToken,
@@ -293,6 +281,29 @@ export const buildPrivateState = (
     myCurrentNightTargetId: round.nightActions.find((action) => action.actorId === player.id)
       ?.targetId,
   };
+};
+
+export const buildPrivateState = (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord,
+  player: WhoIsFakerPlayerRecord
+): WhoIsFakerPrivateState => {
+  // 房间公共快照永远不包含秘密信息，私有视图单独按连接发放。
+  const round = room.round;
+  if (!round) return buildWaitingPrivateState(player);
+  // 旁观者的上帝视角与「允许旁观」是两件事：进场资格由 allowSpectators 决定，
+  // 进场后能看到多少由 spectatorsSeeAnswers 决定。开关关闭时局中只按普通连接发放，
+  // 结算后答案随公开快照（summary 与 revealedRole）全房可见，这里不再收紧。
+  const spectatorSeesAnswers =
+    player.membership === "spectator" &&
+    canSeeRoundSecrets(
+      { setsRound: false, spectator: true },
+      isRoundActive(room),
+      room.settings.spectatorsSeeAnswers ?? false
+    );
+  if (round.questionerPlayerId === player.id || spectatorSeesAnswers)
+    return buildPrivilegedPrivateState(round, player);
+  return buildParticipantPrivateState(ctx, room, round, player);
 };
 
 const canViewerAccessGhostChat = (

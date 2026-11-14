@@ -237,6 +237,71 @@ test("开关打开时旁观者局中实时收到全部答案与身份", async ()
   expect(state.privilegedActionPreview).toBeDefined();
 });
 
+test("上帝视角的全局词语带白板提示，出题人与可见答案的旁观者同口径", async () => {
+  const { service } = createTestContext();
+  const roomId = "7311";
+  const hostConnection = createConnection(service, `${roomId}-host`);
+  const created = (await execute(service, hostConnection, {
+    id: "create",
+    type: "room.create",
+    payload: {
+      roomId,
+      name: "白板提示上帝视角",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  })) as { playerId: string };
+  const host: Seat = { connection: hostConnection, playerId: created.playerId };
+  const seats: Seat[] = [];
+  for (let index = 0; index < 8; index += 1) seats.push(await joinSeat(service, roomId, index));
+  const questioner = seats[7];
+
+  await execute(service, host.connection, {
+    id: "settings",
+    type: "room.updateSettings",
+    payload: {
+      roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: true },
+      spectatorsSeeAnswers: true,
+    },
+  });
+  for (const seat of [host, ...seats]) {
+    await execute(service, seat.connection, {
+      id: `ready-${seat.playerId}`,
+      type: "player.setReady",
+      payload: { ready: true },
+    });
+  }
+  await execute(service, host.connection, { id: "start", type: "game.advancePhase", payload: {} });
+  await execute(service, host.connection, {
+    id: "assign",
+    type: "game.assignQuestioner",
+    payload: { playerId: questioner.playerId },
+  });
+  const manualRoles: Record<string, WhoIsFakerRole> = {
+    [host.playerId]: "civilian",
+    [seats[0].playerId]: "undercover",
+    [seats[1].playerId]: "blank",
+  };
+  for (const index of [2, 3, 4, 5, 6]) manualRoles[seats[index].playerId] = "civilian";
+  await execute(service, questioner.connection, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: [CIVILIAN_WORD, UNDERCOVER_WORD], blankHint: "水果", manualRoles },
+  });
+  const spectator = await joinSeat(service, roomId, 9);
+
+  const globalWordsOf = (seat: Seat) =>
+    getLastEventPayload<WhoIsFakerPrivateState>(seat.connection, "game.privateState")?.globalWords;
+  const expected = {
+    civilianWord: CIVILIAN_WORD,
+    undercoverWord: UNDERCOVER_WORD,
+    blankHint: "水果",
+  };
+  expect(globalWordsOf(questioner)).toEqual(expected);
+  expect(globalWordsOf(spectator)).toEqual(expected);
+});
+
 test("开关打开也不经公共快照或参与者私有视图泄漏答案", async () => {
   const f = await startRound(true);
 
