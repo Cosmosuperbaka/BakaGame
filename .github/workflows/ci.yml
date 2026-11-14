@@ -153,6 +153,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          # 壳版本号门禁要与上一个提交比较；默认的单提交浅克隆会让它只能跳过。
+          fetch-depth: 2
 
       # Server 测试全部使用隔离夹具（见 test/ 的 *Fixtures），不读 Server/data，
       # 因此不再下载数据集 —— 它只服务 E2E（下方 e2e 作业）与生产首启的基线补发。
