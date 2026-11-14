@@ -1,7 +1,14 @@
 import type { AgentGameClient, GameId } from "./GameClient";
 import { GAME_IDS } from "./GameClient";
 import { MCP_POLICY } from "./Policy";
-import { absolutePageUrl, findSitePage, gamePathOf, roomPageOf, SITE_PAGES } from "./SiteMap";
+import {
+  absolutePageUrl,
+  findSitePage,
+  gamePathOf,
+  isAboutsPage,
+  roomPageOf,
+  SITE_PAGES,
+} from "./SiteMap";
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
 import type { SitePageResult, SitePageStep } from "../shared/AgentActivity";
@@ -281,7 +288,7 @@ export const TOOLS: McpTool[] = [
         ...(tab ? { tab } : {}),
         url: absolutePageUrl(client.siteOrigin, page, tab),
         next:
-          page.path === "/abouts" || page.path === "/status"
+          isAboutsPage(page.path) || page.path === "/status"
             ? "这是只读页面；回到 get_site_map 选择游戏大厅"
             : "先 list_rooms 查看可从外部加入的房间，或 create_room 自己建房",
       };

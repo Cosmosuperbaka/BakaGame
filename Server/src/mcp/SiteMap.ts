@@ -60,6 +60,25 @@ export const SITE_PAGES: readonly SitePage[] = [
     access: "public",
     tabs: ["credits", "changelog", "commits", "privacy", "terms"],
   },
+  // 关于页里各有独立地址的三个标签：与关于页同一份正文，单独列出是为了能直接给人类可分享的链接。
+  {
+    path: SITE_PAGE_ENTRIES.changelog.path,
+    title: SITE_PAGE_ENTRIES.changelog.shortTitle,
+    description: "每个版本面向玩家的新增与修复，即关于项目页的更新日志标签。",
+    access: "public",
+  },
+  {
+    path: SITE_PAGE_ENTRIES.privacy.path,
+    title: SITE_PAGE_ENTRIES.privacy.shortTitle,
+    description: "收集哪些信息、用途、保留期限与第三方服务，即关于项目页的隐私说明标签。",
+    access: "public",
+  },
+  {
+    path: SITE_PAGE_ENTRIES.terms.path,
+    title: SITE_PAGE_ENTRIES.terms.shortTitle,
+    description: "服务说明、使用规范与免责，即关于项目页的用户条款标签。",
+    access: "public",
+  },
   {
     path: "/status",
     title: "站点状态",
@@ -67,6 +86,10 @@ export const SITE_PAGES: readonly SitePage[] = [
     access: "public",
   },
 ];
+
+/** 关于页本身或它某个标签的独立地址：都是只读页面。 */
+export const isAboutsPage = (path: string): boolean =>
+  path === SITE_PAGE_ENTRIES.abouts.path || path.startsWith(`${SITE_PAGE_ENTRIES.abouts.path}/`);
 
 /** 游戏标识 → 人类页面路径：两者拼写不同（faker ↔ /whoisfaker），对齐只在玩法路由登记表里做一次。 */
 export const gamePathOf = (game: GameId): string => GAME_ROUTES[game].base;
@@ -80,8 +103,10 @@ export const findSitePage = (path: string): SitePage | undefined => {
   return SITE_PAGES.find((page) => page.path === normalized);
 };
 
-/** 绝对地址：Agent 需要能把链接原样转给人类。 */
+/** 绝对地址：Agent 需要能把链接原样转给人类。有独立地址的标签给独立地址，其余挂在 `?tab=` 上。 */
 export const absolutePageUrl = (origin: string, page: SitePage, tab?: string): string => {
-  const base = `${origin.replace(/\/+$/, "")}${page.path}`;
-  return tab ? `${base}?tab=${encodeURIComponent(tab)}` : base;
+  const root = origin.replace(/\/+$/, "");
+  if (!tab) return `${root}${page.path}`;
+  const own = SITE_PAGES.find((candidate) => candidate.path === `${page.path}/${tab}`);
+  return own ? `${root}${own.path}` : `${root}${page.path}?tab=${encodeURIComponent(tab)}`;
 };

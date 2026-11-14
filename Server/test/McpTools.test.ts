@@ -370,6 +370,9 @@ test("站点地图覆盖全部人类可达位置，visit_page 校验路径与标
     "/songuessr/solo",
     "/cee",
     "/abouts",
+    "/abouts/changelog",
+    "/abouts/privacy",
+    "/abouts/terms",
     "/status",
   ]);
   expect(map.pages.every((page) => page.url.startsWith("http://127.0.0.1:4850/"))).toBe(true);
@@ -378,9 +381,21 @@ test("站点地图覆盖全部人类可达位置，visit_page 校验路径与标
     { path: "/abouts", tab: "changelog" },
     { client, agentName: "TestAgent" }
   )) as { url: string; tab: string; next: string };
-  expect(about.url).toBe("http://127.0.0.1:4850/abouts?tab=changelog");
+  // 有独立地址的标签直接给独立地址，没有的仍挂在 ?tab= 上。
+  expect(about.url).toBe("http://127.0.0.1:4850/abouts/changelog");
   expect(about.tab).toBe("changelog");
   expect(about.next).toContain("只读");
+  const commits = (await tool("visit_page").handler(
+    { path: "/abouts", tab: "commits" },
+    { client, agentName: "TestAgent" }
+  )) as { url: string };
+  expect(commits.url).toBe("http://127.0.0.1:4850/abouts?tab=commits");
+  const privacy = (await tool("visit_page").handler(
+    { path: "/abouts/privacy" },
+    { client, agentName: "TestAgent" }
+  )) as { url: string; next: string };
+  expect(privacy.url).toBe("http://127.0.0.1:4850/abouts/privacy");
+  expect(privacy.next).toContain("只读");
 
   await expect(
     tool("visit_page").handler({ path: "/faker" }, { client, agentName: "TestAgent" })
