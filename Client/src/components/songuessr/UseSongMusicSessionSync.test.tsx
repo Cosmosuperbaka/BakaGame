@@ -157,6 +157,55 @@ describe("useSongMusicSessionSync", () => {
     expect(uploads).toBe(1);
   });
 
+  it("退避等待中卸载后不再重传", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type !== "song.auth.useCookie") return undefined;
+      uploads += 1;
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：先排一次退避再卸载
+      throw { code: "MUSIC_API_BUSY", message: "上游忙" };
+    });
+    const h = render(baseInput());
+    await flush();
+    expect(uploads).toBe(1);
+    h.unmount();
+    await flush(10_000);
+    expect(uploads).toBe(1);
+  });
+
+  it("断线期间不装载，重连后重新发起装载", async () => {
+    send.mockResolvedValue({ account: SONG_ACCOUNTS.vip });
+    const input = baseInput();
+    const { rerender } = render({ ...input, connected: false });
+    await flush();
+    expect(uploadCalls()).toHaveLength(0);
+    rerender(input);
+    await flush();
+    expect(uploadCalls()).toHaveLength(1);
+  });
+
+  it("一个平台被判失效不影响另一个平台装载", async () => {
+    saveSongMusicSession(
+      { cookie: "QQ_COOKIE=test", account: { ...SONG_ACCOUNTS.vip, platform: "qq" } },
+      true,
+      "qq"
+    );
+    send.mockImplementation(async (type: string, payload: { platform: string }) => {
+      if (type !== "song.auth.useCookie") return undefined;
+      if (payload.platform === "netease") {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：只让网易云被判失效
+        throw { code: "MUSIC_SESSION_INVALID", message: "登录状态已失效" };
+      }
+      return { account: { ...SONG_ACCOUNTS.vip, platform: "qq" }, cookie: "QQ_COOKIE=refreshed" };
+    });
+    render(baseInput());
+    await flush();
+    expect(uploadCalls().map(([, payload]) => payload.platform)).toEqual(["netease", "qq"]);
+    expect(getStoredSongMusicSession("netease")).toBeNull();
+    expect(getStoredSongMusicSession("qq")?.cookie).toBe("QQ_COOKIE=refreshed");
+    expect(showToast).toHaveBeenCalledWith("网易云登录状态已失效，请重新扫码登录", "error");
+  });
+
   it("双平台凭据并行装载", async () => {
     saveSongMusicSession(
       { cookie: "QQ_COOKIE=test", account: { ...SONG_ACCOUNTS.vip, platform: "qq" } },
