@@ -173,7 +173,9 @@ const UNPROTECT_RETRY_DELAY: Duration = Duration::from_millis(150);
 enum KeyFile {
     Missing,
     Present(StoredKey),
-    /// 文件在，但内容不是合法的密钥记录（截断、乱码、非 UTF-8）
+    /// 文件在，`v` 是别的版本：结构可能完全不同，不是损坏，只报错、文件原样保留
+    Incompatible(String),
+    /// 文件在，但内容不是本版本写得出的密钥记录（截断、乱码、非 UTF-8、`v` 缺失）
     Corrupt(String),
     /// 读取本身失败（权限、占用等），文件内容未知
     Unreadable(String),
@@ -200,7 +202,18 @@ fn classify_key_bytes(bytes: &[u8]) -> KeyFile {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return KeyFile::Corrupt("文件不是 UTF-8 文本".to_string());
     };
-    match serde_json::from_str::<StoredKey>(text) {
+    // 先按通用 JSON 看版本：将来版本可能换了记录结构，严格结构解析不了也不能当损坏
+    let value = match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(value) => value,
+        Err(err) => return KeyFile::Corrupt(format!("密钥文件格式错误：{err}")),
+    };
+    let Some(version) = value.get("v").and_then(serde_json::Value::as_number) else {
+        return KeyFile::Corrupt("密钥文件缺少数字类型的版本号 v".to_string());
+    };
+    if version.as_u64() != Some(u64::from(STORE_VERSION)) {
+        return KeyFile::Incompatible(format!("密钥存储版本不兼容：v={version}"));
+    }
+    match serde_json::from_value::<StoredKey>(value) {
         Ok(record) => KeyFile::Present(record),
         Err(err) => KeyFile::Corrupt(format!("密钥文件格式错误：{err}")),
     }
@@ -305,6 +318,7 @@ fn load_or_create_with(
     match read_key_file(&path) {
         KeyFile::Missing => generate_and_store(dir, &path),
         KeyFile::Unreadable(err) => Err(format!("无法读取密钥文件，暂不重建：{err}")),
+        KeyFile::Incompatible(reason) => Err(reason),
         KeyFile::Corrupt(reason) => replace_corrupt_key(dir, &path, &reason),
         KeyFile::Present(record) => match open_stored(&record, wrap, unprotect_delay) {
             Ok(device) => Ok(device),
@@ -546,6 +560,57 @@ mod tests {
         assert!(load_or_create(dir.path()).is_err());
         assert_eq!(std::fs::read_to_string(key_path(&dir)).unwrap(), json);
         assert!(!quarantine_path(&dir).exists());
+    }
+
+    /// 将来版本改了记录结构（没有 `key` 字段）：严格结构解析不了，也不能当损坏挪走，
+    /// 否则降级回本版本会把原身份丢掉
+    #[test]
+    fn future_version_with_different_shape_is_left_untouched() {
+        let dir = TempDir::new("future-shape");
+        let json = r#"{"v":2,"protection":"tpm","handle":"h-1"}"#;
+        std::fs::write(key_path(&dir), json).unwrap();
+        let err = match load_or_create(dir.path()) {
+            Ok(_) => panic!("不认识的版本不应载入成功"),
+            Err(err) => err,
+        };
+        assert!(err.contains("版本不兼容"), "应报版本不兼容：{err}");
+        assert_eq!(std::fs::read_to_string(key_path(&dir)).unwrap(), json);
+        assert!(!quarantine_path(&dir).exists());
+    }
+
+    /// 超出 u8 的版本号同样是「别的版本」，不是损坏
+    #[test]
+    fn out_of_range_version_number_is_incompatible() {
+        let dir = TempDir::new("big-version");
+        let json = r#"{"v":300,"blob":"x"}"#;
+        std::fs::write(key_path(&dir), json).unwrap();
+        assert!(load_or_create(dir.path()).is_err());
+        assert_eq!(std::fs::read_to_string(key_path(&dir)).unwrap(), json);
+        assert!(!quarantine_path(&dir).exists());
+    }
+
+    /// `v` 缺失或不是数字：本版本自己写不出这种形状，按损坏处理
+    #[test]
+    fn missing_or_non_numeric_version_is_corrupt() {
+        for (name, json) in [
+            ("no-v", r#"{"protection":"software","key":"AAAA"}"#),
+            ("str-v", r#"{"v":"1","protection":"software","key":"AAAA"}"#),
+            ("not-object", r#"[1,2,3]"#),
+        ] {
+            let dir = TempDir::new(name);
+            std::fs::write(key_path(&dir), json).unwrap();
+            load_or_create(dir.path()).expect("本版本写不出的形状应按损坏自愈");
+            assert!(quarantine_path(&dir).exists(), "{name} 应改名留证");
+        }
+    }
+
+    /// `v` 等于当前版本而结构不合法才算损坏
+    #[test]
+    fn current_version_with_broken_shape_is_corrupt() {
+        let dir = TempDir::new("v1-broken");
+        std::fs::write(key_path(&dir), r#"{"v":1,"protection":"software"}"#).unwrap();
+        load_or_create(dir.path()).expect("当前版本结构不合法应自愈");
+        assert!(quarantine_path(&dir).exists());
     }
 
     #[test]
