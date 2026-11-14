@@ -347,6 +347,7 @@ const row = (
   speechOrder: [],
   submitted: [],
   nightCapable: [],
+  roleCounts: undefined,
   ...rest,
   acting,
 });
@@ -512,4 +513,63 @@ test("测试房：反馈阶段放开给全房，其余阶段与普通房一致",
   const records = await walkAllPhases(ROOM_ID_TEST_MODE);
   expectFullCoverage(records);
   expect(records).toEqual(TEST_MODE_EXPECTED);
+});
+
+// 上面那条链里出题人是旁观者，正式玩家全员参赛，扣不扣出题人自己都是同一个数。
+// 正式玩家出题时要扣掉自身名额，单独走一遍才钉得住；九名正式玩家扣掉出题人剩八人，
+// 正好够天使与白板的开席门槛，配置不会被夹掉。
+test("正式玩家出题：出词人数扣掉他自己，其余座位不下发", async () => {
+  const roomId = "8951";
+  const { service } = createTestContext();
+  let commandId = 0;
+  const send = (client: TestConnection, message: WithoutId<WhoIsFakerClientMessage>) =>
+    execute(service, client, { ...message, id: `self-${++commandId}` } as WhoIsFakerClientMessage);
+
+  const host = createConnection(service, `self-${roomId}-房主`);
+  await send(host, {
+    type: "room.create",
+    payload: {
+      roomId,
+      name: "出题人参赛",
+      userName: "房主",
+      visibility: "public",
+      allowSpectators: true,
+    },
+  });
+  const guests: TestConnection[] = [];
+  for (let index = 1; index <= 8; index += 1) {
+    const client = createConnection(service, `self-${roomId}-玩家${index}`);
+    await send(client, { type: "room.join", roomId, payload: { userName: `玩家${index}` } });
+    await send(client, { type: "player.setReady", payload: { ready: true } });
+    guests.push(client);
+  }
+  await send(host, {
+    type: "room.updateSettings",
+    payload: { roleConfig: { undercoverCount: 2, hasAngel: true, hasBlank: true } },
+  });
+  await send(host, { type: "game.advancePhase", payload: {} });
+  await send(host, {
+    type: "game.assignQuestioner",
+    payload: { playerId: host.record.playerId! },
+  });
+
+  const privateOf = async (client: TestConnection) => {
+    await send(client, { type: "room.requestSync", payload: {} });
+    return getLastEventPayload<WhoIsFakerPrivateState>(client, "game.privateState")!;
+  };
+
+  const hostState = await privateOf(host);
+  expect(hostState.isQuestioner).toBe(true);
+  expect(hostState.canAct).toBe(true);
+  expect(hostState.requiredRoleCounts).toEqual({
+    civilian: 4,
+    undercover: 2,
+    angel: 1,
+    blank: 1,
+  });
+  for (const guest of guests) {
+    const state = await privateOf(guest);
+    expect(state.canAct).toBe(false);
+    expect(state.requiredRoleCounts).toBeUndefined();
+  }
 });
