@@ -1,5 +1,7 @@
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
+import { type BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
+import { type RandomSource } from "../../src/domain/Rules";
 import {
   BangumiSubjectDetails,
   ConnectionRecord,
@@ -189,4 +191,53 @@ export const deferredServiceResult = <T>() => {
     reject = no;
   });
   return { promise, resolve, reject };
+};
+
+export interface AnimeSoloOptions {
+  musicProvider: MusicProvider;
+  bangumiProvider: BangumiDataProvider;
+  /** 连接 ID：同一用例里多次开局时用来区分连接。 */
+  connectionId?: string;
+  roomId?: string;
+  random?: RandomSource;
+  /** false 时只建好番剧单人房并切到番剧题库，由调用方自己发开局命令。 */
+  start?: boolean;
+}
+
+/** 单人房切番剧题库（缺省直接开局），返回服务、连接与本局选中的歌曲 ID。 */
+export const startAnimeSolo = async ({
+  musicProvider,
+  bangumiProvider,
+  connectionId = "anime-solo",
+  roomId = "8888",
+  random = { nextInt: () => 0 },
+  start = true,
+}: AnimeSoloOptions) => {
+  const service = new SonGuessrService({ musicProvider, bangumiProvider, random });
+  const solo = connection(service, connectionId);
+  await createRoom(service, solo, {
+    roomId,
+    name: "猜番单人",
+    userName: "独狼",
+    solo: true,
+  });
+  await execute(service, solo, {
+    id: "anime-solo-settings",
+    type: "song.room.updateSettings",
+    roomId,
+    payload: { questionType: "anime" },
+  });
+  if (start) {
+    await execute(service, solo, {
+      id: "anime-solo-start",
+      type: "song.game.start",
+      roomId,
+      payload: {},
+    });
+  }
+  return {
+    service,
+    solo,
+    chosenId: start ? chosenSongId(service, roomId) : undefined,
+  };
 };

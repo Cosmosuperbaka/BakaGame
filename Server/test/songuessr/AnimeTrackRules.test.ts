@@ -17,7 +17,9 @@ import {
   makeSong,
   provider,
   songs,
+  startAnimeSolo,
 } from "./Fixtures";
+import { fakeBangumiProvider } from "../support/Providers";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   resolveAlbumTrackCandidates,
@@ -89,42 +91,24 @@ describe("SonGuessr 非歌音轨否决", () => {
     musicProvider: MusicProvider,
     bangumiProvider: BangumiDataProvider
   ) => {
-    const service = new SonGuessrService({
+    const { chosenId } = await startAnimeSolo({
       musicProvider,
       bangumiProvider,
-      random: { nextInt: () => 0 },
-    });
-    const solo = connection(service, "anime-nonvocal-solo");
-    await createRoom(service, solo, {
+      connectionId: "anime-nonvocal-solo",
       roomId: "8889",
-      name: "猜番单人",
-      userName: "独狼",
-      solo: true,
     });
-    await execute(service, solo, {
-      id: "anime-nonvocal-settings",
-      type: "song.room.updateSettings",
-      roomId: "8889",
-      payload: { questionType: "anime" },
-    });
-    await execute(service, solo, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "8889",
-      payload: {},
-    });
-    return chosenSongId(service, "8889");
+    return chosenId;
   };
 
   /** Bangumi 把整张特典 CD 挂成关联曲目，CD 里第一条就是台词轨。 */
   const bonusCdProvider = (_results: SongDetails[]) =>
-    ({
+    fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "サイコパス2 第5巻 特典CD", kind: "theme" }],
       }),
       searchSubjects: async () => [anime],
-    }) as unknown as BangumiDataProvider;
+    });
 
   test("台词轨与正歌同池时，正歌胜出", async () => {
     const drama = {
@@ -192,40 +176,22 @@ describe("SonGuessr 非歌音轨否决", () => {
 
 describe("SonGuessr 番剧级兜底归属证据", () => {
   const soloRound = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
-    const service = new SonGuessrService({
+    const { chosenId } = await startAnimeSolo({
       musicProvider,
       bangumiProvider,
-      random: { nextInt: () => 0 },
-    });
-    const solo = connection(service, "anime-level-solo");
-    await createRoom(service, solo, {
+      connectionId: "anime-level-solo",
       roomId: "8890",
-      name: "猜番单人",
-      userName: "独狼",
-      solo: true,
     });
-    await execute(service, solo, {
-      id: "anime-level-settings",
-      type: "song.room.updateSettings",
-      roomId: "8890",
-      payload: { questionType: "anime" },
-    });
-    await execute(service, solo, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "8890",
-      payload: {},
-    });
-    return chosenSongId(service, "8890");
+    return chosenId;
   };
   /** 曲目名在网易云根本不存在，逼着走到番剧级兜底。 */
-  const unreachableTrack = {
+  const unreachableTrack = fakeBangumiProvider({
     getSubject: async () => ({
       ...anime,
       musicTracks: [{ title: "无此曲XYZ", artist: "未知歌手", kind: "theme" }],
     }),
     searchSubjects: async () => [anime],
-  } as unknown as BangumiDataProvider;
+  });
   const sameNameSong = (album: string) => ({
     ...songs.answer,
     id: "same-name",
@@ -340,23 +306,12 @@ describe("SonGuessr 曲名门禁与截断门槛一致性", () => {
 describe("SonGuessrService 番剧出题回源性能约束", () => {
   // 单人房间默认自动出题，开局即走番剧自动题库路径，省去准备与指定出题人的前置步骤。
   const animeSolo = async (musicProvider: MusicProvider, bangumiProvider: BangumiDataProvider) => {
-    const service = new SonGuessrService({
+    const { service, solo } = await startAnimeSolo({
       musicProvider,
       bangumiProvider,
-      random: { nextInt: () => 0 },
-    });
-    const solo = connection(service, "anime-solo");
-    await createRoom(service, solo, {
+      connectionId: "anime-solo",
       roomId: "8888",
-      name: "猜番单人",
-      userName: "独狼",
-      solo: true,
-    });
-    await execute(service, solo, {
-      id: "anime-solo-settings",
-      type: "song.room.updateSettings",
-      roomId: "8888",
-      payload: { questionType: "anime" },
+      start: false,
     });
     return { service, solo };
   };
@@ -379,10 +334,13 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
       },
     } as unknown as MusicProvider;
 
-    const { service, solo } = await animeSolo(slowProvider, {
-      getSubject: async () => noArtistAnime,
-      searchSubjects: async () => [noArtistAnime],
-    } as unknown as BangumiDataProvider);
+    const { service, solo } = await animeSolo(
+      slowProvider,
+      fakeBangumiProvider({
+        getSubject: async () => noArtistAnime,
+        searchSubjects: async () => [noArtistAnime],
+      })
+    );
 
     await execute(service, solo, {
       id: "start",
@@ -416,10 +374,13 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
       },
     } as unknown as MusicProvider;
 
-    const { service, solo } = await animeSolo(missProvider, {
-      getSubject: async () => unmatchedAnime,
-      searchSubjects: async () => [unmatchedAnime],
-    } as unknown as BangumiDataProvider);
+    const { service, solo } = await animeSolo(
+      missProvider,
+      fakeBangumiProvider({
+        getSubject: async () => unmatchedAnime,
+        searchSubjects: async () => [unmatchedAnime],
+      })
+    );
 
     await expect(
       execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} })
@@ -433,20 +394,25 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
     let subjects = 0;
     const silentAnime: BangumiSubjectDetails = { ...anime, musicTracks: [] };
 
-    const { service, solo } = await animeSolo(provider, {
-      getSubject: async () => {
-        subjects += 1;
-        return silentAnime;
-      },
-      // 题库给出 50 个候选，但每个都没有可识别的主题曲。
-      searchSubjects: async () =>
-        Array.from({ length: 50 }, (_, index) => ({
-          id: `subject-${index}`,
-          name: `Anime ${index}`,
-          nameCn: `番剧${index}`,
-          imageUrl: "",
-        })),
-    } as unknown as BangumiDataProvider);
+    const { service, solo } = await animeSolo(
+      provider,
+      fakeBangumiProvider({
+        getSubject: async () => {
+          subjects += 1;
+          return silentAnime;
+        },
+        // 题库给出 50 个候选，但每个都没有可识别的主题曲。
+        searchSubjects: async () =>
+          Array.from({ length: 50 }, (_, index) => ({
+            id: `subject-${index}`,
+            name: `Anime ${index}`,
+            nameCn: `番剧${index}`,
+            imageUrl: "",
+            tags: [],
+            metaTags: [],
+          })),
+      })
+    );
 
     await expect(
       execute(service, solo, { id: "start", type: "song.game.start", roomId: "8888", payload: {} })
@@ -472,13 +438,16 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
       },
     };
 
-    const { service, solo } = await animeSolo(musicProvider, {
-      getSubject: async () => ({
-        ...anime,
-        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
-      }),
-      searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider);
+    const { service, solo } = await animeSolo(
+      musicProvider,
+      fakeBangumiProvider({
+        getSubject: async () => ({
+          ...anime,
+          musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+        }),
+        searchSubjects: async () => [anime],
+      })
+    );
 
     await execute(service, solo, {
       id: "start",
@@ -506,13 +475,16 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
       },
     };
 
-    const { service, solo } = await animeSolo(musicProvider, {
-      getSubject: async () => ({
-        ...anime,
-        musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
-      }),
-      searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider);
+    const { service, solo } = await animeSolo(
+      musicProvider,
+      fakeBangumiProvider({
+        getSubject: async () => ({
+          ...anime,
+          musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
+        }),
+        searchSubjects: async () => [anime],
+      })
+    );
 
     await execute(service, solo, {
       id: "start",
@@ -533,31 +505,13 @@ describe("SonGuessrService 猜番原版优先", () => {
     musicProvider: MusicProvider,
     bangumiProvider: BangumiDataProvider
   ) => {
-    const service = new SonGuessrService({
+    const { chosenId } = await startAnimeSolo({
       musicProvider,
       bangumiProvider,
-      random: { nextInt: () => 0 },
-    });
-    const solo = connection(service, "anime-original-solo");
-    await createRoom(service, solo, {
+      connectionId: "anime-original-solo",
       roomId: "8888",
-      name: "猜番单人",
-      userName: "独狼",
-      solo: true,
     });
-    await execute(service, solo, {
-      id: "anime-original-settings",
-      type: "song.room.updateSettings",
-      roomId: "8888",
-      payload: { questionType: "anime" },
-    });
-    await execute(service, solo, {
-      id: "start",
-      type: "song.game.start",
-      roomId: "8888",
-      payload: {},
-    });
-    return chosenSongId(service, "8888");
+    return chosenId;
   };
 
   test("原版与翻唱同时存在时优先选中原版", async () => {
@@ -577,13 +531,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "secret base ~君がくれたもの~ 翻唱合集",
       audioUrl: "https://audio/cover.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "secret base ~君がくれたもの~", artist: "ZONE", kind: "insert" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     // 翻唱版排在搜索结果首位，模拟网易云把翻唱混排在原版之前。
     const musicProvider: MusicProvider = {
       ...provider,
@@ -630,14 +584,14 @@ describe("SonGuessrService 猜番原版优先", () => {
       audioUrl: "https://audio/kotoko-shooting-star.mp3",
       releaseYear: 2002,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         year: 2002,
         musicTracks: [{ title: "Shooting Star", kind: "opening" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 同名新歌排在原版之前，模拟网易云的检索顺序
@@ -672,14 +626,14 @@ describe("SonGuessrService 猜番原版优先", () => {
       audioUrl: "https://audio/kotoko.mp3",
       releaseYear: 2002,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         year: 2002,
         musicTracks: [{ title: "Shooting Star", kind: "opening" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 带番剧名的检索只召回原版（真实场景里别人家的同名原创不会跟着番剧名出现）；
@@ -704,13 +658,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "翻唱专辑",
       audioUrl: "https://audio/cover-only.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "原唱歌手", kind: "opening" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async () => [cover],
@@ -744,13 +698,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       search: async (keyword) => (keyword.includes("Answer Anime") ? [original] : [cover]),
       getSong: async (id) => (id === "original-broad" ? original : cover),
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "不存在的歌手名", kind: "opening" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
     expect(chosenId).toBe(original.id);
@@ -781,13 +735,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       search: async () => [arrangement, official],
       getSong: async (id) => (id === "official-album" ? official : arrangement),
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", kind: "ost" as const }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const chosenId = await animeSoloRound(musicProvider, bangumiProvider);
     expect(chosenId).toBe(official.id);
@@ -814,13 +768,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       audioUrl: "https://audio/identical-original.mp3",
       originCoverType: 1,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "同一位歌手", kind: "opening" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 翻唱排在前面，且两者打分完全相同，只能靠版本标记区分。
@@ -855,13 +809,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       audioUrl: "https://audio/original-bakemonogatari.mp3",
       originCoverType: 1,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "你所不知道的故事", artist: "supercell", kind: "ending" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 检索只能召回到翻唱；原版只能靠翻唱自带的原曲 ID 取回。
@@ -885,13 +839,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "アニメトランスBEST",
       audioUrl: "https://audio/weak-partial.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "夢を信じて", artist: "徳永英明", kind: "ending" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 带番剧名的检索召不回任何东西，因此弱候选拿不到「番剧上下文命中」这条证据。
@@ -916,13 +870,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "角色歌合辑",
       audioUrl: "https://audio/album-track.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       // 单曲检索按专辑名一无所获；专辑检索能命中同名专辑，再取回专辑曲目。
@@ -947,13 +901,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "另一部番 OST",
       audioUrl: "https://audio/other-album-track.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async () => [],
@@ -979,7 +933,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "Leave a Mark",
       audioUrl: "https://audio/foreign-track.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [
@@ -991,7 +945,7 @@ describe("SonGuessrService 猜番原版优先", () => {
         ],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async () => [],
@@ -1016,13 +970,13 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "「Answer Anime」オリジナルサウンドトラック",
       audioUrl: "https://audio/legit-track.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "Answer Anime Original SoundTrack", kind: "ost" as const }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async () => [],
@@ -1061,7 +1015,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       album: "「Answer Anime」キャラクターソング集",
       audioUrl: "https://audio/original-track.mp3",
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [
@@ -1069,7 +1023,7 @@ describe("SonGuessrService 猜番原版优先", () => {
         ],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async () => [],
@@ -1087,7 +1041,7 @@ describe("SonGuessrService 猜番原版优先", () => {
   const resolveInternals = (musicProvider: MusicProvider) => {
     const service = new SonGuessrService({
       musicProvider,
-      bangumiProvider: {} as BangumiDataProvider,
+      bangumiProvider: fakeBangumiProvider(),
       random: { nextInt: () => 0 },
     });
     return service.ctx;
@@ -1178,27 +1132,14 @@ describe("SonGuessrService 猜番出题等概率", () => {
     bangumiProvider: BangumiDataProvider,
     random: { nextInt: (maxExclusive: number) => number }
   ) => {
-    const service = new SonGuessrService({ musicProvider, bangumiProvider, random });
-    const solo = connection(service, `anime-fair-${Math.random().toString(36).slice(2, 8)}`);
-    await createRoom(service, solo, {
+    const { chosenId } = await startAnimeSolo({
+      musicProvider,
+      bangumiProvider,
+      connectionId: `anime-fair-${Math.random().toString(36).slice(2, 8)}`,
       roomId: "8888",
-      name: "猜番单人",
-      userName: "独狼",
-      solo: true,
+      random,
     });
-    await execute(service, solo, {
-      id: "anime-fair-settings",
-      type: "song.room.updateSettings",
-      roomId: "8888",
-      payload: { questionType: "anime" },
-    });
-    await execute(service, solo, {
-      id: "anime-fair-start",
-      type: "song.game.start",
-      roomId: "8888",
-      payload: {},
-    });
-    return chosenSongId(service, "8888");
+    return chosenId;
   };
 
   test("关联曲目顺序不再决定选曲：所有通过筛选的曲目等概率", async () => {
@@ -1212,13 +1153,13 @@ describe("SonGuessrService 猜番出题等概率", () => {
       },
       getSong: async (id) => makeSong(id, id, 2020),
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: titles.map((title) => ({ title, kind: "opening" as const })),
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     // mulberry32：取值落在 [0, maxExclusive) 内。不用最小线性同余——它的低位与洗牌的
     // 两次取号强相关，固定种子下会整整一批抽不到同一个位置，冤枉被测的洗牌。
@@ -1262,13 +1203,13 @@ test("猜番取歌时凭据被判死：整段解析的租约按失败归还并�
       throw new AppError("MUSIC_SESSION_INVALID", "登录状态已失效");
     },
   };
-  const bangumiProvider = {
+  const bangumiProvider = fakeBangumiProvider({
     getSubject: async () => ({
       ...anime,
       musicTracks: [{ title: "片头曲", kind: "opening" as const }],
     }),
     searchSubjects: async () => [anime],
-  } as unknown as BangumiDataProvider;
+  });
   const service = new SonGuessrService({ musicProvider, bangumiProvider });
   const solo = connection(service, "anime-dead-account");
   await createRoom(service, solo, {
@@ -1417,13 +1358,13 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
       search: async () => [edSong],
       getSong: async () => edSong,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "insert" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
     expect(summary.song.title).toBe(edSong.title);
@@ -1437,13 +1378,13 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
       search: async () => [plainSong],
       getSong: async () => plainSong,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "insert" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
     expect(summary.animeTrack?.kind).toBe("insert");
@@ -1465,13 +1406,13 @@ describe("SonGuessrService 猜番曲目类型校准", () => {
       search: async () => [fallbackSong],
       getSong: async () => fallbackSong,
     };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "ラジオCD 出張版 Vol.1", artist: "测试歌手", kind: "radio" }],
       }),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const summary = await animeRoundSummary(musicProvider, bangumiProvider, anime.id);
     expect(summary.animeTrack?.kind).toBe("ost");
