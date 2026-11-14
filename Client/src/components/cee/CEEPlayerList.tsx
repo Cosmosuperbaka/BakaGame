@@ -11,7 +11,11 @@ import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/Pla
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { TeamSection } from "@/components/common/TeamSection";
-import { listContainer } from "@/lib/motion/Choreography";
+import {
+  PlayerRowGroup,
+  PlayerTeamBlocks,
+  membershipRowGroups,
+} from "@/components/common/room/PlayerRowGroup";
 import { teamGroups } from "@/lib/Teams";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -24,7 +28,6 @@ import {
   SPECTATE_REQUEST_GROUP_TITLE,
   SPECTATE_TIMEOUT_TEXT,
 } from "@/lib/AntiCheatCopy";
-import { AnimatePresence, motion } from "framer-motion";
 import { CEEMarks } from "@/components/cee/CEEMarks";
 
 /** 与 `useCEEAction` 的 `run` 同签名，避免玩家行各自重写命令类型。 */
@@ -70,15 +73,9 @@ export function CEEPlayerList({
   const { run, busy } = useCEEAction();
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
   const observers = snapshot.players.filter((player) => player.membership === "spectator");
-  const groups = teamGroups(activePlayers);
   // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
-  const rowKey = usePlayerRowKeys(
-    snapshot.players.map((player) => ({
-      id: player.id,
-      group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
-    }))
-  );
-  const teamed = groups.some((group) => group.team !== null);
+  const rowKey = usePlayerRowKeys(membershipRowGroups(snapshot.players));
+  const teamed = teamGroups(activePlayers).some((group) => group.team !== null);
   // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
   const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
   const canJoinPlayers = waiting && me?.membership === "spectator";
@@ -105,32 +102,25 @@ export function CEEPlayerList({
   }, [pendingMe]);
 
   const renderRows = (players: CEEPlayer[], inTeam: boolean) => (
-    <motion.div
-      className="flex flex-col gap-px"
-      variants={listContainer(players.length)}
-      initial={false}
-      animate="animate"
-    >
-      <AnimatePresence initial={false} mode="popLayout">
-        {players.map((player) => (
-          <CEEPlayerRow
-            key={rowKey(player.id)}
-            player={player}
-            snapshot={snapshot}
-            sharedInHeader={
-              inTeam &&
-              snapshot.phase === "guessing" &&
-              sharedProgress(players) !== null &&
-              player.status !== "observing"
-            }
-            self={player.id === privateState.playerId}
-            canManage={isHost && player.id !== privateState.playerId}
-            busy={busy}
-            run={run}
-          />
-        ))}
-      </AnimatePresence>
-    </motion.div>
+    <PlayerRowGroup count={players.length}>
+      {players.map((player) => (
+        <CEEPlayerRow
+          key={rowKey(player.id)}
+          player={player}
+          snapshot={snapshot}
+          sharedInHeader={
+            inTeam &&
+            snapshot.phase === "guessing" &&
+            sharedProgress(players) !== null &&
+            player.status !== "observing"
+          }
+          self={player.id === privateState.playerId}
+          canManage={isHost && player.id !== privateState.playerId}
+          busy={busy}
+          run={run}
+        />
+      ))}
+    </PlayerRowGroup>
   );
 
   return (
@@ -140,20 +130,19 @@ export function CEEPlayerList({
           <PlayerGroupTitle label="玩家" count={activePlayers.length} />
           {teamed ? (
             // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
-            <div className="flex flex-col gap-1">
-              <AnimatePresence initial={false}>
-                {groups.map(({ team, members }) => (
-                  <CEETeamSection
-                    key={team ?? "solo"}
-                    team={team}
-                    members={members}
-                    snapshot={snapshot}
-                  >
-                    {renderRows(members, team !== null)}
-                  </CEETeamSection>
-                ))}
-              </AnimatePresence>
-            </div>
+            <PlayerTeamBlocks
+              players={activePlayers}
+              renderTeam={({ team, members }) => (
+                <CEETeamSection
+                  key={team ?? "solo"}
+                  team={team}
+                  members={members}
+                  snapshot={snapshot}
+                >
+                  {renderRows(members, team !== null)}
+                </CEETeamSection>
+              )}
+            />
           ) : (
             renderRows(activePlayers, false)
           )}

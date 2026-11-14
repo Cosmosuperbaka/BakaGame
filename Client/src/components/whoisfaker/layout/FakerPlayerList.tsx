@@ -1,9 +1,10 @@
 import { useCallback } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
+import { PlayerRowGroup } from "@/components/common/room/PlayerRowGroup";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { listContainer, listItem } from "@/lib/motion/Choreography";
+import { listItem } from "@/lib/motion/Choreography";
 import { DESCRIPTION_HEAD_TONES, descriptionCellShadeForPlayer } from "@/lib/DescriptionColumns";
 import type { PlayerListHistory } from "./FakerSpeechHistory";
 import { CompactNameCell, SpeechCell } from "./FakerSpeechCell";
@@ -60,6 +61,10 @@ export interface PlayerListProps {
    */
   compact?: boolean;
 }
+
+/** 展开历史时列轨道由最外层 grid 持有，行容器换成 subgrid 只负责纵向排布。 */
+const rowGroupLayout = (history: PlayerListHistory | undefined): "list" | "subgrid" =>
+  history ? "subgrid" : "list";
 
 export function FakerPlayerList(props: PlayerListProps) {
   const [, historyScrollerRef] = useScrollFade<HTMLDivElement>("x");
@@ -266,16 +271,9 @@ export function FakerPlayerList(props: PlayerListProps) {
         />
       ) : null}
       {renderGroupTitle("玩家", activePlayers.length, false)}
-      <motion.div
-        className={groupClass}
-        variants={listContainer(activePlayers.length)}
-        initial={false}
-        animate="animate"
-      >
-        <AnimatePresence initial={false} mode="popLayout">
-          {activePlayers.map((player, index) => renderRow(player, false, index))}
-        </AnimatePresence>
-      </motion.div>
+      <PlayerRowGroup count={activePlayers.length} layout={rowGroupLayout(history)}>
+        {activePlayers.map((player, index) => renderRow(player, false, index))}
+      </PlayerRowGroup>
 
       {showSpectatorToggle && isSpectator ? (
         <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
@@ -284,16 +282,9 @@ export function FakerPlayerList(props: PlayerListProps) {
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
         <>
           {renderGroupTitle("旁观", observers.length, true)}
-          <motion.div
-            className={groupClass}
-            variants={listContainer(observers.length)}
-            initial={false}
-            animate="animate"
-          >
-            <AnimatePresence initial={false} mode="popLayout">
-              {observers.map((player, index) => renderRow(player, true, observerRowOffset + index))}
-            </AnimatePresence>
-          </motion.div>
+          <PlayerRowGroup count={observers.length} layout={rowGroupLayout(history)}>
+            {observers.map((player, index) => renderRow(player, true, observerRowOffset + index))}
+          </PlayerRowGroup>
           {showSpectatorToggle && !isSpectator ? (
             <SpectatorToggle spectator onToggle={handleSetSpectator} />
           ) : null}

@@ -1,5 +1,4 @@
 import { useRef, useState, type ReactNode, type Ref } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
@@ -8,9 +7,13 @@ import { PlayerGroupTitle, PlayerListLayout } from "@/components/common/PlayerLi
 import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
+import {
+  PlayerRowGroup,
+  PlayerTeamBlocks,
+  membershipRowGroups,
+} from "@/components/common/room/PlayerRowGroup";
 import { errorText } from "@/lib/ErrorMessage";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
-import { listContainer } from "@/lib/motion/Choreography";
 import { teamGroups } from "@/lib/Teams";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@bakagame/shared";
@@ -77,15 +80,9 @@ export function SongPlayerList({
 }: PlayerListProps) {
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
-  const groups = teamGroups(activePlayers);
-  const teamed = groups.some((group) => group.team !== null);
+  const teamed = teamGroups(activePlayers).some((group) => group.team !== null);
   // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
-  const rowKey = usePlayerRowKeys(
-    players.map((player) => ({
-      id: player.id,
-      group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
-    }))
-  );
+  const rowKey = usePlayerRowKeys(membershipRowGroups(players));
   const me = players.find((player) => player.id === myPlayerId);
   const waitingPhase = phase === "waiting";
   const canJoinSpectators = Boolean(me) && allowSpectators && me?.membership === "active";
@@ -109,16 +106,9 @@ export function SongPlayerList({
   );
 
   const renderRows = (list: SonGuessrPlayerView[]) => (
-    <motion.div
-      className="flex flex-col gap-px"
-      variants={listContainer(list.length)}
-      initial={false}
-      animate="animate"
-    >
-      <AnimatePresence initial={false} mode="popLayout">
-        {list.map((player) => renderRow(player, false))}
-      </AnimatePresence>
-    </motion.div>
+    <PlayerRowGroup count={list.length}>
+      {list.map((player) => renderRow(player, false))}
+    </PlayerRowGroup>
   );
 
   return (
@@ -129,21 +119,20 @@ export function SongPlayerList({
             <PlayerGroupTitle label="玩家" count={activePlayers.length} />
             {teamed ? (
               // 有人组队时按队伍分块：队伍一块带标题与共享次数，个人游玩的人接在最后、不加底。
-              <div className="flex flex-col gap-1">
-                <AnimatePresence initial={false}>
-                  {groups.map(({ team, members }) => (
-                    <SongTeamSection
-                      key={team ?? "solo"}
-                      team={team}
-                      members={members}
-                      phase={phase}
-                      maxGuesses={maxGuesses}
-                    >
-                      {renderRows(members)}
-                    </SongTeamSection>
-                  ))}
-                </AnimatePresence>
-              </div>
+              <PlayerTeamBlocks
+                players={activePlayers}
+                renderTeam={({ team, members }) => (
+                  <SongTeamSection
+                    key={team ?? "solo"}
+                    team={team}
+                    members={members}
+                    phase={phase}
+                    maxGuesses={maxGuesses}
+                  >
+                    {renderRows(members)}
+                  </SongTeamSection>
+                )}
+              />
             ) : (
               renderRows(activePlayers)
             )}
@@ -161,16 +150,9 @@ export function SongPlayerList({
             {observers.length > 0 || canJoinSpectators ? (
               <>
                 <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-                <motion.div
-                  className="flex flex-col gap-px"
-                  variants={listContainer(observers.length)}
-                  initial={false}
-                  animate="animate"
-                >
-                  <AnimatePresence initial={false} mode="popLayout">
-                    {observers.map((player) => renderRow(player, true))}
-                  </AnimatePresence>
-                </motion.div>
+                <PlayerRowGroup count={observers.length}>
+                  {observers.map((player) => renderRow(player, true))}
+                </PlayerRowGroup>
                 {canJoinSpectators ? (
                   <SpectatorToggle
                     spectator
