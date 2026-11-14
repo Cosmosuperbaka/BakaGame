@@ -165,10 +165,26 @@ mod tests {
         assert_eq!(env_base(name, true), None);
     }
 
-    /// 环境变量改写开关跟着构建档位走：release 里恒为关
+    /// 经公开入口证明档位接线：进程环境里设了 https 基址时，开发构建读取它，
+    /// 发布构建（`cargo test --release`）必须无视它、只取编译期默认值。
+    /// 只测 `env_base` 的参数化行为证明不了这一点——接线错了（发布构建把开关传成开）它照样绿
     #[test]
-    fn env_overrides_follow_build_profile() {
-        assert_eq!(ENV_OVERRIDES_ENABLED, cfg!(debug_assertions));
+    fn public_bases_follow_build_profile() {
+        let site_name = "BAKA_SITE_URL";
+        let api_name = "BAKA_API_BASE";
+        // 这两个变量只有本测试会碰（`site_url`/`api_base` 在别的用例里不被调用）
+        std::env::set_var(site_name, "https://site-override.example");
+        std::env::set_var(api_name, "https://api-override.example");
+        let (site, api) = (site_url(), api_base());
+        std::env::remove_var(site_name);
+        std::env::remove_var(api_name);
+        if cfg!(debug_assertions) {
+            assert_eq!(site, "https://site-override.example");
+            assert_eq!(api, "https://api-override.example");
+        } else {
+            assert_eq!(site, DEFAULT_SITE_URL, "发布构建不得读取站点环境变量");
+            assert_eq!(api, DEFAULT_SITE_URL, "发布构建不得读取接口环境变量");
+        }
     }
 
     /// https 与开发构建无关，恒可
