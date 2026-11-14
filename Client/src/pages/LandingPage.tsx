@@ -19,6 +19,7 @@ import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
 import appVersion from "virtual:app-version";
 import { currentCommit } from "virtual:build-info";
 import { REPOSITORY_URL, findPageMeta } from "@/data/PageMeta";
+import { GAME_ROUTES } from "@bakagame/shared/values";
 import { useSiteFeatures, type SiteFeatures } from "@/lib/SiteConfig";
 import { cn } from "@/lib/Utils";
 
@@ -53,33 +54,33 @@ interface GameEntry {
 const GAMES: GameEntry[] = [
   {
     id: "whoisfaker",
-    path: "/whoisfaker",
-    lobbyPath: "/whoisfaker",
+    path: GAME_ROUTES.faker.base,
+    lobbyPath: GAME_ROUTES.faker.base,
     icon: "/assets/Faker.png",
     title: "Who is Faker",
-    intro: findPageMeta("/whoisfaker")?.oneLiner,
+    intro: findPageMeta(GAME_ROUTES.faker.base)?.oneLiner,
     available: true,
     feature: "fakerEntry",
   },
   {
     id: "songuessr",
-    lobbyPath: "/songuessr",
+    lobbyPath: GAME_ROUTES.song.base,
     icon: "/assets/SongGuessr.gif",
     title: "Songuessr",
-    intro: findPageMeta("/songuessr")?.oneLiner,
+    intro: findPageMeta(GAME_ROUTES.song.base)?.oneLiner,
     available: true,
     subModes: [
       {
         id: "singleplayer",
         title: "单人模式",
-        path: "/songuessr/solo",
+        path: `${GAME_ROUTES.song.base}/solo`,
         available: true,
         feature: "songSoloEntry",
       },
       {
         id: "multiplayer",
         title: "多人模式",
-        path: "/songuessr",
+        path: GAME_ROUTES.song.base,
         available: true,
         feature: "songMultiplayerEntry",
       },
@@ -87,25 +88,25 @@ const GAMES: GameEntry[] = [
   },
   {
     id: "animecharguessr",
-    path: "/cee",
-    lobbyPath: "/cee",
+    path: GAME_ROUTES.cee.base,
+    lobbyPath: GAME_ROUTES.cee.base,
     icon: "/assets/CEE.jpg",
     // 正式名是 CEE，原版名放进简介：页面标题、大厅与搜索结果里是同一个名字。
     title: "CEE",
-    intro: findPageMeta("/cee")?.oneLiner,
+    intro: findPageMeta(GAME_ROUTES.cee.base)?.oneLiner,
     available: true,
     subModes: [
       {
         id: "multiplayer",
         title: "多人模式",
-        path: "/cee",
+        path: GAME_ROUTES.cee.base,
         available: true,
         feature: "ceeMultiplayerEntry",
       },
       {
         id: "ranked",
         title: "排位赛",
-        path: "/cee/ranked",
+        path: `${GAME_ROUTES.cee.base}/ranked`,
         available: true,
         feature: "ceeRankedEntry",
       },

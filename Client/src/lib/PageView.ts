@@ -1,5 +1,5 @@
 import type { GameId, SitePageControl, SitePageView } from "@bakagame/shared";
-import { isAgentPagePath } from "@bakagame/shared/values";
+import { gameOfPath, isAgentPagePath, roomIdOfPath } from "@bakagame/shared/values";
 
 /**
  * Agent 看到的页面：只从渲染好的 DOM 取人类此刻能看到的内容。
@@ -60,14 +60,6 @@ const LEAF_CONTROL_SELECTOR = [
   "[contenteditable='true']",
   ...CONTROL_ROLES.map((role) => `[role='${role}']`),
 ].join(",");
-
-const GAME_PREFIXES: ReadonlyArray<readonly [string, GameId]> = [
-  ["/whoisfaker", "faker"],
-  ["/songuessr", "song"],
-  ["/cee", "cee"],
-];
-
-const ROOM_PATH = /\/(?:whoisfaker|songuessr|cee)\/room\/([A-Za-z0-9_-]{2,32})/;
 
 const clip = (text: string, limit: number): string => {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -362,10 +354,8 @@ export const primaryScroller = (): HTMLElement => {
 };
 
 const locationOf = (pathname: string): { game?: GameId; roomId?: string } => {
-  const game = GAME_PREFIXES.find(
-    ([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  )?.[1];
-  const roomId = ROOM_PATH.exec(pathname)?.[1];
+  const game = gameOfPath(pathname);
+  const roomId = roomIdOfPath(pathname);
   return { ...(game ? { game } : {}), ...(roomId ? { roomId } : {}) };
 };
 

@@ -1,27 +1,24 @@
+import { GAME_ROOM_PATH, GAME_ROUTES } from "./GameRoutes";
+import { GAME_IDS } from "./Protocol";
+
 /**
  * 标签页接管的页面边界，两端同一份：服务端拦 `navigate`，页面在读取与点击时再拦一次。
  *
  * 这是白名单而不是黑名单：新增页面默认 Agent 到不了，登记后才开放。
  * 管理后台、排位赛入口与账号相关页面都不在表里。
  */
-export const AGENT_PAGE_PATHS = [
+export const AGENT_PAGE_PATHS: readonly string[] = [
   "/",
-  "/whoisfaker",
-  "/songuessr",
-  "/songuessr/solo",
-  "/cee",
+  ...GAME_IDS.flatMap((game) => [GAME_ROUTES[game].base, ...GAME_ROUTES[game].agentPages]),
   "/abouts",
   "/status",
-] as const;
+];
 
 const AGENT_PAGES: ReadonlySet<string> = new Set(AGENT_PAGE_PATHS);
 
-/** 房间页路径，房间号沿用三款游戏的既有形状。 */
-const AGENT_ROOM_PATH = /^\/(?:whoisfaker|songuessr|cee)\/room\/[A-Za-z0-9_-]{2,32}$/;
-
 export const isAgentPagePath = (path: string): boolean => {
   const normalized = path.split(/[?#]/)[0]?.replace(/\/+$/, "") || "/";
-  return AGENT_PAGES.has(normalized) || AGENT_ROOM_PATH.test(normalized);
+  return AGENT_PAGES.has(normalized) || GAME_ROOM_PATH.test(normalized);
 };
 
 /** 页面能执行的动作：`read` 读当前画面，其余都落在真实控件上。 */

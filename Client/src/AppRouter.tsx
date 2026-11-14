@@ -1,20 +1,9 @@
-import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
+import { GAME_IDS, GAME_ROUTES } from "@bakagame/shared/values";
 import { RouteErrorFallback } from "@/components/common/AppErrorFallback";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
+import { GAME_CLIENT, lazyPage } from "@/config/GameClient";
 import { RootLayout } from "@/layouts/RootLayout";
-
-/**
- * 路由级懒加载：数据路由先取到页面分块、再提交导航，
- * 跨页过渡因此总在新页可渲染之后才开始，不会把加载占位拍进快照。
- */
-const page =
-  <P extends object = object>(load: () => Promise<{ default: ComponentType<P> }>, props?: P) =>
-  async () => {
-    const Page = (await load()).default;
-    // 要给页面传固定属性（如单人房）时只能走 element；其余一律交给路由库按 Component 渲染。
-    return props ? { element: <Page {...props} /> } : { Component: Page as ComponentType };
-  };
 
 /** 数据路由：跨页过渡（`viewTransition`）只在数据路由下生效，见 DesignGuide §8。 */
 export function createAppRouter() {
@@ -26,55 +15,25 @@ export function createAppRouter() {
       // 首次进入时页面分块还没到，由这里占位；之后的导航都先取分块，旧页留到新页就绪。
       hydrateFallbackElement: <PageLoadingFallback />,
       children: [
-        { path: "/", lazy: page(() => import("@/pages/LandingPage")) },
-        {
-          path: "/whoisfaker",
-          lazy: page(() => import("@/layouts/WhoIsFakerLayout")),
+        { path: "/", lazy: lazyPage(() => import("@/pages/LandingPage")) },
+        ...GAME_IDS.map((game) => ({
+          path: GAME_ROUTES[game].base,
+          lazy: lazyPage(GAME_CLIENT[game].layout),
           children: [
-            { index: true, lazy: page(() => import("@/pages/WhoIsFakerPage")) },
-            {
-              path: "room/:roomId",
-              lazy: page(() => import("@/pages/WhoIsFakerRoomPage")),
-            },
+            ...GAME_CLIENT[game].routes,
             // 子路径打错时退回本游戏大厅，而不是留在空白页
-            { path: "*", element: <Navigate to="/whoisfaker" replace /> },
+            { path: "*", element: <Navigate to={GAME_ROUTES[game].base} replace /> },
           ],
-        },
-        {
-          path: "/songuessr",
-          lazy: page(() => import("@/layouts/SonGuessrLayout")),
-          children: [
-            { index: true, lazy: page(() => import("@/pages/SonGuessrPage")) },
-            {
-              path: "solo",
-              lazy: page(() => import("@/pages/SonGuessrRoomPage"), { solo: true }),
-            },
-            {
-              path: "room/:roomId",
-              lazy: page(() => import("@/pages/SonGuessrRoomPage")),
-            },
-            { path: "*", element: <Navigate to="/songuessr" replace /> },
-          ],
-        },
-        {
-          path: "/cee",
-          lazy: page(() => import("@/layouts/CEELayout")),
-          children: [
-            { index: true, lazy: page(() => import("@/pages/CEEPage")) },
-            { path: "room/:roomId", lazy: page(() => import("@/pages/CEERoomPage")) },
-            { path: "ranked", lazy: page(() => import("@/pages/CEERankedPage")) },
-            { path: "*", element: <Navigate to="/cee" replace /> },
-          ],
-        },
-        { path: "/admin", lazy: page(() => import("@/pages/AdminPage")) },
+        })),
+        { path: "/admin", lazy: lazyPage(() => import("@/pages/AdminPage")) },
         // 关于项目：开源致谢 / 更新日志 / 提交历史 / 隐私说明 / 用户条款统一走 ?tab=。
-        { path: "/abouts", lazy: page(() => import("@/pages/CreditsPage")) },
+        { path: "/abouts", lazy: lazyPage(() => import("@/pages/CreditsPage")) },
         // 公开状态页：noindex，不进营销页登记位；后端不可达时按未知降级。
-        { path: "/status", lazy: page(() => import("@/pages/StatusPage")) },
+        { path: "/status", lazy: lazyPage(() => import("@/pages/StatusPage")) },
         // 已下线的旧入口仍回首页：外部还有指向它的旧链接，那是有意保留的去向，不算未知路径。
         { path: "/animecharguessr", element: <Navigate to="/" replace /> },
         // 其余无法识别的路径明说页面不存在：静默跳回首页会让乱码地址被当成首页的重复页。
-        { path: "*", lazy: page(() => import("@/pages/NotFoundPage")) },
+        { path: "*", lazy: lazyPage(() => import("@/pages/NotFoundPage")) },
       ],
     },
   ]);

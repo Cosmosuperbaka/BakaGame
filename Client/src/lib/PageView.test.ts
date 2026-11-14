@@ -165,4 +165,22 @@ describe("Agent 看到的页面", () => {
     expect(isOperable(document.getElementById("inert")!)).toBe(false);
     expect(isOperable(document.getElementById("ok")!)).toBe(true);
   });
+
+  it("玩法归属与房号按路径登记表判定，三款房间页与结尾斜杠都认", () => {
+    mount("<main><p>正文</p></main>");
+    const at = (path: string) => {
+      window.history.replaceState(null, "", path);
+      return readPageView();
+    };
+    expect(at("/whoisfaker/room/1234")).toMatchObject({ game: "faker", roomId: "1234" });
+    expect(at("/songuessr/room/ab_cd-12")).toMatchObject({ game: "song", roomId: "ab_cd-12" });
+    expect(at("/cee/room/1234")).toMatchObject({ game: "cee", roomId: "1234" });
+    expect(at("/whoisfaker/room/1234/")).toMatchObject({ game: "faker", roomId: "1234" });
+    expect(at("/songuessr/solo")).toMatchObject({ game: "song" });
+    expect(at("/songuessr/solo").roomId).toBeUndefined();
+    // 站点页可达但不属于任何一款；排位赛不可达，连玩法归属都不报。
+    expect(at("/abouts").game).toBeUndefined();
+    expect(at("/cee/ranked")).toMatchObject({ restricted: true });
+    expect(at("/cee/ranked").game).toBeUndefined();
+  });
 });

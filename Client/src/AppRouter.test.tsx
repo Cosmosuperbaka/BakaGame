@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GAME_IDS, GAME_ROUTES } from "@bakagame/shared/values";
+import { GAME_CLIENT } from "@/config/GameClient";
 
 const captureClientException = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/Sentry", async (importOriginal) => ({
@@ -121,5 +123,48 @@ describe("路由错误出口", () => {
     expect(await screen.findByText("not-found-page")).toBeInTheDocument();
     expect(screen.queryByText("landing-page")).toBeNull();
     expect(router?.state.location.pathname).toBe("/no-such-page");
+  });
+});
+
+describe("玩法路由由登记表生成", () => {
+  let router: ReturnType<typeof createAppRouter> | undefined;
+
+  afterEach(() => {
+    router?.dispose();
+    router = undefined;
+  });
+
+  const childrenAtRoot = () => {
+    window.history.replaceState({}, "", "/");
+    router = createAppRouter();
+    return router.routes[0]?.children ?? [];
+  };
+
+  const pathOf = (route: { index?: boolean; path?: string }) =>
+    route.index === true ? "/" : route.path;
+
+  it("三款按登记表顺序排在首页与站点页之间，站点页与旧入口的去向不变", () => {
+    expect(childrenAtRoot().map(pathOf)).toEqual([
+      "/",
+      ...GAME_IDS.map((game) => GAME_ROUTES[game].base),
+      "/admin",
+      "/abouts",
+      "/status",
+      "/animecharguessr",
+      "*",
+    ]);
+  });
+
+  it("每款的子路由就是登记表里的那几条，末位兜底退回本款大厅", () => {
+    const children = childrenAtRoot();
+    for (const game of GAME_IDS) {
+      const route = children.find((child) => child.path === GAME_ROUTES[game].base);
+      expect(typeof route?.lazy).toBe("function");
+      expect(route?.children?.map(pathOf)).toEqual([...GAME_CLIENT[game].routes.map(pathOf), "*"]);
+      const fallback = route?.children?.at(-1);
+      expect(
+        (fallback?.element as ReactElement<{ to: string; replace?: boolean }>).props
+      ).toMatchObject({ to: GAME_ROUTES[game].base, replace: true });
+    }
   });
 });

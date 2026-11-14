@@ -28,13 +28,14 @@ export {
   ceeRankedTier,
 } from "./CEERankedValues";
 export { CLIENT_CHAT_WINDOW, mergeChatWindow } from "./ChatWindow";
+export { GAME_ROUTES, gameOfPath, roomIdOfPath } from "./GameRoutes";
 export {
   isValidRoomId,
   isPermanentRoomError,
   protocolErrorCode,
   ROOM_ID_TEST_MODE,
 } from "./ModelValues";
-export { SERVER_SHUTDOWN_MESSAGE } from "./Protocol";
+export { GAME_IDS, SERVER_SHUTDOWN_MESSAGE } from "./Protocol";
 export {
   CEE_SETTING_BOUNDS,
   SONG_SUBJECT_LIMIT_BOUNDS,
