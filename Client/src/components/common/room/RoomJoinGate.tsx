@@ -1,19 +1,12 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
   RoomPasswordField,
   type RoomPasswordError,
 } from "@/components/common/room/RoomPasswordField";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { Dialog, DialogContent } from "@/components/ui/Dialog";
+import { FormDialog } from "@/components/common/FormDialog";
 import { Spinner } from "@/components/ui/Spinner";
 import { fadeSwap } from "@/lib/motion/NamedMoves";
 
@@ -79,18 +72,15 @@ export function RoomJoinGate({
         }}
       >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>设置用户名</DialogTitle>
-            <DialogDescription>
-              进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (nameDraft.trim() && !pending) onConfirmName();
-            }}
+          <FormDialog
+            title="设置用户名"
+            description={<>进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。</>}
+            cancelLabel="返回大厅"
+            submitLabel="进入房间"
+            onCancel={onExit}
+            onSubmit={onConfirmName}
+            submitDisabled={!nameDraft.trim()}
+            pending={pending}
           >
             <Input
               autoFocus
@@ -101,15 +91,7 @@ export function RoomJoinGate({
               maxLength={nameMaxLength}
               className="h-10"
             />
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onExit}>
-                返回大厅
-              </Button>
-              <Button type="submit" disabled={!nameDraft.trim()} loading={pending}>
-                进入房间
-              </Button>
-            </DialogFooter>
-          </form>
+          </FormDialog>
         </DialogContent>
       </Dialog>
 
@@ -120,31 +102,22 @@ export function RoomJoinGate({
         }}
       >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>输入房间密码</DialogTitle>
-            <DialogDescription>该链接指向一个私密房间。</DialogDescription>
-          </DialogHeader>
-          <form
-            className="grid gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (passwordDraft.trim() && !pending) onConfirmPassword();
-            }}
+          <FormDialog
+            title="输入房间密码"
+            description="该链接指向一个私密房间。"
+            cancelLabel="返回大厅"
+            submitLabel="加入房间"
+            onCancel={onExit}
+            onSubmit={onConfirmPassword}
+            submitDisabled={!passwordDraft.trim()}
+            pending={pending}
           >
             <RoomPasswordField
               value={passwordDraft}
               onChange={onPasswordDraftChange}
               error={passwordError}
             />
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onExit}>
-                返回大厅
-              </Button>
-              <Button type="submit" disabled={!passwordDraft.trim()} loading={pending}>
-                加入房间
-              </Button>
-            </DialogFooter>
-          </form>
+          </FormDialog>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,14 +1,8 @@
 import { useState } from "react";
 import { EyeOff, Globe, Lock, Users, type LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/Dialog";
+import { Dialog, DialogContent } from "@/components/ui/Dialog";
+import { FormDialog } from "@/components/common/FormDialog";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import type { OriginPoint } from "@/lib/motion/Origin";
@@ -88,9 +82,6 @@ export function CreateRoomDialog({
     <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
       {/* 标题已说清任务，表单字段各有标签与说明，不另写一段描述；显式置空，Radix 不再提示缺少描述。 */}
       <DialogContent aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>创建房间</DialogTitle>
-        </DialogHeader>
         <CreateRoomForm
           defaultName={defaultName}
           nameMaxLength={nameMaxLength}
@@ -190,12 +181,15 @@ function CreateRoomForm({
 
   return (
     // 整张表单一次提交：回车即创建，提交中按钮转圈并禁用，不再手写「创建中」。
-    <form
-      className="grid gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleCreate();
-      }}
+    <FormDialog
+      title="创建房间"
+      description={null}
+      cancelLabel="取消"
+      submitLabel="创建"
+      onCancel={() => onOpenChange(false)}
+      onSubmit={() => void handleCreate()}
+      submitDisabled={false}
+      pending={loading}
     >
       <div className="space-y-5">
         {roomMode ? <RoomModeSwitchRow item={roomMode} /> : null}
@@ -249,14 +243,6 @@ function CreateRoomForm({
           </p>
         ) : null}
       </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-          取消
-        </Button>
-        <Button type="submit" loading={loading}>
-          创建
-        </Button>
-      </DialogFooter>
-    </form>
+    </FormDialog>
   );
 }

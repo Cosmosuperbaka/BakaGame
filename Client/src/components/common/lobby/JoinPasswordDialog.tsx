@@ -1,12 +1,5 @@
-import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { Dialog, DialogContent } from "@/components/ui/Dialog";
+import { FormDialog } from "@/components/common/FormDialog";
 import {
   RoomPasswordField,
   type RoomPasswordError,
@@ -47,27 +40,18 @@ export function JoinPasswordDialog({
       origin={origin}
     >
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>输入房间密码</DialogTitle>
-          <DialogDescription>房间 &ldquo;{roomName}&rdquo; 需要密码</DialogDescription>
-        </DialogHeader>
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (password.trim() && !pending) onConfirm();
-          }}
+        <FormDialog
+          title="输入房间密码"
+          description={<>房间 &ldquo;{roomName}&rdquo; 需要密码</>}
+          cancelLabel="取消"
+          submitLabel="加入"
+          onCancel={onCancel}
+          onSubmit={onConfirm}
+          submitDisabled={!password.trim()}
+          pending={pending}
         >
           <RoomPasswordField value={password} onChange={onPasswordChange} error={error} />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onCancel}>
-              取消
-            </Button>
-            <Button type="submit" disabled={!password.trim()} loading={pending}>
-              加入
-            </Button>
-          </DialogFooter>
-        </form>
+        </FormDialog>
       </DialogContent>
     </Dialog>
   );
