@@ -20,6 +20,7 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { sonGuessrWsClient } from "@/lib/SonGuessrWs";
 import type { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
 
@@ -1287,11 +1288,30 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
   it("单人模式退出房间后再次进入，清空旧房间号并顺利初始化新单人对局", async () => {
     useSonGuessrStore.setState({
       ...initialStoreState,
+      connected: true,
       roomClosedAt: Date.now() - 2000,
-      roomId: null,
-      snapshot: null,
-      privateState: null,
+      roomId: "6688",
+      snapshot: createMockSnapshot({ roomId: "6688" }),
+      privateState: createMockPrivateState(),
     });
+
+    // 旧房间没有可恢复的会话：单人页必须建一局新的，不能沿用旧身份。
+    vi.spyOn(sonGuessrWsClient, "waitForConnection").mockResolvedValue(undefined);
+    const sendSpy = vi
+      .spyOn(sonGuessrWsClient, "send")
+      .mockImplementation(async (_type: string, payload: Record<string, unknown> = {}) => {
+        const roomId = payload.roomId as string;
+        return {
+          roomId,
+          sessionToken: "solo-token",
+          snapshot: createMockSnapshot({
+            roomId,
+            solo: true,
+            players: [createMockSnapshot().players[0]],
+          }),
+          privateState: createMockPrivateState({ sessionToken: "solo-token" }),
+        };
+      });
 
     render(
       <MemoryRouter initialEntries={["/songuessr/solo"]}>
@@ -1304,5 +1324,19 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     expect(screen.queryByText("游戏首页")).not.toBeInTheDocument();
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+
+    await waitFor(() => expect(sendSpy).toHaveBeenCalled());
+    expect(sendSpy).toHaveBeenCalledWith(
+      "song.room.create",
+      expect.objectContaining({ name: "单人模式", solo: true }),
+      undefined
+    );
+    const createdRoomId = (sendSpy.mock.calls[0]![1] as { roomId: string }).roomId;
+    expect(createdRoomId).not.toBe("6688");
+
+    await waitFor(() => expect(useSonGuessrStore.getState().snapshot?.solo).toBe(true));
+    expect(useSonGuessrStore.getState().roomId).toBe(createdRoomId);
+    expect(useSonGuessrStore.getState().snapshot?.roomId).toBe(createdRoomId);
+    expect(window.sessionStorage.getItem("songuessr_solo_room")).toBe(createdRoomId);
   });
 });

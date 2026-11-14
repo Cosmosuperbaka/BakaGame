@@ -581,7 +581,7 @@ describe("协议接线", () => {
         type: "cee.ranked.guess",
         payload: { characterId: 11, extra: 1 },
       })
-    ).toThrow();
+    ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
     expect(() =>
       parseCEEMessage({
         id: "m1",
@@ -589,10 +589,10 @@ describe("协议接线", () => {
         payload: { characterId: 11 },
         extra: 1,
       })
-    ).toThrow();
+    ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
     expect(() =>
       parseCEEMessage({ id: "m1", type: "cee.ranked.guess", payload: { characterId: 0 } })
-    ).toThrow();
+    ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
   });
 
   test("CEEService 把 cee.ranked.* 交给排位服务，房间命令行为不变", async () => {

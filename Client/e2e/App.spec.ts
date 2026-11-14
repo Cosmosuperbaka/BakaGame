@@ -132,8 +132,8 @@ test("landing game entries stack cleanly and stay clear of the footer", async ({
 
     // 顶部不遮挡 header
     expect(resolvedBoxes[0]!.y).toBeGreaterThanOrEqual(headerBox!.y);
-    // 底部存在合理间距
-    expect(footerBox!.y).toBeGreaterThan(0);
+    // 底部不与最后一张卡片重叠
+    expect(footerBox!.y).toBeGreaterThanOrEqual(resolvedBoxes[2]!.y + resolvedBoxes[2]!.height);
   }
 });
 
