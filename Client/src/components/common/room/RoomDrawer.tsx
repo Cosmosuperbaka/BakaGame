@@ -2,8 +2,9 @@ import { useRef, type ReactNode, type RefObject } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
+import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { backdrop, sheetSlide } from "@/lib/motion/Choreography";
+import { sheetSlide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -53,13 +54,7 @@ export function RoomDrawer({
         {open ? (
           <>
             <DialogPrimitive.Overlay forceMount asChild>
-              <motion.div
-                variants={backdrop}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="scrim absolute inset-0 z-drawer"
-              />
+              <OverlayBackdrop placement="container" />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content
               forceMount

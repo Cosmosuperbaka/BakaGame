@@ -2,7 +2,8 @@ import { useRef, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
-import { backdrop, sheetSlide, type SheetSide } from "@/lib/motion/Choreography";
+import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
+import { sheetSlide, type SheetSide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
 export interface SheetProps {
@@ -47,13 +48,7 @@ export function Sheet({
         {open ? (
           <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay forceMount asChild>
-              <motion.div
-                variants={backdrop}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="scrim fixed inset-0 z-overlay"
-              />
+              <OverlayBackdrop placement="viewport" />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content
               forceMount

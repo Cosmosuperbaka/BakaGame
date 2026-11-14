@@ -2,9 +2,9 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
+import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
 import { useOriginStyle } from "@/hooks/UseOriginStyle";
 import { useScrollFade } from "@/hooks/UseScrollFade";
-import { backdrop } from "@/lib/motion/Choreography";
 import { emergeFromOrigin, type OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
@@ -38,22 +38,6 @@ function Dialog({ open, origin = null, children, ...props }: DialogProps) {
   );
 }
 
-const DialogOverlay = React.forwardRef<
-  React.ComponentRef<typeof DialogPrimitive.Overlay>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Overlay ref={ref} asChild {...props}>
-    <motion.div
-      variants={backdrop}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      className={cn("scrim fixed inset-0 z-overlay", className)}
-    />
-  </DialogPrimitive.Overlay>
-));
-DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
-
 interface DialogContentProps extends React.ComponentPropsWithoutRef<
   typeof DialogPrimitive.Content
 > {
@@ -85,7 +69,9 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           把底下的弹窗一并压暗，而不是只压暗页面、让两个窗口平铺在同一层上互相露边。
           零尺寸的定位层不拦截指针，固定定位的子元素仍按视口落位。 */}
         <div className="relative z-modal">
-          <DialogOverlay />
+          <DialogPrimitive.Overlay asChild>
+            <OverlayBackdrop placement="viewport" />
+          </DialogPrimitive.Overlay>
           <DialogPrimitive.Content asChild {...props}>
             <motion.div
               ref={setRefs}
@@ -164,7 +150,6 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 export {
   Dialog,
   DialogPortal,
-  DialogOverlay,
   DialogClose,
   DialogContent,
   DialogHeader,
