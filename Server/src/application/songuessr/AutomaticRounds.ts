@@ -6,6 +6,7 @@ import {
   isPlayableSong,
 } from "../../infrastructure/music/MusicDeduplicator";
 import type { BangumiDataProvider } from "../../infrastructure/BangumiDataProvider";
+import { SONG_SUBJECT_LIMIT_BOUNDS } from "../../shared/SettingBounds";
 import type {
   MusicCookieInput,
   MusicSearchOptions,
@@ -76,7 +77,11 @@ export const normalizeAnimeAutoFilters = (filters: AnimeAutoFilters): AnimeAutoF
     startYear,
     endYear: endYear && startYear ? Math.max(startYear, endYear) : endYear,
     ranking: filters.ranking === "year" ? "year" : "all",
-    subjectLimit: clampInt(filters.subjectLimit ?? 50, 1, 1000),
+    subjectLimit: clampInt(
+      filters.subjectLimit ?? 50,
+      SONG_SUBJECT_LIMIT_BOUNDS.min,
+      SONG_SUBJECT_LIMIT_BOUNDS.max
+    ),
     songMinPopularity,
     trackKinds:
       trackKinds.length > 0
