@@ -385,6 +385,12 @@ jobs:
         with:
           workspaces: Desktop/src-tauri
 
+      # 壳的单元测试（密钥文件状态机、自检的纯判定、能力文件守卫等）只有这里能拦：
+      # 打包不跑测试，少了这一步，这些测试对合入没有约束力。
+      - name: Run shell unit tests
+        working-directory: Desktop/src-tauri
+        run: cargo test --locked
+
       # CLI 由 npx 现取（预编译二进制，不占仓库依赖）；壳不在 pnpm workspace 成员内，
       # 因此这里不跑 pnpm install —— 它没有任何 JS 依赖。
       # 版本必须钉死：`@^2` 每次现取最新 2.x，上游一发新版就能在不改仓库任何文件的前提下
