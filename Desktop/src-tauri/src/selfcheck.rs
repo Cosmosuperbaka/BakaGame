@@ -251,11 +251,23 @@ struct ModuleRecord {
 fn toolhelp_modules() -> Option<Vec<ModuleRecord>> {
     use crate::winapi as w;
     let pid = unsafe { w::GetCurrentProcessId() };
-    let snapshot =
-        unsafe { w::CreateToolhelp32Snapshot(w::TH32CS_SNAPMODULE | w::TH32CS_SNAPMODULE32, pid) };
-    if snapshot.is_null() || snapshot == w::INVALID_HANDLE_VALUE {
-        return None;
-    }
+    // 进程启动期并发加载 DLL 时，模块快照会偶发以 ERROR_BAD_LENGTH 失败，官方文档要求重试；
+    // 只有重试用尽仍失败才按「无法枚举」返回 None（照旧失败关闭）
+    let snapshot = pure::retry_on_bad_length(
+        || {
+            let handle = unsafe {
+                w::CreateToolhelp32Snapshot(w::TH32CS_SNAPMODULE | w::TH32CS_SNAPMODULE32, pid)
+            };
+            if handle.is_null() || handle == w::INVALID_HANDLE_VALUE {
+                // 失败码必须紧接着取，中间不能再有别的 API 调用
+                Err(unsafe { w::GetLastError() })
+            } else {
+                Ok(handle)
+            }
+        },
+        SNAPSHOT_ATTEMPTS,
+        SNAPSHOT_RETRY_DELAY,
+    )?;
     let mut entry: w::MODULEENTRY32W = unsafe { std::mem::zeroed() };
     entry.dw_size = std::mem::size_of::<w::MODULEENTRY32W>() as w::DWORD;
     let mut out = Vec::new();
@@ -273,6 +285,10 @@ fn toolhelp_modules() -> Option<Vec<ModuleRecord>> {
     unsafe { w::CloseHandle(snapshot) };
     Some(out)
 }
+
+/// 模块快照遇到可重试错误时的最多尝试次数与间隔
+const SNAPSHOT_ATTEMPTS: u32 = 10;
+const SNAPSHOT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(5);
 
 /// 交叉验证的采样次数：模块并发载入时单次采样可能撞上「正在加载」的那一条
 const MODULE_SAMPLE_ATTEMPTS: usize = 3;

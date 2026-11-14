@@ -81,6 +81,30 @@ pub fn build_prefixes(sources: &PrefixSources) -> Vec<String> {
     out
 }
 
+/// `CreateToolhelp32Snapshot` 对模块快照的「可重试」错误码（`ERROR_BAD_LENGTH`）：
+/// 进程启动期并发加载 DLL 时偶发，官方文档要求遇到它就重试直到成功
+pub const ERROR_BAD_LENGTH: u32 = 24;
+
+/// 带重试地取一次快照：`attempt` 失败并给出 `ERROR_BAD_LENGTH` 才重试（至多 `max_attempts` 次、
+/// 每次间隔 `delay`），其它错误码当场放弃；用尽仍失败返回 `None`，调用方照旧按「无法枚举」
+/// 硬失败上报——只有重试后仍失败才失败关闭。
+pub fn retry_on_bad_length<T>(
+    mut attempt: impl FnMut() -> Result<T, u32>,
+    max_attempts: u32,
+    delay: std::time::Duration,
+) -> Option<T> {
+    for tried in 1..=max_attempts {
+        match attempt() {
+            Ok(value) => return Some(value),
+            Err(code) if code == ERROR_BAD_LENGTH && tried < max_attempts => {
+                std::thread::sleep(delay);
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 pub fn normalize(value: &str) -> String {
     let mut out = value.trim().to_ascii_lowercase();
     // 去掉 Win32 扩展路径前缀 \\?\，否则与 `SystemRoot` 拼出来的前缀对不上
@@ -202,6 +226,44 @@ mod tests {
             "盘符根目录追加项应覆盖整盘"
         );
         assert!(!path_allowed(r"D:\Tools\one.dll.evil", &prefixes));
+    }
+
+    /// 可重试错误码遇到时重试直到成功；其它错误码当场放弃；用尽次数后仍失败才返回 None
+    #[test]
+    fn snapshot_is_retried_only_for_bad_length() {
+        use std::cell::Cell;
+        use std::time::Duration;
+
+        let calls = Cell::new(0u32);
+        let flaky = || {
+            calls.set(calls.get() + 1);
+            if calls.get() < 4 {
+                Err(ERROR_BAD_LENGTH)
+            } else {
+                Ok("snapshot")
+            }
+        };
+        assert_eq!(
+            retry_on_bad_length(flaky, 10, Duration::ZERO),
+            Some("snapshot")
+        );
+        assert_eq!(calls.get(), 4);
+
+        let other = Cell::new(0u32);
+        let denied = || -> Result<(), u32> {
+            other.set(other.get() + 1);
+            Err(5)
+        };
+        assert_eq!(retry_on_bad_length(denied, 10, Duration::ZERO), None);
+        assert_eq!(other.get(), 1, "不是 ERROR_BAD_LENGTH 不得重试");
+
+        let always = Cell::new(0u32);
+        let stuck = || -> Result<(), u32> {
+            always.set(always.get() + 1);
+            Err(ERROR_BAD_LENGTH)
+        };
+        assert_eq!(retry_on_bad_length(stuck, 10, Duration::ZERO), None);
+        assert_eq!(always.get(), 10, "用尽次数后仍失败要照旧失败关闭");
     }
 
     #[test]
