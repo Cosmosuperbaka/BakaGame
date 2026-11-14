@@ -15,7 +15,6 @@ window.__BAKA_CHANNEL__ = {
   platform: "android",
   clientVersion: string,                       // 打包时注入，与 APK versionName 同源
   channelTicket: string,                       // 桥接层签好的一次性票据；无票时为空串（见第 3 节）
-  sign(challenge: string): Promise<string>,    // base64(DER ECDSA P-256 SHA-256)
   selfCheck(): Promise<SelfCheckReport>,
   setSecureScreen(enabled: boolean): void,     // 窗口级防截屏开关，见第 4 节
 }
@@ -39,7 +38,7 @@ type SelfCheckReport = {
 只接受下面六个键，**多一个键整次请求被 422**。所以注册现在只上报公钥与档位，
 链的材料留在本机（见下方「暂未上报」列）。
 
-首次要票 / 首次 `sign()` 前，桥接层懒执行一次注册（`fetch` 绝对地址 + `credentials: "include"`，
+首次要票前，桥接层懒执行一次注册（`fetch` 绝对地址 + `credentials: "include"`，
 复用壳内已登录的账号会话）：
 
 `POST /api/client/register`，JSON body：
@@ -73,7 +72,7 @@ type SelfCheckReport = {
 
 流程与判定约束见 [`Server/docs/ClientChannel.md`](../Server/docs/ClientChannel.md) §2/§3，字段与词表以代码为准。
 与桌面端的区别：**桌面壳在 Rust 里跑，移动端在桥接 JS 里跑**，原生插件只出密钥能力
-（`getKeyInfo` / `sign` / `selfCheck`），不碰接口、不持有票据。
+（`getKeyInfo` / `sign` / `selfCheck`），不碰接口、不持有票据。页面可见的 `__BAKA_CHANNEL__` 上没有签名方法，签名只在桥接层换票时内部使用。
 
 ```text
 1) POST /api/client/challenge   { clientId }
@@ -81,7 +80,7 @@ type SelfCheckReport = {
 2) plugin.sign({ challenge })                     // Keystore 对 challenge 的原样 UTF-8 字节
    → base64(DER SEQUENCE{r,s} ECDSA-P256-SHA256)   // 不做任何二次编码
 3) POST /api/client/attest      { clientId, challenge, signature, clientType, clientVersion, selfCheck }
-   → { ticket, expiresAt, outdated }               // ticket 30 秒 TTL、用过即焚
+   → { ticket, expiresAt, ttlMs, outdated }        // ticket 30 秒 TTL、用过即焚；到期按 ttlMs 与本地时钟算
 ```
 
 - `channelTicket` 是**访问器属性**：读一次立刻作废并同步补签一张；之后每 4 秒轮询补票，

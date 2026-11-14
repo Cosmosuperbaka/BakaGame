@@ -143,3 +143,24 @@ test("旧服务端没有 ttlMs：退回绝对时刻算法，行为与改动前�
   await h.settle();
   assert.equal(h.attests(), 2);
 });
+
+test("页面可见的桥接面没有签名能力：签名只留在桥内部用于换票", async () => {
+  const h = harness({
+    wallNow: 1_000_000,
+    attestReply: (clock) => ({ ticket: "T", ttlMs: 30000, expiresAt: clock.wall + 30000 }),
+  });
+  assert.equal("sign" in h.channel, false, "页面脚本不该能让壳对任意内容签名");
+  assert.deepEqual(Object.keys(h.channel).sort(), [
+    "channelTicket",
+    "clientType",
+    "clientVersion",
+    "platform",
+    "selfCheck",
+    "setSecureScreen",
+  ]);
+  // 内部换票仍然要签名：桥接面收窄不能让通道证明断掉。
+  h.channel.channelTicket;
+  await h.settle();
+  assert.equal(h.attests(), 1);
+  assert.equal(h.channel.channelTicket, "T");
+});

@@ -21,7 +21,6 @@ const installShell = () => {
     platform: "windows",
     clientVersion: "1.0.0",
     channelTicket: "",
-    sign: vi.fn(),
     selfCheck: vi.fn(),
   } as never;
 };

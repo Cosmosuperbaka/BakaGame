@@ -10,14 +10,13 @@
 
 export type BakaClientType = "web" | "desktop" | "mobile";
 
-/** 外壳注入的只读身份；`sign` / `selfCheck` 属于原生成对能力，前端从不调用。 */
+/** 外壳注入的只读身份；`selfCheck` 属于原生成对能力，前端从不调用。签名能力不在页面可见的对象上。 */
 export interface BakaChannelIdentity {
   clientType: BakaClientType;
   platform: string;
   clientVersion: string;
   /** 壳签好的一次性握手票据；无票时为空串或缺省。前端只读不用，读一次即作废。 */
   channelTicket?: string;
-  sign?: (challenge: string) => Promise<string>;
   selfCheck?: () => Promise<object>;
   /** 窗口级防截屏开关；旧版壳没有该方法，调用方需容忍缺省。 */
   setSecureScreen?: (enabled: boolean) => void;

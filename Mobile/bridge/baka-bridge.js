@@ -7,7 +7,6 @@
 //   window.__BAKA_CHANNEL__ = {
 //     clientType: "mobile", platform: "android", clientVersion: string,
 //     channelTicket: string,                              // 壳签好的一次性票据；无票时为空串
-//     sign(challenge: string): Promise<string>,           // base64 DER 签名
 //     selfCheck(): Promise<SelfCheckReport>,              // 见下
 //     setSecureScreen(enabled: boolean): void,            // 窗口级防截屏，仅反作弊房开启
 //   }
@@ -215,6 +214,8 @@
   }
 
   // —— 原生签名：只出 base64(DER ECDSA-P256-SHA256)，challenge 的字节原样进 Keystore ——
+  // 只在换票闭环内部使用，不挂到 window.__BAKA_CHANNEL__ 上：页面脚本不该有「对任意内容签名」的能力，
+  // 与桌面壳「签名只在壳内部用于通道证明」同口径。
   function signWithKeystore(challenge) {
     return plugin()
       .sign({ challenge: challenge })
@@ -339,14 +340,6 @@
     clientType: "mobile",
     platform: "android",
     clientVersion: CLIENT_VERSION,
-    sign: function (challenge) {
-      if (typeof challenge !== "string" || challenge.length === 0) {
-        return Promise.reject(new Error("BAKA_CHANNEL_BAD_CHALLENGE"));
-      }
-      return ensureRegistered().then(function () {
-        return signWithKeystore(challenge);
-      });
-    },
     selfCheck: buildSelfCheck,
     // 窗口级防截屏开关：只有反作弊房需要，其余场景关掉（否则用户连正常截图分享都做不到）。
     // 这里只转发一个布尔值，不涉及密钥与签名能力；网页端没有本对象，调用方会跳过。

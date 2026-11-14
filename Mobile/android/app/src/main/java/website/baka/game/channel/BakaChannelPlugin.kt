@@ -11,8 +11,8 @@ import org.json.JSONArray
 import java.security.cert.X509Certificate
 
 /**
- * 桥接原生层：JS 侧只通过 window.__BAKA_CHANNEL__ 的三个入口间接触达本插件
- * （sign / selfCheck，外加注册所需的 getKeyInfo）。
+ * 桥接原生层：页面可见的 window.__BAKA_CHANNEL__ 只转发 selfCheck 与 setSecureScreen；
+ * 签名（sign）与注册所需的 getKeyInfo 只供桥脚本自己的换票闭环调用，不挂到页面可见的对象上。
  * 密钥生成、链上报与验证分工见 Mobile/README.md「交给服务端的材料」。
  *
  * 通道证明闭环（challenge → sign → attest）在 `Mobile/bridge/baka-bridge.js` 里跑：

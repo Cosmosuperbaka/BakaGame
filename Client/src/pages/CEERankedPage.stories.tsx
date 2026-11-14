@@ -20,7 +20,6 @@ const meta = {
       platform: "windows",
       clientVersion: "1.0.0",
       channelTicket: "",
-      sign: async () => "",
       selfCheck: async () => true,
     } as never;
     useAccountStore.setState({ status: "signedIn", profile: {} as never });
