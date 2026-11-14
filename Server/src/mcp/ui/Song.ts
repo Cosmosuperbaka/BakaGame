@@ -18,6 +18,8 @@ import {
   selfOf,
   settingsOf,
   str,
+  teamFeedback,
+  teamOf,
   teamSelect,
   textbox,
   waitSearchDebounce,
@@ -116,22 +118,23 @@ const subjectResultView = (subject: Record<string, unknown>): Record<string, unk
   metaTags: subject.metaTags,
 });
 
+/** 猜番的结果有两种：番剧本身，或「关联曲 + 曲目类型」的候选。 */
+const animeResultView = (result: Record<string, unknown>): Record<string, unknown> => {
+  const candidate = isRecord(result.candidate) ? result.candidate : undefined;
+  if (!candidate) return subjectResultView(result);
+  return {
+    trackKind: isRecord(candidate.track) ? candidate.track.kind : undefined,
+    trackTitle: isRecord(candidate.track) ? candidate.track.title : undefined,
+    ...(isRecord(candidate.song) ? songResultView(candidate.song) : {}),
+  };
+};
+
 const searchResultView = (
   result: Record<string, unknown>,
   kind: UiSearchState["kind"]
 ): Record<string, unknown> => {
   if (kind === "song") return songResultView(result);
-  if (kind === "anime") {
-    const candidate = isRecord(result.candidate) ? result.candidate : undefined;
-    if (candidate) {
-      return {
-        trackKind: isRecord(candidate.track) ? candidate.track.kind : undefined,
-        trackTitle: isRecord(candidate.track) ? candidate.track.title : undefined,
-        ...(isRecord(candidate.song) ? songResultView(candidate.song) : {}),
-      };
-    }
-    return subjectResultView(result);
-  }
+  if (kind === "anime") return animeResultView(result);
   return result;
 };
 
@@ -515,25 +518,37 @@ const needSearch = (context: UiContext, prefix: string): UiSearchState =>
     nonEmpty: true,
   });
 
-const clickSubmitResult = async (context: UiContext, search: UiSearchState, index: string) => {
-  const result = searchResultAt(search, index);
-  if (search.kind === "anime" && search.subject) {
-    const song = isRecord(result.song) ? result.song : undefined;
-    const songId = str(song?.id);
-    if (!songId) throw new Error("关联曲缺少 songId");
-    const subjectId = str(search.subject.id);
-    if (!subjectId) throw new Error("番剧缺少 subjectId");
-    await send(context, "song.game.submitAnime", { subjectId, songId });
-    clearSearch(context);
-    return `已提交《${str(search.subject.nameCn) || str(search.subject.name) || "番剧"}》与关联曲`;
-  }
-  if (search.kind === "anime") {
-    const subjectId = str(result.id);
-    if (!subjectId) throw new Error("番剧缺少 subjectId");
-    const ack = await send(context, "song.bangumi.songs", { subjectId });
-    openSubjectResults(search, result, ack);
-    return `已打开番剧的关联曲，共 ${search.results.length} 首`;
-  }
+/** 猜番出题：番剧已展开，选中的这条关联曲就是题目。 */
+const submitAnimeSong = async (
+  context: UiContext,
+  subject: Record<string, unknown>,
+  result: Record<string, unknown>
+): Promise<string> => {
+  const song = isRecord(result.song) ? result.song : undefined;
+  const songId = str(song?.id);
+  if (!songId) throw new Error("关联曲缺少 songId");
+  const subjectId = str(subject.id);
+  if (!subjectId) throw new Error("番剧缺少 subjectId");
+  await send(context, "song.game.submitAnime", { subjectId, songId });
+  clearSearch(context);
+  return `已提交《${str(subject.nameCn) || str(subject.name) || "番剧"}》与关联曲`;
+};
+
+/** 猜番出题：点开一部番剧，列出它的关联曲。 */
+const openAnimeSongs = async (
+  context: UiContext,
+  search: UiSearchState,
+  result: Record<string, unknown>
+): Promise<string> => {
+  const subjectId = str(result.id);
+  if (!subjectId) throw new Error("番剧缺少 subjectId");
+  const ack = await send(context, "song.bangumi.songs", { subjectId });
+  openSubjectResults(search, result, ack);
+  return `已打开番剧的关联曲，共 ${search.results.length} 首`;
+};
+
+/** 猜歌出题：关闭自选片段时选中即出题，开着时先取详情进入片段确认。 */
+const pickSong = async (context: UiContext, result: Record<string, unknown>): Promise<string> => {
   const songId = str(result.id);
   if (!songId) throw new Error("歌曲缺少 songId");
   const pick = {
@@ -552,6 +567,15 @@ const clickSubmitResult = async (context: UiContext, search: UiSearchState, inde
   context.state.songPreview = preview;
   context.state.songClip = initialClip(preview);
   return `已选中《${str(preview.title) ?? songId}》，请确认截取片段`;
+};
+
+const clickSubmitResult = async (context: UiContext, search: UiSearchState, index: string) => {
+  const result = searchResultAt(search, index);
+  if (search.kind === "anime")
+    return search.subject
+      ? submitAnimeSong(context, search.subject, result)
+      : openAnimeSongs(context, search, result);
+  return pickSong(context, result);
 };
 
 const clickGuessResult = async (context: UiContext, search: UiSearchState, index: string) => {
@@ -675,12 +699,8 @@ async function setSongControl(
   value: unknown
 ): Promise<string> {
   if (controlValue.id === "song.team") {
-    if (value !== "none" && !/^[1-8]$/.test(String(value)))
-      throw new Error("队伍必须是 1–8 或不组队");
-    await send(context, "song.player.setTeam", {
-      team: value === "none" ? null : Number(value),
-    });
-    return value === "none" ? "已退出队伍" : `已加入 ${String(value)} 队`;
+    await send(context, "song.player.setTeam", { team: teamOf(value) });
+    return teamFeedback(value);
   }
   if (controlValue.id === "song.clip.range") {
     if (

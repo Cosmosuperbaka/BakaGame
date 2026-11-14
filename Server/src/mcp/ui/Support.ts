@@ -173,6 +173,16 @@ export const teamSelect = (id: string, me: Record<string, unknown>, hint: string
     hint,
   });
 
+/** 设置队伍的取值：1–8 或「none」不组队；其余一律拒绝。返回要发给服务端的队伍号。 */
+export const teamOf = (value: unknown): number | null => {
+  if (value !== "none" && !/^[1-8]$/.test(String(value)))
+    throw new Error("队伍必须是 1–8 或不组队");
+  return value === "none" ? null : Number(value);
+};
+
+export const teamFeedback = (value: unknown): string =>
+  value === "none" ? "已退出队伍" : `已加入 ${String(value)} 队`;
+
 /** 每个游戏屏幕都由「可操作控件」与「聊天」两段组成。 */
 export const screenSections = (
   game: string,

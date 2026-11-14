@@ -62,25 +62,22 @@ const DEFAULT_SITE_FOCUS: { kind: AgentFocusKind; place: FocusPlace } = {
   place: "current",
 };
 
-/**
- * 工具 → 站点级焦点。站点通道是**公开广播**：只带「在哪、做什么」，
- * 不带搜索词、猜测、聊天草稿与控件逐字输入。
- *
- * 返回 `undefined` 表示这次调用不该出现在首页（纯文档读取，不改变位置）。
- */
-export function siteFocusForTool(
+/** 位置固定的工具：不看参数也不看当前房间；值为 `undefined` 的不出现在首页（纯文档读取或页面接管的读取）。 */
+const FIXED_SITE_FOCUS: Record<string, SiteLocation | undefined> = {
+  get_mcp_policy: undefined,
+  get_site_map: { kind: "site", page: "/" },
+  // 标签页接管：只报「在做一件事」，不把页面内容塞进公开广播。
+  page_state: undefined,
+  release_page: undefined,
+  control_page: { kind: "site" },
+};
+
+/** 房间类工具的位置：按表给出口径，再用参数与当前所在房间算出房号与页面。 */
+const roomFocus = (
   tool: string,
   args: Record<string, unknown>,
   client: AgentGameClient
-): SiteLocation | undefined {
-  if (tool === "get_mcp_policy") return undefined;
-  if (tool === "get_site_map") return { kind: "site", page: "/" };
-  if (tool === "visit_page") return pageFocus(args);
-  // 标签页接管：导航沿用 path，其余只报「在做一件事」，不把页面内容塞进公开广播。
-  if (tool === "page_state" || tool === "release_page") return undefined;
-  if (tool === "control_page") return { kind: "site" };
-  if (tool === "page_act")
-    return args.action === "navigate" && pageArgOf(args) ? pageFocus(args) : { kind: "action" };
+): SiteLocation => {
   const { kind, place } = SITE_FOCUS_TARGETS[tool] ?? DEFAULT_SITE_FOCUS;
   const game = focusGame(client, args);
   const current = game ? client.currentRoom(game) : undefined;
@@ -93,6 +90,28 @@ export function siteFocusForTool(
     ...(roomId ? { roomId } : {}),
     page: place === "lobby" ? lobbyPage(game) : roomPage(game, roomId),
   };
+};
+
+/**
+ * 工具 → 站点级焦点。站点通道是**公开广播**：只带「在哪、做什么」，
+ * 不带搜索词、猜测、聊天草稿与控件逐字输入。
+ *
+ * 返回 `undefined` 表示这次调用不该出现在首页（纯文档读取，不改变位置）。
+ */
+export function siteFocusForTool(
+  tool: string,
+  args: Record<string, unknown>,
+  client: AgentGameClient
+): SiteLocation | undefined {
+  if (Object.hasOwn(FIXED_SITE_FOCUS, tool)) {
+    const fixed = FIXED_SITE_FOCUS[tool];
+    return fixed && { ...fixed };
+  }
+  if (tool === "visit_page") return pageFocus(args);
+  // 标签页接管：导航沿用 path，其余只报「在做一件事」，不把页面内容塞进公开广播。
+  if (tool === "page_act")
+    return args.action === "navigate" && pageArgOf(args) ? pageFocus(args) : { kind: "action" };
+  return roomFocus(tool, args, client);
 }
 
 /**

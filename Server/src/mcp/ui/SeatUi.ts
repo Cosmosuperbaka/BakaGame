@@ -38,6 +38,23 @@ interface StepOutcome {
   mutate: boolean;
 }
 
+/** 步骤失败时的报告：步骤本身可能不合法，动作与控件只在形状对得上时才回显。 */
+const failureReport = (
+  step: unknown,
+  index: number,
+  durationMs: number,
+  feedback: string
+): UiStepReport => ({
+  index,
+  action: (isRecord(step) && typeof step.action === "string"
+    ? step.action
+    : "focus") as UiStepAction,
+  ...(isRecord(step) && typeof step.control === "string" ? { control: step.control } : {}),
+  ok: false,
+  durationMs,
+  feedback,
+});
+
 export class SeatUi {
   private readonly states = new Map<GameId, UiState>();
   private readonly pacing: boolean;
@@ -301,20 +318,8 @@ export class SeatUi {
         reports.push(await this.step(game, steps[index]!, index));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const state = this.state(game);
-        state.lastFeedback = message;
-        reports.push({
-          index,
-          action: (isRecord(steps[index]) && typeof steps[index].action === "string"
-            ? steps[index].action
-            : "focus") as UiStepAction,
-          ...(isRecord(steps[index]) && typeof steps[index].control === "string"
-            ? { control: steps[index].control }
-            : {}),
-          ok: false,
-          durationMs: Date.now() - startedAt,
-          feedback: message,
-        });
+        this.state(game).lastFeedback = message;
+        reports.push(failureReport(steps[index], index, Date.now() - startedAt, message));
         ok = false;
         break;
       }

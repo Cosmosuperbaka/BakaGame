@@ -18,6 +18,8 @@ import {
   selfOf,
   settingsOf,
   str,
+  teamFeedback,
+  teamOf,
   teamSelect,
   textbox,
   waitSearchDebounce,
@@ -80,6 +82,19 @@ const teamControl = (context: UiContext): UiControl | undefined => {
   return teamSelect("cee.team", me, "同队共享猜测次数");
 };
 
+/** 房主逐个批准或拒绝旁观申请；缺编号的申请无从回复，跳过。 */
+const spectateRequestControls = (context: UiContext): UiControl[] => {
+  if (!isHostOf(context)) return [];
+  return recordList(context.snapshot.spectateRequests).flatMap((request) => {
+    const playerId = str(request.playerId);
+    if (!playerId) return [];
+    return [
+      button(`cee.spectate.approve.${playerId}`, `批准 ${String(request.name)} 旁观`),
+      button(`cee.spectate.reject.${playerId}`, `拒绝 ${String(request.name)} 旁观`),
+    ];
+  });
+};
+
 const waitingControls = (context: UiContext): UiControl[] => {
   const me = selfOf(context);
   const controls: UiControl[] = [];
@@ -100,17 +115,7 @@ const waitingControls = (context: UiContext): UiControl[] => {
   }
   const team = teamControl(context);
   if (team) controls.push(team);
-  const requests = recordList(context.snapshot.spectateRequests);
-  if (isHostOf(context) && requests.length) {
-    for (const request of requests) {
-      const playerId = str(request.playerId);
-      if (!playerId) continue;
-      controls.push(
-        button(`cee.spectate.approve.${playerId}`, `批准 ${String(request.name)} 旁观`),
-        button(`cee.spectate.reject.${playerId}`, `拒绝 ${String(request.name)} 旁观`)
-      );
-    }
-  }
+  controls.push(...spectateRequestControls(context));
   return controls;
 };
 
@@ -629,12 +634,8 @@ async function setCeeControl(
   value: unknown
 ): Promise<string> {
   if (controlValue.id === "cee.team") {
-    if (value !== "none" && !/^[1-8]$/.test(String(value)))
-      throw new Error("队伍必须是 1–8 或不组队");
-    await send(context, "cee.player.team", {
-      team: value === "none" ? null : Number(value),
-    });
-    return value === "none" ? "已退出队伍" : `已加入 ${String(value)} 队`;
+    await send(context, "cee.player.team", { team: teamOf(value) });
+    return teamFeedback(value);
   }
   throw new Error(`控件「${controlValue.label}」不是可设置取值的控件`);
 }
