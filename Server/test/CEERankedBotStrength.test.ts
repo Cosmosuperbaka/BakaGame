@@ -43,7 +43,7 @@ describe("CEE 排位人机强度", () => {
     );
   });
 
-  it("离散字段只会是最近锚点或其相邻锚点", () => {
+  it("离散字段整体取自最近锚点或其相邻锚点", () => {
     for (let rating = 800; rating <= 2300; rating += 17) {
       const distances = CEE_RANKED_BOT_ANCHORS.map((anchor) => Math.abs(anchor.rating - rating));
       const nearest = distances.indexOf(Math.min(...distances));
@@ -51,11 +51,15 @@ describe("CEE 排位人机强度", () => {
         .filter((index) => index >= 0 && index < CEE_RANKED_BOT_ANCHORS.length)
         .map((index) => CEE_RANKED_BOT_ANCHORS[index].strength);
       const strength = ceeRankedBotStrength(rating, seeded(rating));
-      expect(allowed.some((anchor) => anchor.strategy === strength.strategy)).toBe(true);
-      expect(allowed.some((anchor) => anchor.lockThreshold === strength.lockThreshold)).toBe(true);
-      expect(allowed.some((anchor) => anchor.dims.join("|") === strength.dims.join("|"))).toBe(
-        true
-      );
+      // 三个离散字段同属一档，不能各取一档拼出中间值。
+      expect(
+        allowed.some(
+          (anchor) =>
+            anchor.strategy === strength.strategy &&
+            anchor.lockThreshold === strength.lockThreshold &&
+            anchor.dims.join("|") === strength.dims.join("|")
+        )
+      ).toBe(true);
     }
   });
 });
