@@ -101,4 +101,17 @@ describe("useRoomSounds", () => {
     flush();
     expect(playSound).toHaveBeenCalledTimes(1);
   });
+
+  it("没有行动提示的玩法（传 null）始终不响行动提示", () => {
+    const { rerender } = render({ ...base, needsAction: null });
+    rerender({ ...base, needsAction: null, chat: base.chat });
+    flush();
+    expect(playSound).not.toHaveBeenCalledWith("actionRequired");
+
+    // 中途变成「就绪」也不响：null 不是「需要行动」
+    rerender({ ...base, needsAction: null, hasSnapshotAndPrivate: false });
+    rerender({ ...base, needsAction: null, hasSnapshotAndPrivate: true });
+    flush();
+    expect(playSound).not.toHaveBeenCalledWith("actionRequired");
+  });
 });
