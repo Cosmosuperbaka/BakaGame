@@ -187,7 +187,6 @@ fn attempt_once(
     }
     if response.outdated {
         // 版本门槛由服务端在握手时执行（CLIENT_OUTDATED）；壳只如实记录，不自作主张拦玩家
-        device.mark_outdated();
         eprintln!(
             "本次构建版本 {} 低于服务端最低支持版本，反作弊房会被拒",
             crate::config::client_version()

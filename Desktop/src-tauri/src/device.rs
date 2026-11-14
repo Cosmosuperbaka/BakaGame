@@ -65,7 +65,8 @@ struct RegisterRequest<'a> {
 struct RegisterResponse {
     client_id: String,
     minimum_version: Option<String>,
-    /// 服务端按最低支持版本给出的过期标记；本地比较（`version_lt`）仍会跑一次，两者取或
+    /// 服务端按最低支持版本给出的过期标记。版本比较只在服务端做一次（唯一权威），
+    /// 壳不实现第二份，免得两端对「够不够新」的判断各自漂移；这里只用来写日志
     #[serde(default)]
     outdated: bool,
 }
@@ -76,8 +77,6 @@ pub struct Device {
     public_key_b64: String,
     protection: KeyProtection,
     client_id: Mutex<Option<String>>,
-    minimum_version: Mutex<Option<String>>,
-    outdated: Mutex<bool>,
 }
 
 impl Device {
@@ -97,23 +96,6 @@ impl Device {
     pub fn set_client_id(&self, client_id: String) {
         if let Ok(mut guard) = self.client_id.lock() {
             *guard = Some(client_id);
-        }
-    }
-
-    /// 服务端下发的最低支持版本；仅本地记录与提示，准入判断在服务端
-    pub fn minimum_version(&self) -> Option<String> {
-        self.minimum_version.lock().ok().and_then(|g| g.clone())
-    }
-
-    pub fn is_outdated(&self) -> bool {
-        self.outdated.lock().map(|g| *g).unwrap_or(false)
-    }
-
-    /// 记下服务端在 `register` / `attest` 里回传的过期标记（§7：准入由服务端在握手时执行，
-    /// 壳只保留事实供日志与后续提示，不自作主张拦玩家）
-    pub fn mark_outdated(&self) {
-        if let Ok(mut guard) = self.outdated.lock() {
-            *guard = true;
         }
     }
 
@@ -403,8 +385,6 @@ fn device_from_seed(seed: &[u8], protection: KeyProtection) -> Result<Device, St
         public_key_b64: B64.encode(public_key),
         protection,
         client_id: Mutex::new(None),
-        minimum_version: Mutex::new(None),
-        outdated: Mutex::new(false),
     })
 }
 
@@ -434,64 +414,16 @@ pub fn register(dir: &Path, device: &Device, report: &SelfCheckReport) -> Result
         *guard = Some(parsed.client_id.clone());
     }
     let _ = write_atomic(&dir.join(CLIENT_ID_FILE), parsed.client_id.as_bytes());
-    if let Some(minimum) = parsed.minimum_version.clone() {
-        if let Ok(mut guard) = device.minimum_version.lock() {
-            *guard = Some(minimum.clone());
-        }
-        if version_lt(crate::config::client_version(), &minimum) {
-            device.mark_outdated();
-            // 强制更新口径：壳只记录，准入由服务端在握手里回 CLIENT_OUTDATED；
-            // 注入契约里没有版本字段可暴露，详见 README「强制更新的落点」。
-            eprintln!(
-                "客户端版本 {} 低于服务端最低版本 {minimum}，请更新 BakaGame 桌面客户端",
-                crate::config::client_version()
-            );
-        }
-    }
-    // 服务端自己算的 outdated 与本地比较取或：最低版本可能带本地解析不了的预发布段
     if parsed.outdated {
-        device.mark_outdated();
+        // 强制更新口径：壳只记录，准入由服务端在握手里回 CLIENT_OUTDATED；
+        // 注入契约里没有版本字段可暴露，详见 README「强制更新的落点」。
+        eprintln!(
+            "客户端版本 {} 低于服务端最低版本 {}，请更新 BakaGame 桌面客户端",
+            crate::config::client_version(),
+            parsed.minimum_version.as_deref().unwrap_or("（未给出）")
+        );
     }
     Ok(())
-}
-
-/// 点分十进制版本比较（够用即可，不引入 semver 依赖）；无法解析时按「不低于」处理，
-/// 绝不因为解析失败而误判成过期。
-fn version_lt(current: &str, minimum: &str) -> bool {
-    let a = parse_version(current);
-    let b = parse_version(minimum);
-    match (a, b) {
-        (Some(a), Some(b)) => cmp_parts(&a, &b).is_lt(),
-        _ => false,
-    }
-}
-
-fn parse_version(value: &str) -> Option<Vec<u64>> {
-    let core = value
-        .trim()
-        .trim_start_matches('v')
-        .split(['-', '+'])
-        .next()
-        .unwrap_or_default();
-    if core.is_empty() {
-        return None;
-    }
-    let mut parts = Vec::new();
-    for seg in core.split('.') {
-        parts.push(seg.parse::<u64>().ok()?);
-    }
-    Some(parts)
-}
-
-fn cmp_parts(a: &[u64], b: &[u64]) -> std::cmp::Ordering {
-    for index in 0..a.len().max(b.len()) {
-        let left = a.get(index).copied().unwrap_or(0);
-        let right = b.get(index).copied().unwrap_or(0);
-        if left != right {
-            return left.cmp(&right);
-        }
-    }
-    std::cmp::Ordering::Equal
 }
 
 // 尽力收紧本地文件权限（失败只记日志、不影响启动）目前没有实现：
@@ -519,6 +451,22 @@ mod tests {
             key: B64.encode(key_bytes),
         })
         .unwrap()
+    }
+
+    /// 注册响应只认 clientId，其余字段缺省或多出来都不影响解析：服务端加字段不能让旧壳注册失败
+    #[test]
+    fn register_response_tolerates_missing_and_extra_fields() {
+        let minimal: RegisterResponse = serde_json::from_str(r#"{"clientId":"ccd_a"}"#).unwrap();
+        assert_eq!(minimal.client_id, "ccd_a");
+        assert!(!minimal.outdated);
+        assert!(minimal.minimum_version.is_none());
+
+        let full: RegisterResponse = serde_json::from_str(
+            r#"{"clientId":"ccd_a","minimumVersion":"1.2.3","outdated":true,"future":1}"#,
+        )
+        .unwrap();
+        assert!(full.outdated);
+        assert_eq!(full.minimum_version.as_deref(), Some("1.2.3"));
     }
 
     /// 首次运行生成密钥，再次载入得到同一把公钥；落盘不留临时文件
