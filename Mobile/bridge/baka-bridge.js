@@ -37,6 +37,8 @@
   var clientId = storageGet(STORAGE_KEY) || "";
   // 与桌面壳 attest::TICKET_MARGIN_MS 同值：离过期不足这个余量就当没有
   var TICKET_MARGIN_MS = 5000;
+  // 服务端给的有效期只作合理性封顶：异常响应不能让壳把一张票当成长期有效
+  var TICKET_TTL_SANITY_CAP_MS = 600000;
   // 轮询只决定「签好的票多久能被捡走」，真正的重新签发按票自己的到期时间走
   var TICKET_POLL_MS = 4000;
   // 签发失败后的退避：离线时轮询与页面的每次读取都不能变成对证明接口的轰炸（与桌面壳同款口径）
@@ -245,7 +247,7 @@
                 if (typeof ticket !== "string" || !ticket) {
                   throw new Error("BAKA_CHANNEL_TICKET_EMPTY");
                 }
-                return { value: ticket, expiresAt: Number(unwrap(attestJson, "expiresAt")) || 0 };
+                return newTicket(ticket, attestJson);
               });
             });
           });
@@ -261,13 +263,45 @@
       });
   }
 
-  var ticket = { value: "", expiresAt: 0 };
+  // 票的有效期按「收到后过去了多久」算：服务端的绝对到期时刻属于服务端的时钟，
+  // 本机时钟快慢几十秒是常态，拿来互相比较会把好票判废、把废票放出去。
+  // 单调时钟不受改时间影响但休眠时可能不走，墙上时钟的差值休眠时照走（与服务端时钟的
+  // 偏差在相减时抵消），两者取大：只会让票更早作废，不会放出废票。
+  function monoNow() {
+    try {
+      if (window.performance && typeof window.performance.now === "function") {
+        return window.performance.now();
+      }
+    } catch (e) {
+      /* 取不到单调时钟：退回墙上时钟 */
+    }
+    return Date.now();
+  }
+  var EMPTY_TICKET = { value: "", ttlMs: 0, mono: 0, wall: 0 };
+  // 换票响应优先给相对有效期 ttlMs；较旧的服务端没有它，退回「绝对时刻减本地时钟」的旧算法
+  function newTicket(value, attestJson) {
+    var wall = Date.now();
+    var ttl = Number(unwrap(attestJson, "ttlMs"));
+    if (!(ttl > 0)) ttl = (Number(unwrap(attestJson, "expiresAt")) || 0) - wall;
+    return {
+      value: value,
+      ttlMs: Math.min(Math.max(ttl, 0), TICKET_TTL_SANITY_CAP_MS),
+      mono: monoNow(),
+      wall: wall,
+    };
+  }
+  function ticketElapsedMs() {
+    var wall = Date.now() - ticket.wall;
+    return Math.max(monoNow() - ticket.mono, wall > 0 ? wall : 0, 0);
+  }
+
+  var ticket = EMPTY_TICKET;
   var ticketBusy = false;
   var ticker = 0;
   var failureUntil = 0;
 
   function ticketIsUsable() {
-    return ticket.value.length > 0 && ticket.expiresAt - Date.now() > TICKET_MARGIN_MS;
+    return ticket.value.length > 0 && ticket.ttlMs - ticketElapsedMs() > TICKET_MARGIN_MS;
   }
 
   // force=false 用于定时轮询：手里那张还能用就不重跑一遍签发，免得白打接口
@@ -289,7 +323,7 @@
         // 签不出票（离线、未注册、自检判死、服务端未启用通道）：保持空串，页面按 Web 口径连接
         ticketBusy = false;
         failureUntil = Date.now() + TICKET_RETRY_MS;
-        ticket = { value: "", expiresAt: 0 };
+        ticket = EMPTY_TICKET;
       }
     );
   }
@@ -336,7 +370,7 @@
     configurable: false,
     get: function () {
       var handed = ticket.value;
-      ticket = { value: "", expiresAt: 0 };
+      ticket = EMPTY_TICKET;
       refreshTicket(true);
       return handed;
     },
