@@ -1,3 +1,4 @@
+import { GAME_ROUTES } from "../shared/GameRoutes";
 import type { GameId } from "../shared/Protocol";
 import { SITE_NAME, SITE_PAGE_ENTRIES, lobbyTitleOf } from "../shared/SitePages";
 /**
@@ -67,18 +68,12 @@ export const SITE_PAGES: readonly SitePage[] = [
   },
 ];
 
-/** 游戏标识 → 人类页面路径：两者拼写不同（faker ↔ /whoisfaker），只在映射表里对齐一次。 */
-export const GAME_PATHS = {
-  faker: SITE_PAGE_ENTRIES.faker.path,
-  song: SITE_PAGE_ENTRIES.song.path,
-  cee: SITE_PAGE_ENTRIES.cee.path,
-} as const;
-
-export const gamePathOf = (game: GameId): string => GAME_PATHS[game];
+/** 游戏标识 → 人类页面路径：两者拼写不同（faker ↔ /whoisfaker），对齐只在玩法路由登记表里做一次。 */
+export const gamePathOf = (game: GameId): string => GAME_ROUTES[game].base;
 
 /** 加入房间后的页内位置；只在已经知道房间号时使用。 */
 export const roomPageOf = (game: GameId, roomId: string): string =>
-  `${GAME_PATHS[game]}/room/${roomId}`;
+  `${gamePathOf(game)}/room/${roomId}`;
 
 export const findSitePage = (path: string): SitePage | undefined => {
   const normalized = path.split("?")[0]?.replace(/\/+$/, "") || "/";

@@ -2,7 +2,8 @@ import { createHmac, hkdfSync } from "node:crypto";
 
 import { beijingDay } from "../domain/BeijingDay";
 import type { EventLogger } from "../infrastructure/EventLogger";
-import { GAME_PATHS, SITE_PAGES } from "../mcp/SiteMap";
+import { SITE_PAGES, gamePathOf } from "../mcp/SiteMap";
+import { GAME_IDS } from "../shared/Protocol";
 import type {
   PageDelta,
   SiteStatsRepository,
@@ -35,7 +36,7 @@ const SECTIONS = new Set([
 /** 登记的多段页面（如单人练习）整条保留，其余第二段一律折叠。 */
 const REGISTERED_PATHS = new Set(SITE_PAGES.map((page) => page.path));
 /** 只有玩法大厅有「房间页」。 */
-const ROOM_SECTIONS = new Set(Object.values(GAME_PATHS).map((path) => path.slice(1)));
+const ROOM_SECTIONS = new Set(GAME_IDS.map((game) => gamePathOf(game).slice(1)));
 
 export const normalizeVisitPath = (raw: string): string => {
   const segments = raw.split(/[?#]/)[0]!.toLowerCase().split("/").filter(Boolean);
