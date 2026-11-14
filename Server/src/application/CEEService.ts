@@ -50,6 +50,22 @@ type CEERankedClientMessage = Extract<CEEClientMessage, { type: CEERankedCommand
 const isCEERankedMessage = (message: CEEClientMessage): message is CEERankedClientMessage =>
   message.type.startsWith("cee.ranked.");
 
+/** 入口要过敏感词的展示字段：房名、昵称、自填提示。聊天按会话另判，不在这里取。 */
+const textFieldsOf = (message: CEEClientMessage): string[] => {
+  switch (message.type) {
+    case "cee.room.create":
+      return [message.payload.name, message.payload.userName];
+    case "cee.room.join":
+      return [message.payload.userName];
+    case "cee.room.update":
+      return [message.payload.name];
+    case "cee.game.setAnswer":
+      return message.payload.hints;
+    default:
+      return [];
+  }
+};
+
 export class CEEService implements GameService<CEEClientMessage> {
   readonly native: CEENativeService;
   readonly original: CEEOriginalService;
@@ -166,32 +182,29 @@ export class CEEService implements GameService<CEEClientMessage> {
   async execute(id: string, message: CEEClientMessage): Promise<unknown> {
     const connection = this.connections.get(id);
     if (!connection) throw new AppError("CONNECTION_NOT_FOUND", "连接已经断开");
+    this.screen(id, connection, message);
+    return this.route(id, connection, message);
+  }
+  /** 派发前的统一筛查：命令额度、聊天限流、敏感词、检索配额，先后顺序与错误码都不变。 */
+  private screen(id: string, connection: ConnectionRecord, message: CEEClientMessage): void {
     this.commandQuota.consume(connection);
-    if (message.type === "cee.chat.send") this.chatLimiter.consume(id);
-    // 敏感词在服务端入口统一检查：名称、昵称、聊天与自填提示都会展示给其他玩家。
-    switch (message.type) {
-      case "cee.room.create":
-        assertTextAllowed(message.payload.name, message.payload.userName);
-        break;
-      case "cee.room.join":
-        assertTextAllowed(message.payload.userName);
-        break;
-      case "cee.room.update":
-        assertTextAllowed(message.payload.name);
-        break;
-      case "cee.chat.send":
-        // 增强房的聊天由房间内核在受理时检测一次（针对规范化、截断之后真正展示的文本）；
-        // 原版房的聊天不经内核，只能在这里检测。每条聊天只看一遍。
-        if (this.original.hasSession(id)) assertTextAllowed(message.payload.text);
-        break;
-      case "cee.game.setAnswer":
-        assertTextAllowed(...message.payload.hints);
-        break;
-      default:
-        break;
+    if (message.type === "cee.chat.send") {
+      this.chatLimiter.consume(id);
+      // 增强房的聊天由房间内核在受理时检测一次（针对规范化、截断之后真正展示的文本）；
+      // 原版房的聊天不经内核，只能在这里检测。每条聊天只看一遍。
+      if (this.original.hasSession(id)) assertTextAllowed(message.payload.text);
+    } else {
+      // 敏感词在服务端入口统一检查：名称、昵称与自填提示都会展示给其他玩家。
+      assertTextAllowed(...textFieldsOf(message));
     }
     // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
     if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
+  }
+  private async route(
+    id: string,
+    connection: ConnectionRecord,
+    message: CEEClientMessage
+  ): Promise<unknown> {
     if (isCEERankedMessage(message)) {
       const result = await this.ranked.execute(connection, message);
       // 排位检索与增强房共用台账：猜测时的「先搜后猜」判据要能查到这次检索。
