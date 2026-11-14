@@ -62,7 +62,10 @@ test("桌面壳：Cargo.lock 记录的版本跟上了 Cargo.toml", () => {
   expect(entry?.[1]).toBe(cargoPackageVersion(read("Desktop/src-tauri/Cargo.toml")));
 });
 
-/** 已发出去的最高 versionCode：推导值低于它，系统与应用商店会拒绝升级安装。发了新包就把它抬上来。 */
+/**
+ * 已发出去的最高 versionCode：推导值低于它，系统与应用商店会拒绝升级安装。
+ * 每次发版后把它抬到已发出去的值；没人抬它，这条守卫就一直停在旧下限上，挡不住新的回退。
+ */
 const SHIPPED_VERSION_CODE_FLOOR = 3;
 
 test("安卓壳：versionName 与 versionCode 不手写，都由 Mobile/package.json 派生", () => {

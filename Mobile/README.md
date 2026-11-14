@@ -27,7 +27,7 @@ type SelfCheckReport = {
 
 `clientVersion` 单一版本源是 `Mobile/package.json` 的 `version`：`scripts/prepare-web.mjs`
 替换桥接占位符，`android/app/build.gradle` 构建时直接读它——`versionName` 原样取用，`versionCode`
-按 `major*10000 + minor*100 + patch` 推导（minor、patch 各限 0-99，越界构建失败，免得不同版本撞码）。
+按 `major*10000 + minor*100 + patch` 推导（minor、patch 各限 0-99，越界构建失败，免得不同版本撞码）。安卓版本号只接受三段数字，不支持预发布后缀（推导规则依赖严格的三段，否则无法保证单调），带后缀会让构建直接失败。
 发版只改这一处，构建不再改写任何被追踪的源码；该推导值不得低于已发出去的 `versionCode`，
 规则的守卫在 `Server/test/ClientVersionConsistency.test.ts`。
 `selfCheck()` 的 `attestationLevel` 取自原生 `SelfCheck.check()`，只是壳内展示用的档位，准入判定在服务端。
@@ -138,7 +138,7 @@ Mobile/
 ├── package.json            # 独立 npm 包，不在根 pnpm workspace 成员内
 ├── capacitor.config.ts     # webDir=dist-web（内嵌产物），不做远程 URL
 ├── bridge/baka-bridge.js   # 唯一前端桥接：通道契约 + 注册/证明闭环 + 热更新检查
-├── scripts/prepare-web.mjs # Client/dist → dist-web + 注入桥接 + 版本同步
+├── scripts/prepare-web.mjs # Client/dist → dist-web + 注入桥接
 ├── scripts/web-bundle.mjs  # dist-web → 热更新 zip + BakaGame-web-latest.json
 ├── scripts/apk.mjs         # Gradle 定位（wrapper 声明 → 同版本缓存 → PATH）并跑构建
 └── android/                # 手写最小工程（等效 cap add android 产物，未跑过 CLI）
