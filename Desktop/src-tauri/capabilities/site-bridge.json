@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/remote-schema.json",
   "identifier": "site-bridge",
-  "description": "站点页面调用桥接命令的授权。页面本身就是客户端界面，而 Tauri 把远程来源的 IPC 一并挡在权限层：不在这里列出，壳里命令照常可用，页面却拿到 `not allowed`。这里只放三条桥接命令，不给 core 能力——窗口/事件那套面留给壳自己。",
+  "description": "站点页面调用桥接命令的授权，也是发布构建里唯一的能力文件。页面本身就是客户端界面，而 Tauri 把应用命令挡在权限层：不在这里列出，壳里命令照常可用，页面却拿到 `not allowed`。只放三条桥接命令，不给任何 core 能力——桥接脚本只调这三条，窗口与事件那套面留给壳自己。注意能力文件默认对壳加载的站点（本地来源）按并集生效，所以任何文件多带 core 权限都会落到页面上；域名变更要同步改下面的来源。",
   "windows": ["main"],
   "platforms": ["windows"],
   "remote": {

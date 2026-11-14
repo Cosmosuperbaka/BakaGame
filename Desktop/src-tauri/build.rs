@@ -59,15 +59,27 @@ fn main() {
 
     write_notice(&canary);
 
+    // 能力文件：发布构建只收 `capabilities/` 顶层，`capabilities/dev/` 下只给开发服务器用的
+    // 文件仅调试构建才收。tauri-build 默认递归收整个目录，不限定的话开发用的来源会跟着发布走。
+    // 自定义匹配串后 tauri-build 不再替我们登记监视路径，要自己写。
+    let capabilities_pattern = if env::var("PROFILE").as_deref() == Ok("release") {
+        "./capabilities/*.json"
+    } else {
+        "./capabilities/**/*.json"
+    };
+    println!("cargo:rerun-if-changed=capabilities");
+
     // 应用自身的命令默认**不在 ACL 里**：只有在这里声明过，tauri-build 才会为每个命令
     // 生成 `allow-<命令名>` 权限条目，能力文件（capability）才可能把它授给页面。
     // 漏了这一步的表现很隐蔽：命令自己照常工作，但页面调用一律
     // `baka_ticket not allowed. Plugin not found`——桥接取票失败，通道校验永远不过。
     tauri_build::try_build(
-        tauri_build::Attributes::new().app_manifest(
-            tauri_build::AppManifest::new()
-                .commands(&["baka_self_check", "baka_client_id", "baka_ticket"]),
-        ),
+        tauri_build::Attributes::new()
+            .capabilities_path_pattern(capabilities_pattern)
+            .app_manifest(
+                tauri_build::AppManifest::new()
+                    .commands(&["baka_self_check", "baka_client_id", "baka_ticket"]),
+            ),
     )
     .expect("tauri-build 失败");
 }

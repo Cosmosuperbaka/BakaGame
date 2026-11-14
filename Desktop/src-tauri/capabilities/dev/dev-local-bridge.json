@@ -1,0 +1,11 @@
+{
+  "$schema": "../../gen/schemas/remote-schema.json",
+  "identifier": "dev-local-bridge",
+  "description": "仅调试构建：允许本地 Vite 开发服务器（回环 http）上的页面调用桥接命令。本目录由 build.rs 只在调试构建里收进能力集，发布构建不编译它。端口换成别的（如歌词套件的 5177）要同步改这里，否则 selfCheck / baka_ticket 会被权限层拒掉。",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "remote": {
+    "urls": ["http://localhost:5173", "http://127.0.0.1:5173"]
+  },
+  "permissions": ["allow-baka-ticket", "allow-baka-self-check", "allow-baka-client-id"]
+}

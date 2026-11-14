@@ -39,13 +39,15 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 访问那个站点。**开发构建（`debug_assertions`）例外**：没设 `BAKA_SITE_URL` 时默认加载
 `http://localhost:5173`（`pnpm dev:client` 起的 Vite 服务器），并且只对回环 http（主机为 `localhost` /
 `127.0.0.1`，端口不限）放行；换端口用 `BAKA_SITE_URL` 注入，桥接命令的远程白名单在
-`capabilities/dev-local-bridge.json`，两处要一起改。release 产物里既没有这条放行分支、也没有本地默认值，
-仍只认 https。
+`capabilities/dev/dev-local-bridge.json`，两处要一起改。release 产物里既没有这条放行分支、也没有本地默认值，
+仍只认 https，`capabilities/dev/` 下的能力文件也只在调试构建里收进去。
 
 页面调用壳的命令要过两道门，缺一道的表现都是「壳里能用、页面拿到 `not allowed`」：一是 `build.rs` 的
 `AppManifest::commands` 必须列出每个命令（`tauri-build` 据此生成 `allow-<命令>` 权限条目），二是 capability
-按来源把这些权限授出去——`capabilities/site-bridge.json` 管生产站点，`dev-local-bridge.json` 管本地
-开发服务器。新增桥接命令时两处都要加，否则注册/取票在页面上永远失败，而控制台只留一句「通道校验未通过」。
+按来源把这些权限授出去——`capabilities/site-bridge.json` 管生产站点，`capabilities/dev/dev-local-bridge.json`
+管本地开发服务器。新增桥接命令时两处都要加，否则注册/取票在页面上永远失败，而控制台只留一句「通道校验未通过」。
+能力文件对壳加载的站点按并集生效（站点按 `frontendDist` 算本地来源），所以**不要**给任何能力文件加 `core:*`
+权限：页面只调三条桥接命令，多给的权限会直接落在站点页面上。`withGlobalTauri` 也保持关闭。
 
 ### 图标
 

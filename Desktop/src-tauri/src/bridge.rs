@@ -43,16 +43,13 @@ const BRIDGE_JS: &str = r#"(function () {
   // 轮询只决定「壳里备好的票多久能被捡走」，真正的重新签发按票自己的到期时间走
   var TICKET_POLL_MS = 4000;
 
-  // IPC 句柄延迟解析：初始化脚本可能跑在 Tauri 注入 __TAURI_INTERNALS__ 之前
+  // IPC 句柄延迟解析：初始化脚本可能跑在 Tauri 注入 __TAURI_INTERNALS__ 之前。
+  // 只认 __TAURI_INTERNALS__：壳不开 withGlobalTauri，页面上没有全局 API 对象
   var resolveInvoke = function () {
     try {
       var internals = window.__TAURI_INTERNALS__;
       if (internals && typeof internals.invoke === "function") {
         return function (cmd, args) { return internals.invoke(cmd, args || {}); };
-      }
-      var tauri = window.__TAURI__;
-      if (tauri && tauri.core && typeof tauri.core.invoke === "function") {
-        return function (cmd, args) { return tauri.core.invoke(cmd, args || {}); };
       }
     } catch (e) {}
     return null;
@@ -171,6 +168,8 @@ mod tests {
         // 签名只在壳内部用于通道证明：页面可达面上不能再出现签名命令
         assert!(!BRIDGE_JS.contains("baka_sign"));
         assert!(BRIDGE_JS.contains("baka_self_check"));
+        // 壳不开 withGlobalTauri：脚本不能再去读页面上并不存在的全局 API 对象
+        assert!(!BRIDGE_JS.contains("window.__TAURI__"));
         // 票据通道：契约里的名字与命令名都必须出现在脚本原文里
         assert!(BRIDGE_JS.contains("channelTicket"));
         assert!(BRIDGE_JS.contains("baka_ticket"));

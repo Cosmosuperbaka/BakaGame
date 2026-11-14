@@ -1,8 +1,0 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "壳自身的最小 IPC 面：只允许标签为 main 的窗口使用核心事件与窗口能力。业务命令（baka_ticket / baka_self_check / baka_client_id）另在 site-bridge 与 dev-local-bridge 里按来源授权——应用自身命令同样要显式列出，漏了页面会拿到 `not allowed`。",
-  "windows": ["main"],
-  "platforms": ["windows"],
-  "permissions": ["core:default"]
-}

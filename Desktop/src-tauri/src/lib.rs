@@ -6,6 +6,8 @@
 
 mod attest;
 mod bridge;
+#[cfg(test)]
+mod capability_policy;
 mod config;
 mod device;
 mod dnsproxy;

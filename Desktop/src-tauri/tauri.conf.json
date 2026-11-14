@@ -7,7 +7,7 @@
     "frontendDist": "https://game.baka.website"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [],
     "security": {
       "csp": null,
