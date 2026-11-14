@@ -622,3 +622,104 @@ test("默认输出下一条 logger 记录恰好产出一条 Sentry 出口，且�
     stderr.mockRestore();
   }
 });
+
+test("事件日志完整进入结构化出口，控制台只显示关键事件", async () => {
+  const output: string[] = [];
+  const records: OtelLogRecord[] = [];
+  const logger = new EventLogger(
+    (message) => {
+      output.push(message);
+    },
+    undefined,
+    undefined,
+    undefined,
+    { sinks: [{ write: (record) => records.push(record) }] }
+  );
+
+  await logger.write({
+    type: "room.created",
+    createdAt: Date.UTC(2026, 3, 16, 9, 30, 15, 120),
+    roomId: "1234",
+    playerId: "player_1",
+    payload: {
+      visibility: "private",
+      allowSpectators: true,
+      roleConfig: {
+        undercoverCount: 2,
+        hasAngel: false,
+        hasBlank: true,
+      },
+    },
+  });
+
+  expect(output).toHaveLength(1);
+  expect(output[0]).not.toContain("\n");
+  expect(output[0]).toContain("房间已创建");
+  expect(output[0]).toContain("房间=1234");
+  const [record] = records;
+  expect(record).toMatchObject({
+    severityText: "INFO",
+    body: "房间已创建",
+    attributes: { "event.name": "room.created", roomId: "1234", playerId: "player_1" },
+  });
+  expect((record.attributes.payload as { visibility: string }).visibility).toBe("private");
+});
+test("系统日志控制台输出等级、中文正文与错误首帧", () => {
+  const lines: string[] = [];
+  const logger = new EventLogger({
+    info: (message) => lines.push(message),
+    warn: (message) => lines.push(message),
+    error: (message) => lines.push(message),
+  });
+
+  logger.info("WhoIsFaker 服务已启动", {
+    version: "1.1.0",
+    serverUrl: "http://127.0.0.1:4850",
+    listenAddress: "127.0.0.1:4850",
+  });
+  logger.warn("收到停机信号，开始优雅停机", {
+    signal: "SIGTERM",
+  });
+  logger.error("WebSocket 请求发生未捕获异常", {
+    connectionId: "conn_1",
+    requestId: "req_1",
+    errorName: "TypeError",
+    errorMessage: "boom",
+  });
+
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toContain("INFO");
+  expect(lines[0]).toContain("WhoIsFaker 服务已启动");
+  // 地址与监听属于结构化字段，不在控制台重复占位。
+  expect(lines[0]).not.toContain("http://127.0.0.1:4850");
+  expect(lines[0]).not.toContain("监听=");
+  expect(lines[1]).toContain("WARN");
+  expect(lines[1]).toContain("收到停机信号，开始优雅停机");
+  expect(lines[2]).toContain("ERROR");
+  expect(lines[2]).toContain("WebSocket 请求发生未捕获异常");
+  expect(lines[2]).toContain("异常=TypeError: boom");
+  for (const line of lines) expect(line.split("\n")).toHaveLength(1);
+});
+test("describeError 完整保留调用栈与 Cause，且 redactData 对敏感凭据有效脱敏", () => {
+  const innerError = new Error("底层文件损坏");
+  const outerError = new Error("保存房间失败", { cause: innerError });
+  const desc = describeError(outerError);
+
+  expect(desc.errorName).toBe("Error");
+  expect(desc.errorMessage).toBe("保存房间失败");
+  expect(typeof desc.stack).toBe("string");
+  expect((desc.cause as Record<string, unknown>).errorMessage).toBe("底层文件损坏");
+
+  const sensitive = {
+    cookie: "MUSIC_U=abcdef1234567890",
+    sessionToken: "secret-token-xyz",
+    password: "my-password",
+    normalField: "visible",
+  };
+  const redacted = redactData(sensitive) as Record<string, string>;
+  expect(redacted.cookie).toContain("***[REDACTED]");
+  expect(redacted.cookie).not.toContain("1234567890");
+  expect(redacted.sessionToken).toContain("***[REDACTED]");
+  expect(redacted.password).toBe("***[REDACTED]");
+  expect(redacted.normalField).toBe("visible");
+});

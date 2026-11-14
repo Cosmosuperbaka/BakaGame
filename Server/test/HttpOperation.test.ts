@@ -47,3 +47,29 @@ test("方法名在编译时统一大写，没有路由时恒为固定桶", () =>
   expect(compiled[0]).toEqual({ method: "GET", path: "/health", segments: ["health"] });
   expect(httpOperationAction([], "GET", "/health")).toBe(UNROUTED_HTTP_ACTION);
 });
+
+/**
+ * F07：HTTP 操作名（指标序列与 Sentry 事务名共用）必须取自**已注册路由模板**，
+ * 不能拼未约束的 inbound pathname——扫描器的随机路径会把基数推到无界。
+ * 模板匹配的边界（`:param`、`*`、非标方法）在纯函数上直接钉死。
+ */
+test("HTTP 操作名归一到路由模板，未命中落固定桶", () => {
+  const templates = compileRouteTemplates([
+    { method: "GET", path: "/health" },
+    { method: "GET", path: "/api/account/avatar/:userId" },
+    { method: "ALL", path: "/api/auth/*" },
+    { method: "WS", path: "/api/cee/ws" },
+  ]);
+  expect(httpOperationAction(templates, "GET", "/health")).toBe("HTTP GET /health");
+  expect(httpOperationAction(templates, "GET", "/api/account/avatar/u-123")).toBe(
+    "HTTP GET /api/account/avatar/:userId"
+  );
+  expect(httpOperationAction(templates, "POST", "/api/auth/sign-in/email")).toBe(
+    "HTTP POST /api/auth/*"
+  );
+  expect(httpOperationAction(templates, "GET", "/api/cee/ws")).toBe("HTTP GET /api/cee/ws");
+  // 参数段必须整段消费；多余段、缺失段与非标准方法一律进固定桶。
+  expect(httpOperationAction(templates, "GET", "/api/account/avatar")).toBe(UNROUTED_HTTP_ACTION);
+  expect(httpOperationAction(templates, "GET", "/health/extra")).toBe(UNROUTED_HTTP_ACTION);
+  expect(httpOperationAction(templates, "FOO", "/health")).toBe(UNROUTED_HTTP_ACTION);
+});
