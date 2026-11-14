@@ -35,10 +35,11 @@ describe("whoIsFakerNeedsAction", () => {
   it("prompts alive non-questioners who have not voted", () => {
     const snapshot = wifSnapshot("vote1");
     expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "vote1"))).toBe(true);
+    // 已投票这件事由服务端算进 canAct，客户端不再自己看票根。
     expect(
       whoIsFakerNeedsAction(
         snapshot,
-        wifPrivate("me", "vote1", { myCurrentVoteTargetId: WIF_PEOPLE.peach.id })
+        wifPrivate("me", "vote1", { myCurrentVoteTargetId: WIF_PEOPLE.peach.id, canAct: false })
       )
     ).toBe(false);
     expect(whoIsFakerNeedsAction(snapshot, wifPrivate("host", "vote1"))).toBe(false);
@@ -48,19 +49,22 @@ describe("whoIsFakerNeedsAction", () => {
     const snapshot = wifSnapshot("night1");
     expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "night1"))).toBe(true);
     expect(
-      whoIsFakerNeedsAction(snapshot, wifPrivate("me", "night1", { nightActionSubmitted: true }))
+      whoIsFakerNeedsAction(
+        snapshot,
+        wifPrivate("me", "night1", { nightActionSubmitted: true, canAct: false })
+      )
     ).toBe(false);
     // 天使与白板夜里没有行动资格，不提示；资格只看服务端下发的能力位。
     expect(
       whoIsFakerNeedsAction(
         snapshot,
-        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "angel" })
+        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "angel", canAct: false })
       )
     ).toBe(false);
     expect(
       whoIsFakerNeedsAction(
         snapshot,
-        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "blank" })
+        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "blank", canAct: false })
       )
     ).toBe(false);
   });
@@ -70,12 +74,13 @@ describe("whoIsFakerNeedsAction", () => {
     const blank = wifPrivate(WIF_PEOPLE.kita, "blankGuess", {
       canSubmitBlankGuess: true,
       blankGuessUsed: false,
+      canAct: true,
     });
     expect(whoIsFakerNeedsAction(snapshot, blank)).toBe(true);
     expect(
       whoIsFakerNeedsAction(
         { ...snapshot, status: { ...snapshot.status, blankGuessPendingReview: true } },
-        blank
+        { ...blank, canAct: false }
       )
     ).toBe(false);
   });
@@ -92,8 +97,13 @@ describe("whoIsFakerNeedsAction", () => {
 
   it("prompts the questioner to continue after feedback", () => {
     const snapshot = wifFeedbackSnapshot("vote");
-    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("host", "vote1"))).toBe(true);
-    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "vote1"))).toBe(false);
+    // 反馈节点的私有态按「出题人可继续」下发；夹具的阶段表只覆盖局内节点，这里显式给出服务端的答案。
+    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("host", "vote1", { canAct: true }))).toBe(
+      true
+    );
+    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "vote1", { canAct: false }))).toBe(
+      false
+    );
   });
 
   it("never prompts an agent-controlled seat or a missing state", () => {
@@ -105,7 +115,18 @@ describe("whoIsFakerNeedsAction", () => {
     expect(whoIsFakerNeedsAction(snapshot, null)).toBe(false);
   });
 
-  // 三种发言模式各至少两组快照：提示名单只由「存活、非出题人、未提交、轮到」决定。
+  it("只认服务端下发的 canAct，不再按阶段与名单自行推导", () => {
+    // 全员已交的描述轮：服务端说轮到就提示，客户端不拿已交名单再否一次。
+    expect(
+      whoIsFakerNeedsAction(wifSnapshot("day1"), wifPrivate("me", "day1", { canAct: true }))
+    ).toBe(true);
+    // 投票轮：服务端说没轮到就不提示，即使本人票根还是空的。
+    expect(
+      whoIsFakerNeedsAction(wifSnapshot("vote1"), wifPrivate("me", "vote1", { canAct: false }))
+    ).toBe(false);
+  });
+
+  // 三种发言模式各至少两组快照：提示名单只由「存活、非出题人、未提交、轮到」决定，这四件事都在服务端算。
   const speechActionCases: {
     name: string;
     stage: WifStage;
@@ -141,7 +162,17 @@ describe("whoIsFakerNeedsAction", () => {
         ? base
         : { ...base, status: { ...base.status, submittedSpeechPlayerIds: submitted } };
     const prompted = Object.values(WIF_PEOPLE)
-      .filter((person) => whoIsFakerNeedsAction(snapshot, wifPrivate(person, stage)))
+      .filter((person) =>
+        whoIsFakerNeedsAction(
+          snapshot,
+          // 改过已交名单的节点夹具表达不了，按服务端在该名单下会给出的答案逐座位下发。
+          wifPrivate(
+            person,
+            stage,
+            submitted === undefined ? {} : { canAct: expected.includes(person.id) }
+          )
+        )
+      )
       .map((person) => person.id);
     expect(prompted.sort()).toEqual([...expected].sort());
   });

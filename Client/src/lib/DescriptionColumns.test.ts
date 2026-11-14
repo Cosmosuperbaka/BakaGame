@@ -105,6 +105,8 @@ describe("description column model", () => {
       started: true,
       day: 1,
       speechMode: "tieBreak",
+      speechOrder: [],
+      submittedSpeechPlayerIds: [],
       tieBreakStage: "vote",
       tieBreakIndex: 1,
       tieBreakCandidateIds: ["p1", "p2"],
@@ -131,7 +133,9 @@ describe("description column model", () => {
       phase: "description",
       started: true,
       day: 2,
+      speechMode: "normal",
       speechOrder: ["p1", "p2"],
+      submittedSpeechPlayerIds: [],
     };
 
     const model = buildDescriptionColumns(records, status);

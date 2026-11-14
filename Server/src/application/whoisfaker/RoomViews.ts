@@ -101,8 +101,7 @@ const buildStatusView = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSnapshot["st
   return {
     phase,
     roundId: room.round?.id,
-    // 发言模式与两份名单在任何阶段都下发，取值与客户端原先「按阶段回退」的结果一致，
-    // 客户端因此不必再自己判断当前算哪种发言。
+    // 发言模式与两份名单在任何阶段都下发，客户端不必再按阶段回退自行判断当前算哪种发言。
     speechMode: room.round?.speechMode ?? (phase === "tieBreak" ? "tieBreak" : "normal"),
     speechResumePhase: room.round?.supplement?.resumePhase,
     supplementIndex: room.round?.supplement?.index,
@@ -211,7 +210,10 @@ const buildPublicPlayers = (
     .sort((left, right) => left.joinedAt - right.joinedAt)
     .map((player) => buildPublicPlayer(ctx, room, player));
 
-const buildWaitingPrivateState = (player: WhoIsFakerPlayerRecord): WhoIsFakerPrivateState => ({
+/** 座位私有态里除「是否轮到本人」之外的部分：那一位要等公开快照构造好才能算。 */
+type SeatPrivateState = Omit<WhoIsFakerPrivateState, "canAct">;
+
+const buildWaitingPrivateState = (player: WhoIsFakerPlayerRecord): SeatPrivateState => ({
   playerId: player.id,
   sessionToken: player.sessionToken,
   canActAtNight: false,
@@ -248,7 +250,7 @@ const buildPrivilegedPrivateState = (
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   player: WhoIsFakerPlayerRecord
-): WhoIsFakerPrivateState => ({
+): SeatPrivateState => ({
   playerId: player.id,
   sessionToken: player.sessionToken,
   canActAtNight: false,
@@ -284,7 +286,7 @@ const buildParticipantPrivateState = (
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   player: WhoIsFakerPlayerRecord
-): WhoIsFakerPrivateState => {
+): SeatPrivateState => {
   const state = round.assignments[player.id];
   return {
     playerId: player.id,
@@ -313,16 +315,15 @@ const buildParticipantPrivateState = (
 };
 
 /**
- * 「现在轮到我了」的玩法规则，逐阶段与客户端原先的推导同值：
- * 发言看名单与已提交，投票看是否已投且不是 PK 候选，夜晚看行动资格与是否已提交。
- * 读的就是本次要下发的公开快照与私有态，两者天然同源，不会各算一套。
+ * 「现在轮到我了」的玩法规则：发言看名单与已提交，投票看是否已投且不是 PK 候选，
+ * 夜晚看行动资格与是否已提交。读的就是本次要下发的公开快照与私有态，两者天然同源，不会各算一套。
  */
-const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: WhoIsFakerPrivateState): boolean => {
+const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: SeatPrivateState): boolean => {
   const { status } = snapshot;
   const me = snapshot.players.find((player) => player.id === state.playerId);
   const alive = me?.roundStatus === "alive" && !state.isQuestioner;
-  const order = status.speechOrder ?? [];
-  const submitted = new Set(status.submittedSpeechPlayerIds ?? []);
+  const order = status.speechOrder;
+  const submitted = new Set(status.submittedSpeechPlayerIds);
   const spoken = !submitted.has(state.playerId);
   const canVote = (inTieBreak: boolean) =>
     alive &&
@@ -346,7 +347,7 @@ const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: WhoIsFakerPrivateSta
     case "voting":
       return canVote(false);
     case "night":
-      return Boolean(alive && state.canActAtNight && !state.nightActionSubmitted);
+      return alive && state.canActAtNight && !state.nightActionSubmitted;
     case "blankGuess":
       return state.canSubmitBlankGuess && status.blankGuessPendingReview !== true;
     case "feedback":
@@ -360,7 +361,7 @@ const buildSeatPrivateState = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   player: WhoIsFakerPlayerRecord
-): WhoIsFakerPrivateState => {
+): SeatPrivateState => {
   // 房间公共快照永远不包含秘密信息，私有视图单独按连接发放。
   const round = room.round;
   if (!round) return buildWaitingPrivateState(player);
@@ -386,8 +387,7 @@ export const buildPrivateState = (
   snapshot: WhoIsFakerRoomSnapshot
 ): WhoIsFakerPrivateState => {
   const state = buildSeatPrivateState(ctx, room, player);
-  state.canAct = canActNow(snapshot, state);
-  return state;
+  return { ...state, canAct: canActNow(snapshot, state) };
 };
 
 const canViewerAccessGhostChat = (

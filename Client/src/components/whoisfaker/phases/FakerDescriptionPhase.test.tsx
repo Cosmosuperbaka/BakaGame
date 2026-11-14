@@ -76,6 +76,8 @@ const snapshot: WhoIsFakerRoomSnapshot = {
 const privateState: WhoIsFakerPrivateState = {
   playerId: "player_2",
   sessionToken: "session_token",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner: false,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,

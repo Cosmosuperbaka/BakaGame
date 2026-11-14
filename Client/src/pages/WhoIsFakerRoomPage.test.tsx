@@ -45,6 +45,9 @@ const createMockSnapshot = (
     roundId: "round-100",
     started: false,
     day: 0,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
   },
   players: [
     {
@@ -91,6 +94,8 @@ const createMockPrivateState = (
 ): WhoIsFakerPrivateState => ({
   playerId: "player-1",
   sessionToken: "token-1",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner: false,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,
@@ -109,7 +114,9 @@ function setRoundPhase(phase: WhoIsFakerRoomSnapshot["status"]["phase"], roundId
           roundId,
           started: roundId !== undefined,
           day: roundId === undefined ? 0 : 1,
-          ...(phase === "description" ? { speechOrder: ["player-2", "player-3", "player-1"] } : {}),
+          speechMode: phase === "tieBreak" ? "tieBreak" : "normal",
+          speechOrder: phase === "description" ? ["player-2", "player-3", "player-1"] : [],
+          submittedSpeechPlayerIds: [],
         },
         players: base.players.map((player) => ({
           ...player,
@@ -205,7 +212,9 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             roundId: "round-100",
             started: true,
             day: 1,
+            speechMode: "normal",
             speechOrder: ["player-2", "player-3", "player-1"],
+            submittedSpeechPlayerIds: [],
           },
           players: [
             {
@@ -273,6 +282,9 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             roundId: "round-100",
             started: true,
             day: 1,
+            speechMode: "normal",
+            speechOrder: [],
+            submittedSpeechPlayerIds: [],
           },
           players: [
             {
@@ -455,6 +467,9 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             roundId: "round-100",
             started: true,
             day: 2,
+            speechMode: "normal",
+            speechOrder: [],
+            submittedSpeechPlayerIds: [],
           },
           summary: {
             winner: "undercover",
@@ -504,6 +519,9 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             roundId: "round-100",
             started: true,
             day: 1,
+            speechMode: "normal",
+            speechOrder: [],
+            submittedSpeechPlayerIds: [],
           },
           summary: {
             winner: "blank",
@@ -540,7 +558,15 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     act(() => {
       useWhoIsFakerStore.setState({
         snapshot: createMockSnapshot({
-          status: { phase: "night", roundId: "round-100", started: true, day: 1 },
+          status: {
+            phase: "night",
+            roundId: "round-100",
+            started: true,
+            day: 1,
+            speechMode: "normal",
+            speechOrder: [],
+            submittedSpeechPlayerIds: [],
+          },
           players: createMockSnapshot().players.map((player) => ({
             ...player,
             roundStatus: "alive",
@@ -576,6 +602,9 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             day: 1,
             blankGuessPlayerId: "player-1",
             blankGuessReason: "active",
+            speechMode: "normal",
+            speechOrder: [],
+            submittedSpeechPlayerIds: [],
           },
           players: createMockSnapshot().players.map((player) => ({
             ...player,

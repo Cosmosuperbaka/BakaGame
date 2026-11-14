@@ -45,6 +45,7 @@ describe("buildSpeechHistory", () => {
       phase: "description",
       started: true,
       day: 2,
+      speechMode: "normal",
       speechOrder: ["a", "b"],
       submittedSpeechPlayerIds: ["b"],
     });

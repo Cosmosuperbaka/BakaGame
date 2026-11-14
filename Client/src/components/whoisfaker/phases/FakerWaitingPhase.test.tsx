@@ -30,7 +30,14 @@ const snapshot: WhoIsFakerRoomSnapshot = {
   settings: {
     roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
   },
-  status: { phase: "waiting", started: false, day: 0 },
+  status: {
+    phase: "waiting",
+    started: false,
+    day: 0,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
+  },
   players: [
     {
       id: "host",
@@ -62,6 +69,8 @@ const snapshot: WhoIsFakerRoomSnapshot = {
 const privateState: WhoIsFakerPrivateState = {
   playerId: "guest",
   sessionToken: "session",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner: false,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,

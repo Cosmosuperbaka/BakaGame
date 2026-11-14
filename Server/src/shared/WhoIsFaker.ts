@@ -455,17 +455,18 @@ export interface WhoIsFakerRoomSnapshot {
     phase: WhoIsFakerPhase;
     /** 本局的唯一标识。局外为 undefined；换局必变，客户端据此清空跨局状态（如身份预测）。 */
     roundId?: string;
-    speechMode?: SpeechMode;
+    /** 当前发言子阶段的模式，任何阶段都下发；非发言阶段为 normal，平票 PK 为 tieBreak。 */
+    speechMode: SpeechMode;
     speechResumePhase?: "description" | "voting";
     supplementIndex?: number;
     started: boolean;
     day: number;
     /** 当前描述轮次的公开发言顺序。 */
     descriptionOrder?: string[];
-    /** 当前发言子阶段的完整顺序，普通描述、补充发言与平票 PK 共用。 */
-    speechOrder?: string[];
-    /** 当前发言子阶段已经提交的玩家；仅公开提交状态，不提前公开发言内容。 */
-    submittedSpeechPlayerIds?: string[];
+    /** 当前发言子阶段的完整顺序，普通描述、补充发言与平票 PK 共用；非发言阶段为空数组。 */
+    speechOrder: string[];
+    /** 当前发言子阶段已经提交的玩家；仅公开提交状态，不提前公开发言内容。非发言阶段为空数组。 */
+    submittedSpeechPlayerIds: string[];
     questionerPlayerId?: string;
     tieBreakStage?: TieBreakStage;
     /** 当前平票 PK 的编号，仅在 tieBreak 阶段存在。 */
@@ -502,12 +503,12 @@ export interface WhoIsFakerPrivateState {
    * 现在是否轮到本人操作。玩法规则只在服务端算一次，客户端不再按阶段自行推导；
    * 「页面被托管时不提醒」属于本地状态，由客户端在这个值之外另行叠加。
    */
-  canAct?: boolean;
+  canAct: boolean;
   /**
    * 本人今晚是否有夜间行动资格（存活的平民或卧底）。平民与卧底都不知道自己是哪一边，
-   * 所以私有帧里不下发本人的角色与阵营，只给这个对两边取值相同的能力位；缺省按 false 处理。
+   * 所以私有帧里不下发本人的角色与阵营，只给这个对两边取值相同的能力位。
    */
-  canActAtNight?: boolean;
+  canActAtNight: boolean;
   /**
    * 规则上本来就该自己知道的特殊身份：天使与白板分别拿到候选词或词性提示，早已知情。
    * 平民与卧底没有取值。

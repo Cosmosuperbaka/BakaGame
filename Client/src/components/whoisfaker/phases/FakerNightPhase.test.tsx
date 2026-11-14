@@ -27,7 +27,15 @@ const snapshot: WhoIsFakerRoomSnapshot = {
   testMode: false,
   roleLimits: { maxUndercoverCount: 1, canEnableAngel: false, canEnableBlank: false },
   settings: { roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false } },
-  status: { phase: "night", started: true, day: 1, questionerPlayerId: "host_1" },
+  status: {
+    phase: "night",
+    started: true,
+    day: 1,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
+    questionerPlayerId: "host_1",
+  },
   players: [
     player("host_1", "出题人"),
     player("player_2", "玩家2"),
@@ -41,6 +49,8 @@ const snapshot: WhoIsFakerRoomSnapshot = {
 const baseState: WhoIsFakerPrivateState = {
   playerId: "player_2",
   sessionToken: "session_token",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner: false,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,

@@ -511,6 +511,38 @@ function roleExtras(person: Person, stage: WifStage): Partial<WhoIsFakerPrivateS
 
 export type WifViewer = "host" | "me" | "spectator" | Person;
 
+/**
+ * 各节点上服务端会判为「轮到本人操作」的座位。夹具的私有态默认不带已投票 / 已行动标记，
+ * 所以投票与夜晚节点按「本人都还没提交」列名单；出局与身份资格仍按时间线算。
+ */
+const CAN_ACT_IN: Record<WifStage, readonly string[]> = {
+  waiting: [],
+  assigning: [HOST.id],
+  words: [HOST.id],
+  day1: [],
+  vote1: [ME.id, PEACH.id, AZUMI.id, KANADE.id, KITA.id, LONG.id, YUZU.id, STONE.id],
+  night1: [ME.id, PEACH.id, AZUMI.id, LONG.id, YUZU.id],
+  day2: [ME.id, KITA.id],
+  sup2: [YUZU.id],
+  vote2: [ME.id, PEACH.id, KANADE.id, KITA.id, LONG.id, YUZU.id],
+  tie2: [KITA.id],
+  tieVote2: [ME.id, KANADE.id, LONG.id, YUZU.id],
+  night2: [ME.id, LONG.id, YUZU.id],
+  day3: [KITA.id, KANADE.id],
+  vote3: [ME.id, KANADE.id, KITA.id, YUZU.id],
+  blankGuess: [],
+  blankReview: [],
+  over: [],
+};
+
+/** 出词阶段主持人要凑齐的身份人数：八名参与者按房间配置摊开。 */
+const WIF_REQUIRED_ROLE_COUNTS: Record<WhoIsFakerRole, number> = {
+  civilian: 4,
+  undercover: 2,
+  angel: 1,
+  blank: 1,
+};
+
 export function wifPrivate(
   viewer: WifViewer,
   stage: WifStage,
@@ -523,10 +555,13 @@ export function wifPrivate(
   return {
     playerId: person.id,
     sessionToken: `story-session-${person.id}`,
+    canAct: CAN_ACT_IN[stage].includes(person.id),
+    canActAtNight: false,
     isQuestioner,
     canSubmitBlankGuess: false,
     blankGuessUsed: false,
     nightActionSubmitted: false,
+    ...(stage === "words" && isQuestioner ? { requiredRoleCounts: WIF_REQUIRED_ROLE_COUNTS } : {}),
     ...(observer ? observerExtras(stage) : person.id === HOST.id ? {} : roleExtras(person, stage)),
     ...overrides,
   };
@@ -647,19 +682,23 @@ function stageStatus(
   submitted: Partial<Record<SpeechStage, string[]>>
 ): WhoIsFakerRoomSnapshot["status"] {
   const phase = PHASE_OF[stage];
+  const speech = SPEECH_OF[stage];
+  const order = speech ? speechOrder(speech) : [];
   const status: WhoIsFakerRoomSnapshot["status"] = {
     phase,
     started: at(stage) >= at("assigning"),
     day: DAY_OF[stage],
+    speechMode: speech
+      ? (SPEECH_MODE_OF[speech] ?? "normal")
+      : phase === "tieBreak"
+        ? "tieBreak"
+        : "normal",
+    speechOrder: order,
+    submittedSpeechPlayerIds: speech ? (submitted[speech] ?? order) : [],
     ...(at(stage) >= at("assigning") ? { roundId: "wif-round-3" } : {}),
     ...(at(stage) >= at("words") ? { questionerPlayerId: HOST.id } : {}),
   };
-  const speech = SPEECH_OF[stage];
   if (speech) {
-    const order = speechOrder(speech);
-    status.speechMode = SPEECH_MODE_OF[speech] ?? "normal";
-    status.speechOrder = order;
-    status.submittedSpeechPlayerIds = submitted[speech] ?? order;
     if (speech === "sup2") {
       status.supplementIndex = SPEECHES.sup2.index;
       status.speechResumePhase = "description";
@@ -953,6 +992,9 @@ export function wifFeedbackSnapshot(kind: keyof typeof WIF_FEEDBACK): WhoIsFaker
       phase: "feedback",
       started: true,
       day,
+      speechMode: "normal",
+      speechOrder: [],
+      submittedSpeechPlayerIds: [],
       roundId: base.roundId,
       questionerPlayerId: base.questionerPlayerId,
       feedback,

@@ -33,6 +33,7 @@ describe("FakerSoundBridge", () => {
     const snapshot = wifSnapshot("vote1");
     const privateState = wifPrivate("me", "vote1", {
       myCurrentVoteTargetId: WIF_PEOPLE.peach.id,
+      canAct: false,
     });
     useWhoIsFakerStore.setState({ snapshot, privateState, roomId: snapshot.roomId });
 
@@ -41,7 +42,7 @@ describe("FakerSoundBridge", () => {
 
     act(() => {
       useWhoIsFakerStore.setState({
-        privateState: { ...privateState, myCurrentVoteTargetId: undefined },
+        privateState: { ...privateState, myCurrentVoteTargetId: undefined, canAct: true },
       });
     });
     await waitFor(() => expect(playSound).toHaveBeenCalledWith("actionRequired"));

@@ -128,7 +128,14 @@ const fakerSnapshot = (patch: Partial<WhoIsFakerRoomSnapshot> = {}): WhoIsFakerR
   testMode: false,
   roleLimits: { maxUndercoverCount: 1, canEnableAngel: false, canEnableBlank: false },
   settings: { roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false } },
-  status: { phase: "waiting", started: false, day: 0 },
+  status: {
+    phase: "waiting",
+    started: false,
+    day: 0,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
+  },
   players: [
     {
       id: "host",
@@ -161,6 +168,8 @@ const fakerSnapshot = (patch: Partial<WhoIsFakerRoomSnapshot> = {}): WhoIsFakerR
 const fakerPrivate = (playerId: string): WhoIsFakerPrivateState => ({
   playerId,
   sessionToken: "session",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner: false,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,

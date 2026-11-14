@@ -102,6 +102,9 @@ const gameOverSnapshot = (roundId: string, summary?: RoundSummary): WhoIsFakerRo
     roundId,
     started: true,
     day: 1,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
   },
   players: [],
   descriptions: [],
@@ -388,6 +391,9 @@ describe("game store integration", () => {
         roundId: "round-sync",
         started: true,
         day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
       },
       players: [
         {
@@ -476,6 +482,8 @@ describe("game store integration", () => {
     useWhoIsFakerStore.getState().setPrivateState({
       playerId: "p1",
       sessionToken: "token-1",
+      canAct: false,
+      canActAtNight: false,
       isQuestioner: false,
       canSubmitBlankGuess: false,
       blankGuessUsed: false,
@@ -484,7 +492,15 @@ describe("game store integration", () => {
 
     const ingameAlive: WhoIsFakerRoomSnapshot = {
       ...gameOverSnapshot("round-1"),
-      status: { phase: "description", roundId: "round-1", started: true, day: 1 },
+      status: {
+        phase: "description",
+        roundId: "round-1",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
       players: [
         {
           id: "p1",
@@ -523,7 +539,15 @@ describe("game store integration", () => {
     // 游戏结束 -> 触发返回公共频道提示，原提示依然保留
     const gameOverState: WhoIsFakerRoomSnapshot = {
       ...ingameDead,
-      status: { phase: "gameOver", roundId: "round-1", started: true, day: 1 },
+      status: {
+        phase: "gameOver",
+        roundId: "round-1",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
     };
 
     useWhoIsFakerStore.getState().setSnapshot(gameOverState);
@@ -545,6 +569,8 @@ describe("game store integration", () => {
     useWhoIsFakerStore.getState().setPrivateState({
       playerId: "p1",
       sessionToken: "token-1",
+      canAct: false,
+      canActAtNight: false,
       isQuestioner: false,
       canSubmitBlankGuess: false,
       blankGuessUsed: false,
@@ -563,7 +589,15 @@ describe("game store integration", () => {
     };
     const alive: WhoIsFakerRoomSnapshot = {
       ...gameOverSnapshot("round-1"),
-      status: { phase: "description", roundId: "round-1", started: true, day: 1 },
+      status: {
+        phase: "description",
+        roundId: "round-1",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
       players: [player],
       chat: [],
     };
@@ -583,6 +617,8 @@ describe("game store integration", () => {
     useWhoIsFakerStore.getState().setPrivateState({
       playerId: "spec-1",
       sessionToken: "token-spec",
+      canAct: false,
+      canActAtNight: false,
       isQuestioner: false,
       canSubmitBlankGuess: false,
       blankGuessUsed: false,
@@ -604,7 +640,15 @@ describe("game store integration", () => {
     // 1. 指定出题人阶段 -> 保持在 main 频道，无进入观战频道提示
     const assigningState: WhoIsFakerRoomSnapshot = {
       ...gameOverSnapshot("round-spec"),
-      status: { phase: "assigningQuestioner", roundId: "round-spec", started: true, day: 1 },
+      status: {
+        phase: "assigningQuestioner",
+        roundId: "round-spec",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
       players: [specPlayer],
       chat: [],
     };
@@ -614,7 +658,15 @@ describe("game store integration", () => {
     // 2. 出题阶段 -> 保持在 main 频道，无进入观战频道提示
     const wordSubState: WhoIsFakerRoomSnapshot = {
       ...assigningState,
-      status: { phase: "wordSubmission", roundId: "round-spec", started: true, day: 1 },
+      status: {
+        phase: "wordSubmission",
+        roundId: "round-spec",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
     };
     useWhoIsFakerStore.getState().setSnapshot(wordSubState);
     expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
@@ -623,7 +675,15 @@ describe("game store integration", () => {
     const descState: WhoIsFakerRoomSnapshot = {
       ...assigningState,
       settings: { ...assigningState.settings, spectatorsSeeAnswers: true },
-      status: { phase: "description", roundId: "round-spec", started: true, day: 1 },
+      status: {
+        phase: "description",
+        roundId: "round-spec",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
     };
     useWhoIsFakerStore.getState().setSnapshot(descState);
     const chat = useWhoIsFakerStore.getState().channelNotices;
@@ -635,6 +695,8 @@ describe("game store integration", () => {
     useWhoIsFakerStore.getState().setPrivateState({
       playerId: "spec-2",
       sessionToken: "token-spec-2",
+      canAct: false,
+      canActAtNight: false,
       isQuestioner: false,
       canSubmitBlankGuess: false,
       blankGuessUsed: false,
@@ -653,7 +715,15 @@ describe("game store integration", () => {
     };
     useWhoIsFakerStore.getState().setSnapshot({
       ...gameOverSnapshot("round-spec-off"),
-      status: { phase: "description", roundId: "round-spec-off", started: true, day: 1 },
+      status: {
+        phase: "description",
+        roundId: "round-spec-off",
+        started: true,
+        day: 1,
+        speechMode: "normal",
+        speechOrder: [],
+        submittedSpeechPlayerIds: [],
+      },
       players: [specPlayer],
       chat: [],
     });

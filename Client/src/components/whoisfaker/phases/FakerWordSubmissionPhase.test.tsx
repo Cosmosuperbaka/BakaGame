@@ -34,7 +34,15 @@ const snapshot: WhoIsFakerRoomSnapshot = {
   testMode: false,
   roleLimits: { maxUndercoverCount: 1, canEnableAngel: false, canEnableBlank: true },
   settings: { roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: true } },
-  status: { phase: "wordSubmission", started: true, day: 0, questionerPlayerId: "host" },
+  status: {
+    phase: "wordSubmission",
+    started: true,
+    day: 0,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
+    questionerPlayerId: "host",
+  },
   players: [
     player("host", "主持", true),
     player("a", "阿澄"),
@@ -49,10 +57,13 @@ const snapshot: WhoIsFakerRoomSnapshot = {
 const privateState: WhoIsFakerPrivateState = {
   playerId: "host",
   sessionToken: "session",
+  canAct: true,
+  canActAtNight: false,
   isQuestioner: true,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,
   nightActionSubmitted: false,
+  requiredRoleCounts: { civilian: 2, undercover: 1, angel: 0, blank: 1 },
 };
 
 /** 词语草稿由 GameArea 持有；这里用最小的受控外壳代替。 */
@@ -147,5 +158,21 @@ describe("word submission", () => {
     expect(pressedRole("桃子")).toHaveAccessibleName("白板");
     expect(pressedRole("北川")).toHaveAccessibleName("平民");
     expect(pressedRole("柚子")).toHaveAccessibleName("平民");
+  });
+
+  it("各身份需求人数取服务端下发值，数量不符时禁止提交", () => {
+    useWhoIsFakerStore.setState({
+      privateState: {
+        ...privateState,
+        requiredRoleCounts: { civilian: 3, undercover: 1, angel: 0, blank: 1 },
+      },
+    });
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole("switch", { name: "随机分配身份" }));
+
+    // 预填出两名平民，服务端要三名：按房间配置自行推算只会得到两名，这里必须显示 2/3。
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认提交" })).toBeDisabled();
   });
 });

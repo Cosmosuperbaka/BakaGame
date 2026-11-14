@@ -55,13 +55,7 @@ export function FakerWordSubmissionPhase({
     ...(hasAngel ? (["angel"] as WhoIsFakerRole[]) : []),
     ...(hasBlank ? (["blank"] as WhoIsFakerRole[]) : []),
   ];
-  const requiredRoleCounts: Record<WhoIsFakerRole, number> = {
-    civilian:
-      participants.length - roleConfig.undercoverCount - (hasAngel ? 1 : 0) - (hasBlank ? 1 : 0),
-    undercover: roleConfig.undercoverCount,
-    angel: hasAngel ? 1 : 0,
-    blank: hasBlank ? 1 : 0,
-  };
+  const requiredRoleCounts = privateState?.requiredRoleCounts;
   const assignedRoleCounts = Object.values(manualRoles).reduce<Record<WhoIsFakerRole, number>>(
     (counts, assignedRole) => ({
       ...counts,
@@ -70,7 +64,7 @@ export function FakerWordSubmissionPhase({
     { civilian: 0, undercover: 0, angel: 0, blank: 0 }
   );
   const manualRoleCountsValid = availableRoles.every(
-    (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole]
+    (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts?.[availableRole]
   );
   const roleOptions: SegmentedOption<WhoIsFakerRole>[] = availableRoles.map((availableRole) => ({
     value: availableRole,
@@ -195,7 +189,7 @@ export function FakerWordSubmissionPhase({
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/40 px-3 py-2.5 sm:grid-cols-4">
                   {availableRoles.map((availableRole) => {
                     const valid =
-                      assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole];
+                      assignedRoleCounts[availableRole] === requiredRoleCounts?.[availableRole];
                     return (
                       <div
                         key={availableRole}
@@ -208,7 +202,7 @@ export function FakerWordSubmissionPhase({
                             valid ? "text-foreground" : "text-destructive"
                           )}
                         >
-                          {assignedRoleCounts[availableRole]}/{requiredRoleCounts[availableRole]}
+                          {assignedRoleCounts[availableRole]}/{requiredRoleCounts?.[availableRole]}
                         </span>
                       </div>
                     );

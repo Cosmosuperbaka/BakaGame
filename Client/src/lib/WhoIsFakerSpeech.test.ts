@@ -102,14 +102,14 @@ describe("WhoIsFakerSpeech", () => {
     expect(submittedOf(snapshot.status)).toEqual(new Set(submitted));
   });
 
-  it("服务端未下发 speechMode 时按阶段回退", () => {
-    const day = wifSnapshot("day2");
-    expect(speechModeOf({ ...day.status, speechMode: undefined })).toBe("normal");
-    const tie = wifSnapshot("tie2");
-    expect(speechModeOf({ ...tie.status, speechMode: undefined })).toBe("tieBreak");
+  it("三个读取函数原样透出下发值，不由阶段推断", () => {
+    const status = wifSnapshot("vote1").status;
+    expect(speechModeOf({ ...status, speechMode: "supplement" })).toBe("supplement");
+    expect(speechOrderOf({ ...status, speechOrder: ["a"] })).toEqual(["a"]);
+    expect(submittedOf({ ...status, submittedSpeechPlayerIds: ["a"] })).toEqual(new Set(["a"]));
   });
 
-  it("非发言阶段没有顺序与已提交名单", () => {
+  it("非发言阶段下发 normal 与空名单", () => {
     const status = wifSnapshot("vote1").status;
     expect(speechModeOf(status)).toBe("normal");
     expect(speechOrderOf(status)).toEqual([]);

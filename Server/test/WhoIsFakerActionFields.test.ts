@@ -29,7 +29,15 @@ import {
 // 服务端没有这个概念，托管只影响客户端要不要提醒，不影响玩法规则。
 // 对账完成后整段删除，换成逐阶段期望值。
 
-type SpeechStatus = WhoIsFakerRoomSnapshot["status"];
+// 预言机按旧协议建模：这三个字段当时可选，非发言阶段整个不下发，所以这里保留可选形态。
+type SpeechStatus = Omit<
+  WhoIsFakerRoomSnapshot["status"],
+  "speechMode" | "speechOrder" | "submittedSpeechPlayerIds"
+> & {
+  speechMode?: SpeechMode;
+  speechOrder?: string[];
+  submittedSpeechPlayerIds?: string[];
+};
 
 const speechModeOf = (status: SpeechStatus): SpeechMode =>
   status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : "normal");
@@ -39,7 +47,7 @@ const speechOrderOf = (status: SpeechStatus): readonly string[] => status.speech
 const submittedOf = (status: SpeechStatus): Set<string> =>
   new Set(status.submittedSpeechPlayerIds ?? []);
 
-type Snapshot = WhoIsFakerRoomSnapshot;
+type Snapshot = Omit<WhoIsFakerRoomSnapshot, "status"> & { status: SpeechStatus };
 
 const getPageControl = (): { status: string } => ({ status: "free" });
 
@@ -178,9 +186,11 @@ const seatProblems = (
     problems.push(`${at}: canAct 下发 ${String(privateState.canAct)}，旧推导 ${expected}`);
   }
   if (typeof privateState.canActAtNight !== "boolean") problems.push(`${at}: canActAtNight 未下发`);
-  if (snapshot.status.speechMode === undefined) problems.push(`${at}: speechMode 未下发`);
-  if (snapshot.status.speechOrder === undefined) problems.push(`${at}: speechOrder 未下发`);
-  if (snapshot.status.submittedSpeechPlayerIds === undefined) {
+  // 类型上已经必填，这里钉的是线上载荷真的带了这三个字段。
+  const wire: Partial<SpeechStatus> = snapshot.status;
+  if (wire.speechMode === undefined) problems.push(`${at}: speechMode 未下发`);
+  if (wire.speechOrder === undefined) problems.push(`${at}: speechOrder 未下发`);
+  if (wire.submittedSpeechPlayerIds === undefined) {
     problems.push(`${at}: submittedSpeechPlayerIds 未下发`);
   }
   if (speechModeOf(snapshot.status) !== speechModeOf(oldStatus)) {

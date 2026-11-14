@@ -27,6 +27,9 @@ const createBaseSnapshot = (
     phase,
     started: true,
     day: 1,
+    speechMode: phase === "tieBreak" ? "tieBreak" : "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
     questionerPlayerId: "host_1",
   },
   players: [
@@ -60,6 +63,8 @@ const createBaseSnapshot = (
 const createPrivateState = (isQuestioner = true, playerId = "host_1"): WhoIsFakerPrivateState => ({
   playerId,
   sessionToken: "session_token",
+  canAct: false,
+  canActAtNight: false,
   isQuestioner,
   canSubmitBlankGuess: false,
   blankGuessUsed: false,
