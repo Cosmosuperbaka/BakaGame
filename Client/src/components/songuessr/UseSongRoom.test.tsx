@@ -10,6 +10,7 @@ import type {
 } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import {
+  getSavedUsername,
   getSongSoloRoomId,
   getSonGuessrSessionToken,
   saveSongSoloRoomId,
@@ -667,6 +668,28 @@ describe("猜歌直链入房的分支与去向（补充）", () => {
     ]);
     expect(h.result.current.roomId).toBe("1234");
     expect(getSongSoloRoomId()).toBe("1234");
+  });
+  it("名字框里只填空白就确认：提示后留在名字步，不记名字也不入房", async () => {
+    window.localStorage.clear();
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsName).toBe(true));
+    act(() => h.result.current.setNameDraft("   "));
+    await act(async () => h.result.current.confirmName());
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("请输入用户名", "error");
+    expect(h.result.current.needsName).toBe(true);
+    expect(getSavedUsername()).toBe("");
+    expect(types()).toEqual([]);
+  });
+  it("密码框里只填空白就确认：留在密码步，不再发入房", async () => {
+    send.mockImplementation(async () =>
+      rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "要密码" })
+    );
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+    act(() => h.result.current.setPasswordDraft("   "));
+    await act(async () => h.result.current.confirmPassword());
+    expect(h.result.current.needsPassword).toBe(true);
+    expect(types()).toEqual(["song.room.join"]);
   });
 });
 
