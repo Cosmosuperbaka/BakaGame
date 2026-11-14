@@ -43,12 +43,17 @@ export default function CEEPage() {
    */
   const canCreateAntiCheatRoom = isBakaClient() && accountStatus === "signedIn";
   // 退房操作只有一份；每次 effect 挂载仅订阅该操作，StrictMode 不重复发送。
-  const [leaving, setLeaving] = useState(() => Boolean(useCEEStore.getState().roomId));
+  // 从房间页点离开回来时，退房由房间页卸载时发出，大厅照常可用，只等它落定后重新订阅；
+  // 没经房间页离开（浏览器后退等）而仍留着房间时，由这里兜底先退房，退完之前显示骨架。
+  const [leaving, setLeaving] = useState(() => {
+    const store = useCEEStore.getState();
+    return Boolean(store.roomId) && !store.exitPending;
+  });
   const release = useRef<Promise<void> | null>(null);
   useEffect(() => {
     const store = useCEEStore.getState();
-    if (!release.current && !store.roomId) return;
-    release.current ??= store.leaveRoom();
+    release.current ??= store.roomRelease() ?? (store.roomId ? store.leaveRoom() : null);
+    if (!release.current) return;
     let active = true;
     void release.current
       .then(() => {

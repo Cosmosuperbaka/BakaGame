@@ -8,6 +8,7 @@ import {
   saveRoomCreateDefaults,
 } from "@/lib/RoomSettingsMemory";
 import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import CEEPage from "./CEEPage";
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => vi.fn() }));
@@ -107,6 +108,62 @@ it("大厅已经卸载时退房晚响应不再订阅", async () => {
   h.unmount();
   await act(async () => fixture.resolve());
   expect(fixture.subscribe).not.toHaveBeenCalled();
+});
+it("从房间页主动离开回到大厅：不显示骨架，等房间页发出的退房落定后重新订阅", async () => {
+  let resolve!: () => void;
+  const pending = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const leave = vi.fn();
+  const subscribe = vi.fn().mockResolvedValue(undefined);
+  // 大厅渲染时房间页还没卸载，房间还挂着；它卸载时发出退房，大厅挂载的副作用才拿到这次退房。
+  useCEEStore.setState({
+    roomId: "1234",
+    exitPending: true,
+    connected: true,
+    lobbyReady: true,
+    leaveRoom: leave,
+    subscribeLobby: subscribe,
+    roomRelease: () => pending,
+  });
+  render(
+    <StrictMode>
+      <CEEPage />
+    </StrictMode>
+  );
+  expect(screen.getByRole("button", { name: "加入房间" })).toBeEnabled();
+  expect(leave).not.toHaveBeenCalled();
+  expect(subscribe).not.toHaveBeenCalled();
+  await act(async () => resolve());
+  await waitFor(() => expect(subscribe).toHaveBeenCalledOnce());
+  expect(screen.getByRole("button", { name: "加入房间" })).toBeEnabled();
+});
+it("房间页发出的退房失败时，大厅以错误提示报出", async () => {
+  useCEEStore.setState({
+    roomId: null,
+    connected: true,
+    lobbyReady: true,
+    subscribeLobby: vi.fn().mockResolvedValue(undefined),
+    roomRelease: () => rejectedProtocol({ code: "BAD", message: "退房失败" }),
+  });
+  render(<CEEPage />);
+  await waitFor(() =>
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "退房失败", type: "error" })
+  );
+});
+it("没有房间也没有在途退房时，大厅不退房也不重复订阅", () => {
+  const leave = vi.fn();
+  const subscribe = vi.fn();
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    leaveRoom: leave,
+    subscribeLobby: subscribe,
+  });
+  render(<CEEPage />);
+  expect(screen.getByRole("button", { name: "加入房间" })).toBeEnabled();
+  expect(leave).not.toHaveBeenCalled();
+  expect(subscribe).not.toHaveBeenCalled();
 });
 it("创建时沿用同服务器的上次选项，成功后就地记住本次选项并登记恢复", async () => {
   localStorage.setItem("bakagame:username", "玩家");

@@ -1456,6 +1456,8 @@ describe("CEE 断线与回座的时序", () => {
       expect(useCEEStore.getState().snapshot).toBe(snapshot);
       expect(useCEEStore.getState().sessionToken).toBe("token");
       status(true);
+      // 新一轮回座排在作废的那一轮落定之后才发出。
+      await vi.waitFor(() => expect(acks).toHaveLength(2));
       acks[1].resolve(receipt("fresh"));
       await vi.waitFor(() => expect(useCEEStore.getState().sessionToken).toBe("fresh"));
       expect(useCEEStore.getState().snapshot).toEqual(serverSnapshot);
@@ -1798,5 +1800,128 @@ describe("CEE 聊天展示层续接历史", () => {
     });
     await useCEEStore.getState().joinRoom("5678", "玩家");
     expect(shownChat()).toEqual(["b"]);
+  });
+});
+
+describe("CEE 退房的时机", () => {
+  const leaveAck = () => {
+    const leave = deferred<Record<string, unknown>>();
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
+      if (command === "cee.room.leave") return leave.promise;
+      if (command === "cee.room.join")
+        return Promise.resolve({
+          source: "native",
+          roomId: "5678",
+          sessionToken: "next-token",
+          snapshot: { ...snapshot, roomId: "5678" },
+          privateState: null,
+        });
+      return Promise.resolve({ originalAvailable: false });
+    });
+    return { leave, send };
+  };
+  const commands = (send: { mock: { calls: unknown[][] } }) =>
+    send.mock.calls.map(([command]) => command);
+  const seated = () => {
+    writeCEESession("1234", "tok");
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot, privateState: null });
+  };
+
+  it("退房立刻让出本地房间，退房命令带离开前的身份", async () => {
+    const { leave, send } = leaveAck();
+    seated();
+    const done = useCEEStore.getState().leaveRoom();
+    expect(useCEEStore.getState()).toMatchObject({
+      roomId: null,
+      sessionToken: null,
+      snapshot: null,
+    });
+    expect(readCEESession("1234")).toBeNull();
+    expect(commands(send)).toEqual(["cee.room.leave"]);
+    expect(send.mock.calls[0][2]).toMatchObject({ roomId: "1234", sessionToken: "tok" });
+    leave.resolve({});
+    await done;
+  });
+
+  it("退房在途时给出同一次退房；落定后不再有在途的退房", async () => {
+    const { leave } = leaveAck();
+    seated();
+    expect(useCEEStore.getState().roomRelease()).toBeNull();
+    const done = useCEEStore.getState().leaveRoom();
+    expect(useCEEStore.getState().roomRelease()).toBe(done);
+    leave.resolve({});
+    await done;
+    expect(useCEEStore.getState().roomRelease()).toBeNull();
+  });
+
+  it("退房在途时加入下一间要等退房落定，服务端不会撞上还没离开的座位", async () => {
+    const { leave, send } = leaveAck();
+    seated();
+    const left = useCEEStore.getState().leaveRoom();
+    const joined = useCEEStore.getState().joinRoom("5678", "玩家");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(commands(send)).toEqual(["cee.room.leave"]);
+    leave.resolve({});
+    await left;
+    await joined;
+    expect(commands(send)).toEqual(["cee.room.leave", "cee.room.join"]);
+    expect(useCEEStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "next-token" });
+  });
+
+  it("退房失败也不耽误下一次入房", async () => {
+    const { leave, send } = leaveAck();
+    seated();
+    const left = useCEEStore.getState().leaveRoom();
+    const joined = useCEEStore.getState().joinRoom("5678", "玩家");
+    leave.reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+    await expect(left).rejects.toMatchObject({ code: "NOT_CONNECTED" });
+    await joined;
+    expect(commands(send)).toEqual(["cee.room.leave", "cee.room.join"]);
+  });
+
+  it("退房在途时订阅大厅要等退房落定", async () => {
+    const { leave, send } = leaveAck();
+    seated();
+    const left = useCEEStore.getState().leaveRoom();
+    const subscribed = useCEEStore.getState().subscribeLobby();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(commands(send)).toEqual(["cee.room.leave"]);
+    leave.resolve({});
+    await left;
+    await subscribed;
+    expect(commands(send)).toEqual(["cee.room.leave", "cee.lobby.subscribeRooms"]);
+  });
+
+  it("退房作废在途入房：晚到的 ACK 不把刚离开的房间写回本地", async () => {
+    const ack = deferred<Record<string, unknown>>();
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockImplementation((command: string) =>
+        command === "cee.room.reconnect" ? ack.promise : Promise.resolve({})
+      );
+    seated();
+    const restoring = useCEEStore
+      .getState()
+      .reconnectRoom("1234")
+      .catch((error) => error);
+    await useCEEStore.getState().leaveRoom();
+    ack.resolve({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "late",
+      snapshot,
+      privateState: null,
+    });
+    expect(await restoring).toMatchObject({ name: "AbortError" });
+    expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+    expect(
+      send.mock.calls.filter(
+        ([command, , options]) =>
+          command === "cee.room.leave" &&
+          (options as { sessionToken?: string }).sessionToken === "late"
+      )
+    ).toHaveLength(1);
   });
 });

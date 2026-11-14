@@ -183,9 +183,18 @@ export function useCEERoomLifecycle() {
       if (!controller.signal.aborted) setJoining(false);
     }
   };
-  // 只换页：大厅挂载时发现仍留着房间，会先退房再订阅大厅（CEEPage），失败提示也在那里。
-  // 先退再走的话，跨页过渡拍下的旧页就成了清空快照后的「请加入房间」（DesignGuide §8）。
+  // 先换页、房间页卸载时再退房（另两款同一口径）：先退再走的话，跨页过渡拍下的旧页就成了
+  // 清空快照后的「正在加入」（DesignGuide §8）。换页前登记一笔，大厅挂载时房间还没让出，
+  // 据此知道退房由这里负责、不再显示骨架；失败提示由大厅等这次退房时报出。
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (!exiting) return;
+    return () => void useCEEStore.getState().leaveRoom();
+  }, [exiting]);
   const leave = useCallback(() => {
+    manualJoin.current?.abort();
+    useCEEStore.getState().markExit();
+    setExiting(true);
     void navigate("/cee");
   }, [navigate]);
 

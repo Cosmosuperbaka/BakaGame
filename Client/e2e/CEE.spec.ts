@@ -1,7 +1,15 @@
 import type { Page } from "@playwright/test";
 import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
+/**
+ * 只替换可选的角色图片；返回的开关能掐断本页的全部连接（站点与游戏各一条）并暂时拒绝重连，
+ * 用来验证断线期间保留画面、恢复后由服务端全量接上。
+ */
 async function useLocalCharacterImages(page: Page) {
+  const link = {
+    blocked: false,
+    live: new Set<() => Promise<void>>(),
+  };
   // SQLite 补全缓存也可能已有图片 URL；阻止这些可选图片绕过 WS 隔离回源。
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
@@ -19,7 +27,15 @@ async function useLocalCharacterImages(page: Page) {
   await page.routeWebSocket(
     (url) => isLoopbackUrl(url) && url.pathname === "/api/ws",
     (socket) => {
+      if (link.blocked) {
+        void socket.close();
+        return;
+      }
       const server = socket.connectToServer();
+      link.live.add(async () => {
+        await server.close();
+        await socket.close();
+      });
       socket.onMessage((message) => {
         if (typeof message !== "string") {
           server.send(message);
@@ -42,6 +58,18 @@ async function useLocalCharacterImages(page: Page) {
       });
     }
   );
+  return {
+    /** 掐断当前游戏连接，之后的重连一律被拒，直到 `reconnect`。 */
+    drop: async () => {
+      link.blocked = true;
+      const open = [...link.live];
+      link.live.clear();
+      await Promise.all(open.map((close) => close()));
+    },
+    reconnect: () => {
+      link.blocked = false;
+    },
+  };
 }
 
 async function chooseCharacter(page: Page, name: string) {
@@ -73,7 +101,10 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
   const guestContext = await isolatedContext({ reducedMotion: "reduce" });
   const guest = await guestContext.newPage();
   // 只替换可选头像补全；角色检索、出题、猜测及状态同步仍走真实 SQLite 与服务端。
-  await Promise.all([useLocalCharacterImages(page), useLocalCharacterImages(guest)]);
+  const [, guestLink] = await Promise.all([
+    useLocalCharacterImages(page),
+    useLocalCharacterImages(guest),
+  ]);
   const hostName = "名称很长的房主玩家用于验证默认头像和分数排列";
   const guestName = `猜角色访客${Date.now().toString(36)}`;
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -135,6 +166,21 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
     await guest.reload();
     await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
+
+    // 断线保留房间画面与已输入的搜索词，顶栏报断线；连上后由服务端全量接上，提示收起。
+    const searchBox = guest
+      .getByRole("region", { name: "角色搜索" })
+      .getByRole("combobox", { name: "搜索角色", exact: true });
+    await searchBox.fill("后藤");
+    await guestLink.drop();
+    const lost = guest.getByText("断线中...", { exact: true });
+    await expect(lost.first()).toBeVisible();
+    await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
+    await expect(searchBox).toHaveValue("后藤");
+    guestLink.reconnect();
+    await expect(lost).toHaveCount(0, { timeout: 20_000 });
+    await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
+    await expect(searchBox).toHaveValue("后藤");
 
     for (const viewport of [
       { width: 1440, height: 900 },
@@ -203,6 +249,10 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     );
     await page.screenshot({ path: testInfo.outputPath("cee-settled-dark.png") });
     await guest.getByRole("button", { name: "离开房间" }).click();
+    // 主动离开：房间页卸载时退房，大厅不为这次退房转骨架；紧接着建房排在退房之后，不会撞上仍在房间里。
+    await guest.getByRole("button", { name: "创建房间", exact: true }).click();
+    await guest.getByRole("button", { name: "创建", exact: true }).click();
+    await expect(guest.getByRole("heading", { name: "等待玩家加入" })).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(/\/cee$/);
     await page.getByRole("button", { name: "创建房间", exact: true }).click();

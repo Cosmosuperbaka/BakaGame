@@ -79,7 +79,19 @@ export interface CEEStore
     signal?: AbortSignal
   ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
+  /**
+   * 退房：立刻让出本地房间并作废在途入房，退房命令带离开前的身份发出。
+   * 回包之前的入房与大厅订阅都排在它后面，服务端不会撞上还没离开的座位。
+   */
   leaveRoom: () => Promise<void>;
+  /** 在途的那次退房；没有时为 null。大厅据此在退房落定后重新订阅。 */
+  roomRelease: () => Promise<void> | null;
+  /**
+   * 玩家在房间页点了离开：先换页，房间页卸载时才退房。大厅挂载时房间还没让出，
+   * 据此知道这次退房有房间页负责，不再为它显示骨架。退房发出即撤下。
+   */
+  exitPending: boolean;
+  markExit: () => void;
   resetRoom: (closed?: boolean) => void;
   sendCommand: GameSendCommand<ws.CEECommandMap>;
   /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
@@ -93,6 +105,13 @@ export interface CEEStore
 }
 
 let runtime: RoomRuntime<ws.CEECommandMap, CEERoomSnapshot, CEEPrivateState, CEERoomEnterResult>;
+
+/** 在途的退房；入房与大厅订阅要等它落定（成败都算）再发。 */
+let pendingLeave: Promise<void> | null = null;
+const afterLeave = async <T>(request: () => Promise<T>): Promise<T> => {
+  if (pendingLeave) await pendingLeave.catch(() => {});
+  return request();
+};
 
 /**
  * 恢复失败即放弃本地会话的错误码：共享永久码表，加上 CEE 原版房自己的会话过期码。
@@ -282,19 +301,25 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     },
     subscribeLobby: async () => {
       const generation = runtime.generation();
-      const result = await ws.send("cee.lobby.subscribeRooms", {});
+      // 还在房里时服务端拒绝订阅大厅：等在途的退房落定再发。
+      const result = await afterLeave(() => ws.send("cee.lobby.subscribeRooms", {}));
       if (generation !== runtime.generation()) return;
       set({ lobbyReady: true, originalAvailable: result.originalAvailable });
     },
     createRoom: (payload, signal) =>
-      runtime.enter(() => ws.send("cee.room.create", payload, { timeout: 0 }), signal),
+      runtime.enter(
+        () => afterLeave(() => ws.send("cee.room.create", payload, { timeout: 0 })),
+        signal
+      ),
     joinRoom: (roomId, userName, password, signal) =>
       runtime.enter(
         () =>
-          ws.send(
-            "cee.room.join",
-            { userName, ...(password ? { password } : {}) },
-            { roomId: normalizeCEERoomId(roomId), timeout: 0 }
+          afterLeave(() =>
+            ws.send(
+              "cee.room.join",
+              { userName, ...(password ? { password } : {}) },
+              { roomId: normalizeCEERoomId(roomId), timeout: 0 }
+            )
           ),
         signal
       ),
@@ -305,7 +330,10 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       // 同一恢复意图可由 StrictMode 的新 effect 接管；只有所有所有者都撤销才释放 ACK 会话。
       return runtime.restore(
         `${roomId}:${token}`,
-        () => ws.send("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
+        () =>
+          afterLeave(() =>
+            ws.send("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 })
+          ),
         (error) => {
           if (!isPermanentCEEError(error)) return false;
           removeCEESession(roomId);
@@ -319,17 +347,28 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         signal
       );
     },
-    leaveRoom: async () => {
+    leaveRoom: () => {
       // 退房同时作废在途入房：晚到的 ACK 不能再把刚离开的房间写回本地。
       runtime.cancelEntry();
+      set({ exitPending: false });
       const { roomId } = get();
-      try {
-        if (roomId) await get().sendCommand("cee.room.leave", {});
-      } finally {
-        if (roomId) removeCEESession(roomId);
-        get().resetRoom();
-      }
+      if (!roomId) return Promise.resolve();
+      // 命令在发出的那一刻带上离开前的身份；之后本地立刻让出房间，大厅不必等回包。
+      const leaving = get()
+        .sendCommand("cee.room.leave", {})
+        .then(() => undefined);
+      removeCEESession(roomId);
+      get().resetRoom();
+      pendingLeave = leaving;
+      const settle = () => {
+        if (pendingLeave === leaving) pendingLeave = null;
+      };
+      void leaving.then(settle, settle);
+      return leaving;
     },
+    roomRelease: () => pendingLeave,
+    exitPending: false,
+    markExit: () => set({ exitPending: true }),
     resetRoom: (closed = false) => {
       resetCEEStateSync();
       set({

@@ -449,13 +449,33 @@ describe("CEE 直链入房的分支与去向（补充）", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
     expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "请求超时" });
   });
-  it("点离开只回大厅（不替换历史），卸载时不退房", async () => {
+  it("点离开先换页（不替换历史），房间页卸载时才退房", async () => {
     const { leaveRoom } = ready();
     const h = mount();
     await waitFor(() => expect(h.result.current.joining).toBe(false));
     act(() => h.result.current.leave());
     expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee");
+    // 换页前不退房：退房会清空画面，跨页过渡拍下的旧页就成了正在加入。
+    expect(leaveRoom).not.toHaveBeenCalled();
+    // 大厅挂载时房间还没让出，靠这个标记知道退房有房间页负责。
+    expect(useCEEStore.getState().exitPending).toBe(true);
+    h.unmount();
+    expect(leaveRoom).toHaveBeenCalledOnce();
+  });
+  it("严格模式下点离开、卸载也只退房一次", async () => {
+    const { leaveRoom } = ready();
+    const h = mount(true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => h.result.current.leave());
+    h.unmount();
+    expect(leaveRoom).toHaveBeenCalledOnce();
+  });
+  it("没点离开就卸载（浏览器后退、去别的页面）不退房，留给大厅兜底", async () => {
+    const { leaveRoom } = ready();
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
     h.unmount();
     expect(leaveRoom).not.toHaveBeenCalled();
+    expect(useCEEStore.getState().exitPending).toBe(false);
   });
 });
