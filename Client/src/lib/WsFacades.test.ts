@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as cee from "./CEEWs";
 import * as song from "./SonGuessrWs";
 import * as faker from "./WhoIsFakerWs";
@@ -23,5 +23,25 @@ describe("WS facade 形状", () => {
     expect(facadeOf(faker)).toEqual(expected);
     expect(facadeOf(song)).toEqual(expected);
     expect(facadeOf(cee)).toEqual(expected);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // 门面与原始连接各自导出：store 订阅走门面，换号刷新身份等走原始连接，两者必须是同一条。
+  it.each([
+    ["卧底", faker, faker.whoIsFakerWsClient],
+    ["猜歌", song, song.sonGuessrWsClient],
+    ["CEE", cee, cee.ceeWsClient],
+  ] as const)("%s 的门面转发给它自己导出的那条连接", (_name, facade, client) => {
+    const connect = vi.spyOn(client, "connect").mockImplementation(() => {});
+    const disconnect = vi.spyOn(client, "disconnect").mockImplementation(() => {});
+
+    facade.connect();
+    facade.disconnect();
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 });
