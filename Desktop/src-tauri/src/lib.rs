@@ -454,7 +454,9 @@ pub fn run() {
             single_instance::Instance::First(guard) => Some(guard),
             single_instance::Instance::AlreadyRunning => {
                 eprintln!("已有一个 BakaGame 桌面客户端在运行，聚焦它的窗口后退出");
-                single_instance::focus_existing_window(config::WINDOW_TITLE);
+                if !single_instance::focus_existing_window(config::WINDOW_TITLE) {
+                    eprintln!("没有找到已有实例的窗口，可能它正在启动或退出，本次直接退出");
+                }
                 return;
             }
         }

@@ -31,6 +31,8 @@ pub const TRUE: BOOL = 1;
 pub const ERROR_ALREADY_EXISTS: DWORD = 183;
 /// `ShowWindow` 的还原命令
 pub const SW_RESTORE: c_int = 9;
+/// `OpenProcess` 的受限查询权限：只够读映像路径，别的进程（含更高权限者）通常也能开
+pub const PROCESS_QUERY_LIMITED_INFORMATION: DWORD = 0x1000;
 
 /// `CreateToolhelp32Snapshot` 失败时返回的伪句柄
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
@@ -126,11 +128,23 @@ extern "system" {
     pub fn GetCommandLineW() -> LPWSTR;
     pub fn LocalFree(memory: *mut c_void) -> *mut c_void;
     pub fn CreateMutexW(attributes: *mut c_void, initial_owner: BOOL, name: LPCWSTR) -> HANDLE;
+    pub fn OpenProcess(desired_access: DWORD, inherit_handle: BOOL, process_id: DWORD) -> HANDLE;
+    pub fn QueryFullProcessImageNameW(
+        process: HANDLE,
+        flags: DWORD,
+        exe_name: LPWSTR,
+        size: *mut DWORD,
+    ) -> BOOL;
 }
+
+/// `EnumWindows` 的回调：返回 `TRUE` 继续枚举，`FALSE` 停止
+pub type WndEnumProc = unsafe extern "system" fn(window: HANDLE, param: isize) -> BOOL;
 
 #[link(name = "user32")]
 extern "system" {
-    pub fn FindWindowW(class_name: LPCWSTR, window_name: LPCWSTR) -> HANDLE;
+    pub fn EnumWindows(callback: WndEnumProc, param: isize) -> BOOL;
+    pub fn GetWindowTextW(window: HANDLE, text: LPWSTR, max_count: c_int) -> c_int;
+    pub fn GetWindowThreadProcessId(window: HANDLE, process_id: *mut DWORD) -> DWORD;
     pub fn IsIconic(window: HANDLE) -> BOOL;
     pub fn ShowWindow(window: HANDLE, command: c_int) -> BOOL;
     pub fn SetForegroundWindow(window: HANDLE) -> BOOL;
