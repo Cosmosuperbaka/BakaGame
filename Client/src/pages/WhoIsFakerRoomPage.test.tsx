@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -162,7 +162,8 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     expect(screen.getByText("房主小明")).toBeInTheDocument();
     expect(screen.getByText("玩家小红")).toBeInTheDocument();
     expect(screen.getByText("玩家小强")).toBeInTheDocument();
-    expect(screen.getAllByText("准备").length).toBeGreaterThanOrEqual(1);
+    // 玩家列表只挂载一份（游戏区侧的桌面列），三名已准备玩家各一枚徽章
+    expect(screen.getAllByText("准备")).toHaveLength(3);
   });
 
   it("发言阶段流转、发言记录呈现与投票面板交互", () => {
@@ -460,6 +461,14 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     expect(screen.getByText("西瓜")).toBeInTheDocument();
     expect(screen.getByText("冬瓜")).toBeInTheDocument();
     expect(screen.getByText("身份揭示与得分统计")).toBeInTheDocument();
+
+    // 得分与身份是结算的核心信息：身份徽章逐行对上，增量补正号，累计分取快照总分
+    const table = within(screen.getByRole("table", { name: "身份揭示与得分统计" }));
+    expect(table.getAllByText("平民")).toHaveLength(2);
+    expect(table.getByText("卧底")).toBeInTheDocument();
+    const undercoverRow = table.getByRole("row", { name: /玩家小红/ });
+    expect(within(undercoverRow).getByText("+3")).toBeInTheDocument();
+    expect(within(undercoverRow).getByText("5")).toBeInTheDocument();
   });
 
   it("白板胜利结算与词语提示展示", () => {
@@ -499,6 +508,83 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     expect(screen.getByText("电脑")).toBeInTheDocument();
     expect(screen.getByText("平板")).toBeInTheDocument();
     expect(screen.getByText("电子设备")).toBeInTheDocument();
+  });
+
+  it("夜晚阶段：有行动资格的存活玩家看到候选目标，点选后提交夜间行动", async () => {
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: createMockSnapshot({
+          status: { phase: "night", roundId: "round-100", started: true, day: 1 },
+          players: createMockSnapshot().players.map((player) => ({
+            ...player,
+            roundStatus: "alive",
+          })),
+        }),
+        privateState: createMockPrivateState({ canActAtNight: true }),
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "夜晚降临" })).toBeInTheDocument();
+    // 自己永远不是夜晚目标，候选只剩另外两名存活玩家
+    expect(screen.queryByRole("button", { name: "房主小明" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "玩家小红" }));
+    await waitFor(() =>
+      expect(sendCommandSpy).toHaveBeenCalledWith("game.submitNightAction", {
+        targetId: "player-2",
+      })
+    );
+  });
+
+  it("白板猜词阶段：本人两词齐全后可提交，其他玩家看到谁在猜与原因", async () => {
+    const sendCommandSpy = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand: sendCommandSpy });
+    renderRoomPage();
+
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: createMockSnapshot({
+          status: {
+            phase: "blankGuess",
+            roundId: "round-100",
+            started: true,
+            day: 1,
+            blankGuessPlayerId: "player-1",
+            blankGuessReason: "active",
+          },
+          players: createMockSnapshot().players.map((player) => ({
+            ...player,
+            roundStatus: "alive",
+          })),
+        }),
+        privateState: createMockPrivateState({ canSubmitBlankGuess: true }),
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "白板猜词" })).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: "提交猜测" });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("词语 A"), { target: { value: "西瓜" } });
+    fireEvent.change(screen.getByLabelText("词语 B"), { target: { value: "冬瓜" } });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(sendCommandSpy).toHaveBeenCalledWith("game.submitBlankGuess", {
+        words: ["西瓜", "冬瓜"],
+      })
+    );
+
+    // 换成旁观者视角：同页展示猜词人与进入猜词的原因
+    act(() => {
+      useWhoIsFakerStore.setState({
+        privateState: createMockPrivateState({ playerId: "player-2" }),
+      });
+    });
+    expect(screen.getByText("房主小明 正在猜词")).toBeInTheDocument();
+    expect(screen.getByText("白板主动发起猜词")).toBeInTheDocument();
   });
 
   it("长连接断线状态展示与房间被关闭自动退出到大厅", () => {
