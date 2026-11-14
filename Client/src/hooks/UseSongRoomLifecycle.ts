@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { useCommandRunner } from "@/hooks/UseCommandRunner";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { waitForConnection } from "@/lib/SonGuessrWs";
 import {
@@ -140,8 +141,6 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     netease: MusicSessionTask | null;
     qq: MusicSessionTask | null;
   }>({ netease: null, qq: null });
-  const inFlightCommandsRef = useRef<Set<string>>(new Set());
-  const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
 
   /** 终止指定或全部平台的当前装载事务：在途请求与待执行的退避都作废，下一次快照变化可重新发起。 */
   const cancelMusicSessionUpload = useCallback((platform?: "netease" | "qq") => {
@@ -200,12 +199,21 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   useEffect(() => () => cancelMusicSessionUpload(), [cancelMusicSessionUpload]);
 
-  const isPending = useCallback(
-    (type: string) => Boolean(pendingCommands[type]),
-    [pendingCommands]
-  );
+  const { run: runLocked, pending: pendingCommands } = useCommandRunner<string>({
+    onError: (error) => {
+      const appError = error as { code?: string; message?: string };
+      if (appError.code === "MUSIC_SESSION_INVALID") {
+        cancelMusicSessionUpload();
+        showToast(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
+        return;
+      }
+      showToast(appError.message ?? "操作失败", "error");
+    },
+  });
 
-  const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => Boolean(pendingCommands[type]));
+  const isPending = useCallback((type: string) => pendingCommands.has(type), [pendingCommands]);
+
+  const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => pendingCommands.has(type));
   // 轮询定时器在 effect 内创建，用 Effect Event 读最新的 sendCommand，不让它进依赖导致定时器重建。
   const pollSync = useEffectEvent(() => {
     void sendCommand("song.room.requestSync").catch(() => {});
@@ -494,29 +502,10 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   };
 
   const runCommand: SongRunCommand = async (type, payload, success) => {
-    if (inFlightCommandsRef.current.has(type)) return;
-    inFlightCommandsRef.current.add(type);
-    setPendingCommands((prev) => ({ ...prev, [type]: true }));
-    try {
+    await runLocked(type, async () => {
       await sendCommand(type, payload, isLongRunningCommand(type) ? { timeout: 0 } : undefined);
       if (success) showToast(success, "success");
-    } catch (error) {
-      const appError = error as { code?: string; message?: string };
-      if (appError.code === "MUSIC_SESSION_INVALID") {
-        cancelMusicSessionUpload();
-        showToast(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
-        return;
-      }
-      showToast(appError.message ?? "操作失败", "error");
-    } finally {
-      inFlightCommandsRef.current.delete(type);
-      setPendingCommands((prev) => {
-        if (!prev[type]) return prev;
-        const next = { ...prev };
-        delete next[type];
-        return next;
-      });
-    }
+    });
   };
 
   // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的占位（DesignGuide §8）。

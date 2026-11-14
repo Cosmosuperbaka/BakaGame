@@ -105,6 +105,114 @@ describe("长耗时命令的同步轮询", () => {
     expect(syncCalls()).toHaveLength(2);
   });
 });
+describe("runCommand 的进行中锁与失败提示", () => {
+  const callsOf = (type: string) => send.mock.calls.filter(([command]) => command === type);
+
+  it("同一命令在途时重复点击被忽略，成功后落成功提示并解锁", async () => {
+    const start = deferred<Record<string, unknown>>();
+    send.mockImplementation((type: string) =>
+      type === "song.game.start" ? start.promise : Promise.resolve(receipt())
+    );
+    const h = mount();
+    act(() => {
+      void h.result.current.runCommand("song.game.start", {}, "已开局");
+    });
+    expect(h.result.current.isPending("song.game.start")).toBe(true);
+    act(() => {
+      void h.result.current.runCommand("song.game.start", {}, "已开局");
+    });
+    expect(callsOf("song.game.start")).toHaveLength(1);
+
+    await act(async () => start.resolve({}));
+    expect(h.result.current.isPending("song.game.start")).toBe(false);
+    expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledExactlyOnceWith(
+      "已开局",
+      "success"
+    );
+    // 长耗时命令由服务端计时，不能被客户端短超时截断。
+    expect(callsOf("song.game.start")[0][2]).toMatchObject({ timeout: 0 });
+  });
+
+  it("普通失败落服务端文案、不带客户端超时，并且解锁", async () => {
+    send.mockImplementation((type: string) =>
+      type === "song.player.setReady"
+        ? rejectedProtocol({ code: "NOT_HOST", message: "只有房主可以这样做" })
+        : Promise.resolve(receipt())
+    );
+    const h = mount();
+    await act(async () => h.result.current.runCommand("song.player.setReady", { ready: true }));
+    expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledExactlyOnceWith(
+      "只有房主可以这样做",
+      "error"
+    );
+    expect(h.result.current.isPending("song.player.setReady")).toBe(false);
+    expect(callsOf("song.player.setReady")[0][2].timeout).toBeUndefined();
+  });
+
+  it("失败没有文案时落兜底提示", async () => {
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    send.mockRejectedValueOnce({ code: "NOT_HOST" });
+    await act(async () => h.result.current.runCommand("song.player.setReady", { ready: true }));
+    expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledExactlyOnceWith(
+      "操作失败",
+      "error"
+    );
+  });
+
+  it("MUSIC_SESSION_INVALID 取消在途的凭据装载并落专用提示", async () => {
+    vi.useFakeTimers();
+    try {
+      saveSongMusicSession({ cookie: "MUSIC_U=fixture", account: SONG_ACCOUNTS.vip }, true);
+      let uploads = 0;
+      send.mockImplementation((type: string) => {
+        if (type === "song.room.join")
+          return Promise.resolve({
+            roomId: "1234",
+            sessionToken: "fixture-token",
+            snapshot: songSnapshot({
+              roomId: "1234",
+              hostPlayerId: "player-host",
+              phase: "waiting",
+            }),
+            privateState: songPrivate({
+              playerId: "player-host",
+              sessionToken: "fixture-token",
+            }),
+          });
+        if (type === "song.auth.useCookie") {
+          uploads += 1;
+          return rejectedProtocol({ code: "MUSIC_API_RATE_LIMITED", message: "上游限流" });
+        }
+        if (type === "song.game.start")
+          return rejectedProtocol({ code: "MUSIC_SESSION_INVALID", message: "音乐登录会话已失效" });
+        return Promise.resolve(undefined);
+      });
+
+      const h = mount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(uploads).toBe(1);
+
+      await act(async () => h.result.current.runCommand("song.game.start", {}));
+      expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledWith(
+        "音乐登录会话已失效",
+        "error"
+      );
+      expect(h.result.current.isPending("song.game.start")).toBe(false);
+
+      // 装载事务已被取消：退避到点也不再重传。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(uploads).toBe(1);
+      h.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS）", () => {
   it("等连接期间卸载不发恢复或加入", async () => {
     const connection = deferred<void>();
