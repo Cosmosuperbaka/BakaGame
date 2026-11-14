@@ -1,8 +1,6 @@
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useLobbySession } from "@/hooks/UseLobbySession";
-import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
-import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
-import { LobbyPage } from "@/components/common/lobby/LobbyPage";
+import { GameLobbyScreen } from "@/components/common/lobby/GameLobbyScreen";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
 import {
   markPendingRestore,
@@ -31,25 +29,7 @@ export default function WhoIsFakerPage() {
   const reconnectRoom = useWhoIsFakerStore((state) => state.reconnectRoom);
   const showToast = useWhoIsFakerStore((state) => state.showToast);
 
-  const {
-    userName,
-    setUserName,
-    createOpen,
-    setCreateOpen,
-    joinTarget,
-    setJoinTarget,
-    joinPassword,
-    setJoinPassword,
-    joinError,
-    createOrigin,
-    joinOrigin,
-    handleJoinRoom,
-    handlePasswordJoin,
-    handleCreateRoom,
-    isInitialLoading,
-    pending,
-    pendingRoomId,
-  } = useLobbySession<WhoIsFakerRoomSummary>({
+  const session = useLobbySession<WhoIsFakerRoomSummary>({
     gamePath: "/whoisfaker",
     rooms,
     ready: lobbyReady,
@@ -68,49 +48,21 @@ export default function WhoIsFakerPage() {
   });
 
   return (
-    <LobbyPage
-      path="/whoisfaker"
-      // Faker.png 就是「Faker」这个词：顶栏写「Who is」接图标，读屏与按名查找仍得到完整的「Who is Faker」。
-      title="Who is"
-      logo={{ src: "/assets/Faker.png", alt: "Faker" }}
-      titleLabel="Who is Faker"
-      rooms={rooms.map(toRoomView)}
-      disabled={pending}
-      loading={isInitialLoading}
-      pendingRoomId={pendingRoomId}
-      userName={userName}
-      onUserNameChange={setUserName}
-      onCreate={(event) => {
-        createOrigin.capture(event);
-        setCreateOpen(true);
+    <GameLobbyScreen
+      session={session}
+      rooms={rooms}
+      toRoomView={toRoomView}
+      header={{
+        path: "/whoisfaker",
+        // Faker.png 就是「Faker」这个词：顶栏写「Who is」接图标，读屏与按名查找仍得到完整的「Who is Faker」。
+        title: "Who is",
+        logo: { src: "/assets/Faker.png", alt: "Faker" },
+        titleLabel: "Who is Faker",
       }}
-      onSelectRoom={(room, event) => {
-        const target = rooms.find((candidate) => candidate.roomId === room.roomId);
-        if (target) void handleJoinRoom(target, event);
+      createDialog={{
+        nameMaxLength: 40,
+        defaults: readRoomCreateDefaults("faker"),
       }}
-      dialogs={
-        <>
-          <CreateRoomDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            origin={createOrigin.origin}
-            defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
-            nameMaxLength={40}
-            defaults={readRoomCreateDefaults("faker")}
-            onCreate={handleCreateRoom}
-          />
-          <JoinPasswordDialog
-            pending={pending}
-            roomName={joinTarget?.name ?? null}
-            origin={joinOrigin.origin}
-            password={joinPassword}
-            onPasswordChange={setJoinPassword}
-            error={joinError}
-            onCancel={() => setJoinTarget(null)}
-            onConfirm={() => void handlePasswordJoin()}
-          />
-        </>
-      }
     />
   );
 }

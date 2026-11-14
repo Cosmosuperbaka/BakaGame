@@ -16,13 +16,17 @@ vi.mock("@/components/common/lobby/LobbyPage", () => ({
     disabled,
     dialogs,
     onCreate,
+    onSelectRoom,
   }: {
     disabled: boolean;
     dialogs?: ReactNode;
     onCreate: (event: React.MouseEvent<HTMLButtonElement>) => void;
+    onSelectRoom: (room: { roomId: string }, event: React.MouseEvent<HTMLButtonElement>) => void;
   }) => (
     <div>
-      <button disabled={disabled}>加入房间</button>
+      <button disabled={disabled} onClick={(event) => onSelectRoom({ roomId: "9999" }, event)}>
+        加入房间
+      </button>
       <button onClick={onCreate}>新建房间</button>
       {dialogs}
     </div>
@@ -182,6 +186,37 @@ it("切到兼容原版后建房：旁观强制允许，记忆带 original 来源
     allowSpectators: true,
     source: "original",
   });
+});
+it("点原版房进房前把建房来源切到原版", async () => {
+  localStorage.setItem("bakagame:username", "玩家");
+  useCEEStore.setState({
+    rooms: [
+      {
+        roomId: "9999",
+        source: "original",
+        name: "原版房",
+        phase: "waiting",
+        playerCount: 2,
+        spectatorCount: null,
+        hasPassword: false,
+        allowSpectators: true,
+        bakaAntiCheat: false,
+      },
+    ],
+    connected: true,
+    lobbyReady: true,
+    reconnectRoom: vi.fn().mockResolvedValue(false),
+    joinRoom: vi.fn().mockResolvedValue(undefined),
+  });
+  render(<CEEPage />);
+  expect(dialogProps.current?.privacy).toBe("password");
+
+  await userEvent.click(screen.getByRole("button", { name: "加入房间" }));
+
+  // 原版房没有密码机制：来源切过去后建房弹窗才是原版语义，加入表单也不会带错字段。
+  await waitFor(() => expect(dialogProps.current?.privacy).toBe("unlisted"));
+  expect(dialogProps.current?.nameMaxLength).toBe(30);
+  expect(dialogProps.current?.spectatorsDisabledReason).toBe("原版房间不允许禁止旁观。");
 });
 it("反作弊开关只对客户端里已登录的建房者出现", () => {
   // 已登录但走网页接入：连开关都不给，免得点了才被服务端拒。

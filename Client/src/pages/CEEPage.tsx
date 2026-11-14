@@ -3,9 +3,7 @@ import { Server, ShieldCheck } from "lucide-react";
 import { useCEEStore, ceeErrorMessage } from "@/stores/UseCEEStore";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { useLobbySession } from "@/hooks/UseLobbySession";
-import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
-import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
-import { LobbyPage } from "@/components/common/lobby/LobbyPage";
+import { GameLobbyScreen } from "@/components/common/lobby/GameLobbyScreen";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
 import { isBakaClient } from "@/lib/BakaChannel";
 import { CEE_SOURCE_LABELS } from "@/lib/CEESession";
@@ -68,25 +66,7 @@ export default function CEEPage() {
     };
   }, []);
 
-  const {
-    userName,
-    setUserName,
-    createOpen,
-    setCreateOpen,
-    joinTarget,
-    setJoinTarget,
-    joinPassword,
-    setJoinPassword,
-    joinError,
-    createOrigin,
-    joinOrigin,
-    handleJoinRoom,
-    handlePasswordJoin,
-    handleCreateRoom,
-    isInitialLoading,
-    pending,
-    pendingRoomId,
-  } = useLobbySession<CEERoomSummary>({
+  const session = useLobbySession<CEERoomSummary>({
     gamePath: "/cee",
     rooms,
     ready: lobbyReady,
@@ -129,84 +109,48 @@ export default function CEEPage() {
     rememberedCreate && rememberedCreate.source === server ? rememberedCreate : null;
 
   return (
-    <LobbyPage
-      path="/cee"
-      title="CEE"
-      subtitle="二刺猿笑传之猜猜呗增强版"
-      rooms={rooms.map(toRoomView)}
-      loading={isInitialLoading || leaving}
-      disabled={leaving || pending}
-      pendingRoomId={pendingRoomId}
-      userName={userName}
-      onUserNameChange={setUserName}
-      nameMaxLength={32}
-      onCreate={(event) => {
-        createOrigin.capture(event);
-        setRememberedCreate(readRoomCreateDefaults("cee"));
-        setCreateOpen(true);
+    <GameLobbyScreen
+      session={session}
+      rooms={rooms}
+      toRoomView={toRoomView}
+      header={{ path: "/cee", title: "CEE", subtitle: "二刺猿笑传之猜猜呗增强版" }}
+      lobbyNameMaxLength={32}
+      extraLoading={leaving}
+      onBeforeOpenCreate={() => setRememberedCreate(readRoomCreateDefaults("cee"))}
+      // 原版房没有密码机制，把当前来源切到它，加入表单才不会带错字段。
+      onSelect={(room) => setServer(room.source)}
+      createDialog={{
+        // 协议上限 32；原版服务器只保留前 30 个字符。
+        nameMaxLength: server === "original" ? 30 : 32,
+        roomMode: {
+          label: "兼容原版",
+          icon: Server,
+          description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
+          checked: server === "original",
+          onCheckedChange: (checked) => {
+            setServer(checked ? "original" : "native");
+            // 原版房没有反作弊这一说：切过去就把选择收回，免得切回来时还留着隐藏的待提交值。
+            if (checked) setAntiCheat(false);
+          },
+          ...(originalAvailable
+            ? {}
+            : { disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。" }),
+        },
+        antiCheat:
+          server === "native" && canCreateAntiCheatRoom
+            ? {
+                label: "反作弊房",
+                icon: ShieldCheck,
+                description:
+                  "只接受 BakaGame 客户端接入、全员需登录、旁观要房主批准。建房后不可更改。",
+                checked: antiCheat,
+                onCheckedChange: setAntiCheat,
+              }
+            : undefined,
+        privacy: server === "original" ? "unlisted" : "password",
+        spectatorsDisabledReason: server === "original" ? "原版房间不允许禁止旁观。" : undefined,
+        defaults: createDefaults,
       }}
-      onSelectRoom={(room, event) => {
-        const target = rooms.find((candidate) => candidate.roomId === room.roomId);
-        // 原版房没有密码机制，把当前来源切到它，加入表单才不会带错字段。
-        if (target) {
-          setServer(target.source);
-          void handleJoinRoom(target, event);
-        }
-      }}
-      dialogs={
-        <>
-          <CreateRoomDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            origin={createOrigin.origin}
-            defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
-            // 协议上限 32；原版服务器只保留前 30 个字符。
-            nameMaxLength={server === "original" ? 30 : 32}
-            roomMode={{
-              label: "兼容原版",
-              icon: Server,
-              description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
-              checked: server === "original",
-              onCheckedChange: (checked) => {
-                setServer(checked ? "original" : "native");
-                // 原版房没有反作弊这一说：切过去就把选择收回，免得切回来时还留着隐藏的待提交值。
-                if (checked) setAntiCheat(false);
-              },
-              ...(originalAvailable
-                ? {}
-                : { disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。" }),
-            }}
-            antiCheat={
-              server === "native" && canCreateAntiCheatRoom
-                ? {
-                    label: "反作弊房",
-                    icon: ShieldCheck,
-                    description:
-                      "只接受 BakaGame 客户端接入、全员需登录、旁观要房主批准。建房后不可更改。",
-                    checked: antiCheat,
-                    onCheckedChange: setAntiCheat,
-                  }
-                : undefined
-            }
-            privacy={server === "original" ? "unlisted" : "password"}
-            spectatorsDisabledReason={
-              server === "original" ? "原版房间不允许禁止旁观。" : undefined
-            }
-            defaults={createDefaults}
-            onCreate={(params) => handleCreateRoom(params)}
-          />
-          <JoinPasswordDialog
-            pending={pending}
-            roomName={joinTarget?.name ?? null}
-            origin={joinOrigin.origin}
-            password={joinPassword}
-            onPasswordChange={setJoinPassword}
-            error={joinError}
-            onCancel={() => setJoinTarget(null)}
-            onConfirm={() => void handlePasswordJoin()}
-          />
-        </>
-      }
     />
   );
 }
