@@ -230,13 +230,19 @@ describe("room settings memory", () => {
   });
 
   it("swallows storage failures instead of throwing", () => {
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    // 测试环境的 localStorage 是自定义存储实例，方法不在 Storage.prototype 上。
+    const spy = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });
     expect(() =>
       saveRoomCreateDefaults("faker", { visibility: "public", allowSpectators: true })
     ).not.toThrow();
     expect(() => markPendingRestore("faker", "ROOM4")).not.toThrow();
+    // 两次写入都尝试过但被存储拒绝，读回来必须等同于「没有记忆」。
+    expect(spy).toHaveBeenCalledTimes(2);
     spy.mockRestore();
+
+    expect(readRoomCreateDefaults("faker")).toBeNull();
+    expect(peekPendingRestore("faker")).toBeNull();
   });
 });

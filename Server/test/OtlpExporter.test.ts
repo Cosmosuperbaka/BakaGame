@@ -319,10 +319,18 @@ test("toUnixNanoString 兼容整型与高精度浮点毫秒并防止 BigInt Rang
   expect(nanoStr.startsWith("1725553948737418")).toBe(true);
   expect(() => BigInt(nanoStr)).not.toThrow();
 
-  // 3. 边界值：NaN, 负数, Infinity 回退到当前时间纳秒且不崩溃
-  expect(() => toUnixNanoString(Number.NaN)).not.toThrow();
-  expect(() => toUnixNanoString(-100)).not.toThrow();
-  expect(() => toUnixNanoString(Infinity)).not.toThrow();
+  // 3. 边界值：NaN、负数、Infinity 回退到当前时间纳秒，而不是返回无效值
+  const expectFallsBackToNow = (input: number) => {
+    const before = BigInt(Date.now()) * 1_000_000n;
+    const value = toUnixNanoString(input);
+    const after = BigInt(Date.now()) * 1_000_000n;
+    expect(value).toMatch(/^\d{19}$/);
+    const nanos = BigInt(value);
+    expect(nanos >= before && nanos <= after).toBe(true);
+  };
+  expectFallsBackToNow(Number.NaN);
+  expectFallsBackToNow(-100);
+  expectFallsBackToNow(Infinity);
 });
 
 test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandledRejection", async () => {
