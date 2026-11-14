@@ -39,7 +39,7 @@ import {
 import * as ws from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
-import { resolveEndedRoom } from "./RoomEndedEvent";
+import { resolveEndedRoom } from "./room/RoomEndedEvent";
 import { createStateSyncChannel } from "./room/StateSyncChannel";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 

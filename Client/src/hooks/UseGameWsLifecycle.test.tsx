@@ -1,11 +1,9 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WhoIsFakerProvider } from "@/contexts/WhoIsFakerContext";
-import { SonGuessrProvider } from "@/contexts/SonGuessrContext";
 import { initCEEWs, useCEEStore } from "@/stores/UseCEEStore";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { initWhoIsFakerWs, useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { initSonGuessrWs, useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 vi.mock("@/lib/Sentry", () => ({
   captureClientLog: vi.fn(),
   captureClientException: vi.fn(),
@@ -34,6 +32,11 @@ class FakeSocket {
     FakeSocket.instances.push(this);
   }
 }
+/** 布局在 effect 里初始化连接并交回清理；这里只驱动同一份契约，不带布局的其余子树。 */
+function Connection({ init }: { init: () => () => void }) {
+  useEffect(() => init(), [init]);
+  return <span>玩法</span>;
+}
 beforeEach(() => {
   vi.useFakeTimers();
   FakeSocket.instances = [];
@@ -48,12 +51,10 @@ it.each(["Faker", "Song", "CEE"])(
   async (game) => {
     const mount = () => {
       if (game === "CEE") return { unmount: initCEEWs() };
-      const Provider = game === "Faker" ? WhoIsFakerProvider : SonGuessrProvider;
+      const init = game === "Faker" ? initWhoIsFakerWs : initSonGuessrWs;
       return render(
         <StrictMode>
-          <Provider>
-            <span>玩法</span>
-          </Provider>
+          <Connection init={init} />
         </StrictMode>
       );
     };

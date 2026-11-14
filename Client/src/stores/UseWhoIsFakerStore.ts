@@ -1,12 +1,11 @@
 import { create } from "zustand";
 import { errorText } from "@/lib/ErrorMessage";
-import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
 import type { GameSendCommand } from "@/lib/GameWs";
-import { resolveEndedRoom } from "./RoomEndedEvent";
 import { serverNow } from "./UseServerClock";
-import { createStateSyncChannel } from "./room/StateSyncChannel";
+import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
+import { createRoomRuntime, type RoomRuntime } from "./room/RoomRuntime";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
@@ -20,40 +19,26 @@ import type {
   WhoIsFakerRoomSnapshot,
   WhoIsFakerPrivateState,
   WhoIsFakerRoomSummary,
-  ServerMessage,
-  EventPacket,
 } from "@bakagame/shared";
 
 type WhoIsFakerChatMessage = WhoIsFakerRoomSnapshot["chat"][number];
 
-export interface WhoIsFakerGameState extends ToastState {
-  connected: boolean;
-  /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
-  lobbyReady: boolean;
-  rooms: WhoIsFakerRoomSummary[];
-  roomId: string | null;
-  sessionToken: string | null;
-  snapshot: WhoIsFakerRoomSnapshot | null;
-  privateState: WhoIsFakerPrivateState | null;
+export interface WhoIsFakerGameState
+  extends
+    ToastState,
+    RoomCoreState<WhoIsFakerRoomSummary, WhoIsFakerRoomSnapshot, WhoIsFakerPrivateState> {
   /**
    * 本机生成的频道切换提示（进入观战频道 / 返回公共频道）。
    * 与 `snapshot` 分开存：快照只放服务端下发的投影，本地提示混进去就分不清哪些是房间事实；
    * 展示时由 `withChannelNotices` 按时间并入聊天列表。
    */
   channelNotices: WhoIsFakerChatMessage[];
-  /**
-   * 房间被服务端关闭的时刻。房间页据此立刻退回大厅：
-   * 关闭是一次明确的服务端事件，不能靠「没有快照」这种同时也匹配初次挂载的推断来判断。
-   */
-  roomClosedAt: number | null;
 
   // Actions
-  setConnected: (connected: boolean) => void;
   setRooms: (rooms: WhoIsFakerRoomSummary[]) => void;
   joinRoomState: (roomId: string, sessionToken: string) => void;
   leaveRoomState: () => void;
   markRoomClosed: () => void;
-  clearRoomClosed: () => void;
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
 
@@ -87,18 +72,15 @@ export interface WhoIsFakerGameState extends ToastState {
  */
 type RoomEntryReceipt = WhoIsFakerRoomEnterAck & { previousToken?: string | null };
 
-let connectionGeneration = 0;
-let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-
-const stateSync = createStateSyncChannel<WhoIsFakerRoomSnapshot, WhoIsFakerPrivateState>({
-  requestFull: () => useWhoIsFakerStore.getState().sendCommand("room.requestSync"),
-  // 卧底的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
-  defer: () => false,
-  onError: () => {},
-});
+let runtime: RoomRuntime<
+  ws.WhoIsFakerCommandMap,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerPrivateState,
+  RoomEntryReceipt
+>;
 
 export const resetWhoIsFakerStateSync = () => {
-  stateSync.reset();
+  runtime.sync.reset();
 };
 
 let lastPlayerChannel: "main" | "ghost" | undefined;
@@ -169,44 +151,113 @@ export const withChannelNotices = (
 ): WhoIsFakerRoomSnapshot["chat"] => (notices.length ? mergeChatWindow(chat, [...notices]) : chat);
 
 export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
-  const entry = (roomEntry = createRoomEntry<RoomEntryReceipt>({
-    generation: () => connectionGeneration,
-    begin: resetWhoIsFakerStateSync,
-    apply: (receipt) => {
-      saveSessionToken(receipt.roomId, receipt.sessionToken);
-      const syncedSnapshot = stateSync.snapshot.baseline();
-      const syncedPrivateState = stateSync.privateState.baseline();
-      const snapshot = syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined;
-      const privateState =
-        syncedPrivateState?.sessionToken === receipt.sessionToken ? syncedPrivateState : undefined;
-      get().joinRoomState(receipt.roomId, receipt.sessionToken);
-      if (snapshot) get().setSnapshot(snapshot);
-      if (privateState) get().setPrivateState(privateState);
+  runtime = createRoomRuntime<
+    ws.WhoIsFakerCommandMap,
+    WhoIsFakerRoomSnapshot,
+    WhoIsFakerPrivateState,
+    RoomEntryReceipt
+  >({
+    ws,
+    tokens: { read: getSessionToken, save: saveSessionToken, clear: clearSessionToken },
+    requestSync: "room.requestSync",
+    identity: get,
+    events: {
+      lobbyRooms: "lobby.rooms",
+      snapshot: "room.snapshot",
+      privateState: "game.privateState",
+      ended: {
+        // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
+        "room.closed": "房间已关闭",
+        // 席位已被新标签页接管，本标签页同样必须退回大厅。
+        "session.replaced": "您的连接已被新标签页替代",
+      },
+      extra: {
+        "game.disconnectDecisionRequested": () =>
+          get().showToast("有玩家掉线，等待主持人处理", "info"),
+        "room.expiring": () => get().showToast("房间即将因超时关闭", "error"),
+      },
     },
-    discard: async (receipt) => {
-      try {
-        await ws.send(
-          "room.leave",
-          {},
-          { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
-        );
-      } finally {
-        const token = getSessionToken(receipt.roomId);
-        if (
-          token === receipt.sessionToken ||
-          (receipt.previousToken && token === receipt.previousToken)
-        )
-          clearSessionToken(receipt.roomId);
+    sync: {
+      // 卧底的座位绑定在连接上，全量请求不依赖信封凭据，任何时候都可以立即发。
+      defer: () => false,
+      onError: () => {},
+    },
+    entry: {
+      apply: (receipt, { sync }) => {
+        saveSessionToken(receipt.roomId, receipt.sessionToken);
+        const syncedSnapshot = sync.snapshot.baseline();
+        const syncedPrivateState = sync.privateState.baseline();
+        const snapshot = syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined;
+        const privateState =
+          syncedPrivateState?.sessionToken === receipt.sessionToken
+            ? syncedPrivateState
+            : undefined;
+        get().joinRoomState(receipt.roomId, receipt.sessionToken);
+        if (snapshot) get().setSnapshot(snapshot);
+        if (privateState) get().setPrivateState(privateState);
+      },
+      discard: async (receipt, { sync }) => {
+        try {
+          await ws.send(
+            "room.leave",
+            {},
+            { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
+          );
+        } finally {
+          const token = getSessionToken(receipt.roomId);
+          if (
+            token === receipt.sessionToken ||
+            (receipt.previousToken && token === receipt.previousToken)
+          )
+            clearSessionToken(receipt.roomId);
+          sync.reset();
+          const current = get();
+          if (
+            current.roomId === null ||
+            (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
+          )
+            current.leaveRoomState();
+        }
+      },
+    },
+    status: {
+      generationOn: "disconnect",
+      syncOn: "resetOnConnect",
+      write: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
+      subscribeLobby: () => {
+        void get()
+          .subscribeLobby()
+          .catch(() => {});
+      },
+      restore: { by: "runtime", reconnect: (roomId) => get().reconnectRoom(roomId) },
+    },
+    cleanup: {
+      disconnectFirst: false,
+      bumpGeneration: true,
+      finish: () => {
         resetWhoIsFakerStateSync();
-        const current = get();
-        if (
-          current.roomId === null ||
-          (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
-        )
-          current.leaveRoomState();
-      }
+        set({ connected: false, lobbyReady: false });
+      },
     },
-  }));
+    handlers: {
+      lobbyRooms: (payload) => get().setRooms(payload as WhoIsFakerRoomSummary[]),
+      snapshot: (snapshot) => get().setSnapshot(snapshot),
+      privateState: (privateState) => get().setPrivateState(privateState),
+      roomEnded: (text) => {
+        get().leaveRoomState();
+        get().markRoomClosed();
+        get().showToast(text, "error");
+      },
+      shutdown: (payload) => {
+        runtime.cancelEntry();
+        // 原地待命：不清票据、不退房。服务端停机前会把房间落盘，连接恢复后
+        // 状态回调会带原 sessionToken 自动 reconnectRoom 回到原位；
+        // 若那局已被丢弃（旧版本服务或停机过久），那一步会收到 SESSION_NOT_FOUND
+        // 并走既有的失效分支。这里提前清票据才是真的回不去了。
+        get().showToast(errorText(payload, SERVER_SHUTDOWN_MESSAGE), "error", 10000);
+      },
+    },
+  });
   const noticeUpdate = (
     snapshot: WhoIsFakerRoomSnapshot,
     playerId: string | null | undefined
@@ -217,18 +268,10 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       : {};
   };
   return {
-    connected: false,
-    lobbyReady: false,
-    rooms: [],
-    roomId: null,
-    sessionToken: null,
-    snapshot: null,
-    privateState: null,
+    ...createRoomCoreSlice(set),
     ...createToastSlice(set, { mode: "queue", defaultType: "info", defaultMs: 3000 }),
     channelNotices: [],
-    roomClosedAt: null,
 
-    setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
     setRooms: (rooms) => set({ rooms, lobbyReady: true }),
     joinRoomState: (roomId, sessionToken) => {
       const changedRoom = get().roomId !== roomId;
@@ -254,7 +297,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       });
     },
     markRoomClosed: () => set({ roomClosedAt: Date.now() }),
-    clearRoomClosed: () => set({ roomClosedAt: null }),
     setSnapshot: (incomingSnapshot) => {
       if (!incomingSnapshot) {
         set({ snapshot: null });
@@ -287,19 +329,19 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     },
 
     createRoom: (params, signal) =>
-      entry.enter(async () => {
+      runtime.enter(async () => {
         return ws.send("room.create", params);
       }, signal),
 
     joinRoom: (roomId, userName, password, signal) =>
-      entry.enter(async () => {
+      runtime.enter(async () => {
         return ws.send("room.join", { userName, password }, { roomId });
       }, signal),
 
     reconnectRoom: (roomId, signal) => {
       const token = getSessionToken(roomId);
       if (!token) return Promise.resolve(false);
-      return entry.restore(
+      return runtime.restore(
         `${roomId}:${token}`,
         async () => {
           const res = await ws.send("room.reconnect", {
@@ -323,7 +365,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     },
 
     leaveRoom: async () => {
-      entry.cancel();
+      runtime.cancelEntry();
       const { roomId, sessionToken } = get();
       if (!roomId) return;
       try {
@@ -343,118 +385,11 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       }
     },
 
-    sendCommand: async (type, payload = {}, options) => {
-      const { roomId, sessionToken } = get();
-      return ws.send(type, payload, {
-        roomId: roomId ?? undefined,
-        sessionToken: sessionToken ?? undefined,
-        timeout: options?.timeout,
-      });
-    },
+    sendCommand: runtime.sendCommand,
   };
 });
 
-/** 房间已结束：事件指向别的房间时只清它的令牌，口径见 RoomEndedEvent。 */
-function endRoom(
-  currentStore: ReturnType<typeof useWhoIsFakerStore.getState>,
-  eventRoomId: string | undefined,
-  toastText: string
-) {
-  const { roomId, foreign } = resolveEndedRoom(eventRoomId, currentStore.roomId);
-  if (roomId) clearSessionToken(roomId);
-  if (foreign) return;
-  roomEntry.cancel();
-  currentStore.leaveRoomState();
-  currentStore.markRoomClosed();
-  currentStore.showToast(toastText, "error");
-}
-
-/** 幂等门闩：重复调用 initWhoIsFakerWs 不应叠加第二路消息与状态订阅。 */
-let whoIsFakerWsInitialized = false;
-
+/** 玩法对外的连接入口：幂等门闩、事件分发与清理都在运行时里。 */
 export function initWhoIsFakerWs() {
-  if (whoIsFakerWsInitialized) return () => {};
-  whoIsFakerWsInitialized = true;
-
-  const unsubMsg = ws.onMessage((msg: ServerMessage) => {
-    if (msg.type !== "event") return;
-    const evt = msg as EventPacket;
-    const currentStore = useWhoIsFakerStore.getState();
-
-    switch (evt.event) {
-      case "lobby.rooms":
-        currentStore.setRooms(evt.payload as WhoIsFakerRoomSummary[]);
-        break;
-      case "room.snapshot":
-        {
-          const snapshot = stateSync.snapshot.consume(evt.payload);
-          if (snapshot && !roomEntry.isPending()) currentStore.setSnapshot(snapshot);
-        }
-        break;
-      case "game.privateState":
-        {
-          const privateState = stateSync.privateState.consume(evt.payload);
-          if (privateState && !roomEntry.isPending()) currentStore.setPrivateState(privateState);
-        }
-        break;
-      case "game.disconnectDecisionRequested":
-        currentStore.showToast("有玩家掉线，等待主持人处理", "info");
-        break;
-      case "room.expiring":
-        currentStore.showToast("房间即将因超时关闭", "error");
-        break;
-      case "room.closed": {
-        // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
-        endRoom(currentStore, (evt.payload as { roomId?: string }).roomId, "房间已关闭");
-        break;
-      }
-      case "session.replaced": {
-        // 席位已被新标签页接管，本标签页同样必须退回大厅。
-        endRoom(
-          currentStore,
-          (evt.payload as { roomId?: string }).roomId,
-          "您的连接已被新标签页替代"
-        );
-        break;
-      }
-      case "server.shutdown": {
-        roomEntry.cancel();
-        const message = errorText(evt.payload, SERVER_SHUTDOWN_MESSAGE);
-        // 原地待命：不清票据、不退房。服务端停机前会把房间落盘，连接恢复后
-        // onStatus 会带原 sessionToken 自动 reconnectRoom 回到原位；
-        // 若那局已被丢弃（旧版本服务或停机过久），那一步会收到 SESSION_NOT_FOUND
-        // 并走既有的失效分支。这里提前清票据才是真的回不去了。
-        currentStore.showToast(message, "error", 10000);
-        break;
-      }
-    }
-  });
-
-  const unsubStatus = ws.onStatus((connected) => {
-    if (!connected) connectionGeneration += 1;
-    const currentStore = useWhoIsFakerStore.getState();
-    currentStore.setConnected(connected);
-
-    if (connected) {
-      // 快照与私有态的基线一起作废：旧连接上的版本号对新连接没有意义。
-      resetWhoIsFakerStateSync();
-      ws.send("lobby.subscribeRooms", {}).catch(() => {});
-      if (currentStore.roomId && currentStore.sessionToken) {
-        saveSessionToken(currentStore.roomId, currentStore.sessionToken);
-        void currentStore.reconnectRoom(currentStore.roomId).catch(() => {});
-      }
-    }
-  });
-
-  ws.connect();
-
-  return () => {
-    whoIsFakerWsInitialized = false;
-    unsubMsg();
-    unsubStatus();
-    connectionGeneration += 1;
-    ws.disconnect();
-    resetWhoIsFakerStateSync();
-    useWhoIsFakerStore.getState().setConnected(false);
-  };
+  return runtime.init();
 }

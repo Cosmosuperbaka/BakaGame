@@ -1,4 +1,4 @@
-import { resolveEndedRoom } from "./RoomEndedEvent";
+import { resolveEndedRoom } from "./room/RoomEndedEvent";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { create } from "zustand";
 import type {

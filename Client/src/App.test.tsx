@@ -18,12 +18,6 @@ vi.mock("framer-motion", () => ({
 vi.mock("@/components/ui/Tooltip", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("@/contexts/WhoIsFakerContext", () => ({
-  WhoIsFakerProvider: ({ children }: { children: ReactNode }) => children,
-}));
-vi.mock("@/contexts/SonGuessrContext", () => ({
-  SonGuessrProvider: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock("@/components/Toast", () => ({
   ToastContainer: () => null,
   SonGuessrToastContainer: () => null,
