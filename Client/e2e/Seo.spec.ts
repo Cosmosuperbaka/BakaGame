@@ -151,6 +151,46 @@ test.describe("页面 SEO 元信息", () => {
     });
   }
 
+  // 页面分块按需下载，启动清理又发生在渲染之前：这段空档里标签页标题必须仍是外壳写的那个，
+  // 不能空白（浏览器会显示网址）；Seo 挂载后改写同一个 title，head 里始终只有一个。
+  test("页面分块下载期间标题不空窗，挂载后 head 里只有一个 title", async ({ page }) => {
+    const entry = new Set(
+      [
+        ...(await (await getLoopback(page.request, "/")).text()).matchAll(
+          /(?:src|href)="(\/assets\/[^"]+\.js)"/g
+        ),
+      ].map((match) => match[1])
+    );
+    await page.route("**/assets/*.js", async (route) => {
+      if (entry.has(new URL(route.request().url()).pathname)) return route.fallback();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return route.fallback();
+    });
+    await page.addInitScript(() => {
+      const samples: { title: string; count: number }[] = [];
+      (window as unknown as { __titleSamples: typeof samples }).__titleSamples = samples;
+      setInterval(() => {
+        samples.push({
+          title: document.title,
+          count: document.head.querySelectorAll("title").length,
+        });
+      }, 10);
+    });
+
+    await page.goto("/whoisfaker");
+    await expect(page.getByRole("button", { name: "玩法说明" })).toBeVisible();
+    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+
+    const samples = await page.evaluate(
+      () =>
+        (window as unknown as { __titleSamples: { title: string; count: number }[] }).__titleSamples
+    );
+    expect(samples.length).toBeGreaterThan(20);
+    expect(samples.every((sample) => sample.title !== "")).toBe(true);
+    expect(samples.every((sample) => sample.count === 1)).toBe(true);
+    await page.waitForLoadState("networkidle");
+  });
+
   test("左键点首页入口在当前页过渡到大厅，入口带 href", async ({ page }) => {
     await page.goto("/");
     const entry = page.getByRole("link", { name: "Who is Faker 开始游戏" });
