@@ -4,8 +4,8 @@ import type {
   BangumiDataReply,
   BangumiDataRequest,
   BangumiDataFrame,
-  BangumiErrorContext,
 } from "./BangumiDataWorker";
+import type { BangumiErrorContext } from "./BangumiDataWorkerError";
 
 /**
  * 主线程日志出口的最小形状；`EventLogger` 结构上直接满足。
