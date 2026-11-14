@@ -26,7 +26,7 @@ import {
   isLoginRequiredCode,
 } from "@/lib/AntiCheatCopy";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
-import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
+import { createQueryReuseCache, keywordQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { playSound } from "@/lib/SoundEffects";
 import { isProtocolError } from "@/lib/WebsocketClient";
@@ -233,6 +233,12 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     void pending.then(release, release);
     return pending;
   };
+  /** 只读查询的共用壳：复用窗口 + 取 results，房间身份只由 sendCommand 注入一处。 */
+  const query = <TResult>(
+    cache: QueryReuseCache<TResult>,
+    key: string,
+    load: () => Promise<{ results: TResult }>
+  ) => cache.run(key, async () => (await load()).results);
   return {
     connected: false,
     lobbyReady: false,
@@ -344,20 +350,17 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       });
     },
     searchCharacters: (keyword) =>
-      ceeCharacterSearchCache.run(keyword, async () => {
-        const { results } = await get().sendCommand("cee.character.search", { keyword });
-        return results;
-      }),
+      query(ceeCharacterSearchCache, keyword, () =>
+        get().sendCommand("cee.character.search", { keyword })
+      ),
     searchSubjects: (keyword) =>
-      ceeSubjectSearchCache.run(keyword, async () => {
-        const { results } = await get().sendCommand("cee.subject.search", { keyword });
-        return results;
-      }),
+      query(ceeSubjectSearchCache, keyword, () =>
+        get().sendCommand("cee.subject.search", { keyword })
+      ),
     loadSubjectCharacters: (subjectId) =>
-      ceeSubjectCharactersCache.run(String(subjectId), async () => {
-        const { results } = await get().sendCommand("cee.subject.characters", { subjectId });
-        return results;
-      }),
+      query(ceeSubjectCharactersCache, String(subjectId), () =>
+        get().sendCommand("cee.subject.characters", { subjectId })
+      ),
   };
 });
 

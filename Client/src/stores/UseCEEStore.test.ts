@@ -179,6 +179,43 @@ describe("CEE 状态同步", () => {
     ]);
   });
 
+  it("CEE 只读查询各发对应命令、带当前房间身份，并取回 results", async () => {
+    clearCEEQueryCache();
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      Promise.resolve({
+        results: command === "cee.subject.search" ? [{ id: 7, name: "作品" }] : [{ id: 1 }],
+      })
+    );
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    const store = useCEEStore.getState();
+
+    expect(await store.searchCharacters("初音")).toEqual([{ id: 1 }]);
+    expect(await store.searchSubjects("某作品")).toEqual([{ id: 7, name: "作品" }]);
+    expect(await store.loadSubjectCharacters(123)).toEqual([{ id: 1 }]);
+
+    // 三条查询共用一个壳，但命令名、载荷与取字段各自独立；身份一律由 sendCommand 补齐。
+    expect(send.mock.calls).toEqual([
+      ["cee.character.search", { keyword: "初音" }, { roomId: "1234", sessionToken: "tok" }],
+      ["cee.subject.search", { keyword: "某作品" }, { roomId: "1234", sessionToken: "tok" }],
+      ["cee.subject.characters", { subjectId: 123 }, { roomId: "1234", sessionToken: "tok" }],
+    ]);
+  });
+
+  it("CEE 只读查询失败不进复用窗口，下一次照常回源", async () => {
+    clearCEEQueryCache();
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockRejectedValueOnce({ code: "UPSTREAM_UNAVAILABLE", message: "上游暂时不可用" })
+      .mockResolvedValue({ results: [{ id: 1 }] });
+    const store = useCEEStore.getState();
+
+    await expect(store.searchCharacters("初音")).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+    });
+    expect(await store.searchCharacters("初音")).toEqual([{ id: 1 }]);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it("使用服务端原始基线应用聊天补丁", () => {
     handleCEEMessage({
       type: "event",

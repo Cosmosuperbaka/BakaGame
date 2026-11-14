@@ -617,6 +617,26 @@ describe("排位命令", () => {
     expect(retried).toHaveLength(1);
     expect(callsOf("cee.ranked.characterSearch")).toHaveLength(2);
   });
+
+  it("排位查询不带房间身份，也不设客户端超时", async () => {
+    attachRanked();
+    await settle();
+    socket.send.mockResolvedValue({ results: [] });
+
+    await useCEERankedStore.getState().searchCharacters("直");
+    await useCEERankedStore.getState().searchSubjects("空");
+    await useCEERankedStore.getState().loadSubjectCharacters(12);
+
+    // 排位按账号鉴权：这三条不能套多人房那份注入房号与会话凭据的发送壳。
+    for (const command of [
+      "cee.ranked.characterSearch",
+      "cee.ranked.subjectSearch",
+      "cee.ranked.subjectCharacters",
+    ]) {
+      expect(callsOf(command)).toHaveLength(1);
+      expect(callsOf(command)[0]?.[2]).toBeUndefined();
+    }
+  });
 });
 
 describe("壳内排位准入", () => {

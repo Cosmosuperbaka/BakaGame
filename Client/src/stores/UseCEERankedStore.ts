@@ -11,7 +11,7 @@ import type {
   ServerMessage,
 } from "@bakagame/shared";
 import * as ws from "@/lib/CEEWs";
-import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
+import { createQueryReuseCache, keywordQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
 import { rankedAntiCheatMessage } from "@/lib/AntiCheatCopy";
@@ -232,6 +232,16 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
     }
   };
 
+  /**
+   * 只读查询的共用壳：复用窗口 + 取 results。
+   * 排位按账号而非房间身份鉴权，命令直接走 ws，不套多人房那份注入房号与会话凭据的 sendCommand。
+   */
+  const query = <TResult>(
+    cache: QueryReuseCache<TResult>,
+    key: string,
+    load: () => Promise<{ results: TResult }>
+  ) => cache.run(key, async () => (await load()).results);
+
   return {
     ready: false,
     state: null,
@@ -341,20 +351,17 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
       }
     },
     searchCharacters: (keyword) =>
-      rankedCharacterSearchCache.run(keyword, async () => {
-        const { results } = await ws.send("cee.ranked.characterSearch", { keyword });
-        return results;
-      }),
+      query(rankedCharacterSearchCache, keyword, () =>
+        ws.send("cee.ranked.characterSearch", { keyword })
+      ),
     searchSubjects: (keyword) =>
-      rankedSubjectSearchCache.run(keyword, async () => {
-        const { results } = await ws.send("cee.ranked.subjectSearch", { keyword });
-        return results;
-      }),
+      query(rankedSubjectSearchCache, keyword, () =>
+        ws.send("cee.ranked.subjectSearch", { keyword })
+      ),
     loadSubjectCharacters: (subjectId) =>
-      rankedSubjectCharactersCache.run(String(subjectId), async () => {
-        const { results } = await ws.send("cee.ranked.subjectCharacters", { subjectId });
-        return results;
-      }),
+      query(rankedSubjectCharactersCache, String(subjectId), () =>
+        ws.send("cee.ranked.subjectCharacters", { subjectId })
+      ),
     // 取图要回源上游，耗时由服务端决定：不设客户端超时，与多人房的图片命令同一口径。
     characterImage: async (characterId, size) => {
       const { imageUrl } = await ws.send(
