@@ -13,7 +13,7 @@ import equal from "fast-deep-equal";
  * 返回的 `epoch` 每次重置加一，依赖「草稿起点」的派生状态（例如目录是否已同步）可以据此作废。
  * 在渲染中基于上一轮 props 调整 state 是 React 认可的派生写法，不需要 Effect。
  */
-export function useCEEDraft<T>(serverValue: T, editable: boolean) {
+export function useSettingsDraft<T>(serverValue: T, editable: boolean) {
   const [draft, setDraft] = useState<T>(() => structuredClone(serverValue));
   const [synced, setSynced] = useState({ value: serverValue, editable, epoch: 0 });
   if (synced.editable !== editable || !equal(synced.value, serverValue)) {

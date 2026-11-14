@@ -4,7 +4,7 @@ import { ShieldCheck } from "lucide-react";
 import type { CEESettings, CEESource } from "@bakagame/shared";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { SettingValue, SettingsSection } from "@/components/common/room/settings/Layout";
-import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useWaitingSettingsSave } from "@/hooks/UseWaitingSettingsSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
@@ -14,8 +14,22 @@ import { CEEGuessPanel } from "./CEEGuessPanel";
 import { CEEQuestionPanel } from "./CEEQuestionPanel";
 import { SETTINGS_FILE_LIMIT } from "./CEESettingOptions";
 import { settingsValidationMessage, summaries } from "./CEESettingsRules";
-import { useCEEDraft } from "./UseCEEDraft";
+import { useSettingsDraft } from "@/hooks/UseSettingsDraft";
 import { useCEESubjectNames } from "./UseCEESubjectNames";
+
+/**
+ * MCP 与旁观可见答案是房间级的独立设置项，不随玩法草稿：保存时保留服务端当前的开关，
+ * 避免旧草稿（含导入的设置文件）把它们改回去。
+ */
+function withRoomSwitches(value: CEESettings, live: CEESettings): CEESettings {
+  const rest = { ...value };
+  delete rest.spectatorsSeeAnswers;
+  const seeAnswers =
+    live.spectatorsSeeAnswers === undefined
+      ? {}
+      : { spectatorsSeeAnswers: live.spectatorsSeeAnswers };
+  return { ...rest, ...seeAnswers, allowAgents: live.allowAgents === true };
+}
 
 /**
  * 题目与猜测设置。两个折叠面板共用一份草稿、一条防抖自动保存：分开保存会让后保存的一方用旧值覆盖另一方的修改。
@@ -36,7 +50,7 @@ export function CEEGameSettings({
   waiting: boolean;
   readOnly?: boolean;
 }) {
-  const { draft, setDraft, epoch } = useCEEDraft(settings, !readOnly);
+  const { draft, setDraft, epoch } = useSettingsDraft(settings, !readOnly);
   const [presetName, setPresetName] = useState("");
   const [antiCheatOpen, setAntiCheatOpen] = useState(false);
   const [questionOpen, setQuestionOpen] = useState(false);
@@ -56,31 +70,20 @@ export function CEEGameSettings({
 
   const validation = readOnly ? "" : settingsValidationMessage(draft, syncedIndexId);
 
-  useAutoSave(
-    draft,
-    (value) => {
-      // MCP 与旁观可见答案是房间级的独立设置项，不随玩法草稿：保存时保留服务端当前的开关，
-      // 避免旧草稿（含导入的设置文件）把它们改回去。
-      const room = waitingSnapshotOf(roomId);
-      if (!room) return Promise.resolve();
-      const live = room.settings;
-      const rest = { ...value };
-      delete rest.spectatorsSeeAnswers;
-      const seeAnswers =
-        live.spectatorsSeeAnswers === undefined
-          ? {}
-          : { spectatorsSeeAnswers: live.spectatorsSeeAnswers };
-      const next = { ...rest, ...seeAnswers, allowAgents: live.allowAgents === true };
+  useWaitingSettingsSave({
+    value: draft,
+    enabled: !readOnly && waiting && !validation,
+    liveRoom: () => waitingSnapshotOf(roomId),
+    send: async (value, live) => {
+      const next = withRoomSwitches(value, live.settings);
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
-      if (equal(next, live)) return Promise.resolve();
+      if (equal(next, live.settings)) return null;
       saveRoomSettingsMemory("cee", { settings: { ...next, allowAgents: false } });
-      return useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
+      await useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
+      return next;
     },
-    {
-      enabled: !readOnly && waiting && !validation,
-      onError: (error) => useCEEStore.getState().reportError(error),
-    }
-  );
+    onError: (error) => useCEEStore.getState().reportError(error),
+  });
 
   const syncDirectory = async (indexId: number) => {
     const result = await run("cee.directory.import", { indexId });

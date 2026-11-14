@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { errorText } from "@/lib/ErrorMessage";
-import { useSongWaitingSettingsSave } from "./UseSongWaitingSettingsSave";
+import { useWaitingSettingsSave } from "@/hooks/UseWaitingSettingsSave";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { SearchCombobox } from "@/components/common/SearchCombobox";
@@ -99,6 +99,24 @@ const questionOf = (snapshot: SonGuessrRoomSnapshot) => ({
 type QuestionDraft = ReturnType<typeof questionOf>;
 
 /**
+ * 发送边界：阶段切换会直接卸载等待设置树，旧 props 的 enabled 来不及变为 false，
+ * 所以防抖、卸载刷新与飞行中的后续草稿都在这里读 Store，房间不是这一间或已离开等待阶段就不发。
+ */
+const liveSongRoom = (roomId: string): SonGuessrRoomSnapshot | null => {
+  const { snapshot } = useSonGuessrStore.getState();
+  return snapshot?.roomId === roomId && snapshot.phase === "waiting" ? snapshot : null;
+};
+
+const sendSongSettings = async <T extends Record<string, unknown>>(payload: T): Promise<T> => {
+  await useSonGuessrStore.getState().sendCommand("song.room.updateSettings", payload);
+  return payload;
+};
+
+/** 三个面板同一种失败提示：弹出服务端给的原因。 */
+const notifySongSettingsSaveFailed = (error: unknown) =>
+  useSonGuessrStore.getState().showToast(errorText(error, "保存设置失败"), "error");
+
+/**
  * 题目设置：题型与出题方式，手动出题时的轮流开关，自动出题时按题型出现的筛选小节。
  * 非房主看到同一份结构（`readOnly`），读的是当前快照；房主改动防抖后自动保存。
  */
@@ -117,9 +135,8 @@ export function SongQuestionSettings({
   const editAnime = (patch: Partial<AnimeAutoFilters>) =>
     setDraft((current) => ({ ...current, animeFilters: { ...current.animeFilters, ...patch } }));
 
-  useSongWaitingSettingsSave(
-    snapshot,
-    {
+  useWaitingSettingsSave({
+    value: {
       questionType: draft.questionType,
       questionMode: draft.questionMode,
       autoRotateSubmitter: draft.autoRotateSubmitter,
@@ -131,14 +148,15 @@ export function SongQuestionSettings({
       },
       animeAutoFilters: draft.animeFilters,
     },
-    {
-      // 记住题目设置（单人模式不参与多人房间的记忆），下次创建的房间由等待页重放。
-      remember: (payload) => {
-        if (!solo)
-          updateRoomSettingsMemory("song", (current) => ({ ...current, question: payload }));
-      },
-    }
-  );
+    enabled: !readOnly && snapshot.phase === "waiting",
+    liveRoom: () => liveSongRoom(snapshot.roomId),
+    send: async (value) => sendSongSettings(value),
+    // 记住题目设置（单人模式不参与多人房间的记忆），下次创建的房间由等待页重放。
+    remember: (payload) => {
+      if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, question: payload }));
+    },
+    onError: notifySongSettingsSaveFailed,
+  });
 
   const automatic = values.questionMode === "automatic";
   return (
@@ -529,11 +547,16 @@ export function SongGameSettings({
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useSongWaitingSettingsSave(snapshot, draft, {
+  useWaitingSettingsSave({
+    value: draft,
+    enabled: !readOnly && snapshot.phase === "waiting",
+    liveRoom: () => liveSongRoom(snapshot.roomId),
+    send: async (value) => sendSongSettings(value),
     // 与题目设置分开记，各存各的；同样只在多人房间里记忆。
     remember: (payload) => {
       if (!solo) updateRoomSettingsMemory("song", (current) => ({ ...current, game: payload }));
     },
+    onError: notifySongSettingsSaveFailed,
   });
 
   return (
@@ -610,23 +633,24 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
   const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useSongWaitingSettingsSave(
-    snapshot,
-    {
+  useWaitingSettingsSave({
+    value: {
       ...roomBasicsPayload(draft),
       spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
     },
-    {
-      // 私密房间必须有密码：还没有、也没填新的就先不保存。
-      enabled: canSaveRoomBasics(draft, snapshot.hasPassword),
-      // 名称与口令不进记忆，下次建房沿用的只有旁观可见答案。
-      remember: (payload) =>
-        updateRoomSettingsMemory("song", (current) => ({
-          ...current,
-          room: { spectatorsSeeAnswers: payload.spectatorsSeeAnswers },
-        })),
-    }
-  );
+    // 私密房间必须有密码：还没有、也没填新的就先不保存。
+    enabled:
+      !readOnly && snapshot.phase === "waiting" && canSaveRoomBasics(draft, snapshot.hasPassword),
+    liveRoom: () => liveSongRoom(snapshot.roomId),
+    send: async (value) => sendSongSettings(value),
+    // 名称与口令不进记忆，下次建房沿用的只有旁观可见答案。
+    remember: (payload) =>
+      updateRoomSettingsMemory("song", (current) => ({
+        ...current,
+        room: { spectatorsSeeAnswers: payload.spectatorsSeeAnswers },
+      })),
+    onError: notifySongSettingsSaveFailed,
+  });
 
   return (
     <SettingsFields>

@@ -12,16 +12,16 @@ import { SettingsAccordion, SettingsStack } from "@/components/common/room/Setti
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { RoomBasicsFields, type RoomBasicsValues } from "@/components/common/room/RoomBasicsFields";
-import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useWaitingSettingsSave } from "@/hooks/UseWaitingSettingsSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
+import { useSettingsDraft } from "@/hooks/UseSettingsDraft";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { ceeRoomPath } from "@/lib/CEESession";
 import { updateRoomSettingsMemory, type CEERoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { CEEGameSettings } from "./CEEGameSettings";
 import { CEETeamPicker } from "./CEETeamPicker";
 import { waitingSnapshotOf } from "./CEEWaitingSave";
-import { useCEEDraft } from "./UseCEEDraft";
 
 /**
  * 套用上局的玩法设置：用了 Bangumi 目录时先同步入库（服务端只从已落库的成员出题），
@@ -319,8 +319,8 @@ export function CEEWaiting({
   const readying = pending.has("cee.player.ready");
   const [roomOpen, setRoomOpen] = useState(false);
 
-  // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。随房主身份与服务端当前值同步，见 useCEEDraft。
-  const { draft: roomDraft, setDraft: setRoomDraft } = useCEEDraft<RoomDraft>(
+  // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。随房主身份与服务端当前值同步，见 useSettingsDraft。
+  const { draft: roomDraft, setDraft: setRoomDraft } = useSettingsDraft<RoomDraft>(
     {
       name: snapshot.name,
       visibility: snapshot.visibility,
@@ -341,11 +341,12 @@ export function CEEWaiting({
 
   const roomValidation = roomValidationText(snapshot.source, roomDraft, snapshot.hasPassword);
 
-  useAutoSave(
-    roomDraft,
-    async (value) => {
-      const live = waitingSnapshotOf(snapshot.roomId);
-      if (!live) return;
+  useWaitingSettingsSave({
+    value: roomDraft,
+    enabled:
+      isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
+    liveRoom: () => waitingSnapshotOf(snapshot.roomId),
+    send: async (value, live) => {
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
       if (
         !value.password.trim() &&
@@ -353,7 +354,7 @@ export function CEEWaiting({
         value.visibility === live.visibility &&
         value.allowSpectators === live.allowSpectators
       )
-        return;
+        return null;
       await useCEEStore.getState().sendCommand("cee.room.update", {
         name: value.name.trim(),
         visibility: value.visibility,
@@ -361,13 +362,10 @@ export function CEEWaiting({
         password: value.password.trim() || null,
       });
       setRoomNotice("");
+      return true;
     },
-    {
-      enabled:
-        isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
-      onError: (error) => setRoomNotice(ceeErrorMessage(error)),
-    }
-  );
+    onError: (error) => setRoomNotice(ceeErrorMessage(error)),
+  });
 
   // 新建房间的首次进房：先套用上局的玩法设置（标记匹配才触发），落定前不让设置面板先挂载。
   const restoring = useRoomSettingsRestore("cee", snapshot.roomId, (memory) =>
