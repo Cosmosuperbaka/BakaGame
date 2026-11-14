@@ -95,12 +95,11 @@ class DnsProxyServer private constructor(
             socket.use { client ->
                 client.soTimeout = HEADER_TIMEOUT_MS
                 val input = BufferedInputStream(client.getInputStream())
-                val requestLine = readLine(input, MAX_HEADER_BYTES) ?: return
-                var consumed = requestLine.toByteArray(Charsets.ISO_8859_1).size + 2
-                while (true) {
-                    val line = readLine(input, MAX_HEADER_BYTES - consumed) ?: return
-                    consumed += line.toByteArray(Charsets.ISO_8859_1).size + 2
-                    if (line.isEmpty()) break
+                val requestLine = try {
+                    readHead(input) ?: return
+                } catch (_: HeaderTooLargeException) {
+                    respond(client, "431 Request Header Fields Too Large")
+                    return
                 }
 
                 val parts = requestLine.trim().split(Regex("\\s+"))
@@ -213,9 +212,13 @@ class DnsProxyServer private constructor(
 
     companion object {
         private const val TAG = "BakaDnsProxy"
+
+        /** 请求头超限；单独成类是为了让调用方能回 431，而不是和一般的读写失败混在一起。 */
+        private class HeaderTooLargeException : IOException("请求头过大")
+
         private const val HEADER_TIMEOUT_MS = 10_000
         private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val MAX_HEADER_BYTES = 8 * 1024
+        internal const val MAX_HEADER_BYTES = 8 * 1024
 
         /**
          * 读头阶段的连接数上限，只挡慢连接占满处理线程；回 200 之后名额即归还。
@@ -253,8 +256,23 @@ class DnsProxyServer private constructor(
             return host to port
         }
 
+        /**
+         * 读到请求头结尾，返回请求行；连接在读完之前断开则返回 null。
+         * 每一行与总量都受 `MAX_HEADER_BYTES` 约束，额度用完而头还没结束就判过大。
+         */
+        private fun readHead(input: InputStream): String? {
+            val requestLine = readLine(input, MAX_HEADER_BYTES) ?: return null
+            var consumed = requestLine.toByteArray(Charsets.ISO_8859_1).size + 2
+            while (true) {
+                val line = readLine(input, MAX_HEADER_BYTES - consumed) ?: return null
+                consumed += line.toByteArray(Charsets.ISO_8859_1).size + 2
+                if (line.isEmpty()) break
+            }
+            return requestLine
+        }
+
         private fun readLine(input: InputStream, limit: Int): String? {
-            if (limit <= 0) throw IOException("请求头过大")
+            if (limit <= 0) throw HeaderTooLargeException()
             val out = ByteArrayOutputStream()
             while (true) {
                 val byte = input.read()
@@ -272,7 +290,7 @@ class DnsProxyServer private constructor(
                         }
                     return String(bytes, 0, length, Charsets.ISO_8859_1)
                 }
-                if (out.size() >= limit) throw IOException("请求头过大")
+                if (out.size() >= limit) throw HeaderTooLargeException()
                 out.write(byte)
             }
         }

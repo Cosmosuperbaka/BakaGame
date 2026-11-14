@@ -160,6 +160,35 @@ class DnsProxyServerTest {
         assertEquals(2, tunnels.size)
     }
 
+    /** 没有换行的超长请求头：先回 431 再断开，与桌面壳一致。 */
+    @Test fun oversizedHeaderGetsStatus431() {
+        val proxy = startProxy()
+        val client = connectToProxy(proxy)
+        // 恰好多一个字节：服务端把已收到的字节全部读走后才判过大，关闭时不留未读数据，状态行不会被 RST 吞掉
+        client.getOutputStream().write(
+            ByteArray(DnsProxyServer.MAX_HEADER_BYTES + 1) { 'a'.code.toByte() },
+        )
+        client.getOutputStream().flush()
+        val response = readAll(client)
+        assertTrue(response, response.startsWith("HTTP/1.1 431"))
+    }
+
+    /** 请求头恰好把额度用完且没有以空行结束：判为过大，不能当成头已读完。 */
+    @Test fun headerFillingTheLimitExactlyGetsStatus431() {
+        val echoPort = startEcho()
+        val proxy = startProxy()
+        val client = connectToProxy(proxy)
+        val first = "CONNECT game.example.com:$echoPort HTTP/1.1\r\n"
+        val prefix = "X-Pad: "
+        val pad = DnsProxyServer.MAX_HEADER_BYTES - first.length - prefix.length - 2
+        val head = first + prefix + "a".repeat(pad) + "\r\n"
+        assertEquals(DnsProxyServer.MAX_HEADER_BYTES, head.length)
+        client.getOutputStream().write(head.toByteArray(Charsets.ISO_8859_1))
+        client.getOutputStream().flush()
+        val response = readAll(client)
+        assertTrue(response, response.startsWith("HTTP/1.1 431"))
+    }
+
     @Test fun connectionsBeyondTheLimitAreRefusedAndReleased() {
         val proxy = DnsProxyServer.start(loopbackResolver, maxConnections = 2)
         closers += { proxy.close() }
