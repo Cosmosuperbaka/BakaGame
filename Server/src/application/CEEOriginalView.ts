@@ -2,6 +2,10 @@ import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
 import type { CEEGuess, CEEPrivateState, CEERoomSnapshot } from "../shared/CEE";
 import type { CEEOriginalChatRoom, CEEOriginalSession } from "./CEEOriginalModel";
 
+/** 原版房的显示名：房名优先，其次用房主名拼；两样都没有时给通用称谓，不让大厅出现只剩后缀的名字。 */
+export const originalRoomDisplayName = (roomName: string, hostName: string): string =>
+  roomName || (hostName ? `${hostName}的房间` : "原版房间");
+
 export function originalPrivateState(session: CEEOriginalSession): CEEPrivateState {
   const playerId = session.socket.id || "";
   const me = session.players.find((player) => player.id === playerId);
@@ -91,8 +95,10 @@ export function originalSnapshot(
   return {
     roomId: session.alias,
     source: "original",
-    name:
-      session.roomName || `${session.players.find((player) => player.isHost)?.name || ""}的房间`,
+    name: originalRoomDisplayName(
+      session.roomName,
+      session.players.find((player) => player.isHost)?.name ?? ""
+    ),
     visibility: session.isPublic ? "public" : "private",
     hasPassword: false,
     allowSpectators: true,

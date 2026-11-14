@@ -6,6 +6,7 @@ import {
 } from "../infrastructure/CEEOriginalProtocol";
 import { reasonOf, type CEEOriginalContext } from "./CEEOriginalContext";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
+import { originalRoomDisplayName } from "./CEEOriginalView";
 
 export async function fetchRooms(ctx: CEEOriginalContext): Promise<Record<string, unknown>[]> {
   try {
@@ -30,10 +31,10 @@ export async function listUpstreamRooms(ctx: CEEOriginalContext): Promise<CEEUps
     .map((room): CEEUpstreamRoom => ({
       id: originalString(room.id),
       isPublic: room.isPublic === true,
-      name:
-        originalString(room.displayRoomName) ||
-        originalString(room.roomName) ||
-        `${originalString(room.hostName)}的房间`,
+      name: originalRoomDisplayName(
+        originalString(room.displayRoomName) || originalString(room.roomName),
+        originalString(room.hostName)
+      ),
       phase: room.isGameStarted === true ? "guessing" : "waiting",
       playerCount: originalNumber(room.playerCount),
     }))

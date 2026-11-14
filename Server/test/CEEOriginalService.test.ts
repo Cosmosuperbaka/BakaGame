@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
+import { originalRoomDisplayName } from "../src/application/CEEOriginalView";
 import type { ConnectionRecord } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtocol";
@@ -101,6 +102,14 @@ const sync = (service: CEEOriginalService, id = "first") =>
     payload: {},
   }) as Promise<CEERoomEnterResult>;
 
+describe("原版房显示名", () => {
+  test("有房名用房名，没有就用房主名拼，都没有给通用称谓", () => {
+    expect(originalRoomDisplayName("周末局", "阿虚")).toBe("周末局");
+    expect(originalRoomDisplayName("", "阿虚")).toBe("阿虚的房间");
+    expect(originalRoomDisplayName("", "")).toBe("原版房间");
+  });
+});
+
 describe("原版房间适配", () => {
   test("加入检查尚未完成时拒绝重复加入，客户端断线后不创建上游会话", async () => {
     let release!: (response: Response) => void;
@@ -196,16 +205,14 @@ describe("原版房间适配", () => {
       fetcher: async () => Response.json([{ id: "1234", isPublic: false, playerCount: 1 }]),
     });
     const [listed] = await service.listUpstreamRooms();
-    // 上游没给任何名称字段，兜底文案只保证「大厅有字可显示」；
-    // 不逐字锁定当前兜底实现，避免改进兜底后用例无故变红。
-    expect(listed).toMatchObject({
+    // 上游一个名称字段都没给：显示名用通用称谓，不能只剩「的房间」这个后缀。
+    expect(listed).toEqual({
       id: "1234",
       isPublic: false,
+      name: "原版房间",
       phase: "waiting",
       playerCount: 1,
     });
-    expect(typeof listed!.name).toBe("string");
-    expect(listed!.name.length).toBeGreaterThan(0);
     const entered = (await request(service, "first", {
       id: "private-join",
       type: "cee.room.join",
