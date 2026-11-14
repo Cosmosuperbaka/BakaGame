@@ -1,13 +1,15 @@
 //! 壳 ↔ 服务端的 JSON POST 传输层（注册与通道证明共用）。
 //!
-//! 只有这一个地方构造 `reqwest::blocking::Client`：基址统一取自 `config::api_base()`
-//! （强制 https），错误信封按服务端的 `{ error: { code, message, traceId } }` 解析，
+//! 只有这一个地方构造 `reqwest::blocking::Client`（进程内按是否直连各留一个、重复使用）：
+//! 基址统一取自 `config::api_base()`（强制 https），不跟随重定向，响应体有上限，
+//! 错误信封按服务端的 `{ error: { code, message, traceId } }` 解析，
 //! 并兼容 `{ error: "CODE" }` 这种把码直接放在 `error` 上的写法。
 //! 上层只需要 `code` 来决定「换一条路径重试」还是「就此放弃」，通道约束见 `Server/docs/ClientChannel.md`。
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::io::Read;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 /// 接口调用失败。`code` 为可归因码（§6 词表）；传输层与解析层的失败拿不到码，记 `None`。
@@ -19,7 +21,10 @@ pub struct ApiError {
 impl ApiError {
     /// 壳侧自己构造的失败（没走到服务端，或响应体不合契约）
     pub fn local(message: impl Into<String>) -> Self {
-        Self { message: message.into(), code: None }
+        Self {
+            message: message.into(),
+            code: None,
+        }
     }
 
     /// 按错误码判定，供上层决定重试策略
@@ -65,6 +70,57 @@ impl ErrorBody {
     }
 }
 
+/// 响应体读取上限：注册与证明的响应都只有几百字节，异常网关或被劫持的出口不该能让壳读无界数据
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
+
+/// 两个进程级共享的客户端：Client 是连接池与 TLS 配置的持有者，每次请求都新建一个，
+/// 等于每趟都重做 TLS 初始化与握手，延迟直接叠在建连关键路径上。
+/// 回环目标必须直连（见 `post_json` 的说明），所以按「是否直连」各留一个。
+static PROXIED_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+static DIRECT_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+
+fn build_client(direct: bool) -> Result<reqwest::blocking::Client, String> {
+    // 不跟随重定向：服务端从不重定向这些接口，出现 30x 只可能是异常网关或被劫持的出口；
+    // 默认策略会跟到明文地址，307/308 还会连同请求体（clientId、签名、挑战）一起重发。
+    let mut builder =
+        reqwest::blocking::Client::builder().redirect(reqwest::redirect::Policy::none());
+    if let Some(resolver) = crate::httpdns::shared() {
+        builder = builder.dns_resolver(Arc::new(crate::httpdns::ReqwestResolver::new(resolver)));
+    }
+    // 回环目标一律直连。终端里常驻的 `HTTP_PROXY`（Clash 等，`Set-Proxy` 之类一行就设上）
+    // 会把发往 localhost 的请求交给代理进程，代理再把它转到远端节点——那边连不到这台机器，
+    // 回来就是一个**空响应体的 502**，看着像本地后端挂了，其实请求连 Vite 都没到过。
+    // 生产域名照旧走环境里的代理，这里只掐回环。
+    if direct {
+        builder = builder.no_proxy();
+    }
+    builder
+        .build()
+        .map_err(|e| format!("HTTP 客户端初始化失败：{e}"))
+}
+
+fn client_for(url: &str) -> Result<&'static reqwest::blocking::Client, ApiError> {
+    let direct = is_loopback(url);
+    let cell = if direct {
+        &DIRECT_CLIENT
+    } else {
+        &PROXIED_CLIENT
+    };
+    cell.get_or_init(|| build_client(direct))
+        .as_ref()
+        .map_err(|message| ApiError::local(message.clone()))
+}
+
+/// 读响应体，最多 `MAX_RESPONSE_BYTES`；超出返回 `None`（调用方按「响应体过大」处理）
+fn read_limited(response: reqwest::blocking::Response) -> Option<Vec<u8>> {
+    let mut body = Vec::new();
+    response
+        .take(MAX_RESPONSE_BYTES + 1)
+        .read_to_end(&mut body)
+        .ok()?;
+    (body.len() as u64 <= MAX_RESPONSE_BYTES).then_some(body)
+}
+
 /// 阻塞式 JSON POST：`path` 是接口相对路径（如 `/api/client/challenge`）。
 /// 非 2xx 一律转成 `ApiError`，并尽量带上服务端的可归因码。
 pub fn post_json<B, R>(path: &str, body: &B, timeout: Duration) -> Result<R, ApiError>
@@ -73,29 +129,26 @@ where
     R: DeserializeOwned,
 {
     let url = format!("{}{}", crate::config::api_base(), path);
-    let mut builder = reqwest::blocking::Client::builder().timeout(timeout);
-    if let Some(resolver) = crate::httpdns::shared() {
-        builder = builder.dns_resolver(Arc::new(crate::httpdns::ReqwestResolver::new(resolver)));
-    }
-    // 回环目标一律直连。终端里常驻的 `HTTP_PROXY`（Clash 等，`Set-Proxy` 之类一行就设上）
-    // 会把发往 localhost 的请求交给代理进程，代理再把它转到远端节点——那边连不到这台机器，
-    // 回来就是一个**空响应体的 502**，看着像本地后端挂了，其实请求连 Vite 都没到过。
-    // 生产域名照旧走环境里的代理，这里只掐回环。
-    if is_loopback(&url) {
-        builder = builder.no_proxy();
-    }
-    let client = builder
-        .build()
-        .map_err(|e| ApiError::local(format!("HTTP 客户端初始化失败：{e}")))?;
+    post_json_to(&url, path, body, timeout)
+}
+
+fn post_json_to<B, R>(url: &str, path: &str, body: &B, timeout: Duration) -> Result<R, ApiError>
+where
+    B: Serialize + ?Sized,
+    R: DeserializeOwned,
+{
+    let client = client_for(url)?;
+    // 超时按请求设：共享客户端上注册与领挑战、换票用的超时各不相同
     let response = client
-        .post(&url)
+        .post(url)
+        .timeout(timeout)
         .json(body)
         .send()
         .map_err(|e| ApiError::local(format!("请求 {url} 失败：{e}")))?;
     let status = response.status();
     if !status.is_success() {
-        // 4xx 的响应体只有几百字节，读全文不改变「不重试」的结论；读不动就退回状态码文本
-        let text = response.text().unwrap_or_default();
+        // 4xx 的响应体只有几百字节，读到上限为止不改变「不重试」的结论；读不动就退回状态码文本
+        let text = read_limited_lossy(response);
         let (code, message) = serde_json::from_str::<ErrorEnvelope>(&text)
             .ok()
             .and_then(|envelope| envelope.error)
@@ -107,7 +160,7 @@ where
             let head: String = text.chars().take(160).collect();
             let head = head.split_whitespace().collect::<Vec<_>>().join(" ");
             eprintln!("[BakaGame http] POST {url} -> {status}，响应体开头：{head}");
-            if head.is_empty() && is_loopback(&url) {
+            if head.is_empty() && is_loopback(url) {
                 eprintln!(
                     "[BakaGame http] 回环请求的空体 {status} 通常是代理软件拦的：壳已对 localhost \
                      禁用代理，若仍出现请检查代理是否处于 TUN / 全局模式。"
@@ -121,9 +174,17 @@ where
             code,
         });
     }
-    response
-        .json::<R>()
+    let bytes = read_limited(response)
+        .ok_or_else(|| ApiError::local(format!("{path} 响应体过大或读取失败")))?;
+    serde_json::from_slice::<R>(&bytes)
         .map_err(|e| ApiError::local(format!("{path} 响应格式错误：{e}")))
+}
+
+/// 错误响应体：读到上限为止，超出部分丢弃；非 UTF-8 的字节按替换字符处理
+fn read_limited_lossy(response: reqwest::blocking::Response) -> String {
+    let mut body = Vec::new();
+    let _ = response.take(MAX_RESPONSE_BYTES).read_to_end(&mut body);
+    String::from_utf8_lossy(&body).into_owned()
 }
 
 /// 目标是否为回环地址（`localhost` / `127.0.0.0/8` / `[::1]`）。
@@ -160,17 +221,22 @@ mod tests {
         assert!(is_loopback("http://LOCALHOST:5173/api"));
 
         // 生产域名与「看着像回环」的域名都不算
-        assert!(!is_loopback("https://game.baka.website/api/client/register"));
-        assert!(!is_loopback("http://localhost.evil.example/api/client/register"));
+        assert!(!is_loopback(
+            "https://game.baka.website/api/client/register"
+        ));
+        assert!(!is_loopback(
+            "http://localhost.evil.example/api/client/register"
+        ));
         assert!(!is_loopback("http://10.0.0.2:5173/api"));
     }
 
     /// 服务端信封：`{ error: { code, message } }` 与 `{ error: "CODE" }` 两种写法都要能拿到码
     #[test]
     fn parses_both_error_shapes() {
-        let coded: ErrorEnvelope =
-            serde_json::from_str(r#"{"error":{"code":"CLIENT_UNTRUSTED","message":"完整性不通过"}}"#)
-                .expect("标准信封应能解析");
+        let coded: ErrorEnvelope = serde_json::from_str(
+            r#"{"error":{"code":"CLIENT_UNTRUSTED","message":"完整性不通过"}}"#,
+        )
+        .expect("标准信封应能解析");
         let (code, message) = match coded.error {
             Some(ErrorBody::Coded { code, message }) => (code, message),
             other => panic!("期望 Coded 分支，实际 {other:?}"),
@@ -178,8 +244,8 @@ mod tests {
         assert_eq!(code.as_deref(), Some("CLIENT_UNTRUSTED"));
         assert_eq!(message.as_deref(), Some("完整性不通过"));
 
-        let plain: ErrorEnvelope = serde_json::from_str(r#"{"error":"CLIENT_UNKNOWN"}"#)
-            .expect("简写信封应能解析");
+        let plain: ErrorEnvelope =
+            serde_json::from_str(r#"{"error":"CLIENT_UNKNOWN"}"#).expect("简写信封应能解析");
         let (code, _) = match plain.error {
             Some(body) => body.split(),
             None => panic!("简写信封应解析出 error"),
@@ -195,8 +261,182 @@ mod tests {
         assert_eq!(transport.text(), "HTTP 400");
         assert!(!transport.is("CLIENT_UNTRUSTED"));
         assert_eq!(
-            ApiError { message: "完整性不通过".into(), code: Some("CLIENT_UNTRUSTED".into()) }.text(),
+            ApiError {
+                message: "完整性不通过".into(),
+                code: Some("CLIENT_UNTRUSTED".into())
+            }
+            .text(),
             "完整性不通过（CLIENT_UNTRUSTED）"
+        );
+    }
+
+    // —— 传输层行为：用本机回环上的小型 HTTP 服务模拟服务端与异常网关 ——
+
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// 读完一个请求（含按 Content-Length 的请求体）；连接关闭返回 false
+    fn read_request(stream: &mut TcpStream) -> bool {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                while buf.len() < end + 4 + length {
+                    match stream.read(&mut chunk) {
+                        Ok(0) | Err(_) => return false,
+                        Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                    }
+                }
+                return true;
+            }
+            match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => return false,
+                Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            }
+        }
+    }
+
+    /// 起一个回环 HTTP 服务：每个请求用 `respond` 生成完整响应；返回基址与「已接受连接数」
+    fn mock_server(
+        respond: impl Fn() -> Vec<u8> + Send + Sync + 'static,
+    ) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counter = connections.clone();
+        let respond = Arc::new(respond);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                counter.fetch_add(1, Ordering::SeqCst);
+                let respond = respond.clone();
+                std::thread::spawn(move || {
+                    while read_request(&mut stream) {
+                        if stream.write_all(&respond()).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        (format!("http://{address}"), connections)
+    }
+
+    fn json_response(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Echo {
+        ok: bool,
+    }
+
+    /// 服务端或边缘异常重定向时不得跟随：307/308 会连同请求体（clientId、签名、挑战）重发到新地址
+    #[test]
+    fn redirects_are_never_followed() {
+        let (target, target_hits) = mock_server(|| json_response(r#"{"ok":true}"#));
+        let location = format!("{target}/elsewhere");
+        let (origin, _) = mock_server(move || {
+            format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nLocation: {location}\r\nContent-Length: 0\r\n\r\n"
+            )
+            .into_bytes()
+        });
+        let result: Result<Echo, ApiError> = post_json_to(
+            &format!("{origin}/api/client/attest"),
+            "/api/client/attest",
+            &serde_json::json!({"clientId": "ccd_x"}),
+            Duration::from_secs(3),
+        );
+        assert!(result.is_err(), "30x 必须当作失败，而不是跟过去");
+        assert_eq!(
+            target_hits.load(Ordering::SeqCst),
+            0,
+            "重定向目标不应收到任何请求"
+        );
+    }
+
+    /// 响应体有上限：超大响应不能让壳读无界数据
+    #[test]
+    fn oversized_response_body_is_rejected() {
+        let padding = "a".repeat(200 * 1024);
+        let body = format!(r#"{{"ok":true,"pad":"{padding}"}}"#);
+        let (origin, _) = mock_server(move || json_response(&body));
+        let result: Result<Echo, ApiError> = post_json_to(
+            &format!("{origin}/api/client/register"),
+            "/api/client/register",
+            &serde_json::json!({}),
+            Duration::from_secs(5),
+        );
+        let err = result.err().expect("超过上限的响应应被拒绝");
+        assert!(err.message.contains("过大"), "{}", err.message);
+
+        let (small, _) = mock_server(|| json_response(r#"{"ok":true}"#));
+        let ok: Echo = post_json_to(
+            &format!("{small}/api/client/register"),
+            "/api/client/register",
+            &serde_json::json!({}),
+            Duration::from_secs(5),
+        )
+        .unwrap_or_else(|e| panic!("正常响应应成功：{}", e.text()));
+        assert!(ok.ok);
+    }
+
+    /// 连续请求复用同一个客户端与连接，不再每次重建 TLS 与连接池
+    #[test]
+    fn consecutive_requests_share_one_connection() {
+        let (origin, connections) = mock_server(|| json_response(r#"{"ok":true}"#));
+        for _ in 0..3 {
+            let reply: Echo = post_json_to(
+                &format!("{origin}/api/client/challenge"),
+                "/api/client/challenge",
+                &serde_json::json!({"clientId": "ccd_x"}),
+                Duration::from_secs(3),
+            )
+            .unwrap_or_else(|e| panic!("请求应成功：{}", e.text()));
+            assert!(reply.ok);
+        }
+        assert_eq!(
+            connections.load(Ordering::SeqCst),
+            1,
+            "三次请求应复用同一条连接"
+        );
+    }
+
+    /// 超时按请求设置：共享客户端不能让「每请求超时」失效
+    #[test]
+    fn per_request_timeout_still_applies() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            // 接受连接但永不回应
+            let held: Vec<TcpStream> = listener.incoming().flatten().take(1).collect();
+            std::thread::sleep(Duration::from_secs(3));
+            drop(held);
+        });
+        let started = std::time::Instant::now();
+        let result: Result<Echo, ApiError> = post_json_to(
+            &format!("http://{address}/api/client/attest"),
+            "/api/client/attest",
+            &serde_json::json!({}),
+            Duration::from_millis(300),
+        );
+        assert!(result.is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
         );
     }
 }
