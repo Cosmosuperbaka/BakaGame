@@ -118,7 +118,9 @@ export const legacyGameSocketRoutes = ({
   clientChannel,
   siteFeatures,
 }: LegacySocketDependencies) =>
-  new Elysia({ name: "legacy-game-sockets" })
+  // 入站规范化与主应用同样关闭：消息体是联合类型，规范化库处理不了，只会在装配时告警；
+  // 入站消息一律原样交给处理函数。
+  new Elysia({ name: "legacy-game-sockets", normalize: false })
     .ws(LEGACY_WS_PATHS.faker, {
       body: WhoIsFakerClientMessageSchema,
       parse: decodeGameFrame,

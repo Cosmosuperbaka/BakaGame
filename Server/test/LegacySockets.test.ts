@@ -111,3 +111,24 @@ test("旧路径建立连接时各打一个带路径标签的计数，统一入�
     await stop();
   }
 });
+
+// 旧路径的消息体是联合类型：子应用若开着入站规范化，规范化库处理不了联合，装配时每条路径告警一次，
+// 入站消息是否被改写也变成取决于那个库的降级行为。主应用一直关着它，拆出来的子应用必须同口径。
+test("装配旧实时路径时规范化库不告警", () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    createTestApp({
+      env,
+      logger: new EventLogger(() => undefined),
+      games: {
+        faker: stubService<WhoIsFakerService>(),
+        song: stubService<SonGuessrService>(),
+        cee: stubService<CEEService>(),
+      },
+    });
+    const texts = warn.mock.calls.map((args) => args.map(String).join(" "));
+    expect(texts.filter((text) => text.includes("exact-mirror"))).toEqual([]);
+  } finally {
+    warn.mockRestore();
+  }
+});
