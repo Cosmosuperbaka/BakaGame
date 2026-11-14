@@ -16,7 +16,8 @@ export function CreditsDisclaimer() {
         QQ
         音乐等第三方服务都没有官方关系。发现侵权或违规内容，或者遇到别的问题，可以通过反馈告诉我们。
       </p>
-      <div className="mt-2">
+      {/* 幽灵按钮的左内边距抵回去，图标与上面的正文左缘对齐（同返回主页按钮的做法）。 */}
+      <div className="-ml-4 mt-2">
         <FeedbackButton />
       </div>
     </section>
