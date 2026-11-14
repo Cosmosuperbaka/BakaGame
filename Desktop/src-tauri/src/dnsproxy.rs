@@ -100,6 +100,10 @@ fn read_head(reader: &mut BufReader<TcpStream>) -> Result<String, HeadError> {
             .read_line(&mut line)
             .map_err(|err| HeadError::Io(format!("读取请求头失败：{err}")))?;
         if read == 0 {
+            // 额度恰好用完而头还没结束：不是「头已读完」，按过大处理
+            if remaining == 0 {
+                return Err(HeadError::TooLarge);
+            }
             break;
         }
         if !line.ends_with('\n') && read >= remaining {
@@ -448,6 +452,30 @@ mod tests {
         extra.read_exact(&mut reply).unwrap();
         assert_eq!(&reply, b"PING");
         drop(tunnels);
+    }
+
+    /// 请求头恰好把额度用完且没有以空行结束，必须判为过大，
+    /// 不能当成头已读完而继续建立隧道。
+    #[test]
+    fn header_filling_the_limit_exactly_is_rejected() {
+        let (proxy, echo_port) = proxy_to_echo();
+        let mut client = TcpStream::connect(proxy).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let first = format!("CONNECT {HOST}:{echo_port} HTTP/1.1\r\n");
+        let filler_prefix = "X-Pad: ";
+        let pad = HEADER_LIMIT_BYTES - first.len() - filler_prefix.len() - 2;
+        let mut head = first.into_bytes();
+        head.extend_from_slice(filler_prefix.as_bytes());
+        head.extend(std::iter::repeat(b'a').take(pad));
+        head.extend_from_slice(b"\r\n");
+        assert_eq!(head.len(), HEADER_LIMIT_BYTES);
+        // 后面补一个空行：额度已经用完，这个头合计超过上限
+        head.extend_from_slice(b"\r\n");
+        client.write_all(&head).unwrap();
+        let mut reader = BufReader::new(client);
+        let mut status = String::new();
+        let _ = reader.read_line(&mut status);
+        assert!(status.starts_with("HTTP/1.1 431"), "{status}");
     }
 
     fn mock_httpdns() -> String {
