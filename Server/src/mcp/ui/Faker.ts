@@ -2,16 +2,19 @@ import { fakerDescriptionOverflow } from "../../shared/TextUnits";
 import { ABSTAIN_TARGET_ID } from "../../shared/WhoIsFaker";
 import {
   assemble,
+  avatarOf,
   button,
-  chatControls,
   control,
   isRecord,
   list,
   playerName,
   recordList,
-  section,
+  screenSections,
+  seatIdOf,
+  selfOf,
   str,
   textbox,
+  youBase,
   type UiContext,
 } from "./Support";
 import type { UiControl, UiScreen } from "./Types";
@@ -44,30 +47,21 @@ const fakerPlayers = (snapshot: Record<string, unknown>) =>
     roundStatus: player.roundStatus,
     ...(str(player.revealedRole) ? { revealedRole: player.revealedRole } : {}),
     ...(typeof player.eliminatedAt === "number" ? { eliminatedAt: player.eliminatedAt } : {}),
-    ...(isRecord(player.account) && typeof player.account.image === "string"
-      ? { avatar: player.account.image }
-      : {}),
+    ...avatarOf(player),
   }));
-
-const selfPlayer = (context: UiContext) =>
-  recordList(context.snapshot.players).find(
-    (player) => player.id === (context.playerId ?? context.privateState.playerId)
-  );
 
 const statusOf = (context: UiContext): Record<string, unknown> =>
   isRecord(context.snapshot.status) ? context.snapshot.status : {};
 
 const phaseOf = (context: UiContext): string => str(statusOf(context).phase) ?? "waiting";
 
-const meOf = (context: UiContext) => selfPlayer(context);
-
-const isAlive = (context: UiContext): boolean => meOf(context)?.roundStatus === "alive";
+const isAlive = (context: UiContext): boolean => selfOf(context)?.roundStatus === "alive";
 
 const isQuestioner = (context: UiContext): boolean => context.privateState.isQuestioner === true;
 
 const canVote = (context: UiContext): boolean => {
   const status = statusOf(context);
-  const me = meOf(context);
+  const me = selfOf(context);
   const voted = context.privateState.myCurrentVoteTargetId;
   if (!me || me.roundStatus !== "alive" || isQuestioner(context) || voted) return false;
   if (status.phase !== "tieBreak") return true;
@@ -77,7 +71,7 @@ const canVote = (context: UiContext): boolean => {
 
 const voteTargets = (context: UiContext) => {
   const status = statusOf(context);
-  const me = meOf(context);
+  const me = selfOf(context);
   const alive = recordList(context.snapshot.players).filter(
     (player) => player.roundStatus === "alive" && player.id !== me?.id
   );
@@ -90,7 +84,7 @@ const voteTargets = (context: UiContext) => {
 
 const canSpeak = (context: UiContext): boolean => {
   const status = statusOf(context);
-  const me = meOf(context);
+  const me = selfOf(context);
   if (!me || me.roundStatus !== "alive" || isQuestioner(context)) return false;
   const submitted = new Set(
     list(status.submittedSpeechPlayerIds).filter((id): id is string => typeof id === "string")
@@ -123,7 +117,7 @@ const wordsPanel = (context: UiContext) => {
 const descriptionsPanel = (context: UiContext) => recordList(context.snapshot.descriptions);
 
 const waitingControls = (context: UiContext): UiControl[] => {
-  const me = meOf(context);
+  const me = selfOf(context);
   const status = statusOf(context);
   const active = recordList(context.snapshot.players).filter(
     (player) => player.membership === "active"
@@ -147,7 +141,7 @@ const waitingControls = (context: UiContext): UiControl[] => {
 };
 
 const assignControls = (context: UiContext): UiControl[] => {
-  if (!isQuestioner(context) && meOf(context)?.isHost !== true) return [];
+  if (!isQuestioner(context) && selfOf(context)?.isHost !== true) return [];
   return recordList(context.snapshot.players)
     .filter((player) => player.membership === "active" || player.membership === "spectator")
     .map((player) =>
@@ -258,11 +252,7 @@ const nightControls = (context: UiContext): UiControl[] => {
     isAlive(context) && !isQuestioner(context) && context.privateState.canActAtNight === true;
   if (canAct && !acted) {
     for (const target of recordList(context.snapshot.players)) {
-      if (
-        target.roundStatus !== "alive" ||
-        target.id === (context.playerId ?? context.privateState.playerId)
-      )
-        continue;
+      if (target.roundStatus !== "alive" || target.id === seatIdOf(context)) continue;
       controls.push(
         button(`faker.night.${String(target.id)}`, `对 ${String(target.name)} 出手`, "game", {
           data: { playerId: target.id },
@@ -281,7 +271,7 @@ const blankGuessControls = (context: UiContext): UiControl[] => {
   const controls: UiControl[] = [];
   const status = statusOf(context);
   const pendingReview = status.blankGuessPendingReview === true;
-  const myId = context.playerId ?? context.privateState.playerId;
+  const myId = seatIdOf(context);
   const guesserId = status.blankGuessPlayerId;
   const isGuesser = myId !== undefined && myId === guesserId;
   if (isGuesser) {
@@ -334,7 +324,7 @@ const phaseControls = (context: UiContext): UiControl[] => {
     case "feedback":
       return advanceControl(context, "继续");
     case "gameOver":
-      return meOf(context)?.isHost === true ? [button("faker.advance", "返回等待房间")] : [];
+      return selfOf(context)?.isHost === true ? [button("faker.advance", "返回等待房间")] : [];
     default:
       return [];
   }
@@ -366,13 +356,11 @@ export function buildFakerScreen(context: UiContext): UiScreen {
     phase === "gameOver" ? "本局已结束，房主可以返回等待房间" : undefined,
   ].filter((entry): entry is string => Boolean(entry));
 
-  const sections = [
-    section("faker.actions", "可操作控件", [
-      ...phaseControls(context),
-      ...blankGuessEntry(context),
-    ]),
-    section("faker.chat", "聊天", chatControls(context.state)),
-  ];
+  const sections = screenSections(
+    "faker",
+    [...phaseControls(context), ...blankGuessEntry(context)],
+    context
+  );
 
   return assemble(
     context,
@@ -381,11 +369,8 @@ export function buildFakerScreen(context: UiContext): UiScreen {
       title: PHASE_TITLES[phase] ?? "谁是卧底",
       notice: noticeParts.join("；") || undefined,
       you: {
-        playerId: context.playerId ?? context.privateState.playerId,
-        name: meOf(context)?.name,
-        isHost: meOf(context)?.isHost === true,
-        membership: meOf(context)?.membership,
-        roundStatus: meOf(context)?.roundStatus,
+        ...youBase(context, selfOf(context)?.isHost === true),
+        roundStatus: selfOf(context)?.roundStatus,
         isQuestioner: isQuestioner(context),
         canSubmitBlankGuess: context.privateState.canSubmitBlankGuess === true,
         blankGuessUsed: context.privateState.blankGuessUsed === true,
@@ -500,7 +485,7 @@ const clickFakerVoteNight = async (context: UiContext, id: string): Promise<stri
 };
 
 const clickFakerBasic = async (context: UiContext, id: string): Promise<string | undefined> => {
-  const me = meOf(context);
+  const me = selfOf(context);
   if (id === "faker.ready") {
     await send(context, "player.setReady", { ready: me?.isReady !== true });
     return me?.isReady === true ? "已取消准备" : "已准备";

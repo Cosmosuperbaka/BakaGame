@@ -1,15 +1,27 @@
 import {
+  ackResults,
   assemble,
+  avatarOf,
   button,
-  chatControls,
   control,
+  inputPrefixOf,
+  isHostOf,
   isRecord,
   list,
+  loadSearch,
+  openSubjectResults,
   playerName,
   recordList,
-  section,
+  requireSearch,
+  screenSections,
+  searchResultAt,
+  selfOf,
+  settingsOf,
   str,
+  teamSelect,
   textbox,
+  waitSearchDebounce,
+  youBase,
   type UiContext,
   type UiSearchState,
 } from "./Support";
@@ -23,17 +35,6 @@ const PHASE_TITLES: Record<string, string> = {
   guessing: "猜猜是哪位角色",
   settled: "答案揭晓",
 };
-
-const meOf = (context: UiContext) =>
-  recordList(context.snapshot.players).find(
-    (player) => player.id === (context.playerId ?? context.privateState.playerId)
-  );
-
-const isHost = (context: UiContext): boolean =>
-  context.snapshot.hostPlayerId === (context.playerId ?? context.privateState.playerId);
-
-const settingsOf = (context: UiContext): Record<string, unknown> =>
-  isRecord(context.snapshot.settings) ? context.snapshot.settings : {};
 
 const ceePlayers = (snapshot: Record<string, unknown>) =>
   recordList(snapshot.players).map((player) => ({
@@ -49,9 +50,7 @@ const ceePlayers = (snapshot: Record<string, unknown>) =>
     marks: player.marks,
     isAgent: player.isAgent,
     mcpControlled: player.mcpControlled,
-    ...(isRecord(player.account) && typeof player.account.image === "string"
-      ? { avatar: player.account.image }
-      : {}),
+    ...avatarOf(player),
   }));
 
 const characterView = (character: Record<string, unknown>): Record<string, unknown> => ({
@@ -75,25 +74,15 @@ const subjectView = (subject: Record<string, unknown>): Record<string, unknown> 
 const canStart = (context: UiContext): boolean => context.privateState.canStart === true;
 
 const teamControl = (context: UiContext): UiControl | undefined => {
-  const me = meOf(context);
+  const me = selfOf(context);
   if (!me || me.membership !== "active" || context.snapshot.phase !== "waiting") return undefined;
-  return control("cee.team", "队伍", "select", "game", {
-    value: typeof me.team === "number" ? String(me.team) : "none",
-    options: [
-      { value: "none", label: "不组队" },
-      ...Array.from({ length: 8 }, (_, index) => ({
-        value: String(index + 1),
-        label: `${index + 1} 队`,
-      })),
-    ],
-    hint: "同队共享猜测次数",
-  });
+  return teamSelect("cee.team", me, "同队共享猜测次数");
 };
 
 const waitingControls = (context: UiContext): UiControl[] => {
-  const me = meOf(context);
+  const me = selfOf(context);
   const controls: UiControl[] = [];
-  if (isHost(context)) {
+  if (isHostOf(context)) {
     controls.push(
       button(
         "cee.start",
@@ -111,7 +100,7 @@ const waitingControls = (context: UiContext): UiControl[] => {
   const team = teamControl(context);
   if (team) controls.push(team);
   const requests = recordList(context.snapshot.spectateRequests);
-  if (isHost(context) && requests.length) {
+  if (isHostOf(context) && requests.length) {
     for (const request of requests) {
       const playerId = str(request.playerId);
       if (!playerId) continue;
@@ -125,7 +114,7 @@ const waitingControls = (context: UiContext): UiControl[] => {
 };
 
 const choosingControls = (context: UiContext): UiControl[] => {
-  if (!isHost(context)) return [];
+  if (!isHostOf(context)) return [];
   const allowed = new Set(list(context.privateState.setterCandidateIds));
   const controls = recordList(context.snapshot.players)
     .filter((player) => allowed.has(player.id))
@@ -247,7 +236,7 @@ const answerControls = (context: UiContext): UiControl[] => {
       disabled: !context.state.ceeAnswer,
     })
   );
-  if (isHost(context) && context.snapshot.source === "native")
+  if (isHostOf(context) && context.snapshot.source === "native")
     controls.push(button("cee.cancel", "取消本局"));
   return controls;
 };
@@ -287,10 +276,12 @@ const guessControls = (context: UiContext): UiControl[] => {
 };
 
 const preparingControls = (context: UiContext): UiControl[] =>
-  isHost(context) && context.snapshot.source === "native" ? [button("cee.cancel", "取消本局")] : [];
+  isHostOf(context) && context.snapshot.source === "native"
+    ? [button("cee.cancel", "取消本局")]
+    : [];
 
 const settledControls = (context: UiContext): UiControl[] => {
-  if (!isHost(context)) return [];
+  if (!isHostOf(context)) return [];
   if (context.snapshot.source === "native") {
     return [
       button("cee.next", "返回等待房间"),
@@ -345,11 +336,8 @@ const searchPanel = (context: UiContext): Record<string, unknown> | undefined =>
 
 export function buildCeeScreen(context: UiContext): UiScreen {
   const phase = str(context.snapshot.phase) ?? "waiting";
-  const me = meOf(context);
-  const sections = [
-    section("cee.actions", "可操作控件", phaseControls(context)),
-    section("cee.chat", "聊天", chatControls(context.state)),
-  ];
+  const me = selfOf(context);
+  const sections = screenSections("cee", phaseControls(context), context);
   return assemble(
     context,
     {
@@ -358,14 +346,11 @@ export function buildCeeScreen(context: UiContext): UiScreen {
       notice:
         phase === "answering" && context.privateState.canSetAnswer !== true
           ? `等待 ${playerName(context.snapshot, context.snapshot.setterPlayerId)} 出题`
-          : phase === "settled" && !isHost(context)
+          : phase === "settled" && !isHostOf(context)
             ? "等待房主开始下一局"
             : undefined,
       you: {
-        playerId: context.playerId ?? context.privateState.playerId,
-        name: me?.name,
-        isHost: isHost(context),
-        membership: me?.membership,
+        ...youBase(context, isHostOf(context)),
         canGuess: context.privateState.canGuess === true,
         canSurrender: context.privateState.canSurrender === true,
         canSetAnswer: context.privateState.canSetAnswer === true,
@@ -406,6 +391,9 @@ const defaultModeFor = (context: UiContext, prefix: string): "character" | "subj
   return search?.prefix === prefix && search.kind === "subject" ? "subject" : "character";
 };
 
+const purposeOf = (prefix: string): UiSearchState["purpose"] =>
+  prefix === "cee.answer.search" ? "cee_answer" : "cee_guess";
+
 const runSearch = async (
   context: UiContext,
   prefix: string,
@@ -427,47 +415,23 @@ const runSearch = async (
     search.status = "ready";
     return search;
   }
-  try {
-    const ack = await send(
-      context,
-      kind === "subject" ? "cee.subject.search" : "cee.character.search",
-      {
-        keyword,
-      }
-    );
-    search.results = isRecord(ack) ? recordList(ack.results) : [];
-    search.status = "ready";
-  } catch (error) {
-    search.status = "error";
-    search.error = error instanceof Error ? error.message : String(error);
-    throw error;
-  }
+  await loadSearch(search, () =>
+    send(context, kind === "subject" ? "cee.subject.search" : "cee.character.search", { keyword })
+  );
   return search;
 };
 
 export async function autoSearchCee(context: UiContext, controlId: string): Promise<void> {
-  const prefix = controlId.endsWith(".input") ? controlId.slice(0, -".input".length) : "";
+  const prefix = inputPrefixOf(controlId);
   if (prefix !== "cee.answer.search" && prefix !== "cee.guess.search") return;
-  const purpose = prefix === "cee.answer.search" ? "cee_answer" : "cee_guess";
-  await new Promise((resolve) => setTimeout(resolve, 420));
-  const search = await runSearch(context, prefix, purpose);
+  await waitSearchDebounce();
+  const search = await runSearch(context, prefix, purposeOf(prefix));
   context.state.lastFeedback =
     search.error ?? (search.keyword ? `找到 ${search.results.length} 条结果` : undefined);
 }
 
-const needSearch = (context: UiContext, prefix: string): UiSearchState => {
-  const search = context.state.search;
-  if (!search || search.prefix !== prefix)
-    throw new Error("搜索结果已变化，请重新输入并等待检索完成");
-  return search;
-};
-
-const resultAt = (search: UiSearchState, index: string): Record<string, unknown> => {
-  const value = Number.parseInt(index, 10);
-  const result = Number.isInteger(value) ? search.results[value] : undefined;
-  if (!result) throw new Error(`结果 ${index} 不存在`);
-  return result;
-};
+const needSearch = (context: UiContext, prefix: string): UiSearchState =>
+  requireSearch(context, prefix, "搜索结果已变化，请重新输入并等待检索完成");
 
 const openCast = async (
   context: UiContext,
@@ -477,9 +441,7 @@ const openCast = async (
   const subjectId = Number(subject.id);
   if (!Number.isInteger(subjectId)) throw new Error("作品编号无效");
   const ack = await send(context, "cee.subject.characters", { subjectId });
-  search.subject = subject;
-  search.results = isRecord(ack) ? recordList(ack.results) : [];
-  search.status = "ready";
+  openSubjectResults(search, subject, ack);
   context.state.ceeCast = { subject, characters: search.results };
   return `已打开《${str(subject.nameCn) || str(subject.name) || subjectId}》，共 ${search.results.length} 位角色`;
 };
@@ -489,7 +451,7 @@ const clickGuessResult = async (
   search: UiSearchState,
   index: string
 ): Promise<string> => {
-  const result = resultAt(search, index);
+  const result = searchResultAt(search, index);
   if (search.kind === "subject" && !search.subject) {
     return openCast(context, search, result);
   }
@@ -507,7 +469,7 @@ const clickAnswerResult = async (
   search: UiSearchState,
   index: string
 ): Promise<string> => {
-  const result = resultAt(search, index);
+  const result = searchResultAt(search, index);
   if (search.kind === "subject" && !search.subject) {
     return openCast(context, search, result);
   }
@@ -531,27 +493,26 @@ const clickMode = async (
   prefix: string,
   kind: "character" | "subject"
 ): Promise<string> => {
-  const purpose = prefix === "cee.answer.search" ? "cee_answer" : "cee_guess";
   const search = context.state.search;
   if (search?.prefix === prefix) search.kind = kind;
   else {
     context.state.search = {
       prefix,
-      purpose,
+      purpose: purposeOf(prefix),
       kind,
       keyword: (context.state.drafts[`${prefix}.input`] ?? "").trim(),
       status: "idle",
       results: [],
     };
   }
-  await runSearch(context, prefix, purpose);
+  await runSearch(context, prefix, purposeOf(prefix));
   return kind === "subject" ? "已切换到搜作品" : "已切换到搜角色";
 };
 
 const clickCeeBasic = async (context: UiContext, id: string): Promise<string | undefined> => {
   switch (id) {
     case "cee.ready": {
-      const me = meOf(context);
+      const me = selfOf(context);
       await send(context, "cee.player.ready", { ready: me?.ready !== true });
       return me?.ready === true ? "已取消准备" : "已准备";
     }
@@ -596,7 +557,7 @@ const clickCeeAnswer = async (context: UiContext, id: string): Promise<string> =
 const clickCeeSearch = async (context: UiContext, id: string): Promise<string | undefined> => {
   for (const prefix of ["cee.answer.search", "cee.guess.search"]) {
     if (id === `${prefix}.refresh`) {
-      await runSearch(context, prefix, prefix === "cee.answer.search" ? "cee_answer" : "cee_guess");
+      await runSearch(context, prefix, purposeOf(prefix));
       return "已重新搜索";
     }
     if (id === `${prefix}.back`) {
@@ -604,7 +565,7 @@ const clickCeeSearch = async (context: UiContext, id: string): Promise<string | 
       search.subject = undefined;
       context.state.ceeCast = undefined;
       const ack = await send(context, "cee.subject.search", { keyword: search.keyword });
-      search.results = isRecord(ack) ? recordList(ack.results) : [];
+      search.results = ackResults(ack);
       search.status = "ready";
       return "已返回作品结果";
     }
@@ -687,9 +648,8 @@ export async function pressCee(
 ): Promise<string | undefined> {
   if (key !== "Enter") return undefined;
   if (controlValue.id.endsWith(".search.input")) {
-    const prefix = controlValue.id.slice(0, -".input".length);
-    const purpose = prefix === "cee.answer.search" ? "cee_answer" : "cee_guess";
-    await runSearch(context, prefix, purpose);
+    const prefix = inputPrefixOf(controlValue.id);
+    await runSearch(context, prefix, purposeOf(prefix));
     return "已立即搜索";
   }
   return undefined;

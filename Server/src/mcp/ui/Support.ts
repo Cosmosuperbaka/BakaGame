@@ -1,5 +1,5 @@
 import type { GameId } from "../GameClient";
-import type { UiControl, UiPart, UiScreen } from "./Types";
+import type { UiControl, UiPart, UiScreen, UiSection } from "./Types";
 import { isRecord } from "../../shared/Json";
 
 export { isRecord };
@@ -138,6 +138,128 @@ export const playerName = (snapshot: Record<string, unknown>, id: unknown): stri
   return str(found?.name) ?? "该玩家";
 };
 
+/** 当前座位的玩家编号：命令上下文里带的优先，退回私有状态。 */
+export const seatIdOf = (context: UiContext): unknown =>
+  context.playerId ?? context.privateState.playerId;
+
+/** 玩家栏里属于本座位的那一条。 */
+export const selfOf = (context: UiContext) =>
+  recordList(context.snapshot.players).find((player) => player.id === seatIdOf(context));
+
+/** 本座位是不是房主：以快照里的房主编号为准。 */
+export const isHostOf = (context: UiContext): boolean =>
+  context.snapshot.hostPlayerId === seatIdOf(context);
+
+export const settingsOf = (context: UiContext): Record<string, unknown> =>
+  isRecord(context.snapshot.settings) ? context.snapshot.settings : {};
+
+/** 玩家栏条目里的账号头像；没有账号头像时不带这个字段。 */
+export const avatarOf = (player: Record<string, unknown>): { avatar?: string } =>
+  isRecord(player.account) && typeof player.account.image === "string"
+    ? { avatar: player.account.image }
+    : {};
+
+/** 队伍下拉：不组队加 1–8 队，三款有队伍的玩法口径一致。 */
+export const teamSelect = (id: string, me: Record<string, unknown>, hint: string): UiControl =>
+  control(id, "队伍", "select", "game", {
+    value: typeof me.team === "number" ? String(me.team) : "none",
+    options: [
+      { value: "none", label: "不组队" },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        value: String(index + 1),
+        label: `${index + 1} 队`,
+      })),
+    ],
+    hint,
+  });
+
+/** 每个游戏屏幕都由「可操作控件」与「聊天」两段组成。 */
+export const screenSections = (
+  game: string,
+  actions: UiControl[],
+  context: UiContext
+): UiSection[] => [
+  section(`${game}.actions`, "可操作控件", actions),
+  section(`${game}.chat`, "聊天", chatControls(context.state)),
+];
+
+/** 屏幕 `you` 字段里三款共有的开头四项；顺序是对外契约的一部分。 */
+export const youBase = (context: UiContext, isHost: boolean) => {
+  const me = selfOf(context);
+  return {
+    playerId: seatIdOf(context),
+    name: me?.name,
+    isHost,
+    membership: me?.membership,
+  };
+};
+
+// ---------------------------------------------------------------- 搜索流程（猜歌与猜角色共用）
+
+/** 人类页面停止输入后才自动查询；Agent 保持同样的节拍。 */
+export const SEARCH_DEBOUNCE_MS = 420;
+
+export const waitSearchDebounce = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS));
+
+/** 控件 id 形如 `<前缀>.input`；不是输入框时返回空串。 */
+export const inputPrefixOf = (controlId: string): string =>
+  controlId.endsWith(".input") ? controlId.slice(0, -".input".length) : "";
+
+/** 上游应答里的结果表；应答不是对象时按空表处理。 */
+export const ackResults = (ack: unknown): Array<Record<string, unknown>> =>
+  isRecord(ack) ? recordList(ack.results) : [];
+
+/** 取当前搜索态：前缀对不上说明结果已经被别的操作换掉了。 */
+export const requireSearch = (
+  context: UiContext,
+  prefix: string,
+  changedMessage: string,
+  options: { nonEmpty?: boolean } = {}
+): UiSearchState => {
+  const search = context.state.search;
+  if (!search || search.prefix !== prefix) throw new Error(changedMessage);
+  if (options.nonEmpty && (search.status !== "ready" || search.results.length === 0))
+    throw new Error("当前没有可选结果");
+  return search;
+};
+
+export const searchResultAt = (search: UiSearchState, index: string): Record<string, unknown> => {
+  const value = Number.parseInt(index, 10);
+  const result = Number.isInteger(value) ? search.results[value] : undefined;
+  if (!result) throw new Error(`结果 ${index} 不存在`);
+  return result;
+};
+
+/**
+ * 执行一次检索并把结果或失败记进搜索态。失败时先记下再重新抛出：
+ * 是否把失败交给调用方（按键触发）还是只留在状态里（自动检索）由调用方决定。
+ */
+export const loadSearch = async (
+  search: UiSearchState,
+  query: () => Promise<unknown>
+): Promise<void> => {
+  try {
+    search.results = ackResults(await query());
+    search.status = "ready";
+  } catch (error) {
+    search.status = "error";
+    search.error = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
+};
+
+/** 点开一个作品（番剧）后切到它的关联结果表。 */
+export const openSubjectResults = (
+  search: UiSearchState,
+  subject: Record<string, unknown>,
+  ack: unknown
+): void => {
+  search.subject = subject;
+  search.results = ackResults(ack);
+  search.status = "ready";
+};
+
 /** 把页面标题、提示、玩家栏、聊天栏统一挂到每个游戏屏幕上。 */
 export const assemble = (
   context: UiContext,
@@ -163,14 +285,10 @@ export const assemble = (
 };
 
 /** 聊天模块共用的发送逻辑；三个游戏仅命令名不同，由各自模块调用。 */
-export async function sendChat(
-  context: UiContext,
-  command: string,
-  state = context.state
-): Promise<string> {
-  const value = (state.drafts["chat.input"] ?? "").trim();
+export async function sendChat(context: UiContext, command: string): Promise<string> {
+  const value = (context.state.drafts["chat.input"] ?? "").trim();
   if (!value) throw new Error("聊天内容不能为空");
   await context.client.sendInRoom(context.game, command, { text: value });
-  delete state.drafts["chat.input"];
+  delete context.state.drafts["chat.input"];
   return "聊天消息已发送";
 }

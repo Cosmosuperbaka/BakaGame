@@ -1,15 +1,27 @@
 import {
+  ackResults,
   assemble,
+  avatarOf,
   button,
-  chatControls,
   control,
+  inputPrefixOf,
+  isHostOf,
   isRecord,
   list,
+  loadSearch,
+  openSubjectResults,
   playerName,
   recordList,
-  section,
+  requireSearch,
+  screenSections,
+  searchResultAt,
+  selfOf,
+  settingsOf,
   str,
+  teamSelect,
   textbox,
+  waitSearchDebounce,
+  youBase,
   type UiContext,
   type UiSearchState,
 } from "./Support";
@@ -25,22 +37,11 @@ const PHASE_TITLES: Record<string, string> = {
   roundResult: "答案揭晓",
 };
 
-const settingsOf = (context: UiContext): Record<string, unknown> =>
-  isRecord(context.snapshot.settings) ? context.snapshot.settings : {};
-
 const questionType = (context: UiContext): "song" | "anime" =>
   settingsOf(context).questionType === "anime" ? "anime" : "song";
 
 const questionMode = (context: UiContext): "manual" | "automatic" =>
   settingsOf(context).questionMode === "automatic" ? "automatic" : "manual";
-
-const meOf = (context: UiContext) =>
-  recordList(context.snapshot.players).find(
-    (player) => player.id === (context.playerId ?? context.privateState.playerId)
-  );
-
-const isHost = (context: UiContext): boolean =>
-  context.snapshot.hostPlayerId === (context.playerId ?? context.privateState.playerId);
 
 const hasMusic = (context: UiContext): boolean =>
   context.snapshot.musicAccountReady === true || context.snapshot.qqMusicAccountReady === true;
@@ -68,9 +69,7 @@ const songPlayers = (snapshot: Record<string, unknown>) =>
     correctGuesses: player.correctGuesses,
     totalGuesses: player.totalGuesses,
     roundMarks: player.roundMarks,
-    ...(isRecord(player.account) && typeof player.account.image === "string"
-      ? { avatar: player.account.image }
-      : {}),
+    ...avatarOf(player),
   }));
 
 const searchHint = (context: UiContext, prefix: string): string =>
@@ -80,22 +79,14 @@ const searchHint = (context: UiContext, prefix: string): string =>
       : "停止输入后自动检索；点一条结果进入片段确认"
     : "停止输入后自动检索；点一条结果即提交猜测";
 
-const guessedSongIds = (context: UiContext): string[] =>
+/** 本人已猜过的条目编号：猜歌取 guessedSong，猜番取 guessedAnime。 */
+const guessedIds = (context: UiContext, field: "guessedSong" | "guessedAnime"): string[] =>
   list(context.privateState.visibleAttempts)
     .filter(isRecord)
     .filter((attempt) => attempt.playerId === context.privateState.playerId)
     .flatMap((attempt) => {
-      const song = isRecord(attempt.guessedSong) ? attempt.guessedSong : undefined;
-      return typeof song?.id === "string" ? [song.id] : [];
-    });
-
-const guessedSubjectIds = (context: UiContext): string[] =>
-  list(context.privateState.visibleAttempts)
-    .filter(isRecord)
-    .filter((attempt) => attempt.playerId === context.privateState.playerId)
-    .flatMap((attempt) => {
-      const subject = isRecord(attempt.guessedAnime) ? attempt.guessedAnime : undefined;
-      return typeof subject?.id === "string" ? [subject.id] : [];
+      const target = isRecord(attempt[field]) ? attempt[field] : undefined;
+      return typeof target?.id === "string" ? [target.id] : [];
     });
 
 const songResultView = (song: Record<string, unknown>): Record<string, unknown> => ({
@@ -201,9 +192,9 @@ const canStart = (context: UiContext): boolean => {
 };
 
 const waitingControls = (context: UiContext): UiControl[] => {
-  const me = meOf(context);
+  const me = selfOf(context);
   const controls: UiControl[] = [];
-  if (isHost(context) || context.snapshot.solo === true) {
+  if (isHostOf(context) || context.snapshot.solo === true) {
     controls.push(
       button("song.start", "开始游戏", "game", {
         disabled: !canStart(context),
@@ -218,25 +209,13 @@ const waitingControls = (context: UiContext): UiControl[] => {
     controls.push(button("song.ready", me.isReady === true ? "取消准备" : "准备"));
   }
   if (me?.membership === "active") {
-    controls.push(
-      control("song.team", "队伍", "select", "game", {
-        value: typeof me.team === "number" ? String(me.team) : "none",
-        options: [
-          { value: "none", label: "不组队" },
-          ...Array.from({ length: 8 }, (_, index) => ({
-            value: String(index + 1),
-            label: `${index + 1} 队`,
-          })),
-        ],
-        hint: "同队共享猜测次数与记录",
-      })
-    );
+    controls.push(teamSelect("song.team", me, "同队共享猜测次数与记录"));
   }
   return controls;
 };
 
 const choosingControls = (context: UiContext): UiControl[] => {
-  if (!isHost(context)) return [];
+  if (!isHostOf(context)) return [];
   const allowed = new Set(list(context.privateState.submitterCandidateIds));
   return recordList(context.snapshot.players)
     .filter((player) => allowed.has(player.id))
@@ -271,8 +250,8 @@ const searchControls = (context: UiContext, prefix: string): UiControl[] => {
     const disabled =
       search.purpose === "song_guess"
         ? search.kind === "anime"
-          ? guessedSubjectIds(context).includes(id ?? "")
-          : guessedSongIds(context).includes(id ?? "")
+          ? guessedIds(context, "guessedAnime").includes(id ?? "")
+          : guessedIds(context, "guessedSong").includes(id ?? "")
         : view.playable === false;
     controls.push(
       control(
@@ -339,7 +318,7 @@ const playingControls = (context: UiContext): UiControl[] => {
 };
 
 const resultControls = (context: UiContext): UiControl[] => {
-  if (!isHost(context)) return [];
+  if (!isHostOf(context)) return [];
   const controls = [
     button("song.finish", context.snapshot.solo === true ? "结束本局" : "返回等待阶段"),
   ];
@@ -431,10 +410,7 @@ const withoutAudioUrl = (summary: Record<string, unknown>): Record<string, unkno
 
 export function buildSongScreen(context: UiContext): UiScreen {
   const phase = str(context.snapshot.phase) ?? "waiting";
-  const sections = [
-    section("song.actions", "可操作控件", phaseControls(context)),
-    section("song.chat", "聊天", chatControls(context.state)),
-  ];
+  const sections = screenSections("song", phaseControls(context), context);
   const roundSummary = isRecord(context.snapshot.roundSummary)
     ? withoutAudioUrl(context.snapshot.roundSummary)
     : undefined;
@@ -446,14 +422,11 @@ export function buildSongScreen(context: UiContext): UiScreen {
       notice:
         phase === "submittingSong" && context.privateState.canSubmitSong !== true
           ? `${playerName(context.snapshot, context.snapshot.pendingSubmitterPlayerId)} 正在选歌`
-          : phase === "roundResult" && !isHost(context)
+          : phase === "roundResult" && !isHostOf(context)
             ? "等待房主开始下一轮"
             : undefined,
       you: {
-        playerId: context.playerId ?? context.privateState.playerId,
-        name: meOf(context)?.name,
-        isHost: isHost(context),
-        membership: meOf(context)?.membership,
+        ...youBase(context, isHostOf(context)),
         isSubmitter: context.privateState.isSubmitter === true,
         teamObserver: context.privateState.teamObserver === true,
         canSubmitSong: context.privateState.canSubmitSong === true,
@@ -505,27 +478,27 @@ const startSearch = (
   return search;
 };
 
+const searchPurposeOf = (prefix: string): UiSearchState["purpose"] =>
+  prefix === "song.submit.search" ? "song_submit" : "song_guess";
+
+const searchCommandOf = (kind: UiSearchState["kind"]): string =>
+  kind === "anime" ? "song.bangumi.search" : "song.music.search";
+
 export async function autoSearchSong(context: UiContext, controlId: string): Promise<void> {
-  const prefix = controlId.endsWith(".input") ? controlId.slice(0, -".input".length) : "";
+  const prefix = inputPrefixOf(controlId);
   if (prefix !== "song.submit.search" && prefix !== "song.guess.search") return;
-  const purpose = prefix === "song.submit.search" ? "song_submit" : "song_guess";
   const keyword = (context.state.drafts[`${prefix}.input`] ?? "").trim();
   if (!keyword) {
     context.state.search = undefined;
     return;
   }
   // 人类页面停止输入后自动查询；这里保持同样的节拍，不额外加显式搜索按钮。
-  await new Promise((resolve) => setTimeout(resolve, 420));
-  const search = startSearch(context, prefix, purpose);
-  try {
-    const command = search.kind === "anime" ? "song.bangumi.search" : "song.music.search";
-    const ack = await send(context, command, { keyword });
-    search.results = isRecord(ack) ? recordList(ack.results) : [];
-    search.status = "ready";
-  } catch (error) {
-    search.status = "error";
-    search.error = error instanceof Error ? error.message : String(error);
-  }
+  await waitSearchDebounce();
+  const search = startSearch(context, prefix, searchPurposeOf(prefix));
+  // 自动检索的失败只留在搜索态里，由下面的反馈说明，不打断后续步骤。
+  await loadSearch(search, () => send(context, searchCommandOf(search.kind), { keyword })).catch(
+    () => undefined
+  );
   if (context.state.search === search)
     context.state.lastFeedback = search.error ?? `找到 ${search.results.length} 条结果`;
 }
@@ -536,23 +509,13 @@ const clearSearch = (context: UiContext) => {
   if (prefix) delete context.state.drafts[`${prefix}.input`];
 };
 
-const needSearch = (context: UiContext, prefix: string): UiSearchState => {
-  const search = context.state.search;
-  if (!search || search.prefix !== prefix)
-    throw new Error("搜索结果已变化，请重新在搜索框输入并等待检索完成");
-  if (search.status !== "ready" || search.results.length === 0) throw new Error("当前没有可选结果");
-  return search;
-};
-
-const resultAt = (search: UiSearchState, index: string): Record<string, unknown> => {
-  const value = Number.parseInt(index, 10);
-  const result = Number.isInteger(value) ? search.results[value] : undefined;
-  if (!result) throw new Error(`结果 ${index} 不存在`);
-  return result;
-};
+const needSearch = (context: UiContext, prefix: string): UiSearchState =>
+  requireSearch(context, prefix, "搜索结果已变化，请重新在搜索框输入并等待检索完成", {
+    nonEmpty: true,
+  });
 
 const clickSubmitResult = async (context: UiContext, search: UiSearchState, index: string) => {
-  const result = resultAt(search, index);
+  const result = searchResultAt(search, index);
   if (search.kind === "anime" && search.subject) {
     const song = isRecord(result.song) ? result.song : undefined;
     const songId = str(song?.id);
@@ -567,9 +530,7 @@ const clickSubmitResult = async (context: UiContext, search: UiSearchState, inde
     const subjectId = str(result.id);
     if (!subjectId) throw new Error("番剧缺少 subjectId");
     const ack = await send(context, "song.bangumi.songs", { subjectId });
-    search.subject = result;
-    search.results = isRecord(ack) ? recordList(ack.results) : [];
-    search.status = "ready";
+    openSubjectResults(search, result, ack);
     return `已打开番剧的关联曲，共 ${search.results.length} 首`;
   }
   const songId = str(result.id);
@@ -593,7 +554,7 @@ const clickSubmitResult = async (context: UiContext, search: UiSearchState, inde
 };
 
 const clickGuessResult = async (context: UiContext, search: UiSearchState, index: string) => {
-  const result = resultAt(search, index);
+  const result = searchResultAt(search, index);
   if (search.kind === "anime") {
     const subjectId = str(result.id);
     if (!subjectId) throw new Error("番剧缺少 subjectId");
@@ -653,7 +614,7 @@ const clickSongSearch = async (context: UiContext, id: string): Promise<string |
       const search = needSearch(context, prefix);
       search.subject = undefined;
       const ack = await send(context, "song.bangumi.search", { keyword: search.keyword });
-      search.results = isRecord(ack) ? recordList(ack.results) : [];
+      search.results = ackResults(ack);
       return "已返回番剧结果";
     }
     if (id.startsWith(`${prefix}.result.`)) {
@@ -670,7 +631,7 @@ const clickSongSearch = async (context: UiContext, id: string): Promise<string |
 const clickSongBasic = async (context: UiContext, id: string): Promise<string | undefined> => {
   switch (id) {
     case "song.ready": {
-      const me = meOf(context);
+      const me = selfOf(context);
       await send(context, "song.player.setReady", { ready: me?.isReady !== true });
       return me?.isReady === true ? "已取消准备" : "已准备";
     }
@@ -747,22 +708,12 @@ export async function pressSong(
 ): Promise<string | undefined> {
   if (key !== "Enter") return undefined;
   if (controlValue.id.endsWith(".search.input")) {
-    const prefix = controlValue.id.slice(0, -".input".length);
-    const purpose = prefix === "song.submit.search" ? "song_submit" : "song_guess";
+    const prefix = inputPrefixOf(controlValue.id);
     const keyword = (context.state.drafts[controlValue.id] ?? "").trim();
     if (!keyword) throw new Error("搜索词不能为空");
-    const search = startSearch(context, prefix, purpose);
-    try {
-      const command = search.kind === "anime" ? "song.bangumi.search" : "song.music.search";
-      const ack = await send(context, command, { keyword });
-      search.results = isRecord(ack) ? recordList(ack.results) : [];
-      search.status = "ready";
-      return `找到 ${search.results.length} 条结果`;
-    } catch (error) {
-      search.status = "error";
-      search.error = error instanceof Error ? error.message : String(error);
-      throw error;
-    }
+    const search = startSearch(context, prefix, searchPurposeOf(prefix));
+    await loadSearch(search, () => send(context, searchCommandOf(search.kind), { keyword }));
+    return `找到 ${search.results.length} 条结果`;
   }
   return undefined;
 }
@@ -774,7 +725,7 @@ export async function ensureSongAudioReady(context: UiContext): Promise<void> {
   const roundNumber = round?.roundNumber;
   if (typeof roundNumber !== "number") return;
   if (context.state.audioReadyRound === roundNumber) return;
-  const me = meOf(context);
+  const me = selfOf(context);
   if (me?.membership !== "active") return;
   if (context.privateState.canGuess !== true && context.privateState.isSubmitter !== true) return;
   context.state.audioReadyRound = roundNumber;
