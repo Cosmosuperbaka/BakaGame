@@ -111,13 +111,13 @@ export function FakerPlayerList(props: PlayerListProps) {
     ...observers.map((player) => ({ id: player.id, group: "observer" })),
   ]);
 
-  // 房主与旁观操作互相独立，不需要锁：发命令，失败落成错误提示
-  const { kick, transferHost, setSpectator } = useHostPlayerActions({
+  // 房主操作与旁观切换共用一把在途锁：回执之前不再发第二条，按钮随之置灰；失败落成错误提示。
+  const { pending, kick, transferHost, setSpectator } = useHostPlayerActions({
     kick: (playerId) => sendCommand("room.kick", { playerId }),
     transferHost: (playerId) => sendCommand("room.transferHost", { playerId }),
     setSpectator: (spectator) => sendCommand("player.setSpectator", { spectator }),
     onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
-    lock: "none",
+    lock: "shared",
   });
 
   /**
@@ -148,6 +148,7 @@ export function FakerPlayerList(props: PlayerListProps) {
       onMarkChange,
       onKick: kick,
       onTransferHost: transferHost,
+      actionsPending: pending,
     };
 
     // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
@@ -236,7 +237,7 @@ export function FakerPlayerList(props: PlayerListProps) {
       </PlayerRowGroup>
 
       {showSpectatorToggle && isSpectator ? (
-        <SpectatorToggle spectator={false} onToggle={setSpectator} />
+        <SpectatorToggle spectator={false} disabled={pending} onToggle={setSpectator} />
       ) : null}
 
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
@@ -246,7 +247,7 @@ export function FakerPlayerList(props: PlayerListProps) {
             {observers.map((player, index) => renderRow(player, true, observerRowOffset + index))}
           </PlayerRowGroup>
           {showSpectatorToggle && !isSpectator ? (
-            <SpectatorToggle spectator onToggle={setSpectator} />
+            <SpectatorToggle spectator disabled={pending} onToggle={setSpectator} />
           ) : null}
         </>
       ) : null}

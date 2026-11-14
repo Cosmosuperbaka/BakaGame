@@ -6,8 +6,8 @@ export interface HostPlayerActionsOptions {
   setSpectator: (spectator: boolean) => Promise<unknown>;
   onError: (error: unknown) => void;
   /**
-   * 猜歌共用一把在途锁：一条命令返回前别的操作不发，同一批事件里的连点在重渲染前靠 ref 同步挡住。
-   * 卧底不加锁；CEE 的锁按命令分在 useCEEAction 里，这里同样不再叠一把共享锁。
+   * 卧底与猜歌共用一把在途锁：一条命令返回前别的操作不发，同一批事件里的连点在重渲染前靠 ref 同步挡住。
+   * CEE 的锁按命令分在 useCEEAction 里，这里不再叠一把共享锁。
    */
   lock: "shared" | "none";
 }

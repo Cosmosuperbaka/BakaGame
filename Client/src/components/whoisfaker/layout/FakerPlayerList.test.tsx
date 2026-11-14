@@ -145,22 +145,7 @@ describe("FakerPlayerList 房主操作指令", () => {
     expect(showToast).toHaveBeenCalledWith("只有房主可以操作", "error");
   });
 
-  // 卧底现状不加锁：同一批事件里的连点不会被挡，两条都发出去。
-  it("不加锁：同一帧连点旁观切换发两条", () => {
-    const sendCommand = vi.fn().mockResolvedValue({});
-    useWhoIsFakerStore.setState({ sendCommand: sendCommand as never });
-    renderHost();
-
-    const toggle = screen.getByRole("button", { name: "加入旁观" });
-    act(() => {
-      toggle.click();
-      toggle.click();
-    });
-    expect(sendCommand).toHaveBeenCalledTimes(2);
-    expect(sendCommand).toHaveBeenCalledWith("player.setSpectator", { spectator: true });
-  });
-
-  it("命令在途时旁观切换不禁用", async () => {
+  it("命令在途时同一帧连点旁观切换只发一条", async () => {
     let finish!: () => void;
     const sendCommand = vi.fn(
       () =>
@@ -172,11 +157,55 @@ describe("FakerPlayerList 房主操作指令", () => {
     renderHost();
 
     const toggle = screen.getByRole("button", { name: "加入旁观" });
-    await act(async () => {
+    // 同一批事件里连点：重渲染之前按钮还没来得及禁用，只有锁挡得住第二下。
+    act(() => {
+      toggle.click();
       toggle.click();
     });
     expect(sendCommand).toHaveBeenCalledTimes(1);
-    expect(toggle).toBeEnabled();
+    expect(sendCommand).toHaveBeenCalledWith("player.setSpectator", { spectator: true });
     await act(async () => finish());
+  });
+
+  it("转移房主在途时，另一个目标的踢出与旁观切换都置灰，返回后恢复可用", async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const sendCommand = vi.fn(
+      () =>
+        new Promise<object>((resolve) => {
+          finish = () => resolve({});
+        })
+    );
+    useWhoIsFakerStore.setState({ sendCommand: sendCommand as never });
+    renderHost();
+
+    await user.click(screen.getByRole("button", { name: `${WIF_PEOPLE.me.name} 操作` }));
+    await user.click(await screen.findByRole("button", { name: "转移房主" }));
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: `${WIF_PEOPLE.peach.name} 操作` }));
+    const kick = await screen.findByRole("button", { name: "踢出玩家" });
+    expect(kick).toBeDisabled();
+    expect(screen.getByRole("button", { name: "加入旁观" })).toBeDisabled();
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish());
+    expect(screen.getByRole("button", { name: "加入旁观" })).toBeEnabled();
+  });
+
+  it("命令失败后释放锁，下一次照常发出", async () => {
+    const showToast = vi.fn();
+    const sendCommand = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以操作" })
+      .mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand: sendCommand as never, showToast });
+    renderHost();
+
+    await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+    expect(showToast).toHaveBeenCalledWith("只有房主可以操作", "error");
+
+    await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+    expect(sendCommand).toHaveBeenCalledTimes(2);
   });
 });

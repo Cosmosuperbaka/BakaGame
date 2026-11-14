@@ -42,6 +42,8 @@ export interface PlayerRowProps {
   onMarkChange: (playerId: string, mark: PlayerMark) => void;
   onKick: (playerId: string) => void;
   onTransferHost: (playerId: string) => void;
+  /** 有房主命令在途：管理动作保留在浮层里但不可点 */
+  actionsPending?: boolean;
   /** 嵌入发言历史首栏时去掉行自身的进出场动画，交由表格统一处理 */
   embedded?: boolean;
   /** 转交给通用行的动画容器，供 `popLayout` 抽出退场行 */
@@ -62,6 +64,7 @@ export function PlayerRow(props: PlayerRowProps) {
     onMarkChange,
     onKick,
     onTransferHost,
+    actionsPending = false,
     embedded,
     ref,
   } = props;
@@ -115,6 +118,8 @@ export function PlayerRow(props: PlayerRowProps) {
             actions: hostActions({
               onTransferHost: () => onTransferHost(player.id),
               onKick: () => onKick(player.id),
+              transferDisabled: actionsPending,
+              kickDisabled: actionsPending,
             }),
           }
         : {})}
