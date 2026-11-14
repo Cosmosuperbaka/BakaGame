@@ -570,7 +570,7 @@ describe("原版房间适配", () => {
   });
 
   test("被上游踢出时立即撤权并清空房间聊天", async () => {
-    const { service, upstream } = setup();
+    const { service, upstream, first } = setup();
     await create(service);
     await request(service, "first", {
       id: "chat",
@@ -578,8 +578,11 @@ describe("原版房间适配", () => {
       payload: { text: "旧房聊天" },
     });
     expect((await sync(service)).snapshot.chat).toHaveLength(1);
+    expect(first.roomId).toBe("original:1234");
     upstream.sockets[0].receive("playerKicked", { playerId: upstream.sockets[0].id });
     expect(service.hasSession("first")).toBe(false);
+    // 撤权包括摘掉连接上记的房号。
+    expect(first.roomId).toBeUndefined();
     expect(upstream.sockets[0].connected).toBe(false);
     expect(service.getHealthSnapshot()).toMatchObject({ sessions: 0, rooms: 0 });
   });
