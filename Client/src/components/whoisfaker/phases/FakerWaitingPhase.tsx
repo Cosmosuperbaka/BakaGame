@@ -20,7 +20,7 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerCommandMap } from "@/lib/WhoIsFakerWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { errorText } from "@/lib/ErrorMessage";
-import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useWaitingSettingsSave } from "@/hooks/UseWaitingSettingsSave";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
@@ -204,6 +204,16 @@ const settingsOf = (snapshot: WhoIsFakerRoomSnapshot) => ({
 });
 
 /**
+ * 发送边界：防抖窗口与卸载冲刷里 props 还停在上一次提交，房主可能已经开局、换房或移交了房主，
+ * 所以在这里读 Store 现值，三个条件缺一不可（Engineering §6）。
+ */
+const liveFakerRoom = (roomId: string): WhoIsFakerRoomSnapshot | null => {
+  const { snapshot, privateState } = useWhoIsFakerStore.getState();
+  if (!snapshot || snapshot.roomId !== roomId || snapshot.status.phase !== "waiting") return null;
+  return snapshot.players.find((p) => p.id === privateState?.playerId)?.isHost ? snapshot : null;
+};
+
+/**
  * 两组折叠设置：「身份设置」管阵营与揭露规则，「房间设置」管房间本身；两组共用一份草稿、一条防抖自动保存。
  * 非房主看到同一份结构，字段只显示取值，读的是当前快照而不是草稿。
  */
@@ -220,30 +230,30 @@ function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSett
   // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
   const roleConfig = effectiveRoleConfig(values, limits);
 
-  useAutoSave(
-    {
+  useWaitingSettingsSave({
+    value: {
       ...roomBasicsPayload(draft),
       revealRoleOnDeath: draft.revealRoleOnDeath,
       spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
       roleConfig: effectiveRoleConfig(draft, limits),
     },
-    (payload) => {
+    enabled:
+      !readOnly &&
+      snapshot.status.phase === "waiting" &&
+      canSaveRoomBasics(draft, snapshot.hasPassword),
+    liveRoom: () => liveFakerRoom(snapshot.roomId),
+    send: async (payload) => {
       // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
       saveRoomSettingsMemory("faker", {
         revealRoleOnDeath: payload.revealRoleOnDeath,
         spectatorsSeeAnswers: payload.spectatorsSeeAnswers,
         roleConfig: payload.roleConfig,
       });
-      return sendCommand("room.updateSettings", payload);
+      await sendCommand("room.updateSettings", payload);
+      return payload;
     },
-    {
-      enabled:
-        !readOnly &&
-        snapshot.status.phase === "waiting" &&
-        canSaveRoomBasics(draft, snapshot.hasPassword),
-      onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
-    }
-  );
+    onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
+  });
 
   return (
     <SettingsStack>

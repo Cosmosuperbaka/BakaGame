@@ -377,6 +377,60 @@ describe("waiting room sharing", () => {
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("改过的房名");
   });
 
+  it.each([
+    [
+      "对局已开始",
+      () => ({ ...snapshot, status: { ...snapshot.status, phase: "wordSubmission" as const } }),
+    ],
+    ["已换到另一间房", () => ({ ...snapshot, roomId: "5678" })],
+    [
+      "房主已移交给别人",
+      () => ({
+        ...snapshot,
+        hostPlayerId: "guest",
+        players: snapshot.players.map((p) => ({ ...p, isHost: p.id === "guest" })),
+      }),
+    ],
+  ])("防抖期间%s：卸载冲刷不会发出设置", async (_label, leave) => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    const view = render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    // Store 已经变了，但组件的 props 与 enabled 还停在上一次提交：冲刷得自己读房态。
+    useWhoIsFakerStore.setState({ snapshot: leave() });
+    view.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("仍在同一房间的等待阶段且仍是房主：卸载会冲刷设置", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    const view = render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    view.unmount();
+
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false })
+    );
+  });
+
   it("房主可以单独打开旁观者局中看答案的开关", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
     useWhoIsFakerStore.setState({
