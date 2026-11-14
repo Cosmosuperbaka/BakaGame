@@ -353,6 +353,28 @@ describe("CEE 直链入房的分支与去向（补充）", () => {
     expect(h.result.current.joining).toBe(false);
     expect(localStorage.getItem("bakagame:username")).toBe("新名字");
   });
+  it("本机没存过名字直链进私密房：密码步沿用自动加入时的访客名，输完密码能进", async () => {
+    localStorage.removeItem("bakagame:username");
+    const { joinRoom } = ready({
+      joinRoom: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "PASSWORD_REQUIRED", message: "需要房间密码" })
+        .mockResolvedValueOnce(undefined),
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsJoin).toBe(true));
+    const guest = joinRoom.mock.calls[0][1] as string;
+    expect(guest.trim()).not.toBe("");
+    // 密码步只有密码框：名字必须已经在表单里，否则点「加入房间」毫无反应。
+    expect(h.result.current.name).toBe(guest);
+    act(() => h.result.current.setPassword("secret"));
+    await act(async () => h.result.current.join());
+    expect(joinRoom).toHaveBeenCalledTimes(2);
+    expect(joinRoom.mock.calls[1]).toEqual(["1234", guest, "secret", expect.any(AbortSignal)]);
+    expect(h.result.current.needsJoin).toBe(false);
+    // 访客名仍然是进房成功之后才记进本机。
+    expect(localStorage.getItem("bakagame:username")).toBe(guest);
+  });
   it("房间不存在且建房失败：提示后替换回大厅", async () => {
     ready({
       joinRoom: vi.fn().mockRejectedValue({ code: "ROOM_NOT_FOUND", message: "房间不存在" }),

@@ -110,6 +110,9 @@ export function useCEERoomLifecycle() {
       if (cancelled(failure, controller)) return;
       if (isPasswordFailure(failure)) {
         fail(failure);
+        // 密码步只有密码框：把这次用的名字（没存过名字时是访客名）放进表单，手动确认才有名字可用。
+        // 只放进表单，不记进本机，记名字仍等进房成功。
+        setName(userName);
         // 直链进私密房必须落到密码步；否则 needsJoin 为假，页面只剩一个永不结束的转圈。
         setNeedsJoin(true);
         return;
