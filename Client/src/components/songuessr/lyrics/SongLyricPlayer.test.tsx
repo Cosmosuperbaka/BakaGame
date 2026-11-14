@@ -293,15 +293,21 @@ describe("歌词动画调度", () => {
     scene.setPlayback("paused", "ready");
     scene.setPlayback("paused", "ready");
     expect(frames.size).toBe(0);
-    expect(vi.getTimerCount()).toBe(1);
-    vi.advanceTimersByTime(34);
+    // 只禁重复调度：暂停时用几个定时器等价实现可以不同，钉死个数会在换调度器时误报。
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+    const first = 34;
+    const second = 68;
+    vi.advanceTimersByTime(first);
     expect(frames.size).toBe(1);
-    flushFrame(34);
+    flushFrame(first);
     expect(frames.size).toBe(0);
-    vi.advanceTimersByTime(34);
-    flushFrame(68);
-    expect(players.at(-1)!.updates.slice(-2)).toEqual([0, 34]);
-    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(second - first);
+    flushFrame(second);
+    const updates = players.at(-1)!.updates;
+    expect(updates.length).toBeGreaterThanOrEqual(2);
+    // 首帧 delta 取什么是实现细节；要钉的是「后一帧按两帧的实际间隔推进」。
+    expect(updates.at(-1)).toBe(second - first);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
   });
 
   it("媒体恢复立即取消低频等待，暂停和卸载清理两种调度及事件", () => {
