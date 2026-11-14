@@ -1,9 +1,8 @@
 import { type ReactNode, type Ref } from "react";
-import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { SongRoundMarks } from "@/components/songuessr/layout/SongRoundMarks";
-import { PlayerGroupTitle, PlayerListLayout } from "@/components/common/PlayerListLayout";
+import { PlayerGroupTitle, PlayerListFrame } from "@/components/common/PlayerListLayout";
 import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
@@ -87,62 +86,56 @@ export function SongPlayerList({
   );
 
   return (
-    <ScrollArea className="h-full">
-      <PlayerListLayout>
-        <div className="min-w-0 px-2">
-          <div className="relative flex min-w-0 w-full flex-col py-1.5">
-            <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-            {teamed ? (
-              // 有人组队时按队伍分块：队伍一块带标题与共享次数，个人游玩的人接在最后、不加底。
-              <PlayerTeamBlocks
-                players={activePlayers}
-                renderTeam={({ team, members }) => (
-                  <SongTeamSection
-                    key={team ?? "solo"}
-                    team={team}
-                    members={members}
-                    phase={phase}
-                    maxGuesses={maxGuesses}
-                  >
-                    {renderRows(members)}
-                  </SongTeamSection>
-                )}
-              />
-            ) : (
-              renderRows(activePlayers)
-            )}
+    <PlayerListFrame>
+      <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+      {teamed ? (
+        // 有人组队时按队伍分块：队伍一块带标题与共享次数，个人游玩的人接在最后、不加底。
+        <PlayerTeamBlocks
+          players={activePlayers}
+          renderTeam={({ team, members }) => (
+            <SongTeamSection
+              key={team ?? "solo"}
+              team={team}
+              members={members}
+              phase={phase}
+              maxGuesses={maxGuesses}
+            >
+              {renderRows(members)}
+            </SongTeamSection>
+          )}
+        />
+      ) : (
+        renderRows(activePlayers)
+      )}
 
-            {canJoinPlayers ? (
-              <SpectatorToggle
-                spectator={false}
-                queued={!waitingPhase}
-                selected={me?.nextRoundMembership === "active"}
-                disabled={pending}
-                onToggle={setSpectator}
-              />
-            ) : null}
+      {canJoinPlayers ? (
+        <SpectatorToggle
+          spectator={false}
+          queued={!waitingPhase}
+          selected={me?.nextRoundMembership === "active"}
+          disabled={pending}
+          onToggle={setSpectator}
+        />
+      ) : null}
 
-            {observers.length > 0 || canJoinSpectators ? (
-              <>
-                <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-                <PlayerRowGroup count={observers.length}>
-                  {observers.map((player) => renderRow(player, true))}
-                </PlayerRowGroup>
-                {canJoinSpectators ? (
-                  <SpectatorToggle
-                    spectator
-                    queued={!waitingPhase}
-                    selected={me?.nextRoundMembership === "spectator"}
-                    disabled={pending}
-                    onToggle={setSpectator}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        </div>
-      </PlayerListLayout>
-    </ScrollArea>
+      {observers.length > 0 || canJoinSpectators ? (
+        <>
+          <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+          <PlayerRowGroup count={observers.length}>
+            {observers.map((player) => renderRow(player, true))}
+          </PlayerRowGroup>
+          {canJoinSpectators ? (
+            <SpectatorToggle
+              spectator
+              queued={!waitingPhase}
+              selected={me?.nextRoundMembership === "spectator"}
+              disabled={pending}
+              onToggle={setSpectator}
+            />
+          ) : null}
+        </>
+      ) : null}
+    </PlayerListFrame>
   );
 }
 

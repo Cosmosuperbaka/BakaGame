@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { ScrollArea } from "@/components/ui/ScrollArea";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { PlayerRowGroup } from "@/components/common/room/PlayerRowGroup";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
@@ -21,7 +20,7 @@ import {
   PLAYER_COLUMN_WIDTH,
   PLAYER_GROUP_TITLE_HEIGHT,
   PlayerGroupTitle,
-  PlayerListLayout,
+  PlayerListFrame,
 } from "@/components/common/PlayerListLayout";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap } from "./FakerPlayerPresentation";
@@ -229,35 +228,8 @@ export function FakerPlayerList(props: PlayerListProps) {
   const observerRowOffset = activePlayers.length;
   const departedRowOffset = observerRowOffset + observers.length;
 
-  const body = (
-    <div
-      className={cn(
-        "relative py-2",
-        history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col"
-      )}
-      style={
-        history
-          ? {
-              gridTemplateColumns: speechGridTemplate(
-                history.columns.length,
-                compact ? COMPACT_PLAYER_COLUMN_WIDTH : PLAYER_COLUMN_WIDTH
-              ),
-            }
-          : undefined
-      }
-    >
-      {/* 玩家列与发言列的分界线。整列贯穿到底，不随最后一行结束，
-          否则行间距与列表末尾的空白处会把线断开。
-          位置必须与行内首列取同一个宽度值，用 rem 而非像素常量，
-          否则 120% 全局字号会让线落进玩家列内部。 */}
-      {/* 紧凑模式的玩家列贴住左缘，分界线改由列自身的右边框承担，否则横滚时线会留在原地。 */}
-      {history && !compact ? (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 w-px bg-border"
-          style={{ left: PLAYER_COLUMN_WIDTH }}
-        />
-      ) : null}
+  const rows = (
+    <>
       {renderGroupTitle("玩家", activePlayers.length, false)}
       <PlayerRowGroup count={activePlayers.length} layout={rowGroupLayout(history)}>
         {activePlayers.map((player, index) => renderRow(player, false, index))}
@@ -290,28 +262,44 @@ export function FakerPlayerList(props: PlayerListProps) {
           </div>
         </>
       ) : null}
-    </div>
+    </>
   );
+
+  if (!history) return <PlayerListFrame>{rows}</PlayerListFrame>;
 
   // 展开后玩家列和发言列必须共享同一个双向滚动容器，才能保持行对齐；
   // 外层面板只负责裁切动画范围，不会替这里提供滚动。
-  if (history) {
-    return (
-      <div
-        ref={historyScrollerRef}
-        data-testid="player-history-scroll"
-        // 右缘还有发言列时淡出；左侧是钉住的玩家列，不淡出。
-        className="scrollbar-hidden scroll-fade-x h-full min-h-0 overflow-auto [--scroll-fade-start:0px]"
-      >
-        {body}
-      </div>
-    );
-  }
   return (
-    <ScrollArea className="h-full">
-      <PlayerListLayout>
-        <div className="px-2">{body}</div>
-      </PlayerListLayout>
-    </ScrollArea>
+    <div
+      ref={historyScrollerRef}
+      data-testid="player-history-scroll"
+      // 右缘还有发言列时淡出；左侧是钉住的玩家列，不淡出。
+      className="scrollbar-hidden scroll-fade-x h-full min-h-0 overflow-auto [--scroll-fade-start:0px]"
+    >
+      {/* 纵向留白与 PlayerListFrame 同一档：展开、收起历史时行的纵向位置不跳。 */}
+      <div
+        className="relative grid min-h-full w-max min-w-full content-start py-1.5"
+        style={{
+          gridTemplateColumns: speechGridTemplate(
+            history.columns.length,
+            compact ? COMPACT_PLAYER_COLUMN_WIDTH : PLAYER_COLUMN_WIDTH
+          ),
+        }}
+      >
+        {/* 玩家列与发言列的分界线。整列贯穿到底，不随最后一行结束，
+            否则行间距与列表末尾的空白处会把线断开。
+            位置必须与行内首列取同一个宽度值，用 rem 而非像素常量，
+            否则 120% 全局字号会让线落进玩家列内部。 */}
+        {/* 紧凑模式的玩家列贴住左缘，分界线改由列自身的右边框承担，否则横滚时线会留在原地。 */}
+        {compact ? null : (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 w-px bg-border"
+            style={{ left: PLAYER_COLUMN_WIDTH }}
+          />
+        )}
+        {rows}
+      </div>
+    </div>
   );
 }

@@ -2,11 +2,10 @@ import type { ReactNode, Ref } from "react";
 import { useEffect } from "react";
 import type { CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Check, Clock, X } from "lucide-react";
-import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
-import { PlayerGroupTitle, PlayerListLayout } from "@/components/common/PlayerListLayout";
+import { PlayerGroupTitle, PlayerListFrame } from "@/components/common/PlayerListLayout";
 import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
@@ -124,120 +123,111 @@ export function CEEPlayerList({
   );
 
   return (
-    <ScrollArea className="h-full">
-      <PlayerListLayout>
-        <div className="flex min-w-0 flex-col px-2 py-1.5">
-          <PlayerGroupTitle label="玩家" count={activePlayers.length} />
-          {teamed ? (
-            // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
-            <PlayerTeamBlocks
-              players={activePlayers}
-              renderTeam={({ team, members }) => (
-                <CEETeamSection
-                  key={team ?? "solo"}
-                  team={team}
-                  members={members}
-                  snapshot={snapshot}
-                >
-                  {renderRows(members, team !== null)}
-                </CEETeamSection>
-              )}
-            />
-          ) : (
-            renderRows(activePlayers, false)
+    <PlayerListFrame>
+      <PlayerGroupTitle label="玩家" count={activePlayers.length} />
+      {teamed ? (
+        // 有人组队时按队伍分块：队伍一块带标题与共享进度，个人游玩的人接在最后、不加底。
+        <PlayerTeamBlocks
+          players={activePlayers}
+          renderTeam={({ team, members }) => (
+            <CEETeamSection key={team ?? "solo"} team={team} members={members} snapshot={snapshot}>
+              {renderRows(members, team !== null)}
+            </CEETeamSection>
           )}
-          {canJoinPlayers ? (
-            <SpectatorToggle spectator={false} disabled={busy} onToggle={setSpectator} />
-          ) : null}
+        />
+      ) : (
+        renderRows(activePlayers, false)
+      )}
+      {canJoinPlayers ? (
+        <SpectatorToggle spectator={false} disabled={busy} onToggle={setSpectator} />
+      ) : null}
 
-          {observers.length > 0 || canJoinSpectators || pendingMe ? (
-            <>
-              <PlayerGroupTitle label="旁观" count={observers.length} withRule />
-              {renderRows(observers, false)}
-              {canJoinSpectators ? (
-                <SpectatorToggle spectator disabled={busy} onToggle={setSpectator} />
-              ) : null}
-              {pendingMe ? (
-                <div className="mt-1 flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
-                  <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    <span className="truncate">
-                      {me?.name ? `${me.name}：` : ""}
-                      {SPECTATE_PENDING_TEXT}
-                    </span>
-                  </span>
+      {observers.length > 0 || canJoinSpectators || pendingMe ? (
+        <>
+          <PlayerGroupTitle label="旁观" count={observers.length} withRule />
+          {renderRows(observers, false)}
+          {canJoinSpectators ? (
+            <SpectatorToggle spectator disabled={busy} onToggle={setSpectator} />
+          ) : null}
+          {pendingMe ? (
+            <div className="mt-1 flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
+              <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">
+                  {me?.name ? `${me.name}：` : ""}
+                  {SPECTATE_PENDING_TEXT}
+                </span>
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="shrink-0 text-muted-foreground"
+                disabled={busy}
+                onClick={() => setSpectator(false)}
+              >
+                {SPECTATE_CANCEL_TEXT}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {isHost && pendingRequests.length > 0 ? (
+        <>
+          <PlayerGroupTitle
+            label={SPECTATE_REQUEST_GROUP_TITLE}
+            count={pendingRequests.length}
+            withRule
+          />
+          <div className="flex flex-col gap-px">
+            {pendingRequests.map((request) => (
+              <div
+                key={request.playerId}
+                // 与上方「等待房主批准」条、加入旁观同一左缘
+                className="flex min-w-0 items-center justify-between gap-2 px-2 py-1"
+              >
+                <span className="min-w-0 truncate text-sm">{request.name}</span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="gap-1"
+                    disabled={busy}
+                    onClick={() =>
+                      void run("cee.player.approveSpectate", {
+                        playerId: request.playerId,
+                        approved: true,
+                      })
+                    }
+                    data-agent-control={`cee.spectate.approve.${request.playerId}`}
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    {SPECTATE_APPROVE_LABEL}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="xs"
-                    className="shrink-0 text-muted-foreground"
+                    className="gap-1 text-muted-foreground hover:text-destructive"
                     disabled={busy}
-                    onClick={() => setSpectator(false)}
+                    aria-label={`${SPECTATE_REJECT_LABEL} ${request.name}`}
+                    onClick={() =>
+                      void run("cee.player.approveSpectate", {
+                        playerId: request.playerId,
+                        approved: false,
+                      })
+                    }
+                    data-agent-control={`cee.spectate.reject.${request.playerId}`}
                   >
-                    {SPECTATE_CANCEL_TEXT}
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    {SPECTATE_REJECT_LABEL}
                   </Button>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          {isHost && pendingRequests.length > 0 ? (
-            <>
-              <PlayerGroupTitle
-                label={SPECTATE_REQUEST_GROUP_TITLE}
-                count={pendingRequests.length}
-                withRule
-              />
-              <div className="flex flex-col gap-px">
-                {pendingRequests.map((request) => (
-                  <div
-                    key={request.playerId}
-                    // 与上方「等待房主批准」条、加入旁观同一左缘
-                    className="flex min-w-0 items-center justify-between gap-2 px-2 py-1"
-                  >
-                    <span className="min-w-0 truncate text-sm">{request.name}</span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        className="gap-1"
-                        disabled={busy}
-                        onClick={() =>
-                          void run("cee.player.approveSpectate", {
-                            playerId: request.playerId,
-                            approved: true,
-                          })
-                        }
-                        data-agent-control={`cee.spectate.approve.${request.playerId}`}
-                      >
-                        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                        {SPECTATE_APPROVE_LABEL}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="gap-1 text-muted-foreground hover:text-destructive"
-                        disabled={busy}
-                        aria-label={`${SPECTATE_REJECT_LABEL} ${request.name}`}
-                        onClick={() =>
-                          void run("cee.player.approveSpectate", {
-                            playerId: request.playerId,
-                            approved: false,
-                          })
-                        }
-                        data-agent-control={`cee.spectate.reject.${request.playerId}`}
-                      >
-                        <X className="h-3.5 w-3.5" aria-hidden="true" />
-                        {SPECTATE_REJECT_LABEL}
-                      </Button>
-                    </span>
-                  </div>
-                ))}
+                </span>
               </div>
-            </>
-          ) : null}
-        </div>
-      </PlayerListLayout>
-    </ScrollArea>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </PlayerListFrame>
   );
 }
 

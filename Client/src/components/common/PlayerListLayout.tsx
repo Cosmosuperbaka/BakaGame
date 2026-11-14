@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { LayoutGroup, motion } from "framer-motion";
+import { ScrollArea } from "@/components/ui/ScrollArea";
 import { playerRelayout } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
@@ -60,4 +61,19 @@ export function PlayerGroupTitle({
  */
 export function PlayerListLayout({ children }: { children: ReactNode }) {
   return <LayoutGroup id={useId()}>{children}</LayoutGroup>;
+}
+
+/**
+ * 三款玩家栏共用的外壳：滚动区、布局作用域与统一的内边距。
+ * 分组标题、行容器（`PlayerRowGroup`）与旁观入口作为子项自上而下排布；
+ * 内边距只在这里维护，桌面侧栏与窄屏抽屉同一份。
+ */
+export function PlayerListFrame({ children }: { children: ReactNode }) {
+  return (
+    <ScrollArea className="h-full">
+      <PlayerListLayout>
+        <div className="flex min-w-0 flex-col px-2 py-1.5">{children}</div>
+      </PlayerListLayout>
+    </ScrollArea>
+  );
 }
