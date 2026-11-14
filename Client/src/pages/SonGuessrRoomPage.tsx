@@ -159,25 +159,18 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const isSpectator = me?.membership === "spectator";
   const displayRound = songDisplayRound(snapshot.phase, snapshot.roundNumber);
 
-  /** 桌面栏与窄屏抽屉各挂一份（按断点只挂其一）：两处共用一个定义，只有桌面栏多一层裁圆角的容器。 */
-  const playerList = (inColumn: boolean) => {
-    const list = (
-      <SongPlayerList
-        players={snapshot.players}
-        myPlayerId={privateState.playerId}
-        isHost={isHost}
-        phase={snapshot.phase}
-        allowSpectators={snapshot.allowSpectators}
-        questionType={snapshot.settings.questionType}
-        maxGuesses={snapshot.settings.maxGuessesPerRound}
-      />
-    );
-    return inColumn ? (
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">{list}</div>
-    ) : (
-      list
-    );
-  };
+  /** 桌面栏与窄屏抽屉各挂一份（按断点只挂其一），两处共用一个定义。 */
+  const playerList = (
+    <SongPlayerList
+      players={snapshot.players}
+      myPlayerId={privateState.playerId}
+      isHost={isHost}
+      phase={snapshot.phase}
+      allowSpectators={snapshot.allowSpectators}
+      questionType={snapshot.settings.questionType}
+      maxGuesses={snapshot.settings.maxGuessesPerRound}
+    />
+  );
   const chatPanel = (
     <ChatPanel
       messages={snapshot.chat ?? []}
@@ -216,7 +209,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           </>
         }
         connectionIssue={connected ? null : "断线中..."}
-        player={solo ? undefined : <PlayerColumn>{playerList(true)}</PlayerColumn>}
+        player={solo ? undefined : <PlayerColumn>{playerList}</PlayerColumn>}
         game={
           <SongGameArea
             snapshot={snapshot}
@@ -259,7 +252,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   side: "left",
                   title: "玩家",
                   closeFrom: "md",
-                  content: playerList(false),
+                  content: playerList,
                 },
                 {
                   key: "chat",
