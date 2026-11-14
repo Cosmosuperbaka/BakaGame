@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { errors, type Page } from "@playwright/test";
 import { expect, test } from "./fixtures/Isolation";
 
 /**
@@ -123,9 +123,22 @@ const SPEECH = "这是接管标签页的发言";
 const control = (guest: Page, id: string) =>
   guest.locator(`[data-agent-control="${id}"]`).locator("visible=true").first();
 
+/** 访客单步操作的等待上限：等不到就留给下一拍。 */
+const GUEST_STEP_TIMEOUT_MS = 3_000;
+
+/**
+ * 访客这一拍尽力而为。游戏区按阶段键整块切换：别的玩家恰好在这时推进，刚填的输入框会随旧阶段一起退场，
+ * 新阶段的提交钮是禁用的，死等只会等到整条用例超时。等不到可点就留给下一拍重新判断，
+ * 外层循环有总拍数上限，真卡死会在那里暴露。
+ */
 const fillAndSubmit = async (guest: Page, fields: Array<[string, string]>, submit: string) => {
-  for (const [id, text] of fields) await control(guest, id).fill(text);
-  await control(guest, submit).click();
+  try {
+    for (const [id, text] of fields)
+      await control(guest, id).fill(text, { timeout: GUEST_STEP_TIMEOUT_MS });
+    await control(guest, submit).click({ timeout: GUEST_STEP_TIMEOUT_MS });
+  } catch (error) {
+    if (!(error instanceof errors.TimeoutError)) throw error;
+  }
 };
 
 /** 其余玩家是人类标签页：隔离环境里服务端连不到自己，Agent 自有座位进不来。 */
@@ -353,13 +366,15 @@ test.describe("完整对局", () => {
   test("Agent 经页面完成建房、开局、发言与投票，全程只走界面控件", async ({
     page,
     isolatedContext,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
+    // 上一次尝试失败留下的房间还在服务端：重试时换一个不被旧房名包含的名字，免得一名对两房。
+    const roomName = testInfo.retry === 0 ? "接管对局房" : `重试${testInfo.retry}的接管房`;
     const agent = new MockAgent("主控Agent");
     await page.goto("/whoisfaker");
     await page.getByPlaceholder("用户名").fill("接管房主");
     await pair(page, agent);
-    await createRoomAsAgent(agent, page, "接管对局房");
+    await createRoomAsAgent(agent, page, roomName);
 
     const friendContext = await isolatedContext();
     const guests: Page[] = [];
@@ -367,7 +382,7 @@ test.describe("完整对局", () => {
       const guest = await friendContext.newPage();
       await guest.goto("/whoisfaker");
       await guest.getByPlaceholder("用户名").fill(`玩家${name}`);
-      await guest.getByRole("button", { name: /接管对局房/ }).click();
+      await guest.getByRole("button", { name: new RegExp(roomName) }).click();
       await expect(guest).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
       await control(guest, "faker.ready").click();
       guests.push(guest);
