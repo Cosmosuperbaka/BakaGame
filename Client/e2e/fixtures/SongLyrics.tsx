@@ -72,6 +72,13 @@ function onPick(index: number) {
 // 只替代媒体解码和房间传输；React、AMLL、字体和浏览器布局均使用生产实现。
 Object.assign(window, {
   lyricsFixture: {
+    // 歌词内核的类名带构建哈希，只能按片段匹配；用例一律从这里取，内核改名时只改这一处。
+    selectors: {
+      line: "[class*=lyricLineWrapper]",
+      mainLine: "[class*=lyricMainLine]",
+      subLine: "[class*=lyricSubLine]",
+      background: "[class*=bgWrapper]",
+    },
     updates: () => updates,
     picks: () => [...picks],
     render(update: SongLyricsFixtureProps) {

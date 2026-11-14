@@ -6,6 +6,7 @@ import type { SongLyricLine } from "@bakagame/shared";
 declare global {
   interface Window {
     lyricsFixture: {
+      selectors: { line: string; mainLine: string; subLine: string; background: string };
       render(props: SongLyricsFixtureProps): void;
       renderSelector(props: SongClipSelectorFixtureProps): void;
       time(ms: number, playing: boolean): void;
@@ -67,7 +68,7 @@ async function expectOverviewFits(page: Page) {
     .poll(() =>
       page.evaluate(() => {
         const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
-        const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
+        const groups = [...host.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line)];
         const box = host.getBoundingClientRect();
         const top = groups[0].getBoundingClientRect().top - box.top;
         const bottom = box.bottom - groups.at(-1)!.getBoundingClientRect().bottom;
@@ -77,7 +78,7 @@ async function expectOverviewFits(page: Page) {
     .toBe(true);
   const gap = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
-    const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
+    const groups = [...host.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line)];
     return host.getBoundingClientRect().bottom - groups.at(-1)!.getBoundingClientRect().bottom;
   });
   expect(gap).toBeGreaterThanOrEqual(-1);
@@ -88,7 +89,9 @@ async function expectOverviewFits(page: Page) {
 const readFirstLineMask = (page: Page) =>
   page.evaluate(() => {
     const host = document.querySelector<HTMLElement>(".baka-lyric-host, .baka-clip-lyric-host")!;
-    const line = host.querySelector<HTMLElement>("[class*=lyricMainLine]")!.parentElement!;
+    const line = host.querySelector<HTMLElement>(
+      window.lyricsFixture.selectors.mainLine
+    )!.parentElement!;
     const animation = [line, ...line.querySelectorAll<HTMLElement>("*")]
       .flatMap((element) => element.getAnimations())
       .find((item) => item.id.startsWith("fade-word"));
@@ -98,6 +101,37 @@ const readFirstLineMask = (page: Page) =>
       active: line.className.includes("active"),
     };
   });
+
+/**
+ * 等一个读数停下来：相隔一小段时间的两次读取相差不到半个像素。
+ * 代替「睡一段固定时间等动画落位」：机器慢的时候固定时长不够，快的时候白等。
+ */
+async function waitUntilStill(page: Page, read: () => Promise<number>) {
+  const deadline = Date.now() + 10_000;
+  let previous = await read();
+  for (;;) {
+    await page.waitForTimeout(150);
+    const next = await read();
+    if (Math.abs(next - previous) < 0.5) return;
+    if (Date.now() > deadline) throw new Error("读数在 10 秒内没有停下来");
+    previous = next;
+  }
+}
+
+const lastLineTop = (page: Page) => () =>
+  page.evaluate(
+    () =>
+      [
+        ...document
+          .querySelector<HTMLElement>(".baka-lyric-host")!
+          .querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line),
+      ]
+        .at(-1)!
+        .getBoundingClientRect().y
+  );
+
+const clipScrollTop = (page: Page) => () =>
+  page.getByTestId("song-clip-lyric-scroll").evaluate((element) => element.scrollTop);
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => {
@@ -166,11 +200,11 @@ test("结束、缩小下移与快速重播均保持原节点和连续位置", as
   await render(page, { lines, audioPlaybackState: "playing" });
   await page.evaluate(() => window.lyricsFixture.time(62500, true));
   // 等原生滚动落位，再采集完成前后及动画中间帧。
-  await page.waitForTimeout(800);
+  await waitUntilStill(page, lastLineTop(page));
   const result = await page.evaluate(async () => {
     const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
     const player = host.firstElementChild!;
-    const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
+    const groups = [...host.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line)];
     const last = groups.at(-1)!;
     const read = () => ({
       y: last.getBoundingClientRect().y,
@@ -202,9 +236,10 @@ test("结束、缩小下移与快速重播均保持原节点和连续位置", as
   expect(result.paused.y).toBeCloseTo(result.before.y, 1);
   expect(result.start.y).toBeCloseTo(result.before.y, 1);
   expect(result.frames.at(-1)!.y).toBeGreaterThan(result.start.y + 50);
+  // 有中间帧就说明是过渡而不是跳变；能抓到几帧取决于机器帧率，不设门槛。
   expect(
     result.frames.filter((frame) => frame.scale > 0.921 && frame.scale < 0.999).length
-  ).toBeGreaterThan(3);
+  ).toBeGreaterThan(0);
   expect(new Set(result.frames.map((frame) => frame.height)).size).toBe(1);
   expect(result.replayAfter.y).toBeCloseTo(result.replayBefore.y, 1);
   await expectOverviewFits(page);
@@ -219,11 +254,13 @@ test("首次可见布局稳定，快照复制不重建，逐字更新必须生�
     while (performance.now() < deadline) {
       await new Promise(requestAnimationFrame);
       if (host.dataset.ready)
-        frames.push(host.querySelector("[class*=lyricLineWrapper]")!.getBoundingClientRect().y);
+        frames.push(
+          host.querySelector(window.lyricsFixture.selectors.line)!.getBoundingClientRect().y
+        );
     }
-    const original = host.querySelector("[class*=lyricLineWrapper]");
+    const original = host.querySelector(window.lyricsFixture.selectors.line);
     window.lyricsFixture.render({ lines: structuredClone(lines), audioStatus: "ready" });
-    return { frames, same: original === host.querySelector("[class*=lyricLineWrapper]") };
+    return { frames, same: original === host.querySelector(window.lyricsFixture.selectors.line) };
   }, lines);
   expect(result.same).toBe(true);
   expect(result.frames.length).toBeGreaterThan(5);
@@ -275,7 +312,7 @@ for (const viewport of [
           const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
           const center = view.getBoundingClientRect().top + view.clientHeight / 2;
           const row = [
-            ...view.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]"),
+            ...view.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line),
           ][20]!.getBoundingClientRect();
           return Math.abs(row.top + row.height / 2 - center);
         })
@@ -294,7 +331,7 @@ for (const viewport of [
     await expect(windowBox).toHaveAttribute("data-at-end", "true");
     const last = await page.evaluate(() => {
       const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
-      const rows = view.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]");
+      const rows = view.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line);
       return {
         bottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
         limit: view.getBoundingClientRect().bottom,
@@ -348,7 +385,9 @@ test("和声活动切换不改变外壳高度，也不接管页面滚动", async
       await new Promise(requestAnimationFrame);
       heights.push(host.clientHeight);
     }
-    const background = [...host.querySelectorAll<HTMLElement>("[class*=bgWrapper]")];
+    const background = [
+      ...host.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.background),
+    ];
     return {
       heights,
       pointerEvents: background.map((element) => getComputedStyle(element).pointerEvents),
@@ -362,18 +401,34 @@ test("和声活动切换不改变外壳高度，也不接管页面滚动", async
 test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async ({ page }) => {
   await render(page, { lines, audioPlaybackState: "playing" });
   await page.evaluate(() => window.lyricsFixture.time(38900, true));
-  const countUpdates = () =>
+  // 同一段时间里同时数「内核更新了几次」与「浏览器给了几帧」：更新次数只和帧数、实际经过的时长比，
+  // 不和另一次采样比，机器被别的任务拖慢时结论不变。
+  const sample = () =>
     page.evaluate(async () => {
       const before = window.lyricsFixture.updates();
+      const startedAt = performance.now();
+      let frames = 0;
+      let counting = true;
+      const count = () => {
+        if (!counting) return;
+        frames++;
+        requestAnimationFrame(count);
+      };
+      requestAnimationFrame(count);
       await new Promise((resolve) => setTimeout(resolve, 700));
-      return window.lyricsFixture.updates() - before;
+      counting = false;
+      return {
+        updates: window.lyricsFixture.updates() - before,
+        frames,
+        elapsedMs: performance.now() - startedAt,
+      };
     });
-  const playing = await countUpdates();
+  const playing = await sample();
   // 正常跨入下一句后立即暂停：必须继续推进尚未落定的原生布局，不能一刀停 update。
   const motion = await page.evaluate(async () => {
     const last = document
       .querySelector<HTMLElement>(".baka-lyric-host")!
-      .querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")
+      .querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.line)
       .item(1);
     const y = () => last.getBoundingClientRect().y;
     window.lyricsFixture.time(39050, true);
@@ -383,24 +438,33 @@ test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async
     const start = y();
     await new Promise((resolve) => setTimeout(resolve, 200));
     const middle = y();
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    const end = y();
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    return { start, middle, end, stable: y() };
+    // 弹簧收敛要多久取决于机器跑得多快：一直读到相邻两次相同为止，不猜一个时长。
+    let end = middle;
+    let settled = false;
+    for (let attempt = 0; attempt < 40 && !settled; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const next = y();
+      settled = Math.abs(next - end) < 1;
+      end = next;
+    }
+    return { start, middle, end, settled };
   });
-  const paused = await countUpdates();
-  console.log(JSON.stringify({ playing, paused, motion }));
+  const paused = await sample();
   expect(Math.abs(motion.middle - motion.start)).toBeGreaterThan(1);
-  expect(Math.abs(motion.stable - motion.end)).toBeLessThan(1);
-  expect(playing).toBeGreaterThan(10);
-  expect(paused).toBeGreaterThan(0);
-  expect(paused).toBeLessThan(playing * 0.8);
+  expect(motion.settled).toBe(true);
+  // 播放时逐帧更新。
+  expect(playing.updates).toBeGreaterThan(10);
+  expect(playing.updates).toBeGreaterThanOrEqual(Math.floor(playing.frames * 0.8));
+  // 暂停时仍在更新，但最多每秒 30 次；多留一次的边界余量。
+  expect(paused.updates).toBeGreaterThan(0);
+  expect(paused.updates).toBeLessThanOrEqual(Math.ceil((paused.elapsedMs * 30) / 1000) + 1);
   await page.evaluate(() => {
     window.lyricsFixture.render({ audioPlaybackState: "playing" });
     window.lyricsFixture.time(35500, true);
   });
-  const replay = await countUpdates();
-  expect(replay).toBeGreaterThan(paused * 1.25);
+  const replay = await sample();
+  expect(replay.updates).toBeGreaterThan(10);
+  expect(replay.updates).toBeGreaterThanOrEqual(Math.floor(replay.frames * 0.8));
   await render(page, { audioPlaybackState: "completed" });
   await expectOverviewFits(page);
   await page.setViewportSize({ width: 390, height: 900 });
@@ -643,8 +707,8 @@ for (const width of [390, 820, 1280]) {
         });
         const sublinesFit = rows.every((row) => {
           const visible = [
-            row.querySelector<HTMLElement>("[class*=lyricMainLine]"),
-            ...row.querySelectorAll<HTMLElement>("[class*=lyricSubLine]"),
+            row.querySelector<HTMLElement>(window.lyricsFixture.selectors.mainLine),
+            ...row.querySelectorAll<HTMLElement>(window.lyricsFixture.selectors.subLine),
           ].filter((element): element is HTMLElement => Boolean(element?.textContent));
           const textBoxes = visible.map((element) => {
             const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -698,7 +762,7 @@ for (const width of [390, 820]) {
     }));
     await renderSelector(page, { lines: wrapped, range: [115000, 127000], anchorIndex: null });
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(400);
+    await waitUntilStill(page, clipScrollTop(page));
     await expect(page.locator('[data-line-index="20"]')).toBeInViewport();
     await expect(page.getByRole("button", { name: "回到选段" })).toBeHidden();
   });
@@ -720,7 +784,7 @@ test("窗口变窄导致折行时，没碰过列表的玩家仍看得到选段�
   const back = page.getByRole("button", { name: "回到选段" });
   await expect(back).toBeVisible();
   await page.setViewportSize({ width: 340, height: 844 });
-  await page.waitForTimeout(300);
+  await waitUntilStill(page, clipScrollTop(page));
   // 浏览器自身的滚动锚定可以微调，但不能把玩家拉回选段。
   await expect(back).toBeVisible();
 });
