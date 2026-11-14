@@ -16,6 +16,9 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipInputStream
 import javax.net.ssl.HttpsURLConnection
 
@@ -34,10 +37,26 @@ import javax.net.ssl.HttpsURLConnection
  * - 解压后核对 `index.html` 的构建标记，防止「清单说 A、包里是 B」。
  * - 只在非计费网络下载：一个包几十 MB，不能悄悄吃移动流量。
  *
+ * 线程：Capacitor 只有一条插件线程，所有插件方法与 `bridge.execute` 都排在它上面。
+ * 下载与解压是几十 MB 的阻塞 IO，绝不能占着它，否则 `BakaChannel` 的取票与签名全部排队。
+ * 所以 `install` 校验参数后立刻把活交给自己的后台线程，完成时再 resolve/reject（Capacitor 允许任意线程应答）。
+ *
  * 插件名 `BakaHotUpdate` 与 `baka-bridge.js` 的调用逐字对应；改名等于换协议。
  */
 @CapacitorPlugin(name = "BakaHotUpdate")
 class BakaHotUpdatePlugin : Plugin() {
+
+    // 单线程后台执行器：同一时刻只做一次安装，守护线程不拖住进程退出。
+    private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "BakaHotUpdate").apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+        }
+    }
+
+    // 已有安装在跑时，新的请求直接拒绝而不是排队：页面重载、后台与首页各触发一次是常态，
+    // 排队只会让同一个包被反复检查，页面侧本来就会在下次首页时重试。
+    private val installing = AtomicBoolean(false)
 
     @PluginMethod
     fun install(call: PluginCall) {
@@ -59,16 +78,32 @@ class BakaHotUpdatePlugin : Plugin() {
             return
         }
 
-        bridge.execute {
-            try {
-                val result = installBundle(ctx, url, sha256, build, publishedAt)
-                call.resolve(result)
-            } catch (error: HotUpdateError) {
-                call.reject(error.message ?: error.code, error.code)
-            } catch (error: Exception) {
-                call.reject(error.message ?: "资源更新安装失败", "HOT_UPDATE_INSTALL_FAILED")
-            }
+        if (!installing.compareAndSet(false, true)) {
+            call.reject("已有资源更新正在安装", "HOT_UPDATE_BUSY")
+            return
         }
+        try {
+            worker.execute {
+                try {
+                    call.resolve(installBundle(ctx, url, sha256, build, publishedAt))
+                } catch (error: HotUpdateError) {
+                    call.reject(error.message ?: error.code, error.code)
+                } catch (error: Exception) {
+                    call.reject(error.message ?: "资源更新安装失败", "HOT_UPDATE_INSTALL_FAILED")
+                } finally {
+                    installing.set(false)
+                }
+            }
+        } catch (error: Exception) {
+            // 执行器已关闭（页面正在销毁）：占位要还回去，否则之后永远是 BUSY。
+            installing.set(false)
+            call.reject("资源更新安装被取消", "HOT_UPDATE_CANCELLED")
+        }
+    }
+
+    // 页面销毁时中断在途的下载：中断点在读写循环里，被中断的安装按取消清理并拒绝。
+    override fun handleOnDestroy() {
+        worker.shutdownNow()
     }
 
     /** 页面确认自己是从待确认包加载起来的；不匹配时什么也不做。 */
@@ -85,9 +120,7 @@ class BakaHotUpdatePlugin : Plugin() {
         call.resolve(result)
     }
 
-    // 两次安装请求同时进来（页面重载、后台与首页各触发一次）会写同一个临时文件；
-    // 串行化后第二次直接看到已落盘的包，走 reused 分支。
-    @Synchronized
+    // 只会在 worker 线程上、且由 installing 保证同一时刻至多一次，写临时文件不会冲突。
     private fun installBundle(
         ctx: Context,
         rawUrl: String,
@@ -113,8 +146,10 @@ class BakaHotUpdatePlugin : Plugin() {
 
         val root = HotUpdateStore.root(ctx)
         root.mkdirs()
+        // 进程在下载途中被杀会留下半截文件：每次开始前清掉所有遗留的下载包。
+        root.listFiles { file -> file.name.startsWith("download-") }?.forEach { it.delete() }
         val zipFile = File(root, "download-$build.zip")
-        zipFile.delete()
+        val tmpDir = File(root, "bundles/$build.tmp")
         try {
             download(uri, zipFile)
             val actual = sha256Of(zipFile)
@@ -123,7 +158,6 @@ class BakaHotUpdatePlugin : Plugin() {
             }
             val finalDir = HotUpdateStore.bundleDir(ctx, build)
                 ?: throw HotUpdateError("HOT_UPDATE_BAD_ARGS", "构建标记不合法")
-            val tmpDir = File(root, "bundles/$build.tmp")
             tmpDir.deleteRecursively()
             tmpDir.mkdirs()
             unzip(zipFile, tmpDir)
@@ -148,7 +182,9 @@ class BakaHotUpdatePlugin : Plugin() {
                 put("reused", false)
             }
         } finally {
+            // 成功时 tmpDir 已改名为正式目录，这里只会清掉失败或被取消时残留的半成品。
             zipFile.delete()
+            tmpDir.deleteRecursively()
         }
     }
 
@@ -196,6 +232,7 @@ class BakaHotUpdatePlugin : Plugin() {
                 FileOutputStream(target).use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {
+                        throwIfCancelled()
                         val read = input.read(buffer)
                         if (read < 0) break
                         total += read
@@ -209,6 +246,12 @@ class BakaHotUpdatePlugin : Plugin() {
             if (total <= 0) throw HotUpdateError("HOT_UPDATE_DOWNLOAD_FAILED", "资源包为空")
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun throwIfCancelled() {
+        if (Thread.currentThread().isInterrupted) {
+            throw HotUpdateError("HOT_UPDATE_CANCELLED", "资源更新安装被取消")
         }
     }
 
@@ -232,6 +275,7 @@ class BakaHotUpdatePlugin : Plugin() {
         ZipInputStream(BufferedInputStream(FileInputStream(zipFile))).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
+                throwIfCancelled()
                 entries += 1
                 if (entries > MAX_ENTRIES) {
                     throw HotUpdateError("HOT_UPDATE_UNSAFE_ARCHIVE", "资源包条目过多")
