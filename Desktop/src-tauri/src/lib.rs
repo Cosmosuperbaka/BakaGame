@@ -128,11 +128,12 @@ impl AppState {
     fn take_cached_ticket(&self) -> Option<attest::TicketPayload> {
         let mut guard = self.ticket.lock().ok()?;
         let held = guard.as_mut()?;
-        if !held.usable(attest::now_ms()) {
+        let now = attest::Stamp::now();
+        if !held.usable(now) {
             return None;
         }
         held.served = true;
-        Some(held.payload())
+        Some(held.payload(now))
     }
 
     /// 放行一次导航时对票缓存的处理：只清掉**已经交给过页面**的票。
@@ -197,7 +198,7 @@ fn mint_ticket(state: &AppState) -> Result<Option<attest::TicketPayload>, String
     };
     match attest::prove(&current, &state.dir) {
         Ok(ticket) => {
-            let payload = ticket.payload();
+            let payload = ticket.payload(attest::Stamp::now());
             state.note_attest_success();
             // 这张票当场交给了调用方，不在缓存里留副本：留着只会被误当成还能用的票
             Ok(Some(payload))
@@ -217,7 +218,7 @@ fn premint_ticket(state: &AppState) {
         .ticket
         .lock()
         .ok()
-        .and_then(|guard| guard.as_ref().map(|held| held.usable(attest::now_ms())))
+        .and_then(|guard| guard.as_ref().map(|held| held.usable(attest::Stamp::now())))
         .unwrap_or(false)
     {
         return;
@@ -230,7 +231,7 @@ fn premint_ticket(state: &AppState) {
     match attest::prove(&current, &state.dir) {
         Ok(ticket) => {
             state.note_attest_success();
-            eprintln!("已预签票据，到期时间 {}", ticket.expires_at_ms);
+            eprintln!("已预签票据，剩余有效 {} 毫秒", ticket.remaining_ms(attest::Stamp::now()));
             state.store_ticket(ticket);
         }
         Err(err) => eprintln!("预签票据未就绪：{err}"),
@@ -513,11 +514,10 @@ mod tests {
     }
 
     fn fresh_ticket(served: bool) -> attest::Ticket {
-        attest::Ticket {
-            value: "t".to_string(),
-            expires_at_ms: attest::now_ms() + 30_000,
-            served,
-        }
+        let mut ticket =
+            attest::Ticket::new("t".to_string(), Duration::from_secs(30), attest::Stamp::now());
+        ticket.served = served;
+        ticket
     }
 
     /// 页面从没见过缓存里那张没交出去的票，换页面时它仍然有效，不该白白弃掉再重签

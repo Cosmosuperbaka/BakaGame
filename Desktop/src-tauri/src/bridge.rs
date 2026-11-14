@@ -57,11 +57,35 @@ const BRIDGE_JS: &str = r#"(function () {
 
   // —— 通道票据：壳签好后由脚本缓存，页面只做同步读取（`bakaChannelQuery()`）——
   var ticketValue = "";
-  var ticketExpiresAt = 0;
+  var ticketTtlMs = 0;
+  var ticketReceived = null;
   var ticketBusy = false;
 
+  // 票的有效期按「收到后过去了多久」算：服务端的绝对到期时刻属于服务端的时钟，
+  // 本机时钟快慢几十秒是常态，拿来互相比较会把好票判废、把废票放出去。
+  // 单调时钟不受改时间影响但休眠时可能不走，墙上时钟的差值休眠时照走（与服务端时钟的
+  // 偏差在相减时抵消），两者取大：只会让票更早作废，不会放出废票。
+  var monoNow = function () {
+    try {
+      if (window.performance && typeof window.performance.now === "function") {
+        return window.performance.now();
+      }
+    } catch (e) {}
+    return Date.now();
+  };
+  var stamp = function () { return { mono: monoNow(), wall: Date.now() }; };
+  var ticketElapsedMs = function () {
+    var wall = Date.now() - ticketReceived.wall;
+    return Math.max(monoNow() - ticketReceived.mono, wall > 0 ? wall : 0, 0);
+  };
   var ticketIsUsable = function () {
-    return ticketValue.length > 0 && ticketExpiresAt - Date.now() > TICKET_MARGIN_MS;
+    return ticketValue.length > 0 && ticketReceived !== null &&
+      ticketTtlMs - ticketElapsedMs() > TICKET_MARGIN_MS;
+  };
+  var clearTicket = function () {
+    ticketValue = "";
+    ticketTtlMs = 0;
+    ticketReceived = null;
   };
 
   // force=false 用于定时轮询：手里那张还能用就不向壳要新的，避免白跑一趟签发
@@ -76,11 +100,11 @@ const BRIDGE_JS: &str = r#"(function () {
         ticketBusy = false;
         if (value && typeof value.ticket === "string" && value.ticket.length > 0) {
           ticketValue = value.ticket;
-          ticketExpiresAt = Number(value.expiresAt) || 0;
+          ticketTtlMs = Number(value.ttlMs) || 0;
+          ticketReceived = stamp();
         } else {
           // 签不出票（未注册、离线、自检判死）：保持空串，页面按 Web 口径连接
-          ticketValue = "";
-          ticketExpiresAt = 0;
+          clearTicket();
         }
       }, function () {
         ticketBusy = false;
@@ -119,8 +143,7 @@ const BRIDGE_JS: &str = r#"(function () {
     get: function () {
       var handed = ticketValue;
       if (handed.length > 0) {
-        ticketValue = "";
-        ticketExpiresAt = 0;
+        clearTicket();
         requestTicket(true);
       }
       return handed;
@@ -173,6 +196,14 @@ mod tests {
         // 票据通道：契约里的名字与命令名都必须出现在脚本原文里
         assert!(BRIDGE_JS.contains("channelTicket"));
         assert!(BRIDGE_JS.contains("baka_ticket"));
+    }
+
+    /// 票的到期只按相对有效期算：脚本不再读服务端的绝对时刻，也不拿它与本地时钟比较
+    #[test]
+    fn ticket_expiry_is_relative() {
+        assert!(BRIDGE_JS.contains("ttlMs"));
+        assert!(!BRIDGE_JS.contains("expiresAt"));
+        assert!(BRIDGE_JS.contains("performance.now"));
     }
 
     /// 版本串注入后必须仍是安全的字符串字面量内容（不带引号与反斜杠）
