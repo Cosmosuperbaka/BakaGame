@@ -15,12 +15,13 @@ use std::time::Duration;
 
 use crate::httpdns::HttpDnsResolver;
 
-/// CONNECT 请求头只有几百字节，上限给足余量即可；与安卓壳取同一个值
+/// CONNECT 请求头只有几百字节，上限给足余量即可；计的是请求头整体（含请求行与各行换行）
 const HEADER_LIMIT_BYTES: usize = 8 * 1024;
 const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// 同时存在的连接数上限（含读头阶段与已建立的隧道）。Chromium 对单个代理的并发连接
-/// 本身就有限（量级几十），留 4 倍余量，页面正常使用不会碰到，只挡失控的本机连接
+/// 处于「读请求头、解析、连上游」阶段的连接数上限，用来挡住慢连接把处理线程占满。
+/// 回 200 进入隧道之后名额即归还：已建立的隧道（对局的长连接）由页面自己的连接池约束，
+/// 不能让悬挂的隧道一点点占满名额、把后来的新连接全部拒掉
 const MAX_CONNECTIONS: usize = 128;
 
 /// 启动隧道并返回回环地址；调用方把它交给 `WebviewWindowBuilder::proxy_url`。
@@ -49,8 +50,7 @@ fn start_with_limit(
                         };
                         let resolver = resolver.clone();
                         std::thread::spawn(move || {
-                            let _slot = slot;
-                            if let Err(err) = handle(stream, resolver) {
+                            if let Err(err) = handle(stream, resolver, slot) {
                                 eprintln!("[baka-dns-proxy] {err}");
                             }
                         });
@@ -66,6 +66,7 @@ fn start_with_limit(
 }
 
 /// 并发连接名额：持有期间计数加一，释放（含处理线程 panic）时自动减一。
+/// 所有权随连接移动，只会释放一次；处理函数在进入隧道前主动丢弃它。
 struct ConnectionSlot(Arc<AtomicUsize>);
 
 impl ConnectionSlot {
@@ -122,7 +123,11 @@ enum HeadError {
     Io(String),
 }
 
-fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), String> {
+fn handle(
+    mut stream: TcpStream,
+    resolver: Arc<HttpDnsResolver>,
+    slot: ConnectionSlot,
+) -> Result<(), String> {
     stream
         .set_read_timeout(Some(HEADER_TIMEOUT))
         .map_err(|err| format!("设置读超时失败：{err}"))?;
@@ -186,6 +191,8 @@ fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), S
     stream
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .map_err(|err| format!("回复 CONNECT 失败：{err}"))?;
+    // 读头阶段结束：归还名额，隧道的寿命不占并发额度（连上游失败走前面的返回，同样已归还）
+    drop(slot);
     let _ = stream.flush();
     let _ = stream.set_read_timeout(None);
     let _ = stream.set_write_timeout(None);
@@ -276,21 +283,27 @@ mod tests {
         assert!(split_target("example.com").is_err());
     }
 
-    /// 回显服务 + 指向它的 HTTPDNS + 已启动的隧道，返回（隧道地址，回显端口）。
-    fn proxy_to_echo() -> (SocketAddr, u16) {
+    /// 回显 4 个字节的本地服务，每条连接一个线程（保持着的隧道不会挡住后来的连接）。
+    fn start_echo() -> u16 {
         let echo = TcpListener::bind("127.0.0.1:0").unwrap();
         let echo_port = echo.local_addr().unwrap().port();
         std::thread::spawn(move || {
             for stream in echo.incoming() {
                 let Ok(mut stream) = stream else { continue };
-                let mut buf = [0u8; 4];
-                if stream.read_exact(&mut buf).is_ok() {
-                    let _ = stream.write_all(&buf);
-                }
+                std::thread::spawn(move || {
+                    let mut buf = [0u8; 4];
+                    if stream.read_exact(&mut buf).is_ok() {
+                        let _ = stream.write_all(&buf);
+                    }
+                });
             }
         });
+        echo_port
+    }
 
-        (start(test_resolver()).unwrap(), echo_port)
+    /// 回显服务 + 指向它的 HTTPDNS + 已启动的隧道，返回（隧道地址，回显端口）。
+    fn proxy_to_echo() -> (SocketAddr, u16) {
+        (start(test_resolver()).unwrap(), start_echo())
     }
 
     /// HTTPDNS 指向本机的解析器：受管域名解析成 127.0.0.1。
@@ -371,11 +384,18 @@ mod tests {
         }
     }
 
-    /// 并发连接数有上限：占满之后的新连接立即得到 503，释放后恢复接受。
+    /// 并发名额只覆盖读头阶段：停在读头阶段（只发半截请求头）的连接占满名额后，
+    /// 新连接立即得到 503，释放后恢复接受。
     #[test]
     fn connections_beyond_the_limit_are_refused_and_released() {
         let proxy = start_with_limit(test_resolver(), 2).unwrap();
-        let mut held: Vec<TcpStream> = (0..2).map(|_| TcpStream::connect(proxy).unwrap()).collect();
+        let mut held: Vec<TcpStream> = (0..2)
+            .map(|_| {
+                let mut stream = TcpStream::connect(proxy).unwrap();
+                stream.write_all(b"CONNECT game.exam").unwrap();
+                stream
+            })
+            .collect();
 
         let mut refused = TcpStream::connect(proxy).unwrap();
         refused.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
@@ -397,6 +417,37 @@ mod tests {
             }
         }
         assert!(accepted, "释放占用后仍在返回 503");
+    }
+
+    /// 已经建立并保持着的隧道不占并发名额：名额只挡读头阶段的慢连接，
+    /// 长连接（对局的 WebSocket）整局都在隧道里，不能把名额一直占住。
+    #[test]
+    fn established_tunnels_do_not_hold_connection_slots() {
+        let proxy = start_with_limit(test_resolver(), 2).unwrap();
+        let echo_port = start_echo();
+        let connect = || {
+            let mut client = TcpStream::connect(proxy).unwrap();
+            client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            client
+                .write_all(format!("CONNECT {HOST}:{echo_port} HTTP/1.1\r\nHost: {HOST}\r\n\r\n").as_bytes())
+                .unwrap();
+            client
+        };
+        // 建立满额条数的隧道并保持不关（不发数据，回显服务也不会结束它们）
+        let mut tunnels = Vec::new();
+        for _ in 0..2 {
+            let mut client = connect();
+            read_connect_head(&mut client);
+            tunnels.push(client);
+        }
+        // 再来一条：名额已不被隧道占用，必须拿到 200
+        let mut extra = connect();
+        read_connect_head(&mut extra);
+        extra.write_all(b"PING").unwrap();
+        let mut reply = [0u8; 4];
+        extra.read_exact(&mut reply).unwrap();
+        assert_eq!(&reply, b"PING");
+        drop(tunnels);
     }
 
     fn mock_httpdns() -> String {
