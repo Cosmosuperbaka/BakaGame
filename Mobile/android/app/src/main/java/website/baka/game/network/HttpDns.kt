@@ -30,7 +30,7 @@ class HttpDns private constructor(
     private val appId: String,
     private val secretKey: String,
     private val token: String,
-) {
+) : TunnelResolver {
     enum class Source { HTTPDNS, CACHE, SYSTEM, SYSTEM_FALLBACK }
 
     data class Resolution(
@@ -56,13 +56,13 @@ class HttpDns private constructor(
     val managedHost: String
         get() = domain
 
-    fun isManaged(rawHost: String): Boolean = normalizeHost(rawHost) == domain
+    override fun isManaged(rawHost: String): Boolean = normalizeHost(rawHost) == domain
 
     /**
      * 受管域名先查缓存再问 HTTPDNS；失败回落系统 DNS。非受管域名直接走系统 DNS，
      * 不访问 HTTPDNS，也不标降级。
      */
-    fun resolve(rawHost: String): Resolution {
+    override fun resolve(rawHost: String): Resolution {
         val host = normalizeHost(rawHost)
         if (host.isEmpty()) throw IOException("host 为空")
         val started = SystemClock.elapsedRealtime()

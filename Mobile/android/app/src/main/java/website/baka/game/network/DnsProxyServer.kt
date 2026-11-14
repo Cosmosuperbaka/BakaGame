@@ -15,6 +15,13 @@ import java.net.SocketException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
+/** 隧道用到的解析能力；抽成接口是为了让回环隧道能脱离 HTTPDNS 与网络单独测试。 */
+interface TunnelResolver {
+    fun isManaged(rawHost: String): Boolean
+
+    fun resolve(rawHost: String): HttpDns.Resolution
+}
+
 /**
  * 只监听回环地址的 CONNECT 代理：WebView 的请求先到本机端口，由这里用 HTTPDNS 解析
  * 目标域名并建立 TCP 隧道。
@@ -23,7 +30,7 @@ import kotlin.concurrent.thread
  * 非 CONNECT 的明文请求不支持（站点只有 HTTPS/WSS），返回 405。
  */
 class DnsProxyServer private constructor(
-    private val resolver: HttpDns,
+    private val resolver: TunnelResolver,
     private val server: ServerSocket,
 ) {
     val port: Int = server.localPort
@@ -113,7 +120,8 @@ class DnsProxyServer private constructor(
                 }
                 write(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
                 client.soTimeout = 0
-                tunnel(client, upstream)
+                // 读头用的是带缓冲的流，已预读的字节只在它里面：隧道必须从同一个流读，不能回到原始 socket 流
+                tunnel(client, input, upstream)
             }
         } catch (err: Exception) {
             if (err !is SocketException) Log.w(TAG, "连接处理失败：${err.message}")
@@ -125,10 +133,10 @@ class DnsProxyServer private constructor(
         }
     }
 
-    private fun tunnel(client: Socket, upstream: Socket) {
+    private fun tunnel(client: Socket, clientInput: InputStream, upstream: Socket) {
         val upload = thread(name = "baka-dns-proxy-up", isDaemon = true) {
             try {
-                copy(client.getInputStream(), upstream.getOutputStream())
+                copy(clientInput, upstream.getOutputStream())
             } catch (_: IOException) {
             } finally {
                 closeQuietly(upstream, output = true)
@@ -180,7 +188,7 @@ class DnsProxyServer private constructor(
         private const val BUFFER_BYTES = 16 * 1024
         private const val TUNNEL_DRAIN_MS = 2_000L
 
-        fun start(resolver: HttpDns): DnsProxyServer {
+        fun start(resolver: TunnelResolver): DnsProxyServer {
             val server = ServerSocket()
             server.reuseAddress = true
             server.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
