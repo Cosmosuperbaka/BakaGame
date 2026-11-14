@@ -258,6 +258,40 @@ export const releaseMusicAccount = (
   wakeMusicPoolWaiters(ctx, roomId);
 };
 
+/** 归还租约时的结果；`platform` 标明失败归属哪个平台，缺省视为两端都可能有份。 */
+type LeaseReleaseResult = {
+  ok: boolean;
+  reason?: string;
+  code?: string;
+  platform?: MusicAuthPlatform;
+};
+
+/** 错误到平台的归属：上游抛出的错误不带平台，由知道自己在调哪个平台的调用点登记。 */
+const errorPlatforms = new WeakMap<object, MusicAuthPlatform>();
+
+/**
+ * 租约内跑一次上游请求，无论成败都归还租约，异常原样抛回。
+ * 平台归属只有聚合租约会读：单平台租约只有一个号，失败记在谁身上没有歧义。
+ */
+const runLeased = async <T, TCookie>(
+  lease: { cookie: TCookie; release: (result: LeaseReleaseResult) => void },
+  run: (cookie: TCookie) => Promise<T>
+): Promise<T> => {
+  try {
+    const value = await run(lease.cookie);
+    lease.release({ ok: true });
+    return value;
+  } catch (error) {
+    lease.release({
+      ok: false,
+      code: error instanceof AppError ? error.code : "",
+      reason: error instanceof Error ? error.message : String(error),
+      platform: typeof error === "object" && error !== null ? errorPlatforms.get(error) : undefined,
+    });
+    throw error;
+  }
+};
+
 /**
  * 按曲目所属平台取号跑一次上游请求，无论成败都归还租约。
  *
@@ -276,42 +310,16 @@ export const withSongAccount = async <T>(
   options: { requireVip?: boolean } = {}
 ): Promise<T> => {
   const platform: MusicAuthPlatform = songId?.startsWith("qq:") ? "qq" : "netease";
-  const runWithLease = async (lease: MusicAccountLease): Promise<T> => {
-    try {
-      const value = await run(lease.cookie);
-      lease.release({ ok: true });
-      return value;
-    } catch (error) {
-      lease.release({
-        ok: false,
-        code: error instanceof AppError ? error.code : "",
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
-  };
-
   const lease = await acquireMusicAccount(ctx, room, platform, options);
   if (!lease) return run(undefined);
   try {
-    return await runWithLease(lease);
+    return await runLeased(lease, run);
   } catch (error) {
     if (!(error instanceof AppError) || error.code !== "MUSIC_API_RATE_LIMITED") throw error;
     const fallback = await acquireMusicAccount(ctx, room, platform, options);
-    return fallback ? runWithLease(fallback) : run(undefined);
+    return fallback ? runLeased(fallback, run) : run(undefined);
   }
 };
-
-/** 归还租约时的结果；`platform` 标明失败归属哪个平台，缺省视为两端都可能有份。 */
-type AggregatedReleaseResult = {
-  ok: boolean;
-  reason?: string;
-  code?: string;
-  platform?: MusicAuthPlatform;
-};
-
-/** 错误到平台的归属：上游抛出的错误不带平台，由知道自己在调哪个平台的调用点登记。 */
-const errorPlatforms = new WeakMap<object, MusicAuthPlatform>();
 
 /**
  * 声明这次上游调用只属于某个平台：它失败时，聚合租约只把失败记在该平台的账号上，
@@ -334,7 +342,7 @@ export const acquireAggregatedAccounts = async (
   room: SonGuessrRoomRecord
 ): Promise<{
   cookie: MusicCookieInput | undefined;
-  release: (result: AggregatedReleaseResult) => void;
+  release: (result: LeaseReleaseResult) => void;
 }> => {
   const [netease, qq] = await Promise.all([
     acquireMusicAccount(ctx, room, "netease"),
@@ -371,32 +379,12 @@ export const withAggregatedAccounts = async <T>(
   room: SonGuessrRoomRecord,
   run: (cookie: MusicCookieInput | undefined) => Promise<T>
 ): Promise<T> => {
-  const runWithLease = async (lease: {
-    cookie: MusicCookieInput | undefined;
-    release: (result: AggregatedReleaseResult) => void;
-  }): Promise<T> => {
-    try {
-      const value = await run(lease.cookie);
-      lease.release({ ok: true });
-      return value;
-    } catch (error) {
-      lease.release({
-        ok: false,
-        code: error instanceof AppError ? error.code : "",
-        reason: error instanceof Error ? error.message : String(error),
-        platform:
-          typeof error === "object" && error !== null ? errorPlatforms.get(error) : undefined,
-      });
-      throw error;
-    }
-  };
-
   const lease = await acquireAggregatedAccounts(ctx, room);
   try {
-    return await runWithLease(lease);
+    return await runLeased(lease, run);
   } catch (error) {
     if (!(error instanceof AppError) || error.code !== "MUSIC_API_RATE_LIMITED") throw error;
-    return runWithLease(await acquireAggregatedAccounts(ctx, room));
+    return runLeased(await acquireAggregatedAccounts(ctx, room), run);
   }
 };
 
