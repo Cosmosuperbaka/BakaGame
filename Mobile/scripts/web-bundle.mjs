@@ -10,7 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { createHash } from "node:crypto";
-import { deflateRawSync } from "node:zlib";
+// zlib.crc32 需要 Node 22.2 / 20.15 以上；CI 用 Node 22。
+import { crc32, deflateRawSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -79,24 +80,6 @@ const readLatestChangelogVersion = () => {
 /** 固定 DOS 时间（2000-01-01 00:00）与权限，保证同一份输入产出同一个 zip。 */
 const DOS_TIME = 0;
 const DOS_DATE = ((2000 - 1980) << 9) | (1 << 5) | 1;
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let index = 0; index < 256; index += 1) {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-    table[index] = value >>> 0;
-  }
-  return table;
-})();
-
-const crc32 = (buffer) => {
-  let value = 0xffffffff;
-  for (const byte of buffer) value = CRC_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
-  return (value ^ 0xffffffff) >>> 0;
-};
 
 const collectFiles = (root) => {
   const out = [];
