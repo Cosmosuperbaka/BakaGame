@@ -1,7 +1,7 @@
 import { createRoomCoreSlice, type RoomCoreState } from "./room/RoomCoreSlice";
 import { createRoomRuntime, type EndedRoomPayload, type RoomRuntime } from "./room/RoomRuntime";
 import type { StateSyncChannel } from "./room/StateSyncChannel";
-import { createToastSlice, type ToastState } from "./room/ToastSlice";
+import { SHUTDOWN_TOAST_MS, createToastSlice, type ToastState } from "./room/ToastSlice";
 import { create } from "zustand";
 import type {
   CEEPayload,
@@ -226,7 +226,11 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         // 原地待命：不清会话、不重置房间、也不作废在途入房。重启后由 useCEERoomLifecycle
         // 带原票据重进；真回不去时会走会话结束分支。
         const { message, reason } = payload as { message?: string; reason?: string };
-        get().showToast(message ?? reason ?? "服务正在重启，稍后将自动重连", "error");
+        get().showToast(
+          message ?? reason ?? "服务正在重启，稍后将自动重连",
+          "error",
+          SHUTDOWN_TOAST_MS
+        );
       },
     },
   });

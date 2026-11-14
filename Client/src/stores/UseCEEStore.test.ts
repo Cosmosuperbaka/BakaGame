@@ -52,6 +52,21 @@ it("停机时原地待命：保留房间会话，只提示等待重连", () => {
   expect(useCEEStore.getState().toasts[0]).toMatchObject({ text: "服务器维护中", type: "error" });
 });
 
+it("停机提示停留十秒，与另外两款一致", () => {
+  vi.useFakeTimers();
+  try {
+    handleCEEMessage({ type: "event", event: "server.shutdown", payload: {} } as never);
+    vi.advanceTimersByTime(9999);
+    expect(useCEEStore.getState().toasts.map((toast) => toast.text)).toEqual([
+      "服务正在重启，稍后将自动重连",
+    ]);
+    vi.advanceTimersByTime(1);
+    expect(useCEEStore.getState().toasts).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("停机不作废在途入房：晚到 ACK 照常落座", async () => {
   let resolveAck!: (value: Record<string, unknown>) => void;
   const ack = new Promise<Record<string, unknown>>((resolve) => {
