@@ -9,6 +9,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -114,8 +115,25 @@ fn build_client(direct: bool) -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("HTTP 客户端初始化失败：{e}"))
 }
 
+/// WebView 是否已经被指向本地隧道（见 `dnsproxy`）。隧道直连目标、不经系统代理，
+/// 所以此后壳自己发的请求也必须直连，两条路径才是同一个出口。
+static WEBVIEW_TUNNEL_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// 登记「WebView 走本地隧道」。必须在任何对外请求之前调用：共享客户端按需构造一次后就不再变。
+pub fn mark_webview_tunnel_active() {
+    WEBVIEW_TUNNEL_ACTIVE.store(true, Ordering::SeqCst);
+}
+
+/// 这条请求要不要绕过系统代理直连。
+///
+/// 回环目标永远直连（见 `build_client` 的说明）；WebView 走隧道时，壳内请求也直连：
+/// 服务端把票绑定到签发时的来源地址，壳取票与页面握手的出口不同，握手就会因地址不符被拒。
+fn bypasses_system_proxy(url: &str, tunnel_active: bool) -> bool {
+    tunnel_active || is_loopback(url)
+}
+
 fn client_for(url: &str) -> Result<&'static reqwest::blocking::Client, ApiError> {
-    let direct = is_loopback(url);
+    let direct = bypasses_system_proxy(url, WEBVIEW_TUNNEL_ACTIVE.load(Ordering::SeqCst));
     let cell = if direct {
         &DIRECT_CLIENT
     } else {
@@ -150,7 +168,20 @@ where
     B: Serialize + ?Sized,
     R: DeserializeOwned,
 {
-    let client = client_for(url)?;
+    send_json(client_for(url)?, url, path, body, timeout)
+}
+
+fn send_json<B, R>(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    path: &str,
+    body: &B,
+    timeout: Duration,
+) -> Result<R, ApiError>
+where
+    B: Serialize + ?Sized,
+    R: DeserializeOwned,
+{
     // 超时按请求设：共享客户端上注册与领挑战、换票用的超时各不相同
     let response = client
         .post(url)
@@ -451,6 +482,70 @@ mod tests {
             1,
             "三次请求应复用同一条连接"
         );
+    }
+
+    /// 取环境里的代理设置，构造完客户端立刻还原：reqwest 在构造时读取，之后改环境无影响
+    struct ProxyEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl ProxyEnv {
+        fn set(proxy: &str) -> Self {
+            const KEYS: [&str; 6] = [
+                "HTTP_PROXY",
+                "http_proxy",
+                "HTTPS_PROXY",
+                "https_proxy",
+                "NO_PROXY",
+                "no_proxy",
+            ];
+            let saved = KEYS.iter().map(|key| (*key, std::env::var_os(key))).collect();
+            for key in KEYS {
+                std::env::remove_var(key);
+            }
+            std::env::set_var("HTTP_PROXY", proxy);
+            std::env::set_var("http_proxy", proxy);
+            Self(saved)
+        }
+    }
+
+    impl Drop for ProxyEnv {
+        fn drop(&mut self) {
+            for (key, value) in &self.0 {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    /// 用「环境里配了系统代理」的条件构造一个客户端，向一个不可路由的地址发请求；
+    /// 返回代理收到的请求数与请求是否成功。走代理就会到达本机的模拟代理，直连就连不出去。
+    fn request_with_system_proxy(tunnel_active: bool) -> (usize, bool) {
+        let (proxy, hits) = mock_server(|| json_response(r#"{"ok":true}"#));
+        let url = "http://203.0.113.1:81/api/client/attest";
+        let client = {
+            let _env = ProxyEnv::set(&proxy);
+            build_client(bypasses_system_proxy(url, tunnel_active)).expect("客户端应能构造")
+        };
+        let result: Result<Echo, ApiError> = send_json(
+            &client,
+            url,
+            "/api/client/attest",
+            &serde_json::json!({}),
+            Duration::from_millis(800),
+        );
+        (hits.load(Ordering::SeqCst), result.is_ok())
+    }
+
+    /// WebView 走本地隧道（直连）时，壳内请求不得再走系统代理，否则取票与握手出口不同、
+    /// 票据绑定的来源地址对不上；没有隧道时保持系统代理行为（企业网络只能靠它出网）
+    #[test]
+    fn shell_requests_leave_the_same_way_as_the_webview() {
+        let (hits, ok) = request_with_system_proxy(false);
+        assert!(ok && hits >= 1, "没有隧道时应沿用系统代理");
+        let (hits, ok) = request_with_system_proxy(true);
+        assert_eq!(hits, 0, "隧道启用后壳内请求不能再交给系统代理");
+        assert!(!ok);
     }
 
     /// 超时按请求设置：共享客户端不能让「每请求超时」失效

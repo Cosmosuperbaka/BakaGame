@@ -380,19 +380,14 @@ fn within_site(url: &str, base: &str) -> bool {
     }
 }
 
-fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn std::error::Error>> {
-    let site = config::site_url();
-    let nav_site = site.clone();
-    // 导航回调里要动运行状态（弃票 + 预签），所以握一份 AppHandle
-    let nav_handle = app.handle().clone();
-    let pump_handle = nav_handle.clone();
-    let parsed = site
-        .parse()
-        .map_err(|err| format!("站点地址 {site} 不是合法 URL：{err}"))?;
-
-    // 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
-    // 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
-    let proxy = httpdns::shared().and_then(|resolver| match dnsproxy::start(resolver) {
+/// 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
+/// 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
+///
+/// 必须在设备引导线程启动之前调用：隧道直连目标、不经系统代理，启用后壳自己发的
+/// 注册、领挑战与换票请求也要直连（见 `http::mark_webview_tunnel_active`），
+/// 否则票据签发时的来源地址与页面握手时的来源地址可能不是同一个出口。
+fn start_webview_tunnel() -> Option<tauri::Url> {
+    let address = httpdns::shared().and_then(|resolver| match dnsproxy::start(resolver) {
         Ok(address) => {
             eprintln!("[baka-dns-proxy] listening on {address}");
             Some(address)
@@ -401,7 +396,31 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
             eprintln!("[baka-dns-proxy] 启动失败，继续使用系统 DNS：{err}");
             None
         }
-    });
+    })?;
+    match format!("http://{address}").parse::<tauri::Url>() {
+        Ok(url) => {
+            http::mark_webview_tunnel_active();
+            Some(url)
+        }
+        Err(err) => {
+            eprintln!("[baka-dns-proxy] 隧道地址非法，改用系统代理：{err}");
+            None
+        }
+    }
+}
+
+fn create_main_window(
+    app: &tauri::App,
+    tunnel: Option<tauri::Url>,
+) -> Result<tauri::WebviewWindow, Box<dyn std::error::Error>> {
+    let site = config::site_url();
+    let nav_site = site.clone();
+    // 导航回调里要动运行状态（弃票 + 预签），所以握一份 AppHandle
+    let nav_handle = app.handle().clone();
+    let pump_handle = nav_handle.clone();
+    let parsed = site
+        .parse()
+        .map_err(|err| format!("站点地址 {site} 不是合法 URL：{err}"))?;
 
     let mut builder =
         WebviewWindowBuilder::new(app, config::WINDOW_LABEL, WebviewUrl::External(parsed))
@@ -432,11 +451,8 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
             allowed
         });
 
-    if let Some(address) = proxy {
-        match format!("http://{address}").parse::<tauri::Url>() {
-            Ok(url) => builder = builder.proxy_url(url),
-            Err(err) => eprintln!("[baka-dns-proxy] 隧道地址非法，改用系统代理：{err}"),
-        }
+    if let Some(url) = tunnel {
+        builder = builder.proxy_url(url);
     }
 
     Ok(builder.build()?)
@@ -472,6 +488,8 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = device::storage_dir();
+            // 先定下 WebView 的出口，再让设备引导线程发请求：共享 HTTP 客户端只构造一次
+            let tunnel = start_webview_tunnel();
             app.manage(AppState::new(dir.clone().unwrap_or_default()));
             match dir {
                 Some(_) => spawn_device_bootstrap(handle.clone()),
@@ -479,7 +497,7 @@ pub fn run() {
                     "无法确定密钥存储目录（APPDATA / USERPROFILE 都取不到），桌面通道未启用"
                 ),
             }
-            create_main_window(app)?;
+            create_main_window(app, tunnel)?;
             Ok(())
         })
         .run(tauri::generate_context!())
