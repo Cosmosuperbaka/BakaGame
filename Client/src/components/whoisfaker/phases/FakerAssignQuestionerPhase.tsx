@@ -2,7 +2,8 @@ import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
+import { CandidateGrid } from "@/components/common/CandidateGrid";
+import { SectionHeader } from "@/components/common/SectionHeader";
 
 export function FakerAssignQuestionerPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;

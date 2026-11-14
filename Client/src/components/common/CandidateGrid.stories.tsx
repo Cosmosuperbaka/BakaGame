@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { Eye, UserCheck } from "lucide-react";
 import { STORY_PLAYERS, STORY_SPECTATORS } from "@/stories/fixtures/Common";
-import { CandidateGrid, SectionHeader } from "./CandidateGrid";
+import { CandidateGrid } from "./CandidateGrid";
+import { SectionHeader } from "./SectionHeader";
 
 const [host, me, peach, azumi, , , longName] = STORY_PLAYERS;
 const CANDIDATES = [host, me, peach, azumi];

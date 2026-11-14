@@ -1,7 +1,8 @@
 import { Eye, UserCheck } from "lucide-react";
 import type { CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
+import { CandidateGrid } from "@/components/common/CandidateGrid";
+import { SectionHeader } from "@/components/common/SectionHeader";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 

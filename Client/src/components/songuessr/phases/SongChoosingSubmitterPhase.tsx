@@ -1,6 +1,7 @@
 import { Eye, UserCheck } from "lucide-react";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
+import { CandidateGrid } from "@/components/common/CandidateGrid";
+import { SectionHeader } from "@/components/common/SectionHeader";
 import { withTeamName } from "@/lib/Teams";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 
