@@ -73,8 +73,8 @@ export function BotCountRow({
     <div className="flex items-center gap-1.5">
       <Button
         variant="outline"
-        size="sm"
-        className="h-7 flex-1 gap-1 text-xs"
+        size="xs"
+        className="flex-1 gap-1 px-3"
         aria-label="移除一个测试人机"
         disabled={count === 0 || removePending}
         loading={removePending}
@@ -86,8 +86,8 @@ export function BotCountRow({
       <span className="w-10 text-center text-sm font-medium tabular-nums">{count}</span>
       <Button
         variant="outline"
-        size="sm"
-        className="h-7 flex-1 gap-1 text-xs"
+        size="xs"
+        className="flex-1 gap-1 px-3"
         aria-label="添加一个测试人机"
         disabled={addPending}
         loading={addPending}

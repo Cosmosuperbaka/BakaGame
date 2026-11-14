@@ -47,8 +47,8 @@ function ClipBoundStepper({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="size-8 text-muted-foreground"
+        size="icon-sm"
+        className="text-muted-foreground"
         aria-label={`${label}提前 0.1 秒`}
         disabled={!canBack}
         onClick={() => onStep(-FINE_STEP_MS)}
@@ -64,8 +64,8 @@ function ClipBoundStepper({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="size-8 text-muted-foreground"
+        size="icon-sm"
+        className="text-muted-foreground"
         aria-label={`${label}延后 0.1 秒`}
         disabled={!canForward}
         onClick={() => onStep(FINE_STEP_MS)}

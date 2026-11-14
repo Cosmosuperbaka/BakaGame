@@ -123,9 +123,8 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="outline"
-          className="size-8"
           aria-label="上一条"
           disabled={index === 0}
           onClick={() => jump(index - 1)}
@@ -134,9 +133,8 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
         </Button>
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="outline"
-          className="size-8"
           aria-label={active ? "暂停回放" : "播放回放"}
           onClick={toggle}
         >
@@ -144,9 +142,8 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
         </Button>
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="outline"
-          className="size-8"
           aria-label="下一条"
           disabled={index >= total - 1}
           onClick={() => jump(index + 1)}
@@ -155,9 +152,8 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
         </Button>
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           variant="outline"
-          className="size-8"
           aria-label="从头重播"
           onClick={() => {
             setIndex(0);

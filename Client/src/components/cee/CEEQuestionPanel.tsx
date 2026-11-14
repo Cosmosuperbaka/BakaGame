@@ -225,8 +225,8 @@ export function CEEQuestionPanel({
                       </Hint>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
+                        size="icon-xs"
+                        className="shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
                         aria-label={`移除作品 ${subjects.nameOf(id)}`}
                         onClick={() =>
                           change(

@@ -70,10 +70,10 @@ export function ClampedText({
         <Button
           type="button"
           variant="ghost"
-          size="icon"
+          size="icon-xs"
           // 外层在补间时裁切溢出：聚焦环向内收，贴着右上角也不被切掉。
           className={cn(
-            "absolute top-0 right-0 h-5 w-5 focus-visible:-outline-offset-2",
+            "absolute top-0 right-0 focus-visible:-outline-offset-2",
             toggleClassName ?? "text-muted-foreground"
           )}
           aria-expanded={expanded}

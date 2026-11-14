@@ -27,8 +27,12 @@ const buttonVariants = cva(
       size: {
         default: "h-9 px-4 py-2",
         sm: "h-8 rounded-md px-3 text-xs",
+        // 行内操作（玩家栏、测试控制器）一行放不下 sm 的高度，比它再矮一档。
+        xs: "h-7 rounded-md px-2 text-xs",
         lg: "h-10 rounded-md px-8",
         icon: "h-9 w-9",
+        "icon-sm": "h-8 w-8",
+        "icon-xs": "h-5 w-5",
       },
     },
     defaultVariants: {
@@ -47,7 +51,7 @@ export interface ButtonProps
 
 /**
  * 按压反馈随变体分级：主要与危险操作幅度更大，确认感更强；
- * 图标钮（size="icon"）不分变体，一律 iconTappable，连同图标一起下沉；
+ * 图标钮（size 为 icon、icon-sm、icon-xs）不分变体，一律 iconTappable，连同图标一起下沉；
  * link 是文本入口，只保留下划线，不做尺度变化。
  * asChild 交由外层元素承担交互，此时不叠加动效避免双重缩放。
  * loading 态强制禁用并展示 spinner，抑制悬浮与点击缩放。
@@ -77,7 +81,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const feedback =
       effectiveVariant === "link"
         ? undefined
-        : size === "icon"
+        : size === "icon" || size === "icon-sm" || size === "icon-xs"
           ? iconTappable
           : effectiveVariant === "default" || effectiveVariant === "destructive"
             ? pressableStrong

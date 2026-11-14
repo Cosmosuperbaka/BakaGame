@@ -104,8 +104,7 @@ function AudioCueControl({
           ) : (
             <Button
               variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+              size="icon-sm"
               onClick={onPlayAudio}
               aria-label="重播音频"
               data-agent-control="song.audio.play"

@@ -168,8 +168,8 @@ export function CEEPlayerList({
                   </span>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                    size="xs"
+                    className="shrink-0 text-muted-foreground"
                     disabled={busy}
                     onClick={() => setSpectator(false)}
                   >
@@ -198,8 +198,8 @@ export function CEEPlayerList({
                     <span className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-7 gap-1 px-2 text-xs"
+                        size="xs"
+                        className="gap-1"
                         disabled={busy}
                         onClick={() =>
                           void run("cee.player.approveSpectate", {
@@ -214,8 +214,8 @@ export function CEEPlayerList({
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        size="xs"
+                        className="gap-1 text-muted-foreground hover:text-destructive"
                         disabled={busy}
                         aria-label={`${SPECTATE_REJECT_LABEL} ${request.name}`}
                         onClick={() =>

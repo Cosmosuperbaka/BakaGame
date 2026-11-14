@@ -20,7 +20,7 @@ const VARIANTS = [
   ["link", "查看更新日志"],
 ] as const;
 
-const SIZES = ["sm", "default", "lg"] as const;
+const SIZES = ["xs", "sm", "default", "lg"] as const;
 
 export const Playground: Story = { name: "调试", tags: ["no-shot"] };
 
@@ -62,6 +62,12 @@ export const States: Story = {
       </Button>
       <Button size="icon" variant="ghost" aria-label="复制链接">
         <Copy />
+      </Button>
+      <Button size="icon-sm" variant="ghost" aria-label="复制链接（小）">
+        <Copy />
+      </Button>
+      <Button size="icon-xs" variant="ghost" aria-label="移除（行内）">
+        <Trash2 />
       </Button>
       <Button loading>开始游戏</Button>
       <Button variant="outline" loading>

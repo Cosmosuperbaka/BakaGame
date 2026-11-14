@@ -15,9 +15,9 @@ const CloseButton = React.forwardRef<HTMLButtonElement, CloseButtonProps>(
       ref={ref}
       type="button"
       variant="ghost"
-      size="icon"
+      size="icon-sm"
       aria-label={ariaLabel}
-      className={cn("h-8 w-8 shrink-0 text-muted-foreground", className)}
+      className={cn("shrink-0 text-muted-foreground", className)}
       {...props}
     >
       <X />

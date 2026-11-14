@@ -334,7 +334,7 @@ function FooterLink({ link }: { link: ExternalLink }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button asChild variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+        <Button asChild variant="ghost" size="icon-sm" className="text-muted-foreground">
           <motion.a
             href={link.href}
             target="_blank"

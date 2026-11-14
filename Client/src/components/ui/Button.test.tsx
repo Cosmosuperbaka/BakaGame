@@ -111,6 +111,11 @@ describe("Button", () => {
     expect(feedback()).toEqual(iconTappable);
     view.rerender(<Button variant="destructive" size="icon" aria-label="图标操作" />);
     expect(feedback()).toEqual(iconTappable);
+    // 小号与行内号图标钮同样是图标钮：换了尺寸档不该悄悄换成文字按钮的按压反馈。
+    view.rerender(<Button size="icon-sm" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
+    view.rerender(<Button variant="destructive" size="icon-xs" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
     view.rerender(<Button variant="link">文本入口</Button>);
     expect(feedback()).toEqual({
       whileHover: undefined,
@@ -176,5 +181,43 @@ describe("Button 默认类型", () => {
       </Button>
     );
     expect(screen.getByRole("link", { name: "去看看" })).not.toHaveAttribute("type");
+  });
+});
+
+describe("Button 尺寸档", () => {
+  const classesOf = (size: "xs" | "sm" | "icon" | "icon-sm" | "icon-xs", className?: string) => {
+    const view = render(
+      <Button size={size} className={className}>
+        档位
+      </Button>
+    );
+    const tokens = view.getByRole("button").className.split(/\s+/);
+    view.unmount();
+    return tokens;
+  };
+
+  it("xs 比 sm 矮一档、内边距更窄，字号相同", () => {
+    expect(classesOf("sm")).toEqual(expect.arrayContaining(["h-8", "px-3", "text-xs"]));
+    const xs = classesOf("xs");
+    expect(xs).toEqual(expect.arrayContaining(["h-7", "px-2", "text-xs"]));
+    expect(xs).not.toContain("h-8");
+    expect(xs).not.toContain("px-3");
+  });
+
+  it("图标钮三档各自定宽高，互不残留", () => {
+    expect(classesOf("icon")).toEqual(expect.arrayContaining(["h-9", "w-9"]));
+    const small = classesOf("icon-sm");
+    expect(small).toEqual(expect.arrayContaining(["h-8", "w-8"]));
+    expect(small).not.toContain("h-9");
+    const inline = classesOf("icon-xs");
+    expect(inline).toEqual(expect.arrayContaining(["h-5", "w-5"]));
+    expect(inline).not.toContain("h-9");
+  });
+
+  it("调用点仍可用 className 覆盖档位里的单项", () => {
+    const tokens = classesOf("xs", "px-3");
+    expect(tokens).toContain("px-3");
+    expect(tokens).not.toContain("px-2");
+    expect(tokens).toContain("h-7");
   });
 });

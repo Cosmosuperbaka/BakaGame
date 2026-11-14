@@ -104,8 +104,8 @@ export function FakerTestController() {
                 <Button
                   key={p}
                   variant={currentPhase === p ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs justify-start"
+                  size="xs"
+                  className="justify-start px-3"
                   onClick={() => void handleJumpPhase(p)}
                 >
                   {PHASE_LABELS[p]}
@@ -118,16 +118,16 @@ export function FakerTestController() {
             <div className="grid grid-cols-3 gap-1.5">
               <Button
                 variant={currentPerspective === "player" ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs"
+                size="xs"
+                className="px-3"
                 onClick={() => void handleSetPerspective("player")}
               >
                 玩家视角
               </Button>
               <Button
                 variant={currentPerspective === "questioner" ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs gap-1"
+                size="xs"
+                className="gap-1 px-3"
                 onClick={() => void handleSetPerspective("questioner")}
               >
                 <Shield className="h-3 w-3" />
@@ -135,8 +135,8 @@ export function FakerTestController() {
               </Button>
               <Button
                 variant={currentPerspective === "spectator" ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs"
+                size="xs"
+                className="px-3"
                 onClick={() => void handleSetPerspective("spectator")}
               >
                 旁观视角
@@ -151,8 +151,8 @@ export function FakerTestController() {
                   <Button
                     key={r}
                     variant={activeRole === r ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 text-xs"
+                    size="xs"
+                    className="px-3"
                     onClick={() => void handleSetRole(r)}
                   >
                     {ROLE_LABELS[r]}

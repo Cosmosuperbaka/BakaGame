@@ -343,8 +343,7 @@ export function Pager({
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className="size-8"
+        size="icon-sm"
         aria-label="上一页"
         disabled={offset === 0}
         onClick={() => onChange(Math.max(0, offset - limit))}
@@ -354,8 +353,7 @@ export function Pager({
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className="size-8"
+        size="icon-sm"
         aria-label="下一页"
         disabled={end >= total}
         onClick={() => onChange(offset + limit)}

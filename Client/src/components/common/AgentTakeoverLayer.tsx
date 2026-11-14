@@ -257,8 +257,8 @@ function TakeoverBar({
           ref={releaseRef}
           type="button"
           variant="outline"
-          size="sm"
-          className="h-7 shrink-0 rounded-full px-3 text-xs"
+          size="xs"
+          className="shrink-0 rounded-full px-3"
           onClick={() => void closePageControl()}
         >
           收回控制

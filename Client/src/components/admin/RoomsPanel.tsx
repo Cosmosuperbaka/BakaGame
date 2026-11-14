@@ -109,8 +109,8 @@ function RoomCard({
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground hover:text-destructive"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-destructive"
                 aria-label={`移出 ${player.name}`}
                 onClick={() => onKick(player)}
               >

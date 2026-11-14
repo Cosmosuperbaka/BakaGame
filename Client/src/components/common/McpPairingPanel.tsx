@@ -27,8 +27,8 @@ function PageCodeBlock({ code }: { code: string }) {
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs"
+            size="xs"
+            className="gap-1.5"
             onClick={() => void copy(code, "code")}
           >
             {copied === "code" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
@@ -37,8 +37,8 @@ function PageCodeBlock({ code }: { code: string }) {
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs"
+            size="xs"
+            className="gap-1.5"
             onClick={() => void copy(pageControlPrompt(code), "prompt")}
           >
             {copied === "prompt" ? <Check aria-hidden="true" /> : <Bot aria-hidden="true" />}

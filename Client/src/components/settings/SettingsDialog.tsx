@@ -57,13 +57,7 @@ function McpConnectionDetails({ connected }: { connected: boolean }) {
           />
           站点连接 · {connected ? "已连接" : "未连接"}
         </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-xs"
-          onClick={copyEndpoint}
-        >
+        <Button type="button" variant="ghost" size="xs" className="gap-1.5" onClick={copyEndpoint}>
           {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
           {copied ? "已复制" : "复制地址"}
         </Button>
