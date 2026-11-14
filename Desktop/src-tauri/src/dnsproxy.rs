@@ -477,7 +477,7 @@ mod tests {
         let pad = HEADER_LIMIT_BYTES - first.len() - filler_prefix.len() - 2;
         let mut head = first.into_bytes();
         head.extend_from_slice(filler_prefix.as_bytes());
-        head.extend(std::iter::repeat(b'a').take(pad));
+        head.extend(std::iter::repeat_n(b'a', pad));
         head.extend_from_slice(b"\r\n");
         assert_eq!(head.len(), HEADER_LIMIT_BYTES);
         // 后面补一个空行：额度已经用完，这个头合计超过上限
