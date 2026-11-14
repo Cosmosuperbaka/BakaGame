@@ -187,6 +187,7 @@ class HttpDns private constructor(
         internal const val QUERY_TIMEOUT_MS = 1500
         internal const val DEFAULT_TTL_SECONDS = 60
         internal const val MAX_TTL_SECONDS = 3600
+        /** 只计应答体；桌面壳计的是整个 HTTP 应答（头加体），数值相同但口径不同。 */
         internal const val MAX_RESPONSE_BYTES = 8 * 1024
         private const val CACHE_LOG_INTERVAL_MS = 5000L
 

@@ -30,7 +30,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_TTL_SECS: u32 = 60;
 /// 上限防止服务端下发一个过长的 TTL 让解析结果永久滞留
 const MAX_TTL_SECS: u32 = 3600;
-/// 真实应答只有几十字节；与安卓壳取同一个上限，数值由共享向量文件对账
+/// 真实应答只有几十字节；这里计的是整个 HTTP 应答（头加体），安卓壳只计应答体，
+/// 两端数值相同但口径不同，数值由共享向量文件对账
 const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 const CACHE_LOG_INTERVAL: Duration = Duration::from_secs(5);
 

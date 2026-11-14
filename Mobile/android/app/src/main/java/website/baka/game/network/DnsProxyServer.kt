@@ -230,6 +230,7 @@ class DnsProxyServer private constructor(
 
         private const val HEADER_TIMEOUT_MS = 10_000
         private const val CONNECT_TIMEOUT_MS = 5_000
+        /** 请求头总量上限，按行累计（每行按内容加两字节换行计）；每一行单独也不得超过剩余额度。 */
         internal const val MAX_HEADER_BYTES = 8 * 1024
 
         /**
