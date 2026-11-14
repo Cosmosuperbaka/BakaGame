@@ -13,7 +13,6 @@ import type {
   PublicStatusSampleCell,
   PublicStatusSnapshot,
 } from "@bakagame/shared";
-import type { TSchema } from "@sinclair/typebox";
 import { fetchJson } from "@/lib/HttpJson";
 
 /** 状态接口的请求选项：永远读最新，不吃缓存；超时用 `fetchJson` 的默认值，后端不可达时页面据此降级展示。 */
@@ -106,33 +105,11 @@ export const parseSystemStatus = (value: unknown): PublicStatusSnapshot => {
   };
 };
 
-/**
- * 响应契约只在真正发请求时才动态加载：schema 与校验库体积不小，
- * 运行时值入口（Values.ts）不允许把它们带进首屏。解析器先按宽松口径归一化，
- * 再逐条目过一遍共享 schema——形状不合的条目丢弃，不整份报错。
- */
-const loadStatusSchemas = () =>
-  Promise.all([import("@sinclair/typebox/value"), import("@bakagame/shared")] as const);
-let statusSchemas: ReturnType<typeof loadStatusSchemas> | null = null;
-
-const filterByContract = async <T>(
-  items: readonly T[],
-  schemaOf: (shared: Awaited<ReturnType<typeof loadStatusSchemas>>[1]) => TSchema
-): Promise<T[]> => {
-  const [{ Value }, shared] = await (statusSchemas ??= loadStatusSchemas());
-  const schema = schemaOf(shared);
-  return items.filter((item) => Value.Check(schema, item));
-};
-
 /** 页面手动刷新时调用；失败直接抛给页面按「未知」降级。 */
 export const fetchSystemStatus = async (): Promise<PublicStatusSnapshot> => {
-  const snapshot = parseSystemStatus(
+  return parseSystemStatus(
     await fetchJson("/api/status", { label: "状态接口", init: STATUS_INIT })
   );
-  return {
-    ...snapshot,
-    components: await filterByContract(snapshot.components, (s) => s.PublicStatusComponentSchema),
-  };
 };
 
 const parseRatio = (value: unknown): number | null =>
@@ -195,13 +172,9 @@ export const parseStatusHistory = (value: unknown): PublicStatusHistory => {
 
 /** 历史一次读满展示窗口；读失败由页面单独降级，不影响当前状态。 */
 export const fetchStatusHistory = async (): Promise<PublicStatusHistory> => {
-  const history = parseStatusHistory(
+  return parseStatusHistory(
     await fetchJson("/api/status/history", { label: "历史接口", init: STATUS_INIT })
   );
-  return {
-    ...history,
-    entries: await filterByContract(history.entries, (s) => s.PublicStatusHistoryEntrySchema),
-  };
 };
 
 const parseSampleCells = (value: unknown): PublicStatusSampleCell[] => {
@@ -271,13 +244,9 @@ export const parseStatusRealtime = (value: unknown): PublicStatusRealtime => {
 export const fetchStatusRealtime = async (
   onRoundTrip?: (milliseconds: number) => void
 ): Promise<PublicStatusRealtime> => {
-  const realtime = parseStatusRealtime(
+  return parseStatusRealtime(
     await fetchJson("/api/status/realtime", { label: "实时接口", init: STATUS_INIT, onRoundTrip })
   );
-  return {
-    ...realtime,
-    entries: await filterByContract(realtime.entries, (s) => s.PublicStatusRealtimeEntrySchema),
-  };
 };
 
 /**
@@ -329,8 +298,7 @@ export const parseStatusEvents = (value: unknown): PublicStatusEvent[] => {
 };
 
 export const fetchStatusEvents = async (): Promise<PublicStatusEvent[]> => {
-  const events = parseStatusEvents(
+  return parseStatusEvents(
     await fetchJson("/api/status/events", { label: "事件接口", init: STATUS_INIT })
   );
-  return filterByContract(events, (s) => s.PublicStatusEventSchema);
 };

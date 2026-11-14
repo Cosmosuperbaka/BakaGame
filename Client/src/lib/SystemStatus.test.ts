@@ -1,3 +1,10 @@
+import {
+  PublicStatusEventsSchema,
+  PublicStatusHistorySchema,
+  PublicStatusRealtimeSchema,
+  PublicStatusSnapshotSchema,
+} from "../../../Server/src/shared/PublicStatusSchemas";
+import { Value } from "@sinclair/typebox/value";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   parseSystemStatus,
@@ -322,5 +329,90 @@ describe("公开状态事件客户端", () => {
     stubFetch(validEvents, urls);
     await expect(fetchStatusEvents()).resolves.toEqual(validEvents.events);
     expect(urls[0]).toMatch(/\/api\/status\/events$/);
+  });
+});
+
+/**
+ * 响应的形状有两处写法：服务端路由用共享契约校验，客户端用手写解析器做宽松归一化
+ * （校验库不进页面，解析器还要把坏条目逐个丢掉而不是整份拒收）。这组用例钉住两边不漂移：
+ * 合乎契约的响应原样通过解析器；解析器吐出来的东西，不管输入多乱，都合乎契约。
+ */
+describe("解析器与共享契约同形", () => {
+  const messyComponent = { id: "未登记的组件", level: "operational", latencyMs: 1 };
+  const cases = [
+    {
+      name: "当前状态",
+      schema: PublicStatusSnapshotSchema,
+      payload: valid,
+      parse: (value: unknown) => parseSystemStatus(value),
+      messy: {
+        ...valid,
+        多出来的字段: true,
+        components: [
+          ...valid.components,
+          messyComponent,
+          { id: "backend", level: "炸了", latencyMs: null },
+          { id: "bangumi", level: "degraded", latencyMs: Number.NaN },
+          null,
+        ],
+      },
+    },
+    {
+      name: "历史",
+      schema: PublicStatusHistorySchema,
+      payload: validHistory,
+      parse: (value: unknown) => parseStatusHistory(value),
+      messy: {
+        ...validHistory,
+        entries: [
+          ...validHistory.entries,
+          { ...validHistory.entries[0], id: "未登记的组件" },
+          { id: "search", uptime: "不是数组", cells: [{ day: 20261021, total: -1, ratio: 9 }] },
+        ],
+      },
+    },
+    {
+      name: "实时条带",
+      schema: PublicStatusRealtimeSchema,
+      payload: validRealtime,
+      parse: (value: unknown) => parseStatusRealtime(value),
+      messy: {
+        ...validRealtime,
+        entries: [
+          ...validRealtime.entries,
+          { ...validRealtime.entries[0], id: "未登记的组件" },
+          { id: "rooms", uptime: 7, cells: [{ start: "昨天", total: 1, ratio: null, level: 3 }] },
+        ],
+      },
+    },
+    {
+      name: "事件",
+      schema: PublicStatusEventsSchema,
+      payload: validEvents,
+      parse: (value: unknown) => ({
+        generatedAt: validEvents.generatedAt,
+        events: parseStatusEvents(value),
+      }),
+      messy: {
+        ...validEvents,
+        events: [
+          ...validEvents.events,
+          { ...validEvents.events[0], id: "二", kind: "演习" },
+          { ...validEvents.events[0], id: 3, components: ["search", "未登记的组件"] },
+        ],
+      },
+    },
+  ];
+
+  it.each(cases)("$name：合乎契约的响应原样通过解析器", ({ schema, payload, parse }) => {
+    expect(Value.Check(schema, payload)).toBe(true);
+    expect(parse(payload)).toEqual(payload);
+  });
+
+  it.each(cases)("$name：输入再乱，解析结果也合乎契约", ({ schema, parse, messy }) => {
+    const parsed = parse(messy);
+    expect(
+      [...Value.Errors(schema, parsed)].map((error) => `${error.path} ${error.message}`)
+    ).toEqual([]);
   });
 });
