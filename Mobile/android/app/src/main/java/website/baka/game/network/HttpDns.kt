@@ -180,35 +180,35 @@ class HttpDns private constructor(
         return String(cipher.doFinal(raw, 16, raw.size - 16), Charsets.UTF_8)
     }
 
-    private fun parseAnswer(answer: String): Pair<List<InetAddress>, Int> {
-        val trimmed = answer.trim()
-        if (trimmed.isEmpty()) throw IOException("HTTPDNS 返回空结果")
-        val head = trimmed.substringBefore('|').trim()
-        val comma = head.lastIndexOf(',')
-        var ttl: Int? = null
-        var ipPart = head
-        if (comma >= 0) {
-            val candidate = head.substring(comma + 1).trim().toIntOrNull()
-            if (candidate != null) {
-                ttl = candidate
-                ipPart = head.substring(0, comma)
-            }
-        }
-        val addresses = ipPart.split(';').mapNotNull { parseIpv4(it.trim()) }
-        if (addresses.isEmpty()) throw IOException("HTTPDNS 应答里没有合法 IPv4：$ipPart")
-        val ttlSeconds = (ttl ?: DEFAULT_TTL_SECONDS).coerceIn(1, MAX_TTL_SECONDS)
-        return addresses to ttlSeconds
-    }
-
     companion object {
         private const val TAG = "BakaHttpDns"
         private const val HTTP_ENDPOINT = "http://119.29.29.98/d"
         private const val HTTPS_ENDPOINT = "https://119.29.29.99/d"
-        private const val QUERY_TIMEOUT_MS = 1500
-        private const val DEFAULT_TTL_SECONDS = 60
-        private const val MAX_TTL_SECONDS = 3600
-        private const val MAX_RESPONSE_BYTES = 8 * 1024
+        internal const val QUERY_TIMEOUT_MS = 1500
+        internal const val DEFAULT_TTL_SECONDS = 60
+        internal const val MAX_TTL_SECONDS = 3600
+        internal const val MAX_RESPONSE_BYTES = 8 * 1024
         private const val CACHE_LOG_INTERVAL_MS = 5000L
+
+        internal fun parseAnswer(answer: String): Pair<List<InetAddress>, Int> {
+            val trimmed = answer.trim()
+            if (trimmed.isEmpty()) throw IOException("HTTPDNS 返回空结果")
+            val head = trimmed.substringBefore('|').trim()
+            val comma = head.lastIndexOf(',')
+            var ttl: Int? = null
+            var ipPart = head
+            if (comma >= 0) {
+                val candidate = head.substring(comma + 1).trim().toIntOrNull()
+                if (candidate != null) {
+                    ttl = candidate
+                    ipPart = head.substring(0, comma)
+                }
+            }
+            val addresses = ipPart.split(';').mapNotNull { parseIpv4(it.trim()) }
+            if (addresses.isEmpty()) throw IOException("HTTPDNS 应答里没有合法 IPv4：$ipPart")
+            val ttlSeconds = (ttl ?: DEFAULT_TTL_SECONDS).coerceIn(1, MAX_TTL_SECONDS)
+            return addresses to ttlSeconds
+        }
 
         /** 密钥缺失或格式不对时返回 null，壳保持系统 DNS；不把半套配置当成可用。 */
         fun fromBuildConfig(): HttpDns? {
@@ -229,7 +229,7 @@ class HttpDns private constructor(
             return HttpDns(domain, appId, secret, token)
         }
 
-        private fun normalizeHost(raw: String): String {
+        internal fun normalizeHost(raw: String): String {
             var value = raw.trim().lowercase()
             val scheme = value.indexOf("://")
             if (scheme >= 0) value = value.substring(scheme + 3)

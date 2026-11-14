@@ -199,6 +199,9 @@ const cases = [
   ["android", "package.json", true],
   ["android", "Server/src/Index.ts", false],
   ["android", "Desktop/src-tauri/tauri.conf.json", false],
+  // 两个壳共用的 HTTPDNS 解析向量：桌面（Desktop/**）与安卓都要被它触发。
+  ["android", "Desktop/src-tauri/tests/httpdns_vectors.tsv", true],
+  ["desktop", "Desktop/src-tauri/tests/httpdns_vectors.tsv", true],
 
   ["knip", "knip.jsonc", true],
   ["knip", "Client/src/App.tsx", true],

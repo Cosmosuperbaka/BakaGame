@@ -30,7 +30,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_TTL_SECS: u32 = 60;
 /// 上限防止服务端下发一个过长的 TTL 让解析结果永久滞留
 const MAX_TTL_SECS: u32 = 3600;
-const MAX_RESPONSE_BYTES: usize = 16 * 1024;
+/// 真实应答只有几十字节；与安卓壳取同一个上限，数值由共享向量文件对账
+const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 const CACHE_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 const BUILD_APP_ID: &str = match option_env!("BAKA_HTTPDNS_APP_ID") {
@@ -675,6 +676,56 @@ mod tests {
         let (ips, ttl) = parse_answer("1.2.3.4;5.6.7.8").unwrap();
         assert_eq!(ips.len(), 2);
         assert_eq!(ttl, DEFAULT_TTL_SECS);
+    }
+
+    /// 与安卓壳共用的向量：同一条应答两端必须给出同样的结果（已知分叉在向量里按端分别写明）。
+    const SHARED_VECTORS: &str = include_str!("../tests/httpdns_vectors.tsv");
+
+    fn render_expected(result: Result<(Vec<IpAddr>, u32), String>) -> String {
+        match result {
+            Ok((ips, ttl)) => format!(
+                "ips={} ttl={ttl}",
+                ips.iter().map(ToString::to_string).collect::<Vec<_>>().join(";")
+            ),
+            Err(_) => "error".to_string(),
+        }
+    }
+
+    #[test]
+    fn answers_match_shared_vectors() {
+        let mut checked = 0;
+        for line in SHARED_VECTORS.lines().map(|line| line.trim_end_matches('\r')) {
+            let columns: Vec<&str> = line.split('\t').collect();
+            if columns.first() != Some(&"case") {
+                continue;
+            }
+            assert_eq!(columns.len(), 5, "向量格式不对：{line}");
+            assert_eq!(
+                render_expected(parse_answer(columns[2])),
+                columns[3],
+                "向量 {} 桌面端结果不符",
+                columns[1]
+            );
+            checked += 1;
+        }
+        assert!(checked >= 10, "向量文件没读到足够的用例：{checked}");
+    }
+
+    #[test]
+    fn limits_match_shared_vectors() {
+        let limit = |name: &str| -> u64 {
+            SHARED_VECTORS
+                .lines()
+                .map(|line| line.trim_end_matches('\r').split('\t').collect::<Vec<_>>())
+                .find(|columns| columns.len() == 3 && columns[0] == "limit" && columns[1] == name)
+                .unwrap_or_else(|| panic!("向量文件缺少常量 {name}"))[2]
+                .parse()
+                .unwrap()
+        };
+        assert_eq!(limit("maxResponseBytes"), MAX_RESPONSE_BYTES as u64);
+        assert_eq!(limit("defaultTtlSeconds"), DEFAULT_TTL_SECS as u64);
+        assert_eq!(limit("maxTtlSeconds"), MAX_TTL_SECS as u64);
+        assert_eq!(limit("queryTimeoutMillis"), QUERY_TIMEOUT.as_millis() as u64);
     }
 
     #[test]

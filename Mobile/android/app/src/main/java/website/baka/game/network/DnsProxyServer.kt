@@ -220,7 +220,7 @@ class DnsProxyServer private constructor(
             return DnsProxyServer(resolver, server, maxConnections)
         }
 
-        private fun splitTarget(value: String): Pair<String, Int>? {
+        internal fun splitTarget(value: String): Pair<String, Int>? {
             val target = value.trim()
             if (target.isEmpty()) return null
             val host: String

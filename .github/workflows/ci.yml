@@ -110,6 +110,8 @@ jobs:
             android:
               - 'Mobile/**'
               - 'Client/**'
+              # 与桌面壳共用的 HTTPDNS 解析向量：安卓单测读它，只改它也要重跑安卓单测。
+              - 'Desktop/src-tauri/tests/httpdns_vectors.tsv'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
