@@ -28,6 +28,8 @@ export function useCEERoomLifecycle() {
   const connected = useCEEStore((state) => state.connected);
   const lobbyReady = useCEEStore((state) => state.lobbyReady);
   const roomClosedAt = useCEEStore((state) => state.roomClosedAt);
+  // 断线保留画面、重连回座交给运行时；回座没成而房间还在时它记下失座，这里据此重走一遍入房。
+  const seatLostAt = useCEEStore((state) => state.seatLostAt);
   // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
   const [mountTime] = useState(() => Date.now());
   const closed = roomClosedAt !== null && roomClosedAt >= mountTime;
@@ -132,6 +134,7 @@ export function useCEERoomLifecycle() {
     const controller = new AbortController();
     const restore = async () => {
       const store = useCEEStore.getState();
+      // 已在房里（含断线后保留的画面，回座由运行时负责），页面不再恢复一次。
       if (store.roomId === roomId && store.snapshot) {
         setJoining(false);
         return;
@@ -153,7 +156,7 @@ export function useCEERoomLifecycle() {
       controller.abort();
       attempted.current = "";
     };
-  }, [roomId, connected, lobbyReady, closed, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomId, connected, lobbyReady, closed, seatLostAt, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 手动确认（密码步提交）：用表单里的名字与密码重试。 */
   const join = async () => {

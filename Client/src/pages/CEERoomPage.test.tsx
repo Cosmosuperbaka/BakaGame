@@ -16,12 +16,12 @@ import { stubMatchMedia } from "@/test/MatchMedia";
 import CEERoomPage from "./CEERoomPage";
 
 // 房间页的入房流程由 UseCEERoomLifecycle 的测试负责；这里只关心「在房间里」时页面对壳做了什么。
-const lifecycle = vi.hoisted(() => ({ roomId: "1234", error: "" }));
+const lifecycle = vi.hoisted(() => ({ roomId: "1234", error: "", connected: true }));
 vi.mock("@/hooks/UseCEERoomLifecycle", () => ({
   CEE_PASSWORD_ERROR_CODES: new Set<string>(),
   useCEERoomLifecycle: () => ({
     roomId: lifecycle.roomId,
-    connected: true,
+    connected: lifecycle.connected,
     joining: false,
     needsJoin: false,
     name: "",
@@ -82,6 +82,7 @@ afterEach(() => {
   window.localStorage.clear();
   lifecycle.roomId = "1234";
   lifecycle.error = "";
+  lifecycle.connected = true;
 });
 
 describe("CEE 房间页的窗口级防截屏", () => {
@@ -109,7 +110,14 @@ describe("CEE 房间页的窗口级防截屏", () => {
     expect(secureNow()).toBe(false);
   });
 
-  it("断线清空视图时关闭，重连回到反作弊房后重新开启", async () => {
+  it("断线保留画面时保持开启：玩家仍看着这间房", () => {
+    enterRoom(true);
+    lifecycle.connected = false;
+    mount();
+    expect(secureNow()).toBe(true);
+  });
+
+  it("画面清空（回座没成、让出房间）时关闭，重新进入反作弊房后再开启", async () => {
     enterRoom(true);
     mount();
     expect(secureNow()).toBe(true);
@@ -259,6 +267,15 @@ describe("CEE 房间页的聊天与断线提示", () => {
     lifecycle.error = "房间已满";
     mount();
     expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "房间已满", type: "error" });
+  });
+
+  it("断线时保留房间画面，顶栏报断线", () => {
+    enterRoom(false);
+    lifecycle.connected = false;
+    mount();
+    expect(gameArea).toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "聊天消息" })).toBeInTheDocument();
+    expect(screen.getAllByText("重连中...").length).toBeGreaterThan(0);
   });
 
   it("原版房上游断线时顶栏报原版重连，上游恢复后收起", async () => {

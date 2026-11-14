@@ -32,7 +32,7 @@ export default function CEERoomPage() {
     await useCEEStore.getState().sendCommand("cee.chat.send", { text });
   };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
-  // 反作弊房要挡录屏与投屏：只在确认进了该房间后开启，断线清空视图、换房与离开都会恢复。
+  // 反作弊房要挡录屏与投屏：只在确认进了该房间后开启；断线保留画面时照常挡着，换房、离开与让出房间都会恢复。
   useCEESecureScreen(Boolean(ready && snapshot.bakaAntiCheat));
   // 聊天在宽屏常驻、窄屏收进抽屉；抽屉关着时攒下的未读数挂在入口上。
   const chatDocked = useMinWidth("xl");

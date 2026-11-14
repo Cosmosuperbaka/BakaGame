@@ -407,6 +407,48 @@ describe("CEE 直链入房的分支与去向（补充）", () => {
     act(() => useCEEStore.setState({ roomClosedAt: Date.now() + 1 }));
     expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee", { replace: true });
   });
+  it("断线时保留画面：重新就绪后不由页面再恢复一次，也不转回正在加入", async () => {
+    const { reconnectRoom, joinRoom } = ready({
+      roomId: "1234",
+      snapshot: { roomId: "1234" },
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => useCEEStore.setState({ connected: false, lobbyReady: false }));
+    expect(h.result.current.joining).toBe(false);
+    act(() => useCEEStore.setState({ connected: true }));
+    act(() => useCEEStore.setState({ lobbyReady: true }));
+    await act(async () => {});
+    expect(h.result.current.joining).toBe(false);
+    expect(reconnectRoom).not.toHaveBeenCalled();
+    expect(joinRoom).not.toHaveBeenCalled();
+  });
+  it("重连后回座失败而房间还在：页面按名字重新加入", async () => {
+    const { reconnectRoom, joinRoom } = ready({
+      roomId: "1234",
+      snapshot: { roomId: "1234" },
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => useCEEStore.setState({ roomId: null, snapshot: null, seatLostAt: Date.now() }));
+    await waitFor(() =>
+      expect(joinRoom).toHaveBeenCalledExactlyOnceWith("1234", "玩家", "", expect.any(AbortSignal))
+    );
+    expect(reconnectRoom).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("重连后回座临时失败、页面再恢复仍失败：提示后回大厅，不卡在正在加入", async () => {
+    ready({
+      roomId: "1234",
+      snapshot: { roomId: "1234" },
+      reconnectRoom: vi.fn().mockRejectedValue({ code: "TIMEOUT", message: "请求超时" }),
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => useCEEStore.setState({ roomId: null, snapshot: null, seatLostAt: Date.now() }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "请求超时" });
+  });
   it("点离开只回大厅（不替换历史），卸载时不退房", async () => {
     const { leaveRoom } = ready();
     const h = mount();

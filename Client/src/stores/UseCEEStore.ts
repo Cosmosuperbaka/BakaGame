@@ -29,6 +29,7 @@ import {
   antiCheatMessage,
   isLoginRequiredCode,
 } from "@/lib/AntiCheatCopy";
+import { isAbortError } from "@/lib/ErrorMessage";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import { createQueryReuseCache, keywordQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { playSound } from "@/lib/SoundEffects";
@@ -58,6 +59,11 @@ export interface CEEStore
   extends ToastState, RoomCoreState<CEERoomSummary, CEERoomSnapshot, CEEPrivateState> {
   originalAvailable: boolean;
   source: CEESource | null;
+  /**
+   * 重连后运行时没能回座的时刻（座位已失效或回座临时失败，房间本身没被关）。
+   * 房间已让出、画面已清空；房间页据此重新走一遍直链入房。
+   */
+  seatLostAt: number | null;
   /** 最近一次要求登录的时刻；CEELayout 监听它去打开登录弹窗。0 表示没有待办请求。 */
   requestLoginAt: number;
   /** 统一处理命令/同步失败：按错误码取文案弹提示，LOGIN_REQUIRED 顺带请求打开登录弹窗。 */
@@ -139,6 +145,21 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     payload.source === "original" || get().snapshot?.source === "original"
       ? (payload.message ?? payload.reason ?? text)
       : text;
+  /**
+   * 重连后的回座。回不去而房间还在时（座位失效、临时失败）让出房间并记下失座，
+   * 由房间页按直链入房重来：座位失效就按名字重新加入，临时失败再恢复一次、仍失败才回大厅。
+   * 作废（又断线、主动退房、房间被关）不算失座：下一次连上或关闭分支各自接手。
+   */
+  const restoreSeat = async (roomId: string): Promise<boolean> => {
+    try {
+      if (await get().reconnectRoom(roomId)) return true;
+    } catch (error) {
+      if (isAbortError(error) || get().roomId !== roomId) return false;
+      get().resetRoom();
+    }
+    if (get().roomClosedAt === null) set({ seatLostAt: Date.now() });
+    return false;
+  };
   runtime = createRoomRuntime<
     ws.CEECommandMap,
     CEERoomSnapshot,
@@ -197,11 +218,11 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     status: {
       generationOn: "everyStatus",
       syncOn: "resetOnEveryStatus",
-      write: (connected) =>
-        set({ connected, lobbyReady: false, snapshot: null, privateState: null }),
+      // 断线保留房间画面与已输入的内容，顶栏给断线提示；同步基线照样作废，
+      // 重连后的展示态由回座 ACK 的服务端全量整体替换，不在旧画面上续补丁。
+      write: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
       subscribeLobby: () => {
         const generation = runtime.generation();
-        // URL 房间会话仅由 useCEERoomLifecycle 恢复，避免订阅 ACK 与页面 effect 争抢重连。
         void get()
           .subscribeLobby()
           .catch((error: unknown) => {
@@ -209,7 +230,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
               get().showToast(ceeErrorMessage(error), "error");
           });
       },
-      restore: { by: "page" },
+      // 订阅大厅先发、回座后发：服务端按到达顺序受理，订阅不会撞上已落座的连接。
+      reconnect: restoreSeat,
     },
     cleanup: {
       disconnectFirst: true,
@@ -249,6 +271,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     ...createRoomCoreSlice(set),
     originalAvailable: false,
     source: null,
+    seatLostAt: null,
     ...createToastSlice(set, get),
     requestLoginAt: 0,
     promptLogin: () => set({ requestLoginAt: Date.now() }),

@@ -79,8 +79,8 @@ export interface RoomRuntimeOptions<
     write: (connected: boolean) => void;
     /** 连上后怎么订阅大厅：另两款发完不管，CEE 等 ACK 并带代次守卫。 */
     subscribeLobby: () => void;
-    /** 谁触发回座：运行时自动恢复，或页面自己恢复。 */
-    restore: { by: "page" } | { by: "runtime"; reconnect: (roomId: string) => Promise<boolean> };
+    /** 连上后带原凭据回座；断线前的房间画面在此期间保留，回座结果以服务端全量为准。 */
+    reconnect: (roomId: string) => Promise<boolean>;
   };
   cleanup: {
     /** CEE 先断连接再退订阅，断线回调仍会被处理；另两款先退订阅。 */
@@ -217,11 +217,10 @@ export function createRoomRuntime<
     if (status.syncOn === "resetOnConnect") sync.reset();
     else if (status.syncOn === "clearRevisionsOnConnect") sync.clearRevisions();
     status.subscribeLobby();
-    if (status.restore.by !== "runtime") return;
     const { roomId, sessionToken } = identity();
     if (roomId && sessionToken) {
       tokens.save(roomId, sessionToken);
-      void status.restore.reconnect(roomId).catch(() => {});
+      void status.reconnect(roomId).catch(() => {});
     }
   };
 

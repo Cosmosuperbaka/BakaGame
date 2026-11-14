@@ -66,6 +66,7 @@ function setup(
     roomEnded: vi.fn(),
     shutdown: vi.fn(),
     finish: vi.fn(),
+    reconnect: vi.fn<(roomId: string) => Promise<boolean>>(async () => true),
   };
   const options: RoomRuntimeOptions<Commands, Snapshot, Private, Receipt> = {
     ws: socket.ws,
@@ -89,7 +90,7 @@ function setup(
       syncOn: "resetOnConnect",
       write: calls.write,
       subscribeLobby: () => {},
-      restore: { by: "page" },
+      reconnect: calls.reconnect,
     },
     cleanup: {
       disconnectFirst: knobs.disconnectFirst ?? false,
@@ -191,6 +192,23 @@ describe("房间运行时骨架", () => {
     // 代次前进说明连接已经换了一条：旧席位随旧连接消失，不再往新连接发旧凭据的退房。
     expect(calls.discard).not.toHaveBeenCalled();
     dispose();
+  });
+
+  it("连上后订阅大厅，再带原凭据回座；不在房间里不回座", () => {
+    const seated = setup({ identity: { roomId: "1234", sessionToken: "token" } });
+    const disposeSeated = seated.runtime.init();
+    seated.socket.emitStatus(false);
+    expect(seated.calls.reconnect).not.toHaveBeenCalled();
+    seated.socket.emitStatus(true);
+    expect(seated.tokens.save).toHaveBeenCalledWith("1234", "token");
+    expect(seated.calls.reconnect).toHaveBeenCalledExactlyOnceWith("1234");
+    disposeSeated();
+
+    const idle = setup();
+    const disposeIdle = idle.runtime.init();
+    idle.socket.emitStatus(true);
+    expect(idle.calls.reconnect).not.toHaveBeenCalled();
+    disposeIdle();
   });
 
   it("入房在途的快照只进基线，ACK 时一次交给玩法", async () => {

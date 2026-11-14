@@ -232,7 +232,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
           .subscribeLobby()
           .catch(() => {});
       },
-      restore: { by: "runtime", reconnect: (roomId) => get().reconnectRoom(roomId) },
+      reconnect: (roomId) => get().reconnectRoom(roomId),
     },
     cleanup: {
       disconnectFirst: false,

@@ -13,6 +13,7 @@ import {
 } from "./UseCEEStore";
 import { readCEESession, writeCEESession } from "@/lib/CEESession";
 import { ceePrivateState } from "@/stories/fixtures/CEE";
+import { deferred } from "@/test/Deferred";
 
 const snapshot: CEERoomSnapshot = {
   roomId: "1234",
@@ -157,7 +158,7 @@ describe("CEE 状态同步", () => {
     expect(readCEESession("1234")).not.toBeNull();
   });
 
-  it("重建连接只订阅大厅并等待页面恢复，卸载释放连接且保留刷新凭据", async () => {
+  it("重建连接先订阅大厅再由运行时回座，卸载释放连接且保留刷新凭据", async () => {
     let status: (connected: boolean) => void = () => {};
     vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
       status = handler;
@@ -165,7 +166,15 @@ describe("CEE 状态同步", () => {
     });
     vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
     const disconnect = vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => status(false));
-    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({ originalAvailable: false });
+    // 回座停在半路直到卸载：入房事务是模块级的，收尾必须让它落定，否则后续用例的推送都被当成入房在途。
+    const restore = deferred<Record<string, unknown>>();
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockImplementation((command: string) =>
+        command === "cee.room.reconnect"
+          ? restore.promise
+          : Promise.resolve({ originalAvailable: false })
+      );
     writeCEESession("1234", "token");
     useCEEStore.setState({
       source: "native",
@@ -180,13 +189,18 @@ describe("CEE 状态同步", () => {
       expect(useCEEStore.getState()).toMatchObject({
         connected: false,
         lobbyReady: false,
-        snapshot: null,
+        snapshot,
       });
       status(true);
       await vi.waitFor(() => expect(useCEEStore.getState().lobbyReady).toBe(true));
-      expect(send.mock.calls.map(([command]) => command)).toEqual(["cee.lobby.subscribeRooms"]);
+      expect(send.mock.calls.map(([command]) => command)).toEqual([
+        "cee.lobby.subscribeRooms",
+        "cee.room.reconnect",
+      ]);
     } finally {
       cleanup();
+      restore.reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+      await restore.promise.catch(() => {});
     }
     expect(disconnect).toHaveBeenCalledOnce();
     expect(readCEESession("1234")).toBe("token");
@@ -1339,7 +1353,200 @@ describe("CEE 连接生命周期", () => {
           send.mock.calls.filter(([command]) => command === "cee.room.requestSync")
         ).toHaveLength(1)
       );
-      expect(useCEEStore.getState().snapshot).toBeNull();
+      // 保留的画面停在断线前那一帧：补丁不落到它上面，等重连后的全量整体替换。
+      expect(useCEEStore.getState().snapshot).toBe(snapshot);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("CEE 断线与回座的时序", () => {
+  let status: (connected: boolean) => void = () => {};
+  const privateState = ceePrivateState({ playerId: "p1" });
+  const serverSnapshot: CEERoomSnapshot = {
+    ...snapshot,
+    name: "服务端全量",
+    phase: "guessing",
+    roundNumber: 2,
+  };
+  const serverPrivate = ceePrivateState({ playerId: "p1", canGuess: false });
+  const commands = (send: { mock: { calls: unknown[][] } }) =>
+    send.mock.calls.map(([command]) => command);
+
+  beforeEach(() => {
+    status = () => {};
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+      status = handler;
+      return () => {};
+    });
+    vi.spyOn(ceeWsClient, "onMessage").mockImplementation(() => () => {});
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+    vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {});
+    writeCEESession("1234", "token");
+    useCEEStore.setState({
+      source: "native",
+      connected: true,
+      lobbyReady: true,
+      roomId: "1234",
+      sessionToken: "token",
+      snapshot,
+      privateState,
+      seatLostAt: null,
+    });
+  });
+
+  /** 回座命令停在半路，由用例决定它何时、以什么结果回来。 */
+  const holdReconnect = () => {
+    const acks: Array<ReturnType<typeof deferred<Record<string, unknown>>>> = [];
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
+      if (command !== "cee.room.reconnect") return Promise.resolve({ originalAvailable: false });
+      const ack = deferred<Record<string, unknown>>();
+      acks.push(ack);
+      return ack.promise;
+    });
+    return { send, acks };
+  };
+  const receipt = (token = "token") => ({
+    source: "native",
+    roomId: "1234",
+    sessionToken: token,
+    snapshot: serverSnapshot,
+    privateState: serverPrivate,
+  });
+
+  it("断线保留房间画面；重连后运行时带原凭据回座，展示态整体换成服务端全量", async () => {
+    const { send, acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      expect(useCEEStore.getState()).toMatchObject({
+        connected: false,
+        lobbyReady: false,
+        roomId: "1234",
+        sessionToken: "token",
+      });
+      expect(useCEEStore.getState().snapshot).toBe(snapshot);
+      expect(useCEEStore.getState().privateState).toBe(privateState);
+
+      status(true);
+      expect(commands(send)).toEqual(["cee.lobby.subscribeRooms", "cee.room.reconnect"]);
+      expect(send.mock.calls[1][1]).toEqual({ roomId: "1234", sessionToken: "token" });
+      // 回座在途时仍是断线前的画面，不先清成占位。
+      expect(useCEEStore.getState().snapshot).toBe(snapshot);
+      acks[0].resolve(receipt());
+      await vi.waitFor(() => expect(useCEEStore.getState().snapshot).toEqual(serverSnapshot));
+      expect(useCEEStore.getState().privateState).toEqual(serverPrivate);
+      expect(useCEEStore.getState().seatLostAt).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("回座途中再次断线：晚到的 ACK 不安装，下一次连上重新回座", async () => {
+    const { send, acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      status(true);
+      status(false);
+      acks[0].resolve(receipt("stale"));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(useCEEStore.getState().snapshot).toBe(snapshot);
+      expect(useCEEStore.getState().sessionToken).toBe("token");
+      status(true);
+      acks[1].resolve(receipt("fresh"));
+      await vi.waitFor(() => expect(useCEEStore.getState().sessionToken).toBe("fresh"));
+      expect(useCEEStore.getState().snapshot).toEqual(serverSnapshot);
+      expect(commands(send).filter((command) => command === "cee.room.leave")).toEqual([]);
+      expect(useCEEStore.getState().seatLostAt).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("断线期间座位失效而房间还在：让出房间、清凭据，标记失座让房间页重新加入", async () => {
+    const { acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      status(true);
+      acks[0].reject({ code: "SESSION_NOT_FOUND", message: "会话不存在" });
+      await vi.waitFor(() => expect(useCEEStore.getState().seatLostAt).not.toBeNull());
+      expect(useCEEStore.getState()).toMatchObject({
+        roomId: null,
+        snapshot: null,
+        privateState: null,
+        roomClosedAt: null,
+      });
+      expect(readCEESession("1234")).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("断线期间房间被关：重连回座得到房间不存在，标记关闭而非失座", async () => {
+    const { acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      status(true);
+      acks[0].reject({ code: "ROOM_NOT_FOUND", message: "房间不存在" });
+      await vi.waitFor(() => expect(useCEEStore.getState().roomClosedAt).not.toBeNull());
+      expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+      expect(useCEEStore.getState().seatLostAt).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("回座临时失败：让出房间但留着凭据，标记失座交给房间页重试", async () => {
+    const { acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      status(true);
+      acks[0].reject({ code: "TIMEOUT", message: "请求超时" });
+      await vi.waitFor(() => expect(useCEEStore.getState().seatLostAt).not.toBeNull());
+      expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+      expect(readCEESession("1234")).toBe("token");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("断线期间主动退房：重连后不再回座", async () => {
+    const { send } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      await useCEEStore
+        .getState()
+        .leaveRoom()
+        .catch(() => {});
+      status(true);
+      await Promise.resolve();
+      expect(commands(send).filter((command) => command === "cee.room.reconnect")).toEqual([]);
+      expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("回座在途时房间被关：晚到 ACK 用结果凭据离房，停在关闭态", async () => {
+    const { send, acks } = holdReconnect();
+    const cleanup = initCEEWs();
+    try {
+      status(false);
+      status(true);
+      handleCEEMessage({ type: "event", event: "cee.room.closed", payload: { roomId: "1234" } });
+      expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+      acks[0].resolve(receipt("late"));
+      await vi.waitFor(() => expect(commands(send)).toContain("cee.room.leave"));
+      expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+      expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+      expect(useCEEStore.getState().seatLostAt).toBeNull();
     } finally {
       cleanup();
     }

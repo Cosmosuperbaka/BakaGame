@@ -254,7 +254,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
           .subscribeLobby()
           .catch(() => {});
       },
-      restore: { by: "runtime", reconnect: (roomId) => get().reconnectRoom(roomId) },
+      reconnect: (roomId) => get().reconnectRoom(roomId),
     },
     cleanup: {
       disconnectFirst: false,
