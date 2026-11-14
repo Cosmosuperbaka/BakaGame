@@ -195,9 +195,17 @@ describe("原版房间适配", () => {
     const { service, upstream } = setup({
       fetcher: async () => Response.json([{ id: "1234", isPublic: false, playerCount: 1 }]),
     });
-    expect(await service.listUpstreamRooms()).toEqual([
-      { id: "1234", isPublic: false, name: "的房间", phase: "waiting", playerCount: 1 },
-    ]);
+    const [listed] = await service.listUpstreamRooms();
+    // 上游没给任何名称字段，兜底文案只保证「大厅有字可显示」；
+    // 不逐字锁定当前兜底实现，避免改进兜底后用例无故变红。
+    expect(listed).toMatchObject({
+      id: "1234",
+      isPublic: false,
+      phase: "waiting",
+      playerCount: 1,
+    });
+    expect(typeof listed!.name).toBe("string");
+    expect(listed!.name.length).toBeGreaterThan(0);
     const entered = (await request(service, "first", {
       id: "private-join",
       type: "cee.room.join",
@@ -370,6 +378,11 @@ describe("原版房间适配", () => {
       payload: { text: "你好" },
     });
     expect((await sync(service, "second")).snapshot.chat[0].text).toBe("你好");
+    // 正向对照：两个上游连接都确实发过入房事件，下面的否定断言不是在空集上恒真。
+    expect(upstream.sockets.map((socket) => socket.sent[0]?.event)).toEqual([
+      "createRoom",
+      "joinRoom",
+    ]);
     expect(
       upstream.sockets.every((socket) =>
         socket.sent.every((item) => item.event !== "updatePlayerMessage")
@@ -533,9 +546,8 @@ describe("原版房间适配", () => {
     );
   });
 
-  test("前端重连复用上游连接，超时清会话聊天，被踢立即撤权", async () => {
-    let now = 100;
-    const { service, upstream, connection } = setup({ now: () => now });
+  test("前端重连复用上游连接并恢复房间聊天", async () => {
+    const { service, upstream, connection } = setup();
     const entered = await create(service);
     await request(service, "first", {
       id: "chat",
@@ -551,17 +563,45 @@ describe("原版房间适配", () => {
       payload: { roomId: "1234", sessionToken: entered.sessionToken },
     })) as CEERoomEnterResult;
     expect(restored.snapshot.chat).toHaveLength(1);
+    expect(restored.snapshot.chat[0].text).toBe("旧房聊天");
+    // 重连是接管已有上游会话，不许另开第二条连接。
     expect(upstream.sockets).toHaveLength(1);
+    expect(replacement.roomId).toBe("original:1234");
+  });
+
+  test("被上游踢出时立即撤权并清空房间聊天", async () => {
+    const { service, upstream } = setup();
+    await create(service);
+    await request(service, "first", {
+      id: "chat",
+      type: "cee.chat.send",
+      payload: { text: "旧房聊天" },
+    });
+    expect((await sync(service)).snapshot.chat).toHaveLength(1);
     upstream.sockets[0].receive("playerKicked", { playerId: upstream.sockets[0].id });
-    expect(service.hasSession("replacement")).toBe(false);
-    expect(replacement.roomId).toBeUndefined();
-    expect(service.getHealthSnapshot().rooms).toBe(0);
-    const next = await create(service, "replacement", "丙");
-    expect(next.snapshot.chat).toEqual([]);
-    service.unregisterConnection("replacement");
+    expect(service.hasSession("first")).toBe(false);
+    expect(upstream.sockets[0].connected).toBe(false);
+    expect(service.getHealthSnapshot()).toMatchObject({ sessions: 0, rooms: 0 });
+  });
+
+  test("会话超时被清理后，同号房间的旧聊天一并清空", async () => {
+    let now = 100;
+    const { service, connection } = setup({ now: () => now });
+    await create(service);
+    await request(service, "first", {
+      id: "chat",
+      type: "cee.chat.send",
+      payload: { text: "旧房聊天" },
+    });
+    expect((await sync(service)).snapshot.chat).toHaveLength(1);
+    service.unregisterConnection("first");
     now += 60_001;
     service.runHousekeeping();
-    expect(service.getHealthSnapshot().sessions).toBe(0);
+    expect(service.getHealthSnapshot()).toMatchObject({ sessions: 0, rooms: 0 });
+    // 超时清理必须连同房间聊天一起丢掉，不能让后来加入的人看到上一轮的旧消息。
+    const again = connection("again");
+    service.registerConnection(again);
+    expect((await create(service, "again", "乙")).snapshot.chat).toEqual([]);
   });
 
   test("原版结算保留分数和并列名次，下一局清空历史并保留房间聊天", async () => {
