@@ -214,8 +214,9 @@
   }
 
   // —— 原生签名：只出 base64(DER ECDSA-P256-SHA256)，challenge 的字节原样进 Keystore ——
-  // 只在换票闭环内部使用，不挂到 window.__BAKA_CHANNEL__ 上：页面脚本不该有「对任意内容签名」的能力，
-  // 与桌面壳「签名只在壳内部用于通道证明」同口径。
+  // 只在换票闭环内部使用，不挂到 window.__BAKA_CHANNEL__ 上，与桌面壳「页面可见的通道对象上没有
+  // 签名」同口径。注意这只是收口桥接面，不是能力边界：页面脚本仍可经
+  // Capacitor.registerPlugin("BakaChannel") 直接调用原生插件的 sign，不要把它当作安全措施。
   function signWithKeystore(challenge) {
     return plugin()
       .sign({ challenge: challenge })
@@ -236,6 +237,9 @@
           }
           return signWithKeystore(challenge).then(function (signature) {
             return buildSelfCheck().then(function (report) {
+              // 票的计时基准必须在发出换票请求之前取：服务端从处理请求那刻起计时，
+              // 响应回来再取就把服务端处理与回程的耗时算进了票的寿命
+              var base = { mono: monoNow(), wall: Date.now() };
               return postJson(ATTEST_PATH, {
                 clientId: id,
                 challenge: challenge,
@@ -248,7 +252,7 @@
                 if (typeof ticket !== "string" || !ticket) {
                   throw new Error("BAKA_CHANNEL_TICKET_EMPTY");
                 }
-                return newTicket(ticket, attestJson);
+                return newTicket(ticket, attestJson, base);
               });
             });
           });
@@ -264,7 +268,7 @@
       });
   }
 
-  // 票的有效期按「收到后过去了多久」算：服务端的绝对到期时刻属于服务端的时钟，
+  // 票的有效期按「发出换票请求之前起过去了多久」算：服务端的绝对到期时刻属于服务端的时钟，
   // 本机时钟快慢几十秒是常态，拿来互相比较会把好票判废、把废票放出去。
   // 单调时钟不受改时间影响但休眠时可能不走，墙上时钟的差值休眠时照走（与服务端时钟的
   // 偏差在相减时抵消），两者取大：只会让票更早作废，不会放出废票。
@@ -279,16 +283,20 @@
     return Date.now();
   }
   var EMPTY_TICKET = { value: "", ttlMs: 0, mono: 0, wall: 0 };
-  // 换票响应优先给相对有效期 ttlMs；较旧的服务端没有它，退回「绝对时刻减本地时钟」的旧算法
-  function newTicket(value, attestJson) {
-    var wall = Date.now();
-    var ttl = Number(unwrap(attestJson, "ttlMs"));
-    if (!(ttl > 0)) ttl = (Number(unwrap(attestJson, "expiresAt")) || 0) - wall;
+  // 换票响应优先给相对有效期 ttlMs（必须是不小于 1 的数，小数向下取整，与桌面壳同口径，
+  // 其他取值一律当作没有这个字段）；没有就退回「绝对到期时刻减发出前的墙上时钟」，
+  // 经过时间同样从 base 起算：本机时钟不跳变时与旧算法等价，跳变时只会更严。
+  function newTicket(value, attestJson, base) {
+    var raw = unwrap(attestJson, "ttlMs");
+    var ttl =
+      typeof raw === "number" && isFinite(raw) && raw >= 1
+        ? Math.floor(raw)
+        : (Number(unwrap(attestJson, "expiresAt")) || 0) - base.wall;
     return {
       value: value,
       ttlMs: Math.min(Math.max(ttl, 0), TICKET_TTL_SANITY_CAP_MS),
-      mono: monoNow(),
-      wall: wall,
+      mono: base.mono,
+      wall: base.wall,
     };
   }
   function ticketElapsedMs() {

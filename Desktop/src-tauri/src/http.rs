@@ -115,16 +115,18 @@ fn build_client(direct: bool) -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("HTTP 客户端初始化失败：{e}"))
 }
 
-/// WebView 是否已经被指向本地隧道（见 `dnsproxy`）。隧道直连目标、不经系统代理，
+/// WebView 是否已经被指向本地隧道（见 `dnsproxy`）。隧道直连目标、不读任何代理设置，
 /// 所以此后壳自己发的请求也必须直连，两条路径才是同一个出口。
 static WEBVIEW_TUNNEL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// 登记「WebView 走本地隧道」。必须在任何对外请求之前调用：共享客户端按需构造一次后就不再变。
+/// 登记「WebView 走本地隧道」。每次请求都会重新读这个标志、按它选直连还是带代理的客户端，
+/// 所以登记之后发出的请求才会直连；要让取票与页面同出口，就得在第一次对外请求之前登记。
 pub fn mark_webview_tunnel_active() {
     WEBVIEW_TUNNEL_ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// 这条请求要不要绕过系统代理直连。
+/// 这条请求要不要绕过环境变量里的代理（`HTTP_PROXY` 等）直连。本工程构建 reqwest 时关掉了
+/// 默认特性，它只认这些环境变量，不读 Windows 的系统代理设置。
 ///
 /// 回环目标永远直连（见 `build_client` 的说明）；WebView 走隧道时，壳内请求也直连：
 /// 服务端把票绑定到签发时的来源地址，壳取票与页面握手的出口不同，握手就会因地址不符被拒。
@@ -132,13 +134,15 @@ fn bypasses_system_proxy(url: &str, tunnel_active: bool) -> bool {
     tunnel_active || is_loopback(url)
 }
 
+/// 这条请求该用哪个共享客户端槽位，以及是否直连。只做选择、不构造，
+/// 让「登记隧道之后选直连那一个」可以脱离网络单独验证。
+fn cell_for(url: &str, tunnel_active: bool) -> (bool, &'static OnceLock<reqwest::blocking::Client>) {
+    let direct = bypasses_system_proxy(url, tunnel_active);
+    (direct, if direct { &DIRECT_CLIENT } else { &PROXIED_CLIENT })
+}
+
 fn client_for(url: &str) -> Result<&'static reqwest::blocking::Client, ApiError> {
-    let direct = bypasses_system_proxy(url, WEBVIEW_TUNNEL_ACTIVE.load(Ordering::SeqCst));
-    let cell = if direct {
-        &DIRECT_CLIENT
-    } else {
-        &PROXIED_CLIENT
-    };
+    let (direct, cell) = cell_for(url, WEBVIEW_TUNNEL_ACTIVE.load(Ordering::SeqCst));
     get_or_try_build(cell, || build_client(direct)).map_err(ApiError::local)
 }
 
@@ -163,7 +167,12 @@ where
     post_json_to(&url, path, body, timeout)
 }
 
-fn post_json_to<B, R>(url: &str, path: &str, body: &B, timeout: Duration) -> Result<R, ApiError>
+pub(crate) fn post_json_to<B, R>(
+    url: &str,
+    path: &str,
+    body: &B,
+    timeout: Duration,
+) -> Result<R, ApiError>
 where
     B: Serialize + ?Sized,
     R: DeserializeOwned,
@@ -253,7 +262,7 @@ fn is_loopback(url: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// 初始化失败不缓存：一次瞬时失败之后，下次请求要重新构造；成功之后才缓存、不再构造
@@ -399,6 +408,27 @@ mod tests {
         (format!("http://{address}"), connections)
     }
 
+    /// 起一个回环服务：读完请求后先睡 `delay` 再回 `body`，模拟响应在慢网下晚到。
+    /// 供别的模块的测试复用（换票的有效期基准要在发出请求之前取）。
+    pub(crate) fn delayed_json_server(delay: Duration, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                std::thread::spawn(move || {
+                    while read_request(&mut stream) {
+                        std::thread::sleep(delay);
+                        if stream.write_all(&json_response(body)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        format!("http://{address}")
+    }
+
     fn json_response(body: &str) -> Vec<u8> {
         format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
@@ -484,11 +514,21 @@ mod tests {
         );
     }
 
-    /// 取环境里的代理设置，构造完客户端立刻还原：reqwest 在构造时读取，之后改环境无影响
-    struct ProxyEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    /// 进程环境变量是全局的：凡是读写代理环境变量的测试都先拿这把锁，免得并行时互相踩
+    static PROXY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 取环境里的代理设置，构造完客户端立刻还原：reqwest 在构造时读取，之后改环境无影响。
+    /// 持有期间同时握着 `PROXY_ENV_LOCK`（字段按声明顺序析构，先还原环境再放锁）。
+    struct ProxyEnv(
+        Vec<(&'static str, Option<std::ffi::OsString>)>,
+        #[allow(dead_code)] std::sync::MutexGuard<'static, ()>,
+    );
 
     impl ProxyEnv {
         fn set(proxy: &str) -> Self {
+            let guard = PROXY_ENV_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             const KEYS: [&str; 6] = [
                 "HTTP_PROXY",
                 "http_proxy",
@@ -503,7 +543,7 @@ mod tests {
             }
             std::env::set_var("HTTP_PROXY", proxy);
             std::env::set_var("http_proxy", proxy);
-            Self(saved)
+            Self(saved, guard)
         }
     }
 
@@ -518,7 +558,7 @@ mod tests {
         }
     }
 
-    /// 用「环境里配了系统代理」的条件构造一个客户端，向一个不可路由的地址发请求；
+    /// 用「环境里配了代理」的条件构造一个客户端，向一个不可路由的地址发请求；
     /// 返回代理收到的请求数与请求是否成功。走代理就会到达本机的模拟代理，直连就连不出去。
     fn request_with_system_proxy(tunnel_active: bool) -> (usize, bool) {
         let (proxy, hits) = mock_server(|| json_response(r#"{"ok":true}"#));
@@ -537,15 +577,36 @@ mod tests {
         (hits.load(Ordering::SeqCst), result.is_ok())
     }
 
-    /// WebView 走本地隧道（直连）时，壳内请求不得再走系统代理，否则取票与握手出口不同、
-    /// 票据绑定的来源地址对不上；没有隧道时保持系统代理行为（企业网络只能靠它出网）
+    /// WebView 走本地隧道（直连）时，壳内请求不得再走环境变量里的代理，否则取票与握手出口不同、
+    /// 票据绑定的来源地址对不上；没有隧道时保持原行为（只能靠代理出网的环境不受影响）
     #[test]
     fn shell_requests_leave_the_same_way_as_the_webview() {
         let (hits, ok) = request_with_system_proxy(false);
-        assert!(ok && hits >= 1, "没有隧道时应沿用系统代理");
+        assert!(ok && hits >= 1, "没有隧道时应沿用环境里的代理");
         let (hits, ok) = request_with_system_proxy(true);
-        assert_eq!(hits, 0, "隧道启用后壳内请求不能再交给系统代理");
+        assert_eq!(hits, 0, "隧道启用后壳内请求不能再交给环境里的代理");
         assert!(!ok);
+    }
+
+    /// 登记隧道之后，对外请求选的是直连那一个共享客户端槽位；没登记时选带代理的那个。
+    /// 只比较槽位、不构造客户端，免得把测试里的环境变量缓存进进程级客户端。
+    /// 标志是进程级的，测完复位；同模块其他测试的目标都是回环，本来就直连，不受影响。
+    #[test]
+    fn registering_the_tunnel_switches_requests_to_the_direct_client() {
+        let outbound = "https://example.com/api/client/attest";
+        let selected = |url: &str| {
+            cell_for(url, WEBVIEW_TUNNEL_ACTIVE.load(Ordering::SeqCst)).1
+                as *const OnceLock<reqwest::blocking::Client>
+        };
+        let direct = &DIRECT_CLIENT as *const OnceLock<reqwest::blocking::Client>;
+        let proxied = &PROXIED_CLIENT as *const OnceLock<reqwest::blocking::Client>;
+        WEBVIEW_TUNNEL_ACTIVE.store(false, Ordering::SeqCst);
+        assert_eq!(selected(outbound), proxied, "没有隧道时对外请求用带代理的客户端");
+        mark_webview_tunnel_active();
+        let after = selected(outbound);
+        WEBVIEW_TUNNEL_ACTIVE.store(false, Ordering::SeqCst);
+        assert_eq!(after, direct, "登记隧道后对外请求必须直连");
+        assert!(cell_for("http://127.0.0.1:1/x", false).0, "回环永远直连");
     }
 
     /// 超时按请求设置：共享客户端不能让「每请求超时」失效

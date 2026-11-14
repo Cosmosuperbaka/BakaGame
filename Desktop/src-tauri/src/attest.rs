@@ -64,13 +64,13 @@ impl Stamp {
 
 /// 壳侧持有的票。`served` 记录「这张票已经交给过页面」：一次性票不得二次给出。
 ///
-/// 有效期按「收到响应后过去了多久」算：服务端给的绝对时刻属于服务端的时钟，
+/// 有效期按「发出换票请求之前起过去了多久」算：服务端给的绝对时刻属于服务端的时钟，
 /// 本机时钟快慢几十秒是常态（手动改时间、未同步），拿它们互相比较会把好票判废、把废票放出去。
 #[derive(Clone, Debug)]
 pub struct Ticket {
     pub value: String,
     ttl: Duration,
-    received: Stamp,
+    base: Stamp,
     pub served: bool,
 }
 
@@ -78,9 +78,10 @@ pub struct Ticket {
 const TICKET_TTL_SANITY_CAP: Duration = Duration::from_secs(600);
 
 impl Ticket {
-    /// `received` 取收到响应的本地时刻：往返时延只会让票比实际更早失效，余量已覆盖这一点
-    pub fn new(value: String, ttl: Duration, received: Stamp) -> Self {
-        Self { value, ttl: ttl.min(TICKET_TTL_SANITY_CAP), received, served: false }
+    /// `base` 取发出换票请求之前的本地时刻：服务端在这之后才开始计时，所以从这里算起
+    /// 只会让票比实际更早失效，绝不会更晚
+    pub fn new(value: String, ttl: Duration, base: Stamp) -> Self {
+        Self { value, ttl: ttl.min(TICKET_TTL_SANITY_CAP), base, served: false }
     }
 
     /// 还没交出去、并且离过期还有足够余量——只有这种票能直接给页面
@@ -89,7 +90,7 @@ impl Ticket {
     }
 
     pub fn remaining_ms(&self, now: Stamp) -> u64 {
-        self.ttl.saturating_sub(now.since(self.received)).as_millis() as u64
+        self.ttl.saturating_sub(now.since(self.base)).as_millis() as u64
     }
 
     pub fn payload(&self, now: Stamp) -> TicketPayload {
@@ -97,14 +98,15 @@ impl Ticket {
     }
 }
 
-/// 把换票响应变成壳侧的票。优先用服务端追加的相对有效期 `ttlMs`；
-/// 响应里没有它（服务端尚未升级）时退回到「绝对时刻减本地墙上时钟」的旧算法，
-/// 行为与改动前一致，只是这条路在时钟有偏差时仍然不准。
-fn ticket_from_response(response: AttestResponse, wall_now_ms: u64, received: Stamp) -> Ticket {
+/// 把换票响应变成壳侧的票，`base` 是发出请求之前取的本地时刻。优先用服务端追加的相对有效期
+/// `ttlMs`；响应里没有它（服务端尚未升级）时，有效期取「绝对到期时刻减 `base` 里的墙上时钟」，
+/// 经过时间同样从 `base` 起算。本机时钟不跳变时这与旧算法等价，跳变时只会更严；
+/// 但这条路在两端时钟有偏差时仍然不准。两条路共用同一个基准。
+fn ticket_from_response(response: AttestResponse, base: Stamp) -> Ticket {
     let ttl_ms = response
         .ttl_ms
-        .unwrap_or_else(|| response.expires_at.saturating_sub(wall_now_ms));
-    Ticket::new(response.ticket, Duration::from_millis(ttl_ms), received)
+        .unwrap_or_else(|| response.expires_at.saturating_sub(base.wall_ms));
+    Ticket::new(response.ticket, Duration::from_millis(ttl_ms), base)
 }
 
 pub fn now_ms() -> u64 {
@@ -147,11 +149,23 @@ struct AttestResponse {
     ticket: String,
     /// 服务端时钟的绝对毫秒；只在没有 `ttlMs` 时作为退路
     expires_at: u64,
-    /// 票还剩多久有效（毫秒），较新的服务端才有
-    #[serde(default)]
+    /// 票还剩多久有效（毫秒），较新的服务端才有。解析不了（不是不小于 1 的数）就当没有，
+    /// 退回 `expiresAt`，不让一个字段的形状毁掉整次换票；小数向下取整。移动桥脚本同口径。
+    #[serde(default, deserialize_with = "lenient_ttl_ms")]
     ttl_ms: Option<u64>,
     #[serde(default)]
     outdated: bool,
+}
+
+fn lenient_ttl_ms<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_f64()
+        .filter(|ms| ms.is_finite() && *ms >= 1.0)
+        .map(|ms| ms.floor() as u64))
 }
 
 /// 签一张可用的票：确保已注册 → 领挑战 → 原样签名 → 换票。
@@ -223,8 +237,9 @@ fn attempt_once(
         .sign(&challenge.challenge)
         .map_err(ApiError::local)?;
 
-    let response: AttestResponse = http::post_json(
-        ATTEST_PATH,
+    let url = format!("{}{}", crate::config::api_base(), ATTEST_PATH);
+    exchange_ticket(
+        &url,
         &AttestRequest {
             client_id: &client_id,
             challenge: &challenge.challenge,
@@ -233,8 +248,16 @@ fn attempt_once(
             client_version: crate::config::client_version(),
             self_check: report,
         },
-        HTTP_TIMEOUT,
-    )?;
+    )
+}
+
+/// 发换票请求并把响应变成票。地址由调用方给，测试才能把它指到本机的模拟服务端。
+fn exchange_ticket(url: &str, request: &AttestRequest) -> Result<Ticket, ApiError> {
+    // 基准时刻必须在发出请求**之前**取：服务端的票从它处理请求那刻起计时，那一刻一定晚于这里，
+    // 所以从这里算起只会让壳眼里的票比实际更早到期。响应回来再取，就把服务端处理与回程的
+    // 耗时全算进了票的寿命，慢网下会把快过期的票当成新鲜的交给页面。
+    let base = Stamp::now();
+    let response: AttestResponse = http::post_json_to(url, ATTEST_PATH, request, HTTP_TIMEOUT)?;
     if response.ticket.trim().is_empty() {
         return Err(ApiError::local("服务端返回的票据为空"));
     }
@@ -245,8 +268,7 @@ fn attempt_once(
             crate::config::client_version()
         );
     }
-    let received = Stamp::now();
-    Ok(ticket_from_response(response, received.wall_ms, received))
+    Ok(ticket_from_response(response, base))
 }
 
 #[cfg(test)]
@@ -287,13 +309,14 @@ mod tests {
         let body = format!(r#"{{"ticket":"t","expiresAt":{server_expires_at},"ttlMs":30000}}"#);
         let received = Stamp::now();
         for wall_now in [server_expires_at - 30_000, server_expires_at + 3_600_000, 1] {
-            let ticket = ticket_from_response(response(&body), wall_now, received);
-            assert!(ticket.usable(received), "墙上时钟 {wall_now} 不该让新票失效");
+            let base = Stamp { wall_ms: wall_now, ..received };
+            let ticket = ticket_from_response(response(&body), base);
+            assert!(ticket.usable(base), "墙上时钟 {wall_now} 不该让新票失效");
             assert!(
-                !ticket.usable(later(received, 26, 26)),
+                !ticket.usable(later(base, 26, 26)),
                 "按相对有效期，离过期不足余量后不得再交出去"
             );
-            assert_eq!(ticket.remaining_ms(received), 30_000);
+            assert_eq!(ticket.remaining_ms(base), 30_000);
         }
     }
 
@@ -312,10 +335,87 @@ mod tests {
     #[test]
     fn response_without_ttl_falls_back_to_absolute_expiry() {
         let body = r#"{"ticket":"t","expiresAt":1030000,"outdated":true}"#;
-        let received = Stamp::now();
-        let ticket = ticket_from_response(response(body), 1_000_000, received);
+        let received = Stamp { wall_ms: 1_000_000, ..Stamp::now() };
+        let ticket = ticket_from_response(response(body), received);
         assert_eq!(ticket.remaining_ms(received), 30_000);
         assert!(ticket.usable(received));
+    }
+
+    /// 响应在慢网下晚到：有效期要从「发出请求之前」算起，晚到的那段时间不能算进票的寿命里。
+    /// 服务端的票从处理请求那刻起就开始计时，壳若从收到响应才起算，会把票看得比实际新鲜。
+    /// 延迟取固定值，断言只依赖「剩余不超过 ttl 减延迟」，与机器快慢无关。
+    #[test]
+    fn ttl_counts_from_before_the_request_is_sent() {
+        let delay = Duration::from_millis(400);
+        let origin = http::tests::delayed_json_server(
+            delay,
+            r#"{"ticket":"t","expiresAt":1,"ttlMs":30000}"#,
+        );
+        let report = SelfCheckReport {
+            hard_fail: Vec::new(),
+            soft_fail: Vec::new(),
+            key_protection: selfcheck::KeyProtection::Software,
+        };
+        let request = AttestRequest {
+            client_id: "ccd_x",
+            challenge: "ccd_x.nonce.1",
+            signature: "AAA",
+            client_type: device::CLIENT_TYPE,
+            client_version: "0.1.0",
+            self_check: &report,
+        };
+        let ticket = exchange_ticket(&format!("{origin}{ATTEST_PATH}"), &request)
+            .unwrap_or_else(|e| panic!("换票应成功：{}", e.text()));
+        let limit = 30_000 - delay.as_millis() as u64;
+        let remaining = ticket.remaining_ms(Stamp::now());
+        assert!(remaining <= limit, "剩余 {remaining} ms 超过 {limit} ms：晚到的响应被算成了票的寿命");
+    }
+
+    /// 没有 ttlMs 的旧服务端：有效期取绝对到期减「发出前」的墙上时钟，经过时间也从发出前起算
+    #[test]
+    fn fallback_expiry_counts_from_before_the_request_is_sent() {
+        let delay = Duration::from_millis(400);
+        let wall = now_ms();
+        let body: &'static str = Box::leak(
+            format!(r#"{{"ticket":"t","expiresAt":{}}}"#, wall + 30_000).into_boxed_str(),
+        );
+        let origin = http::tests::delayed_json_server(delay, body);
+        let report = SelfCheckReport {
+            hard_fail: Vec::new(),
+            soft_fail: Vec::new(),
+            key_protection: selfcheck::KeyProtection::Software,
+        };
+        let request = AttestRequest {
+            client_id: "ccd_x",
+            challenge: "ccd_x.nonce.1",
+            signature: "AAA",
+            client_type: device::CLIENT_TYPE,
+            client_version: "0.1.0",
+            self_check: &report,
+        };
+        let ticket = exchange_ticket(&format!("{origin}{ATTEST_PATH}"), &request)
+            .unwrap_or_else(|e| panic!("换票应成功：{}", e.text()));
+        let limit = 30_000 - delay.as_millis() as u64;
+        let remaining = ticket.remaining_ms(Stamp::now());
+        assert!(remaining <= limit, "剩余 {remaining} ms 超过 {limit} ms");
+    }
+
+    /// ttlMs 的形状不对（字符串、负数、零、空、小数）不能让整次换票失败：
+    /// 不小于 1 的数才采用（小数向下取整），其余当作没有，退回 expiresAt
+    #[test]
+    fn malformed_ttl_is_treated_as_absent() {
+        for bad in [r#""30000""#, "-5", "0", "null", "0.5", "[]"] {
+            let body = format!(r#"{{"ticket":"t","expiresAt":1004000,"ttlMs":{bad}}}"#);
+            let parsed = response(&body);
+            assert_eq!(parsed.ttl_ms, None, "ttlMs={bad} 应当作没有");
+            let base = Stamp { wall_ms: 1_000_000, ..Stamp::now() };
+            let ticket = ticket_from_response(parsed, base);
+            assert_eq!(ticket.remaining_ms(base), 4_000, "ttlMs={bad} 应退回 expiresAt");
+        }
+        let fractional = response(r#"{"ticket":"t","expiresAt":1,"ttlMs":30000.7}"#);
+        assert_eq!(fractional.ttl_ms, Some(30_000));
+        let normal = response(r#"{"ticket":"t","expiresAt":1,"ttlMs":30000}"#);
+        assert_eq!(normal.ttl_ms, Some(30_000));
     }
 
     /// 异常的超长有效期要封顶，壳不会把一张票当成长期有效
@@ -323,7 +423,7 @@ mod tests {
     fn absurd_ttl_is_capped() {
         let body = r#"{"ticket":"t","expiresAt":1,"ttlMs":9999999999}"#;
         let received = Stamp::now();
-        let ticket = ticket_from_response(response(body), 0, received);
+        let ticket = ticket_from_response(response(body), received);
         assert_eq!(ticket.remaining_ms(received), TICKET_TTL_SANITY_CAP.as_millis() as u64);
     }
 
