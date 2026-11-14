@@ -117,9 +117,43 @@ describe("出站地址护栏", () => {
       "[::ffff:808:808]",
       "[2001:db8::1]",
       "[2606:4700::1111]",
-      "[fec0::1]",
     ]) {
       expect(isBlockedOutboundHost(host)).toBe(false);
+    }
+  });
+
+  test("IPv4 兼容形态与站点本地前缀同样拒绝，映射的公网不误伤", () => {
+    for (const host of [
+      "[::127.0.0.1]",
+      "[::7f00:1]",
+      "[::10.0.0.1]",
+      "[::169.254.169.254]",
+      "[fec0::1]",
+      "[feff::1]",
+    ]) {
+      expect(isBlockedOutboundHost(host)).toBe(true);
+    }
+    for (const host of ["[::ffff:8.8.8.8]", "[fbff::1]"]) {
+      expect(isBlockedOutboundHost(host)).toBe(false);
+    }
+  });
+
+  test("结尾点 FQDN 不能绕过内网判定，公网的结尾点形态仍放行", () => {
+    for (const host of [
+      "localhost.",
+      "x.localhost.",
+      "intranet.",
+      "db.internal.",
+      "nas.local.",
+      "metadata.google.internal.",
+    ]) {
+      expect(isBlockedOutboundHost(host)).toBe(true);
+    }
+    for (const host of ["lain.bgm.tv.", "1.1.1.1."]) {
+      expect(isBlockedOutboundHost(host)).toBe(false);
+    }
+    for (const raw of ["http://localhost./a.png", "https://x.localhost./a.png"]) {
+      expect(() => assertOutboundUrl(raw)).toThrow(/内网|保留/);
     }
   });
 

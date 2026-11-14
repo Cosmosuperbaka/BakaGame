@@ -8,7 +8,8 @@ const BLOCKED_DOMAIN_SUFFIXES = [".localhost", ".local", ".internal", ".localdom
  * 禁止出站的网段：内网、链路本地（云厂商元数据服务在 169.254）、CGNAT、设备基准测试段、
  * 组播与保留段，以及 NAT64 前缀（可把内网 v4 包进去）。
  * 规则是数据而不是分支；新增保留段只改这张表。注意 `BlockList` 把 IPv4 与 `::ffff:0:0/96`
- * 视为等价，映射地址由它自己还原判定，表里不要再登记映射段。
+ * 视为等价，映射地址由它自己还原判定，表里不要再登记映射段；但它不还原 IPv4 兼容形态
+ * （`::a.b.c.d`）里嵌的 v4 地址，所以整段 `::/96` 一起封，未指定与回环也在这段里。
  */
 const BLOCKED_SUBNETS: ReadonlyArray<
   readonly [network: string, prefix: number, family: "ipv4" | "ipv6"]
@@ -23,11 +24,11 @@ const BLOCKED_SUBNETS: ReadonlyArray<
   ["192.168.0.0", 16, "ipv4"],
   ["198.18.0.0", 15, "ipv4"],
   ["224.0.0.0", 3, "ipv4"],
-  ["::", 128, "ipv6"],
-  ["::1", 128, "ipv6"],
+  ["::", 96, "ipv6"],
   ["64:ff9b::", 32, "ipv6"],
   ["fc00::", 7, "ipv6"],
   ["fe80::", 10, "ipv6"],
+  ["fec0::", 10, "ipv6"],
   ["ff00::", 8, "ipv6"],
 ];
 
@@ -54,7 +55,9 @@ export const isBlockedOutboundHost = (rawHost: string): boolean => {
   const host = rawHost
     .replace(/^\[|\]$/g, "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    // 结尾点是等价的 FQDN 写法，URL 解析器只对 IPv4 字面量去点，域名原样保留。
+    .replace(/\.+$/, "");
   if (!host) return true;
   if (host.includes(":")) return isBlockedIpLiteral(host) ?? false;
   // 纯数字与点组成却不是规范点分四段（整数形态、前导零、段数不足）：URL 归一化之后
