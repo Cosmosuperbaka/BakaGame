@@ -180,12 +180,12 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("captureServerException 正确注入 traceId / connectionId / roomId tags 与 extras", () => {
-      const tags: Record<string, string> = {};
+      const tags: Record<string, unknown> = {};
       let extras: Record<string, unknown> | undefined;
 
       const mockScope = fakeSentryScope({
         setTag(key, value) {
-          tags[key] = String(value);
+          tags[key] = value;
           return mockScope;
         },
         setExtras(input) {
@@ -233,12 +233,12 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("captureServerMessage 正确注入 tags 并指定 level", () => {
-      const tags: Record<string, string> = {};
+      const tags: Record<string, unknown> = {};
       let extras: Record<string, unknown> | undefined;
 
       const mockScope = fakeSentryScope({
         setTag(key, value) {
-          tags[key] = String(value);
+          tags[key] = value;
           return mockScope;
         },
         setExtras(input) {
