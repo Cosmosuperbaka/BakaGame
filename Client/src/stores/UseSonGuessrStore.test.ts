@@ -732,6 +732,296 @@ describe("Songuessr store integration", () => {
   });
 });
 
+describe("状态同步", () => {
+  let dispose: (() => void) | undefined;
+  const emitMessage = (message: ServerMessage) =>
+    wsMock.messageHandlers.forEach((handler) => handler(message));
+  const emitStatus = (connected: boolean) =>
+    wsMock.statusHandlers.forEach((handler) => handler(connected));
+  const requestSyncCalls = () =>
+    wsMock.send.mock.calls.filter(([type]) => type === "song.room.requestSync");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.sessionStorage.clear();
+    wsMock.send.mockReset();
+    wsMock.connect.mockReset();
+    wsMock.messageHandlers = [];
+    wsMock.statusHandlers = [];
+    useSonGuessrStore.setState(initialState, true);
+  });
+
+  afterEach(() => {
+    dispose?.();
+    dispose = undefined;
+    useSonGuessrStore.getState().resetRoomState();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("修订号连续的快照与私有态补丁逐条应用，不请求全量", () => {
+    wsMock.send.mockResolvedValue({});
+    dispose = initSonGuessrWs();
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "第二夜" }],
+      },
+    });
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("第二夜");
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/roundNumber", value: 1 }],
+      },
+    });
+    expect(useSonGuessrStore.getState().snapshot?.roundNumber).toBe(1);
+
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: { mode: "full", revision: 1, state: privateState },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/remainingGuesses", value: 4 }],
+      },
+    });
+    expect(useSonGuessrStore.getState().privateState?.remainingGuesses).toBe(4);
+    expect(requestSyncCalls()).toHaveLength(0);
+  });
+
+  it("补丁跳号时请求全量，缺口补丁不落在旧基线上", async () => {
+    wsMock.send.mockResolvedValue({});
+    dispose = initSonGuessrWs();
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(wsMock.send).toHaveBeenCalledWith("song.room.requestSync", {}, expect.anything());
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("音乐房间");
+
+    // 私有态通道同一口径：跳号即全量，展示态保持旧值。
+    await vi.advanceTimersByTimeAsync(0);
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: { mode: "full", revision: 1, state: privateState },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(2);
+    expect(useSonGuessrStore.getState().privateState?.playerId).toBe("player-1");
+  });
+
+  it("全量请求在途时，两条通道的后续缺口不重复发", async () => {
+    let resolveSync!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.requestSync"
+        ? new Promise((resolve) => {
+            resolveSync = resolve;
+          })
+        : Promise.resolve({})
+    );
+    dispose = initSonGuessrWs();
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    const gap = (revision: number) => ({
+      type: "event" as const,
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 2,
+        revision,
+        operations: [{ op: "replace" as const, path: "/name", value: "错位" }],
+      },
+    });
+    emitMessage(gap(3));
+    // 私有态还没有基线，补丁同样构成缺口；两条通道共用一个在途标记。
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 0,
+        revision: 1,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    emitMessage(gap(4));
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("音乐房间");
+
+    resolveSync({});
+    await vi.advanceTimersByTimeAsync(0);
+    emitMessage(gap(5));
+    expect(requestSyncCalls()).toHaveLength(2);
+  });
+
+  it("入房在途时推送只更新基线，无状态 ACK 后一次安装且修订号延续", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    dispose = initSonGuessrWs();
+    const joined = useSonGuessrStore.getState().joinRoom("1234", "玩家");
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "暂存名" }],
+      },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: {
+        mode: "full",
+        revision: 1,
+        state: { ...privateState, sessionToken: "entry-token" },
+      },
+    });
+    // 连续补丁被基线正常消费：没有触发全量请求，但展示态与身份都还没安装。
+    expect(requestSyncCalls()).toHaveLength(0);
+    expect(useSonGuessrStore.getState()).toMatchObject({
+      roomId: null,
+      sessionToken: null,
+      snapshot: null,
+      privateState: null,
+    });
+
+    resolveAck({ roomId: "1234", sessionToken: "entry-token" });
+    await joined;
+    expect(useSonGuessrStore.getState()).toMatchObject({
+      roomId: "1234",
+      sessionToken: "entry-token",
+    });
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("暂存名");
+    expect(useSonGuessrStore.getState().privateState?.sessionToken).toBe("entry-token");
+    // 不带首屏载荷的 ACK 不作废已暂存的修订号：后续连续补丁直接应用。
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/roundNumber", value: 1 }],
+      },
+    });
+    expect(useSonGuessrStore.getState().snapshot?.roundNumber).toBe(1);
+    expect(requestSyncCalls()).toHaveLength(0);
+  });
+
+  it("重连只作废修订号：旧基线补丁改走全量，新全量后继续连续应用", async () => {
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.reconnect"
+        ? Promise.resolve({ roomId: "1234", sessionToken: "live-token" })
+        : Promise.resolve({})
+    );
+    dispose = initSonGuessrWs();
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.game.privateState",
+      payload: { mode: "full", revision: 1, state: privateState },
+    });
+    emitStatus(false);
+    emitStatus(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 旧连接上的版本号对新连接没有意义：baseRevision 1 的补丁不再被接受。
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("音乐房间");
+
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: { mode: "full", revision: 2, state: { ...snapshot, name: "恢复" } },
+    });
+    emitMessage({
+      type: "event",
+      event: "song.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/roundNumber", value: 1 }],
+      },
+    });
+    expect(useSonGuessrStore.getState().snapshot?.name).toBe("恢复");
+    expect(useSonGuessrStore.getState().snapshot?.roundNumber).toBe(1);
+    expect(requestSyncCalls()).toHaveLength(1);
+  });
+});
+
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
   saveSonGuessrSessionToken("1234", "recoverable");
   useSonGuessrStore.setState({ connected: true, lobbyReady: true });

@@ -327,6 +327,235 @@ describe("CEE 状态同步", () => {
     expect(deferred[0]!.options?.sessionToken).toBe("tok-original");
   });
 });
+describe("CEE 状态同步通道行为", () => {
+  const requestSyncCalls = (send: { mock: { calls: unknown[][] } }) =>
+    send.mock.calls.filter(([command]) => command === "cee.room.requestSync");
+
+  it("修订号连续的快照与私有态补丁逐条应用，不请求全量", () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "第二幕" }],
+      },
+    });
+    expect(useCEEStore.getState().snapshot?.name).toBe("第二幕");
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/roundNumber", value: 1 }],
+      },
+    });
+    expect(useCEEStore.getState().snapshot?.roundNumber).toBe(1);
+
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: { mode: "full", revision: 1, state: { playerId: "p1" } },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/playerId", value: "p2" }],
+      },
+    });
+    expect(useCEEStore.getState().privateState?.playerId).toBe("p2");
+    expect(requestSyncCalls(send)).toHaveLength(0);
+  });
+
+  it("私有态补丁跳号时请求全量，缺口补丁不落在旧基线上", () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: { mode: "full", revision: 1, state: { playerId: "p1" } },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    expect(requestSyncCalls(send)).toHaveLength(1);
+    expect(send).toHaveBeenCalledWith("cee.room.requestSync", {}, expect.any(Object));
+    expect(useCEEStore.getState().privateState?.playerId).toBe("p1");
+  });
+
+  it("非法同步载荷请求全量，不改动现有展示态", () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { name: "无版本号的裸状态" },
+    });
+    expect(requestSyncCalls(send)).toHaveLength(1);
+    expect(useCEEStore.getState().snapshot?.name).toBe("测试");
+  });
+
+  it("全量请求在途时，两条通道的后续缺口不重复发", async () => {
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockImplementation((command: string) =>
+        command === "cee.room.requestSync" ? new Promise<never>(() => {}) : Promise.resolve({})
+      );
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    const gap = (revision: number) => ({
+      type: "event" as const,
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 2,
+        revision,
+        operations: [{ op: "replace" as const, path: "/name", value: "错位" }],
+      },
+    });
+    handleCEEMessage(gap(3));
+    // 私有态还没有基线，补丁同样构成缺口；两条通道共用一个在途标记。
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 0,
+        revision: 1,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    handleCEEMessage(gap(4));
+    await vi.waitFor(() => expect(requestSyncCalls(send)).toHaveLength(1));
+    expect(useCEEStore.getState().snapshot?.name).toBe("测试");
+  });
+
+  it("入房在途时推送直接写展示态，身份仍等 ACK 安装", async () => {
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      command === "cee.room.join"
+        ? new Promise<Record<string, unknown>>((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const joined = useCEEStore.getState().joinRoom("1234", "甲");
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "暂存名" }],
+      },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.game.privateState",
+      payload: { mode: "full", revision: 1, state: { playerId: "p1" } },
+    });
+    // CEE 现状：入房期间的推送照常写展示态，只有身份与凭据等 ACK 落定。
+    expect(useCEEStore.getState().snapshot?.name).toBe("暂存名");
+    expect(useCEEStore.getState().privateState?.playerId).toBe("p1");
+    expect(useCEEStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+    expect(requestSyncCalls(send)).toHaveLength(0);
+
+    resolveAck({
+      roomId: "1234",
+      source: "native",
+      sessionToken: "tok",
+      snapshot,
+      privateState: { playerId: "p1" },
+    });
+    await joined;
+    expect(useCEEStore.getState()).toMatchObject({ roomId: "1234", sessionToken: "tok" });
+    // 同房 ACK 不覆盖入房期间已应用的更新。
+    expect(useCEEStore.getState().snapshot?.name).toBe("暂存名");
+  });
+
+  it("入房期间凭据已就绪时缺口立即请求全量，不记欠账", async () => {
+    writeCEESession("1234", "old-token");
+    useCEEStore.setState({ roomId: "1234", sessionToken: "old-token" });
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      command === "cee.room.reconnect"
+        ? new Promise<Record<string, unknown>>((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const restoring = useCEEStore.getState().reconnectRoom("1234");
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    // 欠账只记「凭据缺失」的入房期；凭据还在时即使在入房往返中也立即补全量。
+    await vi.waitFor(() => expect(requestSyncCalls(send)).toHaveLength(1));
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.requestSync",
+      {},
+      expect.objectContaining({ sessionToken: "old-token" })
+    );
+
+    resolveAck({
+      roomId: "1234",
+      source: "native",
+      sessionToken: "new-token",
+      snapshot,
+      privateState: null,
+    });
+    await restoring;
+    // 没有欠账：ACK 后不再补发。
+    expect(requestSyncCalls(send)).toHaveLength(1);
+  });
+});
+
 it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", async () => {
   let resolve!: (value: Record<string, unknown>) => void;
   const ack = new Promise<Record<string, unknown>>((done) => {

@@ -661,6 +661,224 @@ describe("game store integration", () => {
   });
 });
 
+describe("状态同步", () => {
+  const requestSyncCalls = () =>
+    wsMock.send.mock.calls.filter(([type]) => type === "room.requestSync");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sessionStorage.clear();
+    wsMock.send.mockReset();
+    wsMock.connect.mockReset();
+    wsMock.clearHandlers();
+    useWhoIsFakerStore.setState(initialState, true);
+  });
+
+  afterEach(() => {
+    useWhoIsFakerStore.getState().leaveRoomState();
+    vi.useRealTimers();
+  });
+
+  it("修订号连续的快照与私有态补丁逐条应用，不请求全量", () => {
+    wsMock.send.mockResolvedValue({});
+    initGameSocket();
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: { mode: "full", revision: 1, state: gameOverSnapshot("sync-round") },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "第二天" }],
+      },
+    });
+    expect(useWhoIsFakerStore.getState().snapshot?.name).toBe("第二天");
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/status/day", value: 2 }],
+      },
+    });
+    expect(useWhoIsFakerStore.getState().snapshot?.status.day).toBe(2);
+
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: { mode: "full", revision: 1, state: wifPrivate(WIF_PEOPLE.host, "waiting") },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/nightActionSubmitted", value: true }],
+      },
+    });
+    expect(useWhoIsFakerStore.getState().privateState?.nightActionSubmitted).toBe(true);
+    expect(requestSyncCalls()).toHaveLength(0);
+  });
+
+  it("补丁跳号时请求全量，缺口补丁不落在旧基线上", async () => {
+    wsMock.send.mockResolvedValue({});
+    initGameSocket();
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: { mode: "full", revision: 1, state: gameOverSnapshot("sync-round") },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(wsMock.send).toHaveBeenCalledWith("room.requestSync", {}, expect.anything());
+    expect(useWhoIsFakerStore.getState().snapshot?.name).toBe("结算房间");
+
+    // 私有态通道同一口径：跳号即全量，展示态保持旧值。
+    await vi.advanceTimersByTimeAsync(0);
+    const privateState = wifPrivate(WIF_PEOPLE.host, "waiting");
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: { mode: "full", revision: 1, state: privateState },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 2,
+        revision: 3,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    expect(requestSyncCalls()).toHaveLength(2);
+    expect(useWhoIsFakerStore.getState().privateState?.playerId).toBe(privateState.playerId);
+  });
+
+  it("全量请求在途时，两条通道的后续缺口不重复发", async () => {
+    let resolveSync!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "room.requestSync"
+        ? new Promise((resolve) => {
+            resolveSync = resolve;
+          })
+        : Promise.resolve({})
+    );
+    initGameSocket();
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: { mode: "full", revision: 1, state: gameOverSnapshot("sync-round") },
+    });
+    const gap = (revision: number) => ({
+      type: "event" as const,
+      event: "room.snapshot",
+      payload: {
+        mode: "patch" as const,
+        baseRevision: 2,
+        revision,
+        operations: [{ op: "replace" as const, path: "/name", value: "错位" }],
+      },
+    });
+    wsMock.emitMessage(gap(3));
+    // 私有态还没有基线，补丁同样构成缺口；两条通道共用一个在途标记。
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 0,
+        revision: 1,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+    wsMock.emitMessage(gap(4));
+    expect(requestSyncCalls()).toHaveLength(1);
+    expect(useWhoIsFakerStore.getState().snapshot?.name).toBe("结算房间");
+
+    resolveSync({});
+    await vi.advanceTimersByTimeAsync(0);
+    wsMock.emitMessage(gap(5));
+    expect(requestSyncCalls()).toHaveLength(2);
+  });
+
+  it("入房在途时推送只更新基线，ACK 后一次安装暂存状态", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    initGameSocket();
+    const joined = useWhoIsFakerStore.getState().joinRoom("1234", "玩家");
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "full",
+        revision: 1,
+        state: { ...gameOverSnapshot("sync-round"), roomId: "1234" },
+      },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "暂存名" }],
+      },
+    });
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: {
+        mode: "full",
+        revision: 1,
+        state: wifPrivate(WIF_PEOPLE.host, "waiting", { sessionToken: "entry-token" }),
+      },
+    });
+    // 连续补丁被基线正常消费：没有触发全量请求，但展示态与身份都还没安装。
+    expect(requestSyncCalls()).toHaveLength(0);
+    expect(useWhoIsFakerStore.getState()).toMatchObject({
+      roomId: null,
+      sessionToken: null,
+      snapshot: null,
+      privateState: null,
+    });
+
+    resolveAck({ roomId: "1234", sessionToken: "entry-token" });
+    await joined;
+    expect(useWhoIsFakerStore.getState()).toMatchObject({
+      roomId: "1234",
+      sessionToken: "entry-token",
+    });
+    expect(useWhoIsFakerStore.getState().snapshot?.name).toBe("暂存名");
+    expect(useWhoIsFakerStore.getState().privateState?.sessionToken).toBe("entry-token");
+  });
+});
+
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
   wsMock.disconnect.mockClear();
   saveSessionToken("1234", "recoverable");
