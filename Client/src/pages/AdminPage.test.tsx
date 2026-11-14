@@ -263,6 +263,13 @@ beforeEach(() => {
     avgCv: null,
     maxScore: 5,
   });
+  // jsdom 没有指针捕获，Radix 下拉的点选会读到它。
+  if (!("hasPointerCapture" in Element.prototype)) {
+    Object.assign(Element.prototype, {
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+    });
+  }
 });
 
 afterEach(() => {
@@ -464,6 +471,67 @@ describe("管理后台", () => {
     expect(within(dialog).getByRole("button", { name: "取消管理员" })).toBeEnabled();
   });
 
+  it("解封按详情里的账号调用一次，成功后给出结果", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      banned: true,
+      banReason: "刷屏",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    admin.users.unban.mockResolvedValue({ ...user, banned: false });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "解封" }));
+    expect(admin.users.unban).toHaveBeenCalledTimes(1);
+    expect(admin.users.unban).toHaveBeenCalledWith({ userId: "u-1" });
+    expect(await within(dialog).findByText("已解封「Alice」。")).toBeInTheDocument();
+  });
+
+  it("撤销贡献者徽章要先确认：取消不发请求，确认后只发一次并给出结果", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      badges: [
+        { kind: "pioneer", serial: 42 },
+        { kind: "contributor", serial: null },
+      ],
+      equippedBadge: "contributor",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    admin.users.revokeBadge.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "撤销贡献者" }));
+    const confirm = await screen.findByRole("dialog", { name: "撤销贡献者徽章" });
+    expect(confirm).toHaveTextContent("「Alice」");
+    expect(admin.users.revokeBadge).not.toHaveBeenCalled();
+
+    await events.click(within(confirm).getByRole("button", { name: "取消" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "撤销贡献者徽章" })).toBeNull()
+    );
+    expect(admin.users.revokeBadge).not.toHaveBeenCalled();
+
+    await events.click(within(dialog).getByRole("button", { name: "撤销贡献者" }));
+    const again = await screen.findByRole("dialog", { name: "撤销贡献者徽章" });
+    await events.click(within(again).getByRole("button", { name: "撤销" }));
+    expect(admin.users.revokeBadge).toHaveBeenCalledTimes(1);
+    expect(admin.users.revokeBadge).toHaveBeenCalledWith({
+      userId: "u-1",
+      badge: "contributor",
+    });
+    expect(await within(dialog).findByText("已撤销「Alice」的贡献者徽章。")).toBeInTheDocument();
+  });
+
   it("关闭房间需要确认，失败文案留在确认框内", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     admin.rooms.close.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce({ ok: true });
@@ -474,6 +542,34 @@ describe("管理后台", () => {
     expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
     await events.click(within(dialog).getByRole("button", { name: "关闭房间" }));
     expect(admin.rooms.close).toHaveBeenLastCalledWith({ game: "faker", roomId: "1234" });
+    expect(admin.rooms.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("移出玩家要先确认：取消不发请求，确认后按房间与玩家调用并刷新列表", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.rooms.kick.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=rooms");
+
+    await events.click(await screen.findByRole("button", { name: "移出 Bob" }));
+    const dialog = await screen.findByRole("dialog", { name: "移出玩家" });
+    expect(dialog).toHaveTextContent("「Bob」");
+    expect(dialog).toHaveTextContent("「周末局」");
+    expect(admin.rooms.kick).not.toHaveBeenCalled();
+
+    await events.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "移出玩家" })).toBeNull());
+    expect(admin.rooms.kick).not.toHaveBeenCalled();
+
+    await events.click(screen.getByRole("button", { name: "移出 Bob" }));
+    const again = await screen.findByRole("dialog", { name: "移出玩家" });
+    await events.click(within(again).getByRole("button", { name: "移出" }));
+    expect(admin.rooms.kick).toHaveBeenCalledTimes(1);
+    expect(admin.rooms.kick).toHaveBeenCalledWith({
+      game: "faker",
+      roomId: "1234",
+      playerId: "p-1",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "移出玩家" })).toBeNull());
     expect(admin.rooms.list).toHaveBeenCalledTimes(2);
   });
 
@@ -593,6 +689,38 @@ describe("管理后台", () => {
       "已修复，请刷新"
     );
     expect(reply).toHaveValue("");
+    expect(admin.feedback.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("反馈详情可直接改状态：调用状态接口并就地显示新状态", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const detail: AdminFeedbackDetail = {
+      ...feedback,
+      content: "副歌提前了半拍",
+      userAgent: "测试浏览器",
+      replies: [],
+    };
+    admin.feedback.list.mockResolvedValue({ items: [feedback], total: 1 });
+    admin.feedback.get.mockResolvedValue(detail);
+    admin.feedback.setStatus.mockResolvedValue({
+      ...feedback,
+      status: "resolved",
+      lastReplyAt: null,
+    });
+
+    const events = renderAdmin("/admin?tab=feedback");
+    const table = await screen.findByRole("table", { name: "反馈列表" });
+    await events.click(within(table).getByRole("button", { name: /歌词不同步/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("副歌提前了半拍")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("combobox", { name: "状态" }));
+    await events.click(await screen.findByRole("option", { name: "已解决" }));
+    expect(admin.feedback.setStatus).toHaveBeenCalledTimes(1);
+    expect(admin.feedback.setStatus).toHaveBeenCalledWith({ id: "fb-1", status: "resolved" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("combobox", { name: "状态" })).toHaveTextContent("已解决")
+    );
     expect(admin.feedback.list).toHaveBeenCalledTimes(2);
   });
 
