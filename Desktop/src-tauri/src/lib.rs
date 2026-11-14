@@ -14,6 +14,8 @@ mod httpdns;
 mod notice;
 mod peb;
 mod selfcheck;
+#[cfg(test)]
+mod test_support;
 #[cfg(target_os = "windows")]
 mod winapi;
 
@@ -48,6 +50,29 @@ pub struct AppState {
 }
 
 impl AppState {
+    fn new(dir: PathBuf) -> Self {
+        Self {
+            device: Mutex::new(None),
+            dir,
+            last_attest_failure: AtomicU64::new(0),
+            ticket: Mutex::new(None),
+            attesting: Mutex::new(()),
+        }
+    }
+
+    /// 当前已发布的设备身份（非阻塞）
+    fn current_device(&self) -> Option<Arc<device::Device>> {
+        self.device.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    /// 发布设备身份：密钥一就绪就发布，不等注册完成——注册在慢网下最长要 20 秒，
+    /// 而取票路径自己会在没有 `clientId` 时补注册，不依赖启动线程先注册完
+    fn publish_device(&self, device: Arc<device::Device>) {
+        if let Ok(mut guard) = self.device.lock() {
+            *guard = Some(device);
+        }
+    }
+
     fn now_secs() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -59,7 +84,7 @@ impl AppState {
     fn wait_for_device(&self) -> Option<Arc<device::Device>> {
         let deadline = Self::now_secs() + DEVICE_READY_TIMEOUT.as_secs().max(1);
         loop {
-            if let Some(found) = self.device.lock().ok().and_then(|guard| guard.clone()) {
+            if let Some(found) = self.current_device() {
                 return Some(found);
             }
             if Self::now_secs() >= deadline {
@@ -195,11 +220,7 @@ fn spawn_ticket_pump(handle: tauri::AppHandle) {
 #[tauri::command]
 async fn baka_client_id(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let state = app.state::<AppState>();
-    Ok(state
-        .device
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().and_then(|device| device.client_id())))
+    Ok(state.current_device().and_then(|device| device.client_id()))
 }
 
 /// 桥接的 `channelTicket`：给页面一张**没用过**的一次性票据。
@@ -225,10 +246,8 @@ async fn baka_self_check(app: tauri::AppHandle) -> Result<selfcheck::SelfCheckRe
     tauri::async_runtime::spawn_blocking(move || {
         let state = handle.state::<AppState>();
         let protection = state
-            .device
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|device| device.protection()))
+            .current_device()
+            .map(|device| device.protection())
             .unwrap_or_else(probe_dpapi);
         let report = selfcheck::run(protection);
         eprintln!(
@@ -263,34 +282,41 @@ fn probe_dpapi() -> selfcheck::KeyProtection {
     }
 }
 
-/// 启动后台线程：载入/创建设备密钥 → 跑一次自检 → 上报公钥换 `clientId`
-fn spawn_device_bootstrap(app: tauri::AppHandle, dir: PathBuf) {
+/// 载入/创建设备密钥并**立刻发布**，再交给 `register` 做自检与注册。
+/// 发布必须排在注册之前：注册最长等 20 秒，期间页面桥每几秒就来取票，
+/// 设备身份晚发布只会让这些取票空等并触发失败退避。
+fn bootstrap_device(state: &AppState, register: impl FnOnce(&Arc<device::Device>)) {
+    let current = match device::load_or_create(&state.dir) {
+        Ok(created) => Arc::new(created),
+        Err(err) => {
+            // 密钥不可用不退出：自检仍可上报，签名会明确报错，页面按 Web 口径处理
+            eprintln!("设备密钥不可用：{err}");
+            return;
+        }
+    };
+    if let Some(cached) = device::cached_client_id(&state.dir) {
+        current.set_client_id(cached);
+    }
+    state.publish_device(current.clone());
+    register(&current);
+}
+
+/// 启动后台线程：载入/创建设备密钥 → 跑一次自检 → 上报公钥换 `clientId` → 预签一张票
+fn spawn_device_bootstrap(app: tauri::AppHandle) {
     std::thread::spawn(move || {
-        let current = match device::load_or_create(&dir) {
-            Ok(created) => Arc::new(created),
-            Err(err) => {
-                // 密钥不可用不退出：自检仍可上报，签名会明确报错，页面按 Web 口径处理
-                eprintln!("设备密钥不可用：{err}");
-                return;
-            }
-        };
-        if let Some(cached) = device::cached_client_id(&dir) {
-            current.set_client_id(cached);
-        }
-        let report = selfcheck::run(current.protection());
-        eprintln!(
-            "启动自检：判定={:?} hard={:?}",
-            report.verdict(),
-            report.hard_fail
-        );
-        if let Err(err) = device::register(&dir, &current, &report) {
-            // 注册失败（离线 / 服务端未就绪）不影响普通房游玩，反作弊房会被服务端拒
-            eprintln!("设备注册失败，稍后按需重试：{err}");
-        }
         let state = app.state::<AppState>();
-        if let Ok(mut guard) = state.device.lock() {
-            *guard = Some(current);
-        }
+        bootstrap_device(&state, |current| {
+            let report = selfcheck::run(current.protection());
+            eprintln!(
+                "启动自检：判定={:?} hard={:?}",
+                report.verdict(),
+                report.hard_fail
+            );
+            if let Err(err) = device::register(&state.dir, current, &report) {
+                // 注册失败（离线 / 服务端未就绪）不影响普通房游玩，反作弊房会被服务端拒
+                eprintln!("设备注册失败，稍后按需重试：{err}");
+            }
+        });
         // 密钥与 clientId 就绪后先备一张票：页面脚本执行时首次同步读取就能拿到
         premint_ticket(&state);
     });
@@ -399,15 +425,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = device::storage_dir();
-            app.manage(AppState {
-                device: Mutex::new(None),
-                dir: dir.clone().unwrap_or_default(),
-                last_attest_failure: AtomicU64::new(0),
-                ticket: Mutex::new(None),
-                attesting: Mutex::new(()),
-            });
+            app.manage(AppState::new(dir.clone().unwrap_or_default()));
             match dir {
-                Some(dir) => spawn_device_bootstrap(handle.clone(), dir),
+                Some(_) => spawn_device_bootstrap(handle.clone()),
                 None => eprintln!(
                     "无法确定密钥存储目录（APPDATA / USERPROFILE 都取不到），桌面通道未启用"
                 ),
@@ -422,6 +442,25 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
+
+    /// 设备身份必须在注册开始之前就发布：注册在慢网下要等很久，
+    /// 期间页面桥取票若看不到身份，会空等并触发失败退避
+    #[test]
+    fn device_is_published_before_registration_starts() {
+        let dir = TempDir::new("publish-first");
+        let state = AppState::new(dir.path().to_path_buf());
+        let mut seen_during_register = None;
+        bootstrap_device(&state, |_| {
+            seen_during_register = Some(state.current_device().is_some());
+        });
+        assert_eq!(
+            seen_during_register,
+            Some(true),
+            "注册开始时设备身份应已发布"
+        );
+        assert!(state.current_device().is_some());
+    }
 
     /// 站内导航要放行，前缀相同的域名要挡住（否则窗口能被导航去外站当钓鱼壳）
     #[test]
