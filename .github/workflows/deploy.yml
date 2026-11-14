@@ -585,6 +585,22 @@ jobs:
               fi
             done
 
+            # ---------- 停机容器恢复 ----------
+            # 上一次发布若在重启后验收失败，容器会停在已退出状态；而 release 元数据、停机预告与探针
+            # 都要在容器里执行。不先拉起来，之后的每一次发布（含回到旧修订）都会卡在下一步，只能人工上机。
+            # 此刻挂载树已对齐到本轮获验修订，拉起的就是本轮代码；没有在线玩家，不做停机预告。
+            # 拉起用掉的是该片的重启预算：这一片在滚动循环里不再预告、排空与重启，只做探针验收。
+            # 进程读到的是上一轮写下的 release 元数据，遥测里的发布标记到下一次重启才归位。
+            REVIVED=""
+            for c in $CONTAINERS; do
+              if [ "$(sudo docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" != "true" ]; then
+                say "[$c] 容器未在运行（上一次发布验收失败留下的），按本轮修订直接拉起"
+                RESTART_STARTED=true
+                sudo docker start "$c" >/dev/null
+                REVIVED="$REVIVED $c"
+              fi
+            done
+
             # ---------- Release 元数据准备（预算 3 秒；bun 取自容器 node_modules，镜像内无 PATH bun） ----------
             say "生成获验修订的无秘密 release 元数据"
             mkdir -p Server/build
@@ -635,22 +651,30 @@ jobs:
                 echo "   容器状态未知，请人工验收；本次部署不自动二次重启或回滚"
                 exit 1
               fi
-              say "[$SHARD] 向在线玩家广播停机维护通知并摘除就绪流量"
-              # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
-              # 脚本默认打本机回环上的后端端口，而 docker exec 打的是该容器自己命名空间的
-              # 回环 —— 每片容器内监听同一端口，只在宿主发布口区分，因此脚本无需改动。
-              if ! sudo docker exec -i "$SHARD" /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
-                echo "❌ $SHARD 维护预通知未成功，本次发布中止且不重启容器"
-                exit 1
-              fi
-              say "[$SHARD] 等待客户端接收通知与平滑退回大厅 (3s)"
-              sleep 3
+              SHARD_REVIVED=false
+              for r in $REVIVED; do
+                if [ "$r" = "$SHARD" ]; then SHARD_REVIVED=true; fi
+              done
+              if [ "$SHARD_REVIVED" = true ]; then
+                say "[$SHARD] 本轮已从停机状态拉起，跳过停机预告、排空与重启"
+              else
+                say "[$SHARD] 向在线玩家广播停机维护通知并摘除就绪流量"
+                # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
+                # 脚本默认打本机回环上的后端端口，而 docker exec 打的是该容器自己命名空间的
+                # 回环 —— 每片容器内监听同一端口，只在宿主发布口区分，因此脚本无需改动。
+                if ! sudo docker exec -i "$SHARD" /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
+                  echo "❌ $SHARD 维护预通知未成功，本次发布中止且不重启容器"
+                  exit 1
+                fi
+                say "[$SHARD] 等待客户端接收通知与平滑退回大厅 (3s)"
+                sleep 3
 
-              say "[$SHARD] 重启容器（入口自带依赖同步与环境初始化）"
-              RESTART_STARTED=true
-              # 必须显式带 -t：默认宽限（10s）小于进程停机预算，容器会在「优雅停机超时」日志写出之前
-              # 被 SIGKILL，退出原因彻底消失。宽限取自预算块，与 Index.ts 的常量保持严格大于关系。
-              sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
+                say "[$SHARD] 重启容器（入口自带依赖同步与环境初始化）"
+                RESTART_STARTED=true
+                # 必须显式带 -t：默认宽限（10s）小于进程停机预算，容器会在「优雅停机超时」日志写出之前
+                # 被 SIGKILL，退出原因彻底消失。宽限取自预算块，与 Index.ts 的常量保持严格大于关系。
+                sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
+              fi
 
               say "[$SHARD] 验证存储就绪及三个协议订阅 ACK（探针预算 ${PROBE_MS}ms）"
               # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。

@@ -639,6 +639,33 @@ test("Worker 继承出口守卫，不能跨线程访问第三方", async () => {
   expect(stdout.trim()).toBe("隔离测试禁止主动网络出口");
 }, 20_000);
 
+test("上一次发布留下的停机容器先拉起，再做要在容器里执行的步骤", async () => {
+  const workflow = Bun.YAML.parse(
+    await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()
+  ) as { jobs: { deploy: { steps: { with?: { script?: unknown } }[] } } };
+  const script = workflow.jobs.deploy.steps
+    .map((step) => step.with?.script)
+    .find((value): value is string => typeof value === "string");
+  if (typeof script !== "string") throw new Error("未找到内嵌部署脚本");
+  // 容器停在已退出状态时，release 元数据、停机预告与探针都执行不了：
+  // 发布（含回到旧修订）会卡死在元数据那一步，只能人工上机。所以要先判断并拉起。
+  const revive = script.indexOf('sudo docker start "$c"');
+  const inspect = script.indexOf("docker inspect -f '{{.State.Running}}'");
+  const align = script.indexOf('git reset --hard "$DEPLOY_REV"');
+  const release = script.indexOf("生成获验修订的无秘密 release 元数据");
+  expect(inspect, "要先看容器是否在运行").toBeGreaterThan(-1);
+  expect(revive, "已退出的容器要拉起").toBeGreaterThan(inspect);
+  expect(align, "拉起之前代码树必须已对齐到本轮修订").toBeLessThan(inspect);
+  expect(revive, "拉起必须早于在容器里生成元数据").toBeLessThan(release);
+  // 刚拉起的那一片没有在线玩家：跳过预告、排空与重启，直接进探针验收。
+  expect(script).toContain('if [ "$SHARD_REVIVED" = true ]; then');
+  const skip = script.indexOf('if [ "$SHARD_REVIVED" = true ]; then');
+  expect(script.indexOf("DeploymentNotify.ts"), "停机预告在跳过分支之后").toBeGreaterThan(skip);
+  expect(script.indexOf("DeploymentProbe.ts"), "探针对两种路径都要跑").toBeGreaterThan(
+    script.indexOf('sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"')
+  );
+});
+
 test("部署内嵌 Bash 仅语法检查，不执行发布命令", async () => {
   const workflow = Bun.YAML.parse(
     await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()
