@@ -1,13 +1,22 @@
 import { createInterface } from "node:readline";
-import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
-import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
+import { AgentGameClient } from "./GameClient";
 import {
-  DEFAULT_PROTOCOL_VERSION,
-  MCP_INSTRUCTIONS,
-  SUPPORTED_PROTOCOL_VERSIONS,
-  protocolVersionOf,
-} from "./Policy";
-import { TOOLS } from "./Tools";
+  WRITE_MAX,
+  auditTarget,
+  failureText,
+  initializeResult,
+  recentWrites,
+  routeRpc,
+  rpcError,
+  rpcResult,
+  runTool,
+  toolCallOf,
+  toolFailure,
+  toolListing,
+  toolResult,
+  unknownToolText,
+  type RpcHandlers,
+} from "./Rpc";
 import { isRecord } from "../shared/Json";
 
 const writeStderr = (record: Record<string, unknown>): void => {
@@ -35,16 +44,13 @@ const client = new AgentGameClient({
 });
 
 /**
- * 按「Agent + 游戏」限制写操作：窗口 60 秒最多 30 次。
  * 键里不能放调用方可控的房号：每次换个房号就得到新桶，限流形同虚设，Map 也会无限增长。
  */
-const WRITE_WINDOW_MS = 60_000;
-const WRITE_MAX = 30;
 const writeBuckets = new Map<string, number[]>();
 
 const consumeWrite = (key: string): boolean => {
   const now = Date.now();
-  const bucket = (writeBuckets.get(key) ?? []).filter((at) => now - at < WRITE_WINDOW_MS);
+  const bucket = recentWrites(writeBuckets.get(key) ?? [], now);
   if (bucket.length >= WRITE_MAX) {
     writeBuckets.set(key, bucket);
     return false;
@@ -54,166 +60,89 @@ const consumeWrite = (key: string): boolean => {
   return true;
 };
 
-const toolGame = (args: Record<string, unknown>): GameId | undefined => {
-  if (typeof args.game === "string" && GAME_IDS.includes(args.game as GameId))
-    return args.game as GameId;
-  const joined = GAME_IDS.filter((game) => client.currentRoom(game));
-  return joined.length === 1 ? joined[0] : undefined;
-};
-
-const handleToolCall = async (id: unknown, params: unknown): Promise<void> => {
-  const call = isRecord(params) ? params : {};
-  const name = typeof call.name === "string" ? call.name : "";
-  const args = isRecord(call.arguments) ? call.arguments : {};
-  const tool = TOOLS.find((entry) => entry.name === name);
+const handleToolCall = async (id: unknown, params: Record<string, unknown>): Promise<void> => {
+  const { name, args, tool } = toolCallOf(params);
   if (!tool) {
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        content: [{ type: "text", text: `未知工具：${name}` }],
-        isError: true,
-      },
-    });
+    writeStdout(rpcResult(id, toolFailure(unknownToolText(name))));
     return;
   }
 
-  const game = toolGame(args);
-  const roomId =
-    typeof args.roomId === "string" ? args.roomId : game ? client.currentRoom(game) : undefined;
+  const { action, game, roomId } = auditTarget(client, args, true);
   const bucketKey = `${agentName}:${game ?? "auto"}`;
-  const action = typeof args.action === "string" ? args.action : undefined;
   const startedAt = performance.now();
-  try {
-    if (tool.write && !consumeWrite(bucketKey)) {
-      throw Object.assign(new Error("Agent 操作过于频繁，请稍后再试"), { code: "RATE_LIMITED" });
-    }
-    publishToolFocus(client, agentName, name, args);
-    const result = await tool.handler(args, { client, agentName });
-    if (FOCUS_AFTER_TOOLS.has(name)) publishToolFocus(client, agentName, name, args);
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: { content: [{ type: "text", text: JSON.stringify(result) }], isError: false },
-    });
+  const run = await runTool(
+    tool,
+    args,
+    {
+      client,
+      agentName,
+      context: { client, agentName },
+      consumeWrite: () => consumeWrite(bucketKey),
+    },
+    (result) => toolResult(JSON.stringify(result))
+  );
+  const durationMs = Math.round(performance.now() - startedAt);
+  if (run.ok) {
+    writeStdout(rpcResult(id, run.value));
     writeStderr({
       time: new Date().toISOString(),
       level: "info",
       msg: "mcp.tool",
-      context: {
-        agent: agentName,
-        tool: name,
-        action,
-        game,
-        roomId,
-        ok: true,
-        durationMs: Math.round(performance.now() - startedAt),
-      },
+      context: { agent: agentName, tool: name, action, game, roomId, ok: true, durationMs },
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        content: [{ type: "text", text: code ? `${code}：${message}` : message }],
-        isError: true,
-      },
-    });
-    writeStderr({
-      time: new Date().toISOString(),
-      level: "warn",
-      msg: "mcp.tool_failed",
-      context: {
-        agent: agentName,
-        tool: name,
-        action,
-        game,
-        roomId,
-        code,
-        message,
-        durationMs: Math.round(performance.now() - startedAt),
-      },
-    });
+    return;
   }
+  writeStdout(rpcResult(id, toolFailure(failureText(run))));
+  writeStderr({
+    time: new Date().toISOString(),
+    level: "warn",
+    msg: "mcp.tool_failed",
+    context: {
+      agent: agentName,
+      tool: name,
+      action,
+      game,
+      roomId,
+      code: run.code,
+      message: run.message,
+      durationMs,
+    },
+  });
 };
+
+/** stdio 只对带 id 的请求回响应；id 为 null 也算请求。 */
+const stdioHandlers = (id: unknown): RpcHandlers<Record<string, unknown> | undefined> => ({
+  answers: () => id !== undefined,
+  silent: () => undefined,
+  reply: (result) => rpcResult(id, result),
+  fail: (code, message) => rpcError(id, code, message),
+  initialize: (params) => rpcResult(id, initializeResult(params)),
+  listTools: () => rpcResult(id, toolListing()),
+  callTool: async (params) => {
+    await handleToolCall(id, params);
+    return undefined;
+  },
+});
 
 const handleLine = async (line: string): Promise<void> => {
   let message: unknown;
   try {
     message = JSON.parse(line);
   } catch {
-    writeStdout({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON 解析失败" } });
+    writeStdout(rpcError(null, -32700, "JSON 解析失败"));
     return;
   }
   if (!isRecord(message)) {
-    writeStdout({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "无效请求" } });
+    writeStdout(rpcError(null, -32600, "无效请求"));
     return;
   }
-  const { id, method, params } = message;
-  const hasId = id !== undefined;
-
-  if (method === "initialize") {
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        protocolVersion: protocolVersionOf(isRecord(params) ? params.protocolVersion : undefined),
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
-        instructions: MCP_INSTRUCTIONS,
-      },
-    });
-    return;
-  }
-  if (method === "notifications/initialized" || method === "notifications/cancelled") return;
-  if (method === "server/discover") {
-    if (!hasId) return;
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        protocolVersion: DEFAULT_PROTOCOL_VERSION,
-        supportedVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
-        instructions: MCP_INSTRUCTIONS,
-      },
-    });
-    return;
-  }
-  if (method === "ping") {
-    if (hasId) writeStdout({ jsonrpc: "2.0", id, result: {} });
-    return;
-  }
-  if (method === "tools/list") {
-    if (!hasId) return;
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      result: {
-        tools: TOOLS.map(({ name, description, inputSchema }) => ({
-          name,
-          description,
-          inputSchema,
-        })),
-      },
-    });
-    return;
-  }
-  if (method === "tools/call") {
-    if (!hasId) return;
-    await handleToolCall(id, params);
-    return;
-  }
-  if (hasId) {
-    writeStdout({
-      jsonrpc: "2.0",
-      id,
-      error: { code: -32601, message: `不支持的方法：${String(method)}` },
-    });
-  }
+  const reply = await routeRpc(
+    message.method,
+    message.id,
+    message.params,
+    stdioHandlers(message.id)
+  );
+  if (reply) writeStdout(reply);
 };
 
 const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });

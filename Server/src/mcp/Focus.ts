@@ -2,7 +2,10 @@ import type { AgentFocusKind, SiteFocusPayload } from "../shared/AgentActivity";
 import { GAME_IDS, type AgentGameClient, type GameId } from "./GameClient";
 import { findSitePage, gamePathOf, roomPageOf } from "./SiteMap";
 
-const focusGame = (client: AgentGameClient, args: Record<string, unknown>): GameId | undefined => {
+export const focusGame = (
+  client: AgentGameClient,
+  args: Record<string, unknown>
+): GameId | undefined => {
   if (typeof args.game === "string" && GAME_IDS.includes(args.game as GameId))
     return args.game as GameId;
   const joined = GAME_IDS.filter((game) => client.currentRoom(game));

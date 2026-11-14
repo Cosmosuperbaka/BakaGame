@@ -2,18 +2,28 @@ import { createHash } from "node:crypto";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
-import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
-import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
+import { AgentGameClient } from "./GameClient";
 import {
-  DEFAULT_PROTOCOL_VERSION,
-  MCP_INSTRUCTIONS,
-  SUPPORTED_PROTOCOL_VERSIONS,
-  protocolVersionOf,
-} from "./Policy";
-import { TOOLS, withRemoteSessionSchema, type PageControlPort } from "./Tools";
+  WRITE_MAX,
+  WRITE_WINDOW_MS,
+  auditTarget,
+  failureText,
+  initializeResult,
+  recentWrites,
+  routeRpc,
+  rpcError,
+  rpcResult,
+  runTool,
+  toolCallOf,
+  toolFailure,
+  toolListing,
+  toolResult,
+  unknownToolText,
+  type RpcHandlers,
+} from "./Rpc";
+import { withRemoteSessionSchema, type McpTool, type PageControlPort } from "./Tools";
 import { isRecord } from "../shared/Json";
 
-const SERVER_INFO = { name: "bakagame-mcp", version: "1.0.0" };
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_SESSIONS = 256;
 /**
@@ -31,8 +41,6 @@ const RECYCLE_IDLE_MS = 2 * 60_000;
 const CALL_WAIT_MS = 30_000;
 const CALL_HOLD_MAX_MS = 4 * 60_000;
 const CALL_QUEUE_MAX = 8;
-const WRITE_WINDOW_MS = 60_000;
-const WRITE_MAX = 30;
 /**
  * 同一来源跨会话的写操作额度。会话号由调用方决定、可随手新开，只按会话计数等于
  * 不设限：不带会话号的每次调用都会落进一个新会话、拿到一份新额度。
@@ -246,7 +254,7 @@ export class RemoteMcpSessions {
   /** 写操作同时扣会话额度与来源额度；任一用完即拒。 */
   consumeWrite(session: RemoteSession): boolean {
     const now = this.now();
-    session.writes = session.writes.filter((at) => now - at < WRITE_WINDOW_MS);
+    session.writes = recentWrites(session.writes, now);
     if (session.writes.length >= WRITE_MAX) return false;
     if (!this.clientWrites.allow(session.clientKey, now)) return false;
     session.writes.push(now);
@@ -254,22 +262,11 @@ export class RemoteMcpSessions {
   }
 }
 
-const rpcResult = (id: unknown, result: unknown) => ({ jsonrpc: "2.0", id, result });
-const rpcError = (id: unknown, code: number, message: string) => ({
-  jsonrpc: "2.0",
-  id: id ?? null,
-  error: { code, message },
-});
-
-const toolResult = (text: string) => ({
-  content: [{ type: "text", text }],
-  isError: false,
-});
-
-const toolFailure = (text: string) => ({
-  content: [{ type: "text", text }],
-  isError: true,
-});
+export interface RemoteOutcome {
+  status: number;
+  headers: Record<string, string>;
+  payload: unknown;
+}
 
 export interface RemoteMcpHandlerOptions {
   enabled: boolean;
@@ -288,7 +285,7 @@ export async function handleRemoteMcp(
   request: Request,
   body: unknown,
   clientKey: string
-): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
+): Promise<RemoteOutcome> {
   const { enabled, sessions } = options;
   if (!enabled) {
     return {
@@ -305,74 +302,40 @@ export async function handleRemoteMcp(
     return { status: 400, headers: {}, payload: rpcError(message.id, -32600, "无效请求") };
   }
   const id = message.id;
-  const params = isRecord(message.params) ? message.params : {};
   const headers: Record<string, string> = {};
-
-  switch (message.method) {
-    case "initialize": {
+  const reply = (status: number, payload: unknown): RemoteOutcome => ({ status, headers, payload });
+  return routeRpc(message.method, id, message.params, {
+    answers: remoteAnswers,
+    // 通知没有 id，规范要求不回任何响应；对它回错误响应会被合规客户端当成协议错误。
+    silent: () => reply(202, null),
+    reply: (result) => reply(200, rpcResult(id, result)),
+    fail: (code, text) => reply(200, rpcError(id, code, text)),
+    initialize: (params) => {
       const clientInfo = isRecord(params.clientInfo) ? params.clientInfo : {};
       const session = sessions.create(sanitizeName(clientInfo.name), clientKey, options.pages);
-      if (!session) return { status: 503, headers, payload: rpcError(id, -32000, SESSIONS_FULL) };
+      if (!session) return reply(503, rpcError(id, -32000, SESSIONS_FULL));
       headers["mcp-session-id"] = session.id;
-      return {
-        status: 200,
-        headers,
-        payload: rpcResult(id, {
-          protocolVersion: protocolVersionOf(params.protocolVersion),
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: SERVER_INFO,
-          instructions: MCP_INSTRUCTIONS,
-        }),
-      };
-    }
-    case "notifications/initialized":
-    case "notifications/cancelled":
-      return { status: 202, headers, payload: null };
-    case "server/discover":
-      return {
-        status: 200,
-        headers,
-        payload: rpcResult(id, {
-          protocolVersion: DEFAULT_PROTOCOL_VERSION,
-          supportedVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: SERVER_INFO,
-          instructions: MCP_INSTRUCTIONS,
-        }),
-      };
-    case "ping":
-      return { status: 200, headers, payload: rpcResult(id, {}) };
-    case "tools/list":
-      return {
-        status: 200,
-        headers,
-        payload: rpcResult(id, {
-          tools: TOOLS.map(({ name, description, inputSchema }) => ({
-            name,
-            description,
-            inputSchema: withRemoteSessionSchema(inputSchema),
-          })),
-        }),
-      };
-    case "tools/call":
-      if (id === undefined || id === null) return { status: 202, headers, payload: null };
-      return handleRemoteToolCall(options, {
+      return reply(200, rpcResult(id, initializeResult(params)));
+    },
+    listTools: () => reply(200, rpcResult(id, toolListing(withRemoteSessionSchema))),
+    callTool: (params) =>
+      handleRemoteToolCall(options, {
         clientKey,
         headerSessionId: request.headers.get("mcp-session-id")?.trim() || "",
         id,
         params,
         headers,
-      });
-    default:
-      // 通知没有 id，规范要求不回任何响应；对它回错误响应会被合规客户端当成协议错误。
-      if (id === undefined) return { status: 202, headers, payload: null };
-      return {
-        status: 200,
-        headers,
-        payload: rpcError(id ?? null, -32601, `不支持的方法：${message.method}`),
-      };
-  }
+      }),
+  });
 }
+
+/** 不带 id 的 ping、server/discover、tools/list 照样回响应；tools/call 的 id 为空则按通知处理。 */
+const REMOTE_ALWAYS_ANSWERED = new Set(["server/discover", "ping", "tools/list"]);
+
+const remoteAnswers: RpcHandlers<RemoteOutcome>["answers"] = (method, id) => {
+  if (method === "tools/call") return id !== undefined && id !== null;
+  return id !== undefined || REMOTE_ALWAYS_ANSWERED.has(String(method));
+};
 
 interface ToolCallContext {
   clientKey: string;
@@ -402,38 +365,22 @@ const resolveToolSession = (
 async function handleRemoteToolCall(
   options: RemoteMcpHandlerOptions,
   context: ToolCallContext
-): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
+): Promise<RemoteOutcome> {
   const { sessions } = options;
-  const name = typeof context.params.name === "string" ? context.params.name : "";
-  const args = isRecord(context.params.arguments) ? { ...context.params.arguments } : {};
-  const tool = TOOLS.find((entry) => entry.name === name);
-  if (!tool) {
-    return {
-      status: 200,
-      headers: context.headers,
-      payload: rpcResult(context.id, toolFailure(`未知工具：${name}`)),
-    };
-  }
+  const { name, args, tool } = toolCallOf(context.params);
+  const respond = (text: ReturnType<typeof toolFailure>): RemoteOutcome => ({
+    status: 200,
+    headers: context.headers,
+    payload: rpcResult(context.id, text),
+  });
+  if (!tool) return respond(toolFailure(unknownToolText(name)));
 
   const resolved = resolveToolSession(sessions, options.pages, tool.name, context, args);
-  if (!resolved) {
-    return {
-      status: 200,
-      headers: context.headers,
-      payload: rpcResult(context.id, toolFailure(SESSIONS_FULL)),
-    };
-  }
+  if (!resolved) return respond(toolFailure(SESSIONS_FULL));
   return sessions.runExclusive(
     resolved.session,
     () => runRemoteTool(options, context, tool, resolved, args),
-    () => ({
-      status: 200,
-      headers: context.headers,
-      payload: rpcResult(
-        context.id,
-        toolFailure("BUSY：同一会话上一个调用仍在执行，请等它返回后再发下一个")
-      ),
-    })
+    () => respond(toolFailure("BUSY：同一会话上一个调用仍在执行，请等它返回后再发下一个"))
   );
 }
 
@@ -444,82 +391,74 @@ async function handleRemoteToolCall(
 const auditContext = (
   session: RemoteSession,
   args: Record<string, unknown>
-): Record<string, unknown> => {
-  const game =
-    typeof args.game === "string" && (GAME_IDS as readonly string[]).includes(args.game)
-      ? (args.game as GameId)
-      : undefined;
-  return {
-    session: refOf(session.id),
-    client: refOf(session.clientKey),
-    agent: session.agentName,
-    action: typeof args.action === "string" ? args.action : undefined,
-    game,
-    roomId:
-      typeof args.roomId === "string"
-        ? args.roomId
-        : game
-          ? session.client.currentRoom(game)
-          : undefined,
-  };
-};
+): Record<string, unknown> => ({
+  session: refOf(session.id),
+  client: refOf(session.clientKey),
+  agent: session.agentName,
+  ...auditTarget(session.client, args, false),
+});
 
-/** 已解析出会话后的一次工具执行：扣额度、发焦点、执行、写审计日志。 */
+/** 已解析出会话后的一次工具执行：交给共用的执行内核，再按远程口径回包并写审计日志。 */
 async function runRemoteTool(
   options: RemoteMcpHandlerOptions,
   context: ToolCallContext,
-  tool: (typeof TOOLS)[number],
+  tool: McpTool,
   { session, ephemeral }: { session: RemoteSession; ephemeral: boolean },
   args: Record<string, unknown>
-): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
+): Promise<RemoteOutcome> {
   const { sessions, logger, pages } = options;
   const startedAt = performance.now();
   try {
-    if (tool.write && !sessions.consumeWrite(session)) {
-      throw Object.assign(new Error("Agent 操作过于频繁，请稍后再试"), { code: "RATE_LIMITED" });
+    const run = await runTool(
+      tool,
+      args,
+      {
+        client: session.client,
+        agentName: session.agentName,
+        context: {
+          client: session.client,
+          agentName: session.agentName,
+          controllerId: session.id,
+          ...(pages ? { pages } : {}),
+        },
+        consumeWrite: () => sessions.consumeWrite(session),
+      },
+      (result) => {
+        // 每个绑定会话的调用都把会话号带回给 Agent：无状态客户端要把它放进下一次 arguments.session。
+        const enriched =
+          !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
+        const stepFailed = isRecord(enriched) && enriched.ok === false;
+        return { stepFailed, text: JSON.stringify(enriched) };
+      }
+    );
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (run.ok) {
+      const { stepFailed, text } = run.value;
+      logger.info("mcp.remote.tool", {
+        ...auditContext(session, args),
+        tool: tool.name,
+        ok: !stepFailed,
+        durationMs,
+      });
+      return {
+        status: 200,
+        headers: context.headers,
+        payload: rpcResult(context.id, stepFailed ? toolFailure(text) : toolResult(text)),
+      };
     }
-    publishToolFocus(session.client, session.agentName, tool.name, args);
-    const result = await tool.handler(args, {
-      client: session.client,
-      agentName: session.agentName,
-      controllerId: session.id,
-      ...(pages ? { pages } : {}),
-    });
-    if (FOCUS_AFTER_TOOLS.has(tool.name))
-      publishToolFocus(session.client, session.agentName, tool.name, args);
-    // 每个绑定会话的调用都把会话号带回给 Agent：无状态客户端要把它放进下一次 arguments.session。
-    const enriched = !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
-    const stepFailed = isRecord(enriched) && enriched.ok === false;
-    logger.info("mcp.remote.tool", {
-      ...auditContext(session, args),
-      tool: tool.name,
-      ok: !stepFailed,
-      durationMs: Math.round(performance.now() - startedAt),
-    });
-    return {
-      status: 200,
-      headers: context.headers,
-      payload: rpcResult(
-        context.id,
-        stepFailed ? toolFailure(JSON.stringify(enriched)) : toolResult(JSON.stringify(enriched))
-      ),
-    };
-  } catch (error) {
-    const messageText = error instanceof Error ? error.message : String(error);
-    const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
     // 工具失败是回给调用方的业务拒绝（未入房、阶段不对、被限流等），属调用方的错，信息级；
     // 告警级留给需要人看的安全事件。
     logger.info("mcp.remote.tool_failed", {
       ...auditContext(session, args),
       tool: tool.name,
-      code,
-      message: messageText,
-      durationMs: Math.round(performance.now() - startedAt),
+      code: run.code,
+      message: run.message,
+      durationMs,
     });
     return {
       status: 200,
       headers: context.headers,
-      payload: rpcResult(context.id, toolFailure(code ? `${code}：${messageText}` : messageText)),
+      payload: rpcResult(context.id, toolFailure(failureText(run))),
     };
   } finally {
     if (ephemeral) sessions.close(session.id);
