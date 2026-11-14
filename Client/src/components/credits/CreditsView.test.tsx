@@ -275,6 +275,19 @@ describe("CreditsView", () => {
     expect(screen.getAllByRole("button", { name: "返回主页" })).toHaveLength(1);
   });
 
+  it("隐私说明的每一项信息都写明保留多久，并如实说明删除要走反馈", () => {
+    renderView({ initialTab: "privacy" });
+
+    const items = screen.getByRole("heading", { name: "一、我们收集的信息" }).parentElement!;
+    const terms = items.querySelectorAll("dt");
+    expect(terms.length).toBeGreaterThan(0);
+    for (const term of terms) {
+      expect(term.nextElementSibling?.textContent, term.textContent ?? "").toContain("保留：");
+    }
+    // 没有自助导出与删除：不能写成已有入口，只能指向反馈。
+    expect(screen.getByText(/目前没有自助导出或删除账号的入口/)).toBeInTheDocument();
+  });
+
   it("用户条款标签渲染同一份正文", () => {
     renderView({ initialTab: "terms" });
 
