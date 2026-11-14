@@ -613,6 +613,23 @@ mod tests {
         assert!(quarantine_path(&dir).exists());
     }
 
+    /// 改名留证失败：连旧文件都挪不开，只报错，不在原地硬写新密钥，旧文件原样保留
+    #[test]
+    fn quarantine_rename_failure_does_not_regenerate() {
+        let dir = TempDir::new("rename-fails");
+        let broken = r#"{"v":1,"protection":"soft"#;
+        std::fs::write(key_path(&dir), broken).unwrap();
+        // 留证路径已被一个非空目录占着：文件改名到它上面必然失败
+        std::fs::create_dir(quarantine_path(&dir)).unwrap();
+        std::fs::write(quarantine_path(&dir).join("keep"), "x").unwrap();
+        let err = match load_or_create(dir.path()) {
+            Ok(_) => panic!("改名失败时不应重建"),
+            Err(err) => err,
+        };
+        assert!(err.contains("改名留证失败"), "{err}");
+        assert_eq!(std::fs::read_to_string(key_path(&dir)).unwrap(), broken);
+    }
+
     #[test]
     fn unknown_protection_is_left_untouched() {
         let dir = TempDir::new("unknown-protection");
