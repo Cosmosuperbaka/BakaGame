@@ -977,3 +977,34 @@ describe("强制移除玩家的关键结论", () => {
     }
   });
 });
+
+describe("移除原因对外的文案与历史码", () => {
+  // 出局原因的文案进玩家看得到的回合数据，历史码进回放记录：两样都是对外契约，逐个原因钉住。
+  const CAUSES = [
+    ["hostKick", "房主已将其移出房间", "kicked"],
+    ["adminKick", "管理员已将其移出房间", "kicked"],
+    ["disconnect", "掉线后被出题人移出", "disconnected"],
+    ["leave", "leave", "left"],
+    ["timeout", "timeout", "timeout"],
+    ["kick", "kicked", "kicked"],
+  ] as const;
+
+  for (const [cause, text, history] of CAUSES) {
+    test(`${cause}：出局原因「${text}」，历史码 ${history}`, async () => {
+      const h = await setupRoom();
+      const round = resetBase(h);
+      const target = h.idOf("机1");
+      await forceRemovePlayer(h.service.ctx, h.room, target, cause);
+      expect(round.assignments[target]?.eliminatedReason).toBe(text);
+      expect(round.history.filter((entry) => entry.kind === "removal")).toEqual([
+        {
+          kind: "removal",
+          day: round.day,
+          createdAt: expect.any(Number),
+          playerId: target,
+          reason: history,
+        },
+      ]);
+    });
+  }
+});
