@@ -324,7 +324,7 @@ const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: SeatPrivateState): b
   const alive = me?.roundStatus === "alive" && !state.isQuestioner;
   const order = status.speechOrder;
   const submitted = new Set(status.submittedSpeechPlayerIds);
-  const spoken = !submitted.has(state.playerId);
+  const yetToSpeak = !submitted.has(state.playerId);
   const canVote = (inTieBreak: boolean) =>
     alive &&
     !state.myCurrentVoteTargetId &&
@@ -338,12 +338,14 @@ const canActNow = (snapshot: WhoIsFakerRoomSnapshot, state: SeatPrivateState): b
     case "description":
       // 补充发言只等被点名的人，普通描述等所有还没交的存活参与者。
       return (
-        alive && spoken && (status.speechMode !== "supplement" || order.includes(state.playerId))
+        alive &&
+        yetToSpeak &&
+        (status.speechMode !== "supplement" || order.includes(state.playerId))
       );
     case "tieBreak":
       return status.tieBreakStage === "vote"
         ? canVote(true)
-        : alive && spoken && order.includes(state.playerId);
+        : alive && yetToSpeak && order.includes(state.playerId);
     case "voting":
       return canVote(false);
     case "night":
