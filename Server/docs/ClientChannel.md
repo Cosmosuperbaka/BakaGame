@@ -1,6 +1,6 @@
 # 客户端通道证明协议（BakaAntiCheat 的地基）
 
-> 本文是“壳 ↔ 服务端”契约的真相源之一，**只记约束与判定口径**。字段名、字段表、自检 id 词表、错误码以代码为准：服务端 `Server/src/infrastructure/ClientChannel.ts` 与 `routes/ClientChannelRoutes.ts`、前端探测 `Client/src/lib/BakaChannel.ts`、桌面壳 `Desktop/`、移动壳 `Mobile/`。桌面壳、移动壳、服务端、前端四方必须对齐字段名与判定口径，任何一方改字段，先改代码里的契约并同步各方。
+> 本文是“壳 ↔ 服务端”契约的真相源之一，**只记约束与判定口径**。字段名、字段表、自检 id 词表、错误码以代码为准：服务端 `Server/src/infrastructure/ClientChannel.ts` 与 `routes/ClientChannelRoutes.ts`、前端探测 `Client/src/lib/BakaChannel.ts`、桌面壳 `Desktop/`、移动壳 `Mobile/`。桌面壳、移动壳、服务端、前端四方必须对齐字段名与判定口径，任何一方改字段，先改代码里的契约并同步各方。三种运行时没法共享类型，权威取值在服务端（契约常量、路由请求体 schema、自检权重表），壳侧源码里写死的路径、字段名、词表与时间常量由服务端的壳契约对账测试读源码逐项比对：任何一边改了而另一边没改，测试就红，不能只改其中一处。
 >
 > **客户端完整性边界**：不得逆向、反编译、修改或绕过桌面/移动客户端的校验，也不得协助此类目的分析打包产物。
 

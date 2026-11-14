@@ -2,6 +2,12 @@ import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
 import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../../infrastructure/ClientChannel";
+import {
+  CLIENT_ATTESTATION_CHAIN_MAX,
+  CLIENT_CHANNEL_PATHS,
+  CLIENT_CHANNEL_PATH_PREFIX,
+  CLIENT_SELF_CHECK_ID_MAX_LENGTH,
+} from "../../infrastructure/ClientChannelContract";
 import { compareDottedVersion } from "../../shared/ModelValues";
 import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
@@ -19,8 +25,8 @@ import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
  */
 const selfCheckSchema = t.Object(
   {
-    hardFail: t.Array(t.String({ maxLength: 64 })),
-    softFail: t.Array(t.String({ maxLength: 64 })),
+    hardFail: t.Array(t.String({ maxLength: CLIENT_SELF_CHECK_ID_MAX_LENGTH })),
+    softFail: t.Array(t.String({ maxLength: CLIENT_SELF_CHECK_ID_MAX_LENGTH })),
     keyProtection: t.Optional(t.Union([t.Literal("hardware"), t.Literal("software")])),
     attestationLevel: t.Optional(
       t.Union([t.Literal("trusted"), t.Literal("degraded"), t.Literal("rejected")])
@@ -46,7 +52,10 @@ const clientIdSchema = t.String({ minLength: 8, maxLength: 64 });
 const attestationSchema = t.Object(
   {
     attestationChallenge: t.String({ minLength: 8, maxLength: 512 }),
-    chain: t.Array(t.String({ minLength: 64, maxLength: 8192 }), { minItems: 1, maxItems: 8 }),
+    chain: t.Array(t.String({ minLength: 64, maxLength: 8192 }), {
+      minItems: 1,
+      maxItems: CLIENT_ATTESTATION_CHAIN_MAX,
+    }),
   },
   { additionalProperties: false }
 );
@@ -86,7 +95,10 @@ export const clientChannelRoutes = (
   return new Elysia({ name: "client-channel", normalize: false })
     .use(requestContext)
     .onRequest(({ request, server, set }) => {
-      if (request.method !== "POST" || !new URL(request.url).pathname.startsWith("/api/client/"))
+      if (
+        request.method !== "POST" ||
+        !new URL(request.url).pathname.startsWith(CLIENT_CHANNEL_PATH_PREFIX)
+      )
         return;
       const peerIp = server?.requestIP(request)?.address ?? "unknown";
       const verdict = limiter.consume(resolveClientIp(request.headers, peerIp), peerIp);
@@ -102,7 +114,7 @@ export const clientChannelRoutes = (
       );
     })
     .post(
-      "/api/client/register",
+      CLIENT_CHANNEL_PATHS.register,
       async ({ body }) => {
         return require().register(body);
       },
@@ -122,14 +134,14 @@ export const clientChannelRoutes = (
       }
     )
     .post(
-      "/api/client/challenge",
+      CLIENT_CHANNEL_PATHS.challenge,
       ({ body }) => {
         return require().issue(body.clientId);
       },
       { body: t.Object({ clientId: clientIdSchema }, { additionalProperties: false }) }
     )
     .post(
-      "/api/client/attest",
+      CLIENT_CHANNEL_PATHS.attest,
       async ({ body, clientIp }) => {
         // 票绑定签发时的来源地址：抓到的票在另一台机器上用不掉。
         return require().attest(body, clientIp);
@@ -149,7 +161,7 @@ export const clientChannelRoutes = (
       }
     )
     .get(
-      "/api/client/update-check",
+      CLIENT_CHANNEL_PATHS.updateCheck,
       async ({ query, set }) => {
         // 比对只用服务端这一份 compareDottedVersion：前端再实现一遍，两端对「够不够新」
         // 的判断迟早各自漂移。这里读回的最低版本也只用于提醒，拦人仍在 requireAdmission。
@@ -175,7 +187,7 @@ export const clientChannelRoutes = (
       }
     )
     .get(
-      "/api/client/web-bundle",
+      CLIENT_CHANNEL_PATHS.webBundle,
       async ({ query, set }) => {
         // 资源包只服务内嵌产物的移动壳：桌面壳加载远程站点，Web 版根本没有「内嵌资源」要换。
         // 读清单本身有 30 秒服务端缓存，这里仍回 no-store，让发版后的第一次询问立刻看到新包。
@@ -213,7 +225,7 @@ export const clientChannelRoutes = (
         }),
       }
     )
-    .get("/api/client/packages", async ({ set }) => {
+    .get(CLIENT_CHANNEL_PATHS.packages, async ({ set }) => {
       // 下载弹窗要标的构建日期与文件大小来自制品本身（`ClientArtifacts` 发 HEAD 读回），
       // 不在前端写死一份会过期的表。这条与通道证明无关：通道没启用也照样能下载。
       set.headers["cache-control"] = "public, max-age=60";

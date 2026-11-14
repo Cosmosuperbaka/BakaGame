@@ -118,9 +118,9 @@ export class InMemoryClientChannelStore implements ClientChannelStore {
  * 移动端不少 id 带 `:<细节>` 后缀（命中的包名、su 的路径），判定只认冒号前的稳定前缀，
  * 后缀原样留在 reason 里供日志与人工复核。
  */
-type SelfCheckWeight = "hard" | "soft" | "mark";
+export type SelfCheckWeight = "hard" | "soft" | "mark";
 
-const SELF_CHECK_WEIGHTS: Record<string, SelfCheckWeight> = {
+export const SELF_CHECK_WEIGHTS: Record<string, SelfCheckWeight> = {
   // —— 桌面：Desktop/src-tauri/src/selfcheck.rs ——
   debugger_attached: "hard",
   debug_port: "hard",
