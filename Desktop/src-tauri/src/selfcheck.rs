@@ -10,6 +10,10 @@
 
 use serde::Serialize;
 
+mod pure;
+#[cfg(target_os = "windows")]
+use pure::{first_difference, sorted_bases};
+
 /// 私钥保护档位：DPAPI 可用记 `hardware`，降级记 `software`（计划 P2.3 的环境探测，不计分）
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -379,78 +383,30 @@ fn query_debug_object_handle() -> Option<bool> {
 /// 目前只按路径判定，因此白名单外的模块一律硬失败；`BakaAntiCheat` 默认关闭，普通房不受影响。
 #[cfg(target_os = "windows")]
 fn module_allowed(raw_path: &str) -> bool {
-    let path = normalize(raw_path);
-    if path.is_empty() {
-        return false;
-    }
-    allowed_prefixes().iter().any(|prefix| path.starts_with(prefix))
+    pure::path_allowed(raw_path, &allowed_prefixes())
 }
 
+/// 从环境与进程信息里取白名单前缀的来源，判定与构造都在 `pure` 里
 #[cfg(target_os = "windows")]
 fn allowed_prefixes() -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let push = |out: &mut Vec<String>, value: Option<String>| {
-        if let Some(dir) = value.map(|v| normalize(&v)) {
-            if !dir.is_empty() {
-                out.push(dir);
-            }
-        }
-    };
-    // 系统目录
-    let system_root = std::env::var("SystemRoot").ok().or_else(|| std::env::var("WINDIR").ok());
-    for leaf in ["System32", "SysWOW64", "WinSxS"] {
-        push(&mut out, system_root.as_ref().map(|root| format!("{root}\\{leaf}")));
-    }
-    // 自身安装目录（含同目录的 WebView2Loader.dll）
-    if let Some(exe) = crate::winapi::self_exe_path() {
-        if let Some(dir) = std::path::Path::new(&exe).parent().map(|p| p.display().to_string()) {
-            push(&mut out, Some(dir));
-        }
-    }
-    // WebView2 运行时与 Edge（WebView2 的 dll 由运行时目录加载）
-    for key in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
-        let base = std::env::var(key).ok();
-        push(&mut out, base.as_ref().map(|v| format!("{v}\\Microsoft\\EdgeWebView\\Application")));
-        push(&mut out, base.as_ref().map(|v| format!("{v}\\Microsoft\\Edge\\Application")));
-        push(&mut out, base.as_ref().map(|v| format!("{v}\\Common Files\\Microsoft Shared")));
-    }
-    // 热修追加项：分号分隔的路径前缀，抬白名单不需要重新发版
-    if let Ok(extra) = std::env::var("BAKA_MODULE_ALLOWLIST") {
-        for item in extra.split(';') {
-            push(&mut out, Some(item.to_string()));
-        }
-    }
-    out
-}
-
-#[cfg(target_os = "windows")]
-fn normalize(value: &str) -> String {
-    let mut out = value.trim().to_ascii_lowercase();
-    // 去掉 Win32 扩展路径前缀 \\?\，否则与 `SystemRoot` 拼出来的前缀对不上
-    while let Some(rest) = out.strip_prefix("\\\\?\\") {
-        out = rest.to_string();
-    }
-    while out.ends_with('\\') {
-        out.pop();
-    }
-    out
-}
-
-#[cfg(target_os = "windows")]
-fn sorted_bases(iter: impl Iterator<Item = usize>) -> Vec<usize> {
-    let mut v: Vec<usize> = iter.collect();
-    v.sort_unstable();
-    v
-}
-
-#[cfg(target_os = "windows")]
-fn first_difference(a: &[usize], b: &[usize]) -> String {
-    for (index, (left, right)) in a.iter().zip(b.iter()).enumerate() {
-        if left != right {
-            return format!("#{index}: {left:#x} vs {right:#x}");
-        }
-    }
-    format!("长度不同 {} vs {}", a.len(), b.len())
+    let system_root = std::env::var("SystemRoot")
+        .ok()
+        .or_else(|| std::env::var("WINDIR").ok());
+    let self_dir = crate::winapi::self_exe_path().and_then(|exe| {
+        std::path::Path::new(&exe)
+            .parent()
+            .map(|p| p.display().to_string())
+    });
+    let program_files = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .collect();
+    pure::build_prefixes(&pure::PrefixSources {
+        system_root,
+        self_dir,
+        program_files,
+        extra_allowlist: std::env::var("BAKA_MODULE_ALLOWLIST").ok(),
+    })
 }
 
 /// devtools 暴露面：远程调试参数（命令行 / 环境变量）与真的开起来的调试端口
@@ -580,6 +536,72 @@ mod tests {
             sorted_bases(snapshot.iter().map(|m| m.base)),
             sorted_bases(ldr.iter().map(|m| m.base)),
             "两份模块列表基址不一致"
+        );
+    }
+}
+
+/// 与平台无关的判定口径：壳侧日志用的同口径复核，以及上报词表的字面量
+#[cfg(test)]
+mod verdict_tests {
+    use super::*;
+
+    fn report(hard: &[&str], soft: &[&str]) -> SelfCheckReport {
+        SelfCheckReport {
+            hard_fail: hard.iter().map(|id| id.to_string()).collect(),
+            soft_fail: soft.iter().map(|id| id.to_string()).collect(),
+            key_protection: KeyProtection::Software,
+        }
+    }
+
+    #[test]
+    fn verdict_has_three_tiers() {
+        assert_eq!(report(&[], &[]).verdict(), Verdict::Trusted);
+        assert_eq!(report(&[], &[CHECK_DEVTOOLS]).verdict(), Verdict::Suspect);
+        assert_eq!(
+            report(&[], &[CHECK_DEVTOOLS, CHECK_PARENT_PROCESS]).verdict(),
+            Verdict::Untrusted
+        );
+        // 任一硬失败即不可信，与软失败个数无关
+        assert_eq!(
+            report(&[CHECK_DEBUGGER_ATTACHED], &[]).verdict(),
+            Verdict::Untrusted
+        );
+        assert_eq!(
+            report(&[CHECK_LDR_MISMATCH], &[CHECK_DEVTOOLS]).verdict(),
+            Verdict::Untrusted
+        );
+    }
+
+    /// 词表是与服务端权重表对接的协议字面量：新增只能追加，改名等于换协议
+    #[test]
+    fn check_ids_are_the_literal_protocol_names() {
+        assert_eq!(
+            [
+                CHECK_DEBUGGER_ATTACHED,
+                CHECK_DEBUG_PORT,
+                CHECK_DEBUG_OBJECT_HANDLE,
+                CHECK_DEBUG_QUERY_FAILED,
+                CHECK_MODULE_NOT_ALLOWED,
+                CHECK_MODULE_ENUM_FAILED,
+                CHECK_LDR_MISMATCH,
+                CHECK_LDR_ENUM_FAILED,
+                CHECK_PARENT_PROCESS,
+                CHECK_DEVTOOLS,
+                CHECK_PLATFORM_UNSUPPORTED,
+            ],
+            [
+                "debugger_attached",
+                "debug_port",
+                "debug_object_handle",
+                "debug_query_unavailable",
+                "module_not_allowed",
+                "module_enumeration_failed",
+                "ldr_list_mismatch",
+                "ldr_enumeration_failed",
+                "parent_process",
+                "devtools",
+                "platform_unsupported",
+            ]
         );
     }
 }
