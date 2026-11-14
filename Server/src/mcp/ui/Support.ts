@@ -161,3 +161,16 @@ export const assemble = (
     updatedAt: context.now,
   };
 };
+
+/** 聊天模块共用的发送逻辑；三个游戏仅命令名不同，由各自模块调用。 */
+export async function sendChat(
+  context: UiContext,
+  command: string,
+  state = context.state
+): Promise<string> {
+  const value = (state.drafts["chat.input"] ?? "").trim();
+  if (!value) throw new Error("聊天内容不能为空");
+  await context.client.sendInRoom(context.game, command, { text: value });
+  delete state.drafts["chat.input"];
+  return "聊天消息已发送";
+}

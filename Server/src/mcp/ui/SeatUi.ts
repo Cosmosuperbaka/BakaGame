@@ -5,7 +5,6 @@ import {
   buildFakerScreen,
   clickFakerControl,
   pressFaker,
-  sendChat,
   setFakerControl,
 } from "./Faker";
 import {
@@ -16,7 +15,15 @@ import {
   pressSong,
   setSongControl,
 } from "./Song";
-import { createUiState, isRecord, str, syncPhase, type UiContext, type UiState } from "./Support";
+import {
+  createUiState,
+  isRecord,
+  sendChat,
+  str,
+  syncPhase,
+  type UiContext,
+  type UiState,
+} from "./Support";
 import type { UiControl, UiRunResult, UiScreen, UiStep, UiStepAction, UiStepReport } from "./Types";
 
 const MAX_STEPS = 16;
