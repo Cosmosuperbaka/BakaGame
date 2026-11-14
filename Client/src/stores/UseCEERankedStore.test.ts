@@ -210,6 +210,8 @@ beforeEach(() => {
   clearCEERankedQueryCache();
   useCEERankedStore.setState({
     ready: false,
+    syncFailed: false,
+    syncRetrying: false,
     state: null,
     profile: null,
     profileLoading: false,
@@ -382,6 +384,107 @@ describe("排位状态同步", () => {
     socket.emit(fullFrame(3, seriesState("rated")));
     await settle();
     expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+  });
+});
+
+describe("状态请求失败与重试", () => {
+  /** 状态请求按次序应答：给出的每一项依次用掉，用完后重复最后一项。 */
+  const statusReplies = (...replies: Array<() => Promise<unknown>>) => {
+    let calls = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command !== "cee.ranked.status") return Promise.resolve({});
+      const next = replies[Math.min(calls, replies.length - 1)];
+      calls += 1;
+      return next ? next() : Promise.resolve(idleState);
+    });
+  };
+  const timeout = () => rejectedProtocol({ code: "TIMEOUT", message: "请求超时" });
+
+  it("已连接时状态请求失败：记下失败，仍未就绪", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: false, syncFailed: true });
+    expect(socket.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it("失败之后事件流送来状态：就绪并撤下失败", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    socket.emit(fullFrame(1, idleState));
+    await settle();
+
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, syncFailed: false });
+  });
+
+  it("失败之后断线即撤下失败，重连后照常自动重发", async () => {
+    statusReplies(timeout, () => Promise.resolve(idleState));
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    socket.emitStatus(false);
+    expect(useCEERankedStore.getState().syncFailed).toBe(false);
+
+    socket.emitStatus(true);
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, syncFailed: false });
+  });
+
+  it("请求途中断过线：失败归重连收拾，不记成失败", async () => {
+    const pendingStatus = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? pendingStatus.promise : Promise.resolve({})
+    );
+    attachRanked();
+    await settle();
+
+    socket.emitStatus(false);
+    pendingStatus.reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+    await settle();
+
+    expect(useCEERankedStore.getState().syncFailed).toBe(false);
+  });
+
+  it("重试再发一次状态请求，在途期间不重复发，成功后就绪", async () => {
+    const retried = deferred<CEERankedState>();
+    statusReplies(timeout, () => retried.promise);
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    const first = useCEERankedStore.getState().retryStatus();
+    const second = useCEERankedStore.getState().retryStatus();
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({ syncFailed: false, syncRetrying: true });
+
+    retried.resolve(idleState);
+    await Promise.all([first, second]);
+    expect(useCEERankedStore.getState()).toMatchObject({
+      ready: true,
+      syncFailed: false,
+      syncRetrying: false,
+    });
+  });
+
+  it("重试再次失败：回到失败态，重试入口解锁", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+
+    await useCEERankedStore.getState().retryStatus();
+
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({
+      ready: false,
+      syncFailed: true,
+      syncRetrying: false,
+    });
   });
 });
 

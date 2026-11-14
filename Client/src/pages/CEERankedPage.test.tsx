@@ -68,16 +68,58 @@ describe("CEERankedPage", () => {
     expect(screen.queryByRole("heading", { name: /登录后参加排位赛|排位赛只在客户端开放/ })).toBe(
       null
     );
-    expect(screen.queryByLabelText("正在连接排位")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
   });
 
-  it("已登录但排位未就绪时给连接中占位", () => {
+  it("已登录但排位未就绪时，连接中占位写出可见文字", () => {
     installShell();
     useAccountStore.setState({ status: "signedIn", profile: {} as never });
-    useCEERankedStore.setState({ ready: false, state: null, profile: null });
+    useCEERankedStore.setState({ ready: false, syncFailed: false, state: null, profile: null });
     renderPage();
 
-    expect(screen.getByLabelText("正在连接排位")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("正在连接排位…");
+    expect(screen.getByText("正在连接排位…")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+  });
+
+  it("状态请求失败时给出说明与重试入口", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({ ready: false, syncFailed: true, state: null, profile: null });
+    renderPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("暂时读不到排位状态");
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
+  });
+
+  it("点重试再发一次状态请求，在途期间入口转圈并挡住连点", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    // 与真实 store 同一口径：发出即撤下失败、记下重试在途，回包前一直挂着。
+    const retryStatus = vi.fn(() => {
+      useCEERankedStore.setState({ syncFailed: false, syncRetrying: true });
+      return new Promise<void>(() => {});
+    });
+    useCEERankedStore.setState({
+      ready: false,
+      syncFailed: true,
+      syncRetrying: false,
+      state: null,
+      profile: null,
+      retryStatus,
+    });
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    expect(retryStatus).toHaveBeenCalledTimes(1);
+    const retry = screen.getByRole("button", { name: "重试" });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("暂时读不到排位状态");
+    fireEvent.click(retry);
+    expect(retryStatus).toHaveBeenCalledTimes(1);
   });
 
   it("就绪后按状态给出排位首页", () => {
