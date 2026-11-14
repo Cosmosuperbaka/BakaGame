@@ -31,7 +31,16 @@ const selfCheckSchema = t.Object(
 const clientTypeSchema = t.Union([t.Literal("desktop"), t.Literal("mobile")]);
 /** 壳类型 → 安装包平台：制品清单按平台索引，更新检查按壳类型提问。 */
 const PACKAGE_PLATFORM = { desktop: "windows", mobile: "android" } as const;
-const versionSchema = t.String({ minLength: 1, maxLength: 32, pattern: "^\\d+(\\.\\d+){0,3}$" });
+/**
+ * 壳上报版本号的唯一口径：壳把项目文件里的 version 原样送来，这里放宽或收紧都会让
+ * 发布流程与接口对不上，所以版本一致性测试也引用这一份，不另写一个正则。
+ */
+export const CLIENT_VERSION_PATTERN = "^\\d+(\\.\\d+){0,3}$";
+const versionSchema = t.String({
+  minLength: 1,
+  maxLength: 32,
+  pattern: CLIENT_VERSION_PATTERN,
+});
 const clientIdSchema = t.String({ minLength: 8, maxLength: 64 });
 /** 厂商链一般 3—5 张，留到 8 张；单张 PEM 上限按 EC P-384 根的量级给。 */
 const attestationSchema = t.Object(

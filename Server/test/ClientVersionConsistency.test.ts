@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { CLIENT_VERSION_PATTERN } from "../src/transport/routes/ClientChannelRoutes";
 
 /**
  * 发布版本号的单一事实来源在两个壳各自的项目文件里，但每个壳都有**两个**消费方：
@@ -38,13 +39,23 @@ const cargoPackageVersion = (toml: string): string => {
 const gradleVersionName = (gradle: string): string =>
   gradle.match(/^\s*versionName\s+['"]([^'"]+)['"]/m)?.[1] ?? "";
 
-const SEMVER = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+/** 闸门取接口那一份：测试自己写一份，放宽会让预发布版本整个壳换不到票，收紧则误报漏改。 */
+const CLIENT_VERSION = new RegExp(CLIENT_VERSION_PATTERN);
+
+test("版本号闸门与服务端接口同一口径：预发布与构建后缀不被接受", () => {
+  for (const version of ["0.2.0-beta.1", "1.0.0+build.5", "v1.0.0", "1.0.0.0.0", ""]) {
+    expect(version).not.toMatch(CLIENT_VERSION);
+  }
+  for (const version of ["0.1.0", "1.2.3", "1.0", "1.2.3.4"]) {
+    expect(version).toMatch(CLIENT_VERSION);
+  }
+});
 
 test("桌面壳：bundle 版本与上报版本一致", () => {
   const bundleVersion = jsonVersion("Desktop/src-tauri/tauri.conf.json");
   const reportedVersion = cargoPackageVersion(read("Desktop/src-tauri/Cargo.toml"));
 
-  expect(bundleVersion).toMatch(SEMVER);
+  expect(bundleVersion).toMatch(CLIENT_VERSION);
   expect(reportedVersion).toBe(bundleVersion);
 });
 
@@ -59,7 +70,7 @@ test("安卓壳：versionName 与 Mobile/package.json 一致", () => {
   const packageVersion = jsonVersion("Mobile/package.json");
   const gradle = read("Mobile/android/app/build.gradle");
 
-  expect(packageVersion).toMatch(SEMVER);
+  expect(packageVersion).toMatch(CLIENT_VERSION);
   expect(gradleVersionName(gradle)).toBe(packageVersion);
 });
 
