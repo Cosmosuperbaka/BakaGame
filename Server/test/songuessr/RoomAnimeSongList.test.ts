@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   BangumiMusicTrack,
@@ -50,11 +51,11 @@ describe("SonGuessrService", () => {
         return [songs.answer];
       },
       getSong: async (id: string) => (id === "song-second" ? secondSong : songs.answer),
-    } as unknown as MusicProvider;
-    const customBangumiProvider = {
+    };
+    const customBangumiProvider = fakeBangumiProvider({
       getSubject: async (id: string) => (id === "anime-multi" ? multiTrackAnime : anime),
       searchSubjects: async () => [multiTrackAnime],
-    } as unknown as BangumiDataProvider;
+    });
 
     const service = new SonGuessrService({
       musicProvider: customMusicProvider,
@@ -162,10 +163,10 @@ describe("SonGuessrService", () => {
     };
     const result = await queryAnimeSongs(
       musicProvider,
-      {
+      fakeBangumiProvider({
         getSubject: async () => anime,
         searchSubjects: async () => [anime],
-      } as unknown as BangumiDataProvider,
+      }),
       anime.id,
       "anime-list-host"
     );
@@ -196,7 +197,7 @@ describe("SonGuessrService", () => {
     };
     const result = await queryAnimeSongs(
       musicProvider,
-      {
+      fakeBangumiProvider({
         getSubject: async () => ({
           ...anime,
           musicTracks: [
@@ -205,7 +206,7 @@ describe("SonGuessrService", () => {
           ],
         }),
         searchSubjects: async () => [anime],
-      } as unknown as BangumiDataProvider,
+      }),
       anime.id,
       "anime-dedup-host"
     );
@@ -238,13 +239,13 @@ describe("SonGuessrService", () => {
     };
     const result = await queryAnimeSongs(
       musicProvider,
-      {
+      fakeBangumiProvider({
         getSubject: async () => ({
           ...anime,
           musicTracks: [{ title: "角色歌合辑", kind: "character" as const }],
         }),
         searchSubjects: async () => [anime],
-      } as unknown as BangumiDataProvider,
+      }),
       anime.id,
       "anime-album-host"
     );
@@ -259,14 +260,14 @@ describe("SonGuessrService", () => {
       musicTracks: [],
     };
     const requestedFilters: unknown[] = [];
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async (_keyword: string, _limit: number, filters: unknown) => {
         requestedFilters.push(filters);
         return [noMusicAnime, anime];
       },
       getSubject: async (subjectId: string) =>
         subjectId === noMusicAnime.id ? noMusicAnime : anime,
-    } as unknown as BangumiDataProvider;
+    });
     const service = new SonGuessrService({
       musicProvider: provider,
       bangumiProvider,
@@ -326,13 +327,13 @@ describe("SonGuessrService", () => {
 
   test("听歌猜番年榜在设置年份范围内选择年份查询", async () => {
     const requestedFilters: unknown[] = [];
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async (_keyword: string, _limit: number, filters: unknown) => {
         requestedFilters.push(filters);
         return [anime];
       },
       getSubject: async () => anime,
-    } as unknown as BangumiDataProvider;
+    });
     const service = new SonGuessrService({
       musicProvider: provider,
       bangumiProvider,
@@ -380,7 +381,7 @@ describe("SonGuessrService", () => {
   test("听歌猜番歌曲热度不达标时优先尝试同作品其它曲目", async () => {
     const low = { ...songs.wrong, id: "low", title: "低热度歌", popularity: 10 };
     const high = { ...songs.answer, id: "high", title: "高热度歌", popularity: 100_000 };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async () => [anime],
       getSubject: async () => ({
         ...anime,
@@ -389,7 +390,7 @@ describe("SonGuessrService", () => {
           { title: "高热度歌", artist: "测试歌手", kind: "ending" },
         ],
       }),
-    } as unknown as BangumiDataProvider;
+    });
     const musicProvider: MusicProvider = {
       ...provider,
       search: async (keyword) => (keyword.includes("低热度歌") ? [low] : [high]),

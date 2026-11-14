@@ -13,8 +13,8 @@ import {
   computeSongDifficulty,
   computeSongSubmitterScore,
 } from "../../src/domain/SongRules";
-import type { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
 import type { EventLogger } from "../../src/infrastructure/EventLogger";
+import { fakeBangumiProvider } from "../support/Providers";
 import type { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import type {
   BangumiSubjectDetails,
@@ -101,13 +101,13 @@ const setupGame = async (options: GameOptions = {}) => {
       return refresh.impl();
     },
   };
-  const bangumiProvider = {
+  const bangumiProvider = fakeBangumiProvider({
     getSubject: (id: string) => {
       subject.calls += 1;
       return subject.impl(id);
     },
     searchSubjects: async () => [anime],
-  } as unknown as BangumiDataProvider;
+  });
   const recorded: GameRoundRecord[] = [];
   const logged: Array<{ type: string; payload?: unknown }> = [];
   const roomId = options.testRoom ? "Oblivionis" : "1234";

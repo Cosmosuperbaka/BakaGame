@@ -4,6 +4,7 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { tabSeatId } from "../../src/application/TabSeat";
 import { DEFAULT_SETTINGS } from "../../src/application/songuessr/Records";
 import type { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 import type { EventLogger } from "../../src/infrastructure/EventLogger";
 import {
   SensitiveTextFilter,
@@ -1486,13 +1487,13 @@ describe("提交番剧：跨 await 复核与收尾", () => {
     const gate = defer();
     releases.push(() => gate.resolve());
     const state = { slow: false };
-    const bangumi = {
+    const bangumi = fakeBangumiProvider({
       getSubject: async () => {
         if (state.slow) await gate.promise;
         return anime;
       },
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const game = await setup({ bangumi, settings: { questionType: "anime" } });
     await begin(game);
     await game.send(game.host, "song.game.chooseSubmitter", { playerId: game.hostId });
@@ -1603,13 +1604,13 @@ describe("补充：提交、成员、巡检的剩余边界", () => {
     const gate = defer();
     releases.push(() => gate.resolve());
     let slow = false;
-    const bangumi = {
+    const bangumi = fakeBangumiProvider({
       getSubject: async () => {
         if (slow) await gate.promise;
         return anime;
       },
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const game = await setup({ bangumi, settings: { questionType: "anime" } });
     await begin(game);
     await game.send(game.host, "song.game.chooseSubmitter", { playerId: game.hostId });

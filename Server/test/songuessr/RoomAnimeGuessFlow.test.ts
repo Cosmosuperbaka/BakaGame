@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import {
@@ -18,10 +18,10 @@ import {
 
 describe("SonGuessrService", () => {
   test("听歌猜番提交后只向出题人公开答案，并按 subject ID 完成猜测结算", async () => {
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
     const host = connection(service, "anime-host");
     const guest = connection(service, "anime-guest");
@@ -107,10 +107,10 @@ describe("SonGuessrService", () => {
   });
 
   test("听歌猜番回合拒绝用猜歌命令作答，也不占用猜测次数", async () => {
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
     const host = connection(service, "anime-gate-host");
     const guest = connection(service, "anime-gate-guest");
@@ -139,13 +139,13 @@ describe("SonGuessrService", () => {
   test("听歌猜番拒绝歌名与曲目不匹配的异形歌曲", async () => {
     const unrelated = { ...songs.wrong, id: "unrelated", title: "TAKE ME HIGHER" };
     const matched = { ...songs.answer, id: "matched", title: "答案歌" };
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async () => [anime],
       getSubject: async () => ({
         ...anime,
         musicTracks: [{ title: "答案歌", artist: "测试歌手", kind: "opening" }],
       }),
-    } as unknown as BangumiDataProvider;
+    });
 
     const musicProvider: MusicProvider = {
       ...provider,
@@ -187,13 +187,13 @@ describe("SonGuessrService", () => {
     const song1 = { ...songs.answer, id: "song-1", title: "歌曲一" };
     const song2 = { ...songs.answer, id: "song-2", title: "歌曲二" };
 
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async () => [anime1, anime2],
       getSubject: async (id: string) =>
         id === "anime-1"
           ? { ...anime1, musicTracks: [{ title: "歌曲一", kind: "opening" }] }
           : { ...anime2, musicTracks: [{ title: "歌曲二", kind: "opening" }] },
-    } as unknown as BangumiDataProvider;
+    });
 
     const musicProvider: MusicProvider = {
       ...provider,

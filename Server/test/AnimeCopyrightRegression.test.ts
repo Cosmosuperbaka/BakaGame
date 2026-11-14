@@ -10,7 +10,7 @@ import {
 } from "../src/shared/Index";
 import type { MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import { chosenSongId, connection, type TestConnection } from "./songuessr/Fixtures";
-import type { BangumiDataProvider } from "../src/infrastructure/BangumiDataProvider";
+import { fakeBangumiProvider } from "./support/Providers";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({
   id,
@@ -107,10 +107,10 @@ describe("猜番版权伪条目防护", () => {
   });
 
   test("自动猜番不得把版权伪条目当成 OP 去网易云搜歌", async () => {
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       searchSubjects: async () => [myGo],
       getSubject: async () => myGo,
-    } as unknown as BangumiDataProvider;
+    });
     const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
     const host = connection(service, "anime-credits-host");
     const guest = connection(service, "anime-credits-guest");

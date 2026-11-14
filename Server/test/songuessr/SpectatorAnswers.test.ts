@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import { SonGuessrPayloadSchemas } from "../../src/shared/SonGuessr";
-import { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 import { describe, expect, test } from "bun:test";
 import {
   anime,
@@ -191,10 +191,10 @@ describe("猜歌旁观者的答案可见性", () => {
   });
 
   test("听歌猜番：旁观者局中同样拿不到番剧答案，打开开关后可见", async () => {
-    const bangumiProvider = {
+    const bangumiProvider = fakeBangumiProvider({
       getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
       searchSubjects: async () => [anime],
-    } as unknown as BangumiDataProvider;
+    });
     const run = async (open: boolean) => {
       const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
       const host = connection(service, `anime-host-${open}`);

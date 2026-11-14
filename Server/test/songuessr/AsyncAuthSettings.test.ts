@@ -27,7 +27,7 @@ import {
   type MusicProvider,
 } from "../../src/infrastructure/music/MusicProvider";
 import { AggregatedMusicProvider } from "../../src/infrastructure/music/AggregatedMusicProvider";
-import { type BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 
 describe("SonGuessr service 异步归属回归", () => {
   for (const fails of [false, true]) {
@@ -101,10 +101,10 @@ describe("SonGuessr service 异步归属回归", () => {
       let delay = false;
       const service = new SonGuessrService({
         musicProvider: { ...provider, getSongMetadata: async () => songPending.promise },
-        bangumiProvider: {
+        bangumiProvider: fakeBangumiProvider({
           getSubject: async () => (delay ? animePending.promise : anime),
           searchSubjects: async () => [anime],
-        } as unknown as BangumiDataProvider,
+        }),
       });
       const host = connection(service, "flight-host");
       const guest = connection(service, "flight-guest");
@@ -793,13 +793,13 @@ describe("SonGuessr service 猜番依赖错误分类", () => {
             return 100_000;
           },
         },
-        bangumiProvider: {
+        bangumiProvider: fakeBangumiProvider({
           searchSubjects: async () => [anime, wrongAnime],
           getSubject: async () => {
             subjects++;
             return anime;
           },
-        } as unknown as BangumiDataProvider,
+        }),
       });
       const host = connection(service, "classified-host");
       await createRoom(service, host, { solo: true });

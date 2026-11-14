@@ -56,7 +56,7 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
         inFlight -= 1;
         return [songs.answer];
       },
-    } as unknown as MusicProvider;
+    };
 
     const { service, solo } = await animeSolo(
       slowProvider,
@@ -96,7 +96,7 @@ describe("SonGuessrService 番剧出题回源性能约束", () => {
       getSong: async () => {
         throw new Error("标题未命中时不应回源歌曲详情");
       },
-    } as unknown as MusicProvider;
+    };
 
     const { service, solo } = await animeSolo(
       missProvider,

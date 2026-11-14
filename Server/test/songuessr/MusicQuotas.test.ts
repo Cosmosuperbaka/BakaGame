@@ -14,8 +14,7 @@ import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
 } from "../../src/config/Constants";
-import type { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
-import type { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
+import { fakeBangumiProvider } from "../support/Providers";
 import type { SonGuessrClientMessage } from "../../src/shared/Index";
 import {
   anime,
@@ -30,17 +29,17 @@ import {
 // 每条连接的命令总额度，加上猜歌里会打上游的几类命令各自的配额：
 // 番剧取歌按成本扣多份、番剧封面独立限流、三条音乐登录命令按连接限流。
 
-const bangumi = {
+const bangumi = fakeBangumiProvider({
   getSubject: async () => anime,
   searchSubjects: async () => [],
   resolveSubjectImage: async () => "https://img.example/cover.jpg",
-} as unknown as BangumiDataProvider;
+});
 
 const loginProvider = {
   ...provider,
   createQrLogin: async () => ({ key: "qr-key", qrUrl: "https://example.com/qr", qrImage: "" }),
-  checkQrLogin: async () => ({ status: "waiting", message: "等待扫码" }),
-} as unknown as MusicProvider;
+  checkQrLogin: async () => ({ status: "waiting" as const, message: "等待扫码" }),
+};
 
 const setup = async () => {
   let clock = 1_000_000;
