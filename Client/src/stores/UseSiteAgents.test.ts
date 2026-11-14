@@ -82,4 +82,11 @@ describe("首页 Agent 活动", () => {
     await act(() => vi.advanceTimersByTimeAsync(125_000));
     expect(result.current).toEqual([]);
   });
+
+  it("整份替换时清掉被换走条目的本地计时器", () => {
+    setSiteAgents([agent("a"), agent("b")]);
+    expect(vi.getTimerCount()).toBe(2);
+    setSiteAgents([agent("a")]);
+    expect(vi.getTimerCount()).toBe(1);
+  });
 });

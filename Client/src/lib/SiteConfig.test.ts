@@ -1,6 +1,7 @@
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OPEN_SITE_FEATURES } from "@bakagame/shared/values";
-import { loadSiteFeatures, resetSiteFeaturesForTest } from "./SiteConfig";
+import { loadSiteFeatures, resetSiteFeaturesForTest, useSiteFeatures } from "./SiteConfig";
 
 const respond = (body: unknown, ok = true) =>
   vi.stubGlobal(
@@ -61,6 +62,24 @@ describe("站点功能可见性", () => {
     respond(OPEN_SITE_FEATURES);
     await Promise.all([loadSiteFeatures(), loadSiteFeatures()]);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("逐项相同的重复回包不再通知订阅者", async () => {
+    respond(rankedClosed);
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useSiteFeatures();
+    });
+    // 挂载 effect 已发起首次读取，等它落定
+    await act(async () => {});
+    expect(result.current).toEqual(rankedClosed);
+    const notified = renders;
+    await act(async () => {
+      await loadSiteFeatures();
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(renders).toBe(notified);
   });
   it("后端挂起时按读失败处理：超时后沿用当前值，并留给下次挂载重试", async () => {
     const hangs = vi.fn(
