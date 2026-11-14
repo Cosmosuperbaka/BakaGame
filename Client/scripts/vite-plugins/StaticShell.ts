@@ -33,6 +33,7 @@ import {
   PAGE_META,
   RUNTIME_PAGES,
   SITE_NAME,
+  SITE_ORIGIN,
   SITE_TAGLINE,
   buildBreadcrumbStructuredData,
   buildFaqStructuredData,
@@ -240,6 +241,22 @@ export function staticShellPlugin() {
       }
 
       writeRuntimeShells(distDir, original);
+
+      // 产物冒烟的期望值与外壳同源：把登记的路径、标题、正文 H1 与 canonical 序列化出去，
+      // asset-smoke 读它来核对产物，免得在脚本里再手抄一份站名、标题与站点地图地址。
+      const shellManifest = {
+        tagline: SITE_TAGLINE,
+        pages: PAGE_META.map((meta) => ({
+          path: meta.path,
+          title: meta.title,
+          h1: meta.shell.h1,
+          canonical: `${SITE_ORIGIN}${meta.path}`,
+        })),
+      };
+      fs.writeFileSync(
+        path.join(distDir, ".shell-manifest.json"),
+        JSON.stringify(shellManifest, null, 2)
+      );
 
       console.log(
         `静态外壳注入完成：${pages.map((page) => page.path).join("、")}；` +

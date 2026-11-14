@@ -111,24 +111,14 @@ try {
 
   // 静态外壳：不执行 JS 的爬虫必须能读到正文与 head 元信息（构建期由 static-shell 插件注入）。
   // 这里只做「有没有」的断言；「会不会产生重复标签」由 E2E 用真实浏览器断言（strict 定位器）。
-  const shellChecks = [
-    { route: "/", text: "二次元朋友的游戏室", canonical: "https://game.baka.website/" },
-    { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
-    {
-      route: "/songuessr",
-      text: "听歌识曲与听歌识番",
-      canonical: "https://game.baka.website/songuessr",
-    },
-    { route: "/cee", text: "多人猜动漫角色", canonical: "https://game.baka.website/cee" },
-    { route: "/abouts", text: "开源致谢", canonical: "https://game.baka.website/abouts" },
-  ];
-  const shellTitles = {
-    "/": "BakaGame - 1000万以内最好玩的小游戏网站",
-    "/whoisfaker": "谁是卧底 Who is Faker - BakaGame",
-    "/songuessr": "听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame",
-    "/cee": "猜动漫角色 CEE（猜猜呗增强版） - BakaGame",
-    "/abouts": "关于 BakaGame：更新日志、开源致谢与隐私条款",
-  };
+  // 期望值取自构建期写出的清单（与外壳同源于 PageMeta），不在脚本里手抄站名、标题与地址。
+  const manifest = JSON.parse(await readFile(path.join(distDir, ".shell-manifest.json"), "utf8"));
+  const shellChecks = manifest.pages.map((page) => ({
+    route: page.path,
+    text: page.h1,
+    canonical: page.canonical,
+  }));
+  const shellTitles = Object.fromEntries(manifest.pages.map((page) => [page.path, page.title]));
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
     const markers = [
@@ -144,7 +134,7 @@ try {
       '"@type":"FAQPage"',
       "常见问题",
       // 分享标语必须出现在描述 content 的开头：社媒卡片只渲染前两行
-      'content="1000万以内最好玩的小游戏网站。',
+      `content="${manifest.tagline}`,
       text,
     ];
     for (const marker of markers) {
@@ -155,13 +145,7 @@ try {
   // 站点地图与分享图由构建期的 seo-artifacts 插件从 PageMeta 生成：
   // 站点地图手工维护时漏改不会报错，缺页只会让搜索引擎更晚发现内容；
   // 分享图必须是 jpg——部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图。
-  const sitemapLocs = [
-    "https://game.baka.website/",
-    "https://game.baka.website/whoisfaker",
-    "https://game.baka.website/songuessr",
-    "https://game.baka.website/cee",
-    "https://game.baka.website/abouts",
-  ];
+  const sitemapLocs = manifest.pages.map((page) => page.canonical);
   const sitemapXml = await (await fetch(`${baseUrl}/sitemap.xml`)).text();
   for (const loc of sitemapLocs) {
     if (!sitemapXml.includes(`<loc>${loc}</loc>`)) throw new Error(`sitemap.xml 缺少 ${loc}`);
