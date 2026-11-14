@@ -670,6 +670,104 @@ describe("CEE 状态同步通道行为", () => {
       expect(useCEEStore.getState().toasts.map((toast) => toast.text)).toEqual(["房间不存在"])
     );
   });
+
+  it("入房开头重置同步基线：上一段会话留下的修订号不会被入房期间的补丁续上", async () => {
+    writeCEESession("1234", "tok");
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision: 1, state: snapshot },
+    });
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) =>
+      command === "cee.room.reconnect"
+        ? new Promise<Record<string, unknown>>((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const restoring = useCEEStore.getState().reconnectRoom("1234");
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith("cee.room.reconnect", expect.anything(), expect.anything())
+    );
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/name", value: "错位" }],
+      },
+    });
+    // 基线已在入房开头清空：编号接得上的补丁也不能落到旧房态上，只能走全量。
+    await vi.waitFor(() => expect(requestSyncCalls(send)).toHaveLength(1));
+
+    resolveAck({
+      roomId: "1234",
+      source: "native",
+      sessionToken: "tok2",
+      snapshot,
+      privateState: null,
+    });
+    await restoring;
+    expect(useCEEStore.getState().snapshot?.name).toBe("测试");
+  });
+
+  it("弃用晚到的会话时连接已经更换：只离房，不重置新连接上的房间态", async () => {
+    let status: (connected: boolean) => void = () => {};
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+      status = handler;
+      return () => {};
+    });
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+    vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {});
+    let resolveAck!: (value: Record<string, unknown>) => void;
+    let resolveLeave!: (value: Record<string, unknown>) => void;
+    const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
+      if (command === "cee.room.join")
+        return new Promise<Record<string, unknown>>((resolve) => {
+          resolveAck = resolve;
+        });
+      if (command === "cee.room.leave")
+        return new Promise<Record<string, unknown>>((resolve) => {
+          resolveLeave = resolve;
+        });
+      return Promise.resolve({ originalAvailable: false });
+    });
+    const cleanup = initCEEWs();
+    try {
+      const controller = new AbortController();
+      const outcome = useCEEStore
+        .getState()
+        .joinRoom("1234", "玩家", undefined, controller.signal)
+        .then(
+          () => null,
+          (error: unknown) => error
+        );
+      controller.abort();
+      resolveAck({
+        source: "native",
+        roomId: "1234",
+        sessionToken: "late-token",
+        snapshot,
+        privateState: null,
+      });
+      await vi.waitFor(() =>
+        expect(send.mock.calls.map(([command]) => command)).toContain("cee.room.leave")
+      );
+      // 离房还没回，连接换了一条，新连接上已经有了别的房间态。
+      status(false);
+      status(true);
+      useCEEStore.setState({ roomId: "5678", sessionToken: "fresh" });
+      resolveLeave({});
+      expect(await outcome).toMatchObject({ name: "AbortError" });
+      expect(useCEEStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "fresh" });
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", async () => {
