@@ -6,6 +6,8 @@
 
 请通过 GitHub 的[私密漏洞报告](https://github.com/Cosmosuperbaka/BakaGame/security/advisories/new)提交，写清影响范围、复现步骤和你认为的严重程度。
 
+这是个人维护的项目，通常会在一周内回复确认收到。修复所需的时间取决于问题本身，处理进展会在这份私密报告里同步。
+
 ## 范围
 
 - 本仓库的服务端、客户端、桌面与移动外壳，以及 MCP 接入。

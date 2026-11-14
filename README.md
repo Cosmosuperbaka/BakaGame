@@ -1,5 +1,7 @@
 # BakaGame
 
+[![CI](https://github.com/Cosmosuperbaka/BakaGame/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cosmosuperbaka/BakaGame/actions/workflows/ci.yml)
+
 **1000万以内最好玩的小游戏网站。** 一间开给二次元朋友的游戏室：开一间房，把房号发进群，人齐就开。
 
 BakaGame is an open-source, Chinese-language party game site for anime fans, played in the browser with friends in the same room: Who is Faker (a "Who is the Spy" / Undercover word game with a night phase), Songuessr (guess the song, or the anime it came from) and CEE (guess the anime character; an enhanced edition of the Chinese fan game 二刺猿笑传之猜猜呗).
