@@ -1156,10 +1156,14 @@ describe("席位命令", () => {
   test("选队：非整数、小于 1、超上限被拒，退出队伍合法", async () => {
     const game = await setup({ guests: 1 });
     const guest = game.guests[0]!.client;
-    for (const team of [1.5, 0, -1, 99]) {
+    for (const team of [1.5, 0, -1, 9, 99]) {
       expect((await rejection(game.send(guest, "song.player.setTeam", { team }))).code).toBe(
         "INVALID_TEAM"
       );
+    }
+    // 两个端点都选得上：上限那一队不能被误拒
+    for (const team of [1, 8]) {
+      await expect(game.send(guest, "song.player.setTeam", { team })).resolves.toEqual({ team });
     }
     await game.send(guest, "song.player.setTeam", { team: 2 });
     await expect(game.send(guest, "song.player.setTeam", { team: null })).resolves.toEqual({
