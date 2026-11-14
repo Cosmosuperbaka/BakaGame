@@ -424,11 +424,12 @@ export default function LandingPage() {
           className="flex items-center justify-center gap-2 text-4xl font-bold sm:gap-3 sm:text-5xl md:gap-4 md:text-6xl [@media(max-height:680px)]:text-3xl"
         >
           Baka
+          {/* 动图自带白底（素材不改）：暗色下把白压到与标题文字同一明度，读作和字同亮的一块，不再是刺眼的白方块。 */}
           <img
             src="/assets/logo.gif"
             alt=""
             aria-hidden="true"
-            className="h-12 rounded-md object-cover sm:h-14 md:h-16 [@media(max-height:680px)]:h-9"
+            className="h-12 rounded-md object-cover sm:h-14 md:h-16 dark:brightness-90 [@media(max-height:680px)]:h-9"
           />
           Game
         </motion.h1>
