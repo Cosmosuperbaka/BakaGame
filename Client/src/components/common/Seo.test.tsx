@@ -21,7 +21,7 @@ describe("Seo", () => {
       expect(description?.getAttribute("content")).toBe("测试描述");
     });
     const canonical = document.head.querySelector('link[rel="canonical"]');
-    expect(canonical?.getAttribute("href")).toBe("https://game.baka.website/whoisfaker");
+    expect(canonical?.getAttribute("href")).toBe(`${SITE_ORIGIN}/whoisfaker`);
     await waitFor(() => expect(document.title).toBe("谁是卧底 Who is Faker - BakaGame"));
   });
 
@@ -66,7 +66,7 @@ describe("Seo", () => {
         document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")
       ).toBe("听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame");
       expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute("content")).toBe(
-        "https://game.baka.website/songuessr"
+        `${SITE_ORIGIN}/songuessr`
       );
       expect(
         document.head.querySelector('meta[property="og:site_name"]')?.getAttribute("content")

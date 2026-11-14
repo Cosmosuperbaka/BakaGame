@@ -22,7 +22,7 @@ const meta = {
   args: {
     open: true,
     floor: desktopFloor,
-    downloadUrl: "https://cdn.baka.website/files/BakaGame-latest-x64.exe",
+    downloadUrl: "https://cdn.example.com/files/BakaGame-latest-x64.exe",
     onDismiss: fn(),
   },
 } satisfies Meta<typeof ClientUpdateBanner>;
@@ -39,7 +39,7 @@ export const MobileOutdated: Story = {
   name: "移动端版本过旧",
   args: {
     floor: mobileFloor,
-    downloadUrl: "https://cdn.baka.website/files/BakaGame-latest-release.apk",
+    downloadUrl: "https://cdn.example.com/files/BakaGame-latest-release.apk",
   },
 };
 export const NothingToDownload: Story = {

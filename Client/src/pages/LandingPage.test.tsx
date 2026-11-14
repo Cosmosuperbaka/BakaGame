@@ -37,7 +37,7 @@ describe("LandingPage", () => {
     renderLandingPage();
 
     const friendLinks = [
-      { name: "二刺猿笑传之猜猜呗", href: "https://ccb.baka.website/" },
+      { name: "二刺猿笑传之猜猜呗", href: expect.stringMatching(/^https:\/\/ccb\./) },
       { name: "动漫高手一眼顶针", href: "https://anipeek.animaster.dpdns.org/" },
       { name: "动漫高手截码战", href: "https://decrypto.monight.dpdns.org/" },
     ];

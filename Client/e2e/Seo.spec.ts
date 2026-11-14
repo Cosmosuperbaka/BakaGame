@@ -14,7 +14,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(description).toHaveAttribute("content", /BakaGame/);
 
     const canonical = page.locator('head link[rel="canonical"]');
-    await expect(canonical).toHaveAttribute("href", "https://game.baka.website/");
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/`);
   });
 
   test("谁是卧底大厅有独立标题、描述与 canonical", async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(description).toHaveAttribute("content", /谁是卧底/);
 
     const canonical = page.locator('head link[rel="canonical"]');
-    await expect(canonical).toHaveAttribute("href", "https://game.baka.website/whoisfaker");
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/whoisfaker`);
   });
 
   test("听歌猜歌大厅有独立标题、描述与 canonical", async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(description).toHaveAttribute("content", /听歌猜歌/);
 
     const canonical = page.locator('head link[rel="canonical"]');
-    await expect(canonical).toHaveAttribute("href", "https://game.baka.website/songuessr");
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/songuessr`);
   });
 
   test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
@@ -50,7 +50,7 @@ test.describe("页面 SEO 元信息", () => {
     );
     await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
       "href",
-      "https://game.baka.website/cee"
+      `${SITE_ORIGIN}/cee`
     );
     await expect(page.locator('head meta[name="robots"]')).toHaveAttribute(
       "content",
@@ -62,7 +62,7 @@ test.describe("页面 SEO 元信息", () => {
     expect(JSON.parse((await structuredData.textContent())!)).toMatchObject({
       "@type": ["VideoGame", "WebApplication"],
       name: "CEE（二刺猿笑传之猜猜呗增强版）",
-      url: "https://game.baka.website/cee",
+      url: `${SITE_ORIGIN}/cee`,
     });
     const faqData = page.locator('head script[id="bakagame-faq-structured-data"]');
     await expect(faqData).toHaveCount(1);
