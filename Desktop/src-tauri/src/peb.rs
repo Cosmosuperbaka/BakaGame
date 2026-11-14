@@ -47,6 +47,12 @@ const _: () = assert!(
     "x64 的 LIST_ENTRY / UNICODE_STRING 都应是 16 字节"
 );
 
+// SAFETY: 两个结构体都只由整数与裸指针字段构成，任何位型都是合法取值
+#[cfg(target_os = "windows")]
+unsafe impl crate::winapi::AnyBitPattern for ListEntry {}
+#[cfg(target_os = "windows")]
+unsafe impl crate::winapi::AnyBitPattern for UnicodeString {}
+
 /// 一条加载模块记录：基址用于交叉验证，路径用于白名单判定
 pub struct LoadedModule {
     pub base: usize,

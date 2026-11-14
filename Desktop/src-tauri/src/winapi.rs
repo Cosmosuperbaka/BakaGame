@@ -242,9 +242,26 @@ pub fn command_line() -> String {
     String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(ptr, len) })
 }
 
+/// 任何位型都是合法取值的类型（整数、裸指针，以及只由它们构成的 `repr(C)` 结构体）。
+///
+/// `read_memory` 先把目标写成全零再读入，读到的字节来自别的内存，对 `bool`、枚举、引用这类
+/// 有无效位型的类型会产生未定义行为；用这个标记特征把它们挡在编译期之外。
+///
+/// # Safety
+/// 实现者保证 `Self` 的每一种位型都是合法取值，且没有需要被调用的 `Drop`。
+pub unsafe trait AnyBitPattern: Copy {}
+
+unsafe impl AnyBitPattern for u8 {}
+unsafe impl AnyBitPattern for u16 {}
+unsafe impl AnyBitPattern for u32 {}
+unsafe impl AnyBitPattern for u64 {}
+unsafe impl AnyBitPattern for usize {}
+unsafe impl<T> AnyBitPattern for *mut T {}
+unsafe impl<T> AnyBitPattern for *const T {}
+
 /// 经 `ReadProcessMemory` 读自身内存（读回的是内核视角的页内容，与被 hook 的用户态
-/// 函数无关，这正是与 Toolhelp 枚举做交叉验证的意义）
-pub fn read_memory<T: Copy>(base: *mut c_void) -> Option<T> {
+/// 函数无关，这正是与 Toolhelp 枚举做交叉验证的意义）。坏指针由 API 返回失败，不会触发访问异常。
+pub fn read_memory<T: AnyBitPattern>(base: *mut c_void) -> Option<T> {
     if base.is_null() {
         return None;
     }
@@ -356,6 +373,22 @@ const NULL_BLOB: DATA_BLOB = DATA_BLOB {
 mod tests {
     use super::*;
 
+    /// 读自身内存：读得出自己的数据；空指针与明显无效的地址返回 None 而不是触发访问异常
+    #[test]
+    fn read_memory_reads_own_data_and_survives_bad_pointers() {
+        let value: u64 = 0x0123_4567_89AB_CDEF;
+        let ptr = &value as *const u64 as *mut c_void;
+        assert_eq!(read_memory::<u64>(ptr), Some(value));
+        let bytes: [u8; 4] = [1, 2, 3, 4];
+        assert_eq!(
+            read_memory::<u32>(bytes.as_ptr() as *mut c_void),
+            Some(u32::from_le_bytes(bytes))
+        );
+        assert_eq!(read_memory::<u64>(std::ptr::null_mut()), None);
+        assert_eq!(read_memory::<u64>(0x10usize as *mut c_void), None);
+        assert_eq!(read_memory::<usize>(usize::MAX as *mut c_void), None);
+    }
+
     /// DPAPI 往返：解密描述串参数传空之后仍要能正常解开；熵不对必须解不开
     #[test]
     fn dpapi_roundtrip_and_entropy_binding() {
@@ -366,7 +399,13 @@ mod tests {
             let back = dpapi_unprotect(&wrapped, b"entropy-a").expect("同一熵应能解开");
             assert_eq!(&back[..], &secret[..]);
         }
-        assert!(dpapi_unprotect(&wrapped, b"entropy-b").is_none(), "熵不同不得解开");
-        assert!(dpapi_unprotect(&[1, 2, 3, 4], b"entropy-a").is_none(), "乱数据不得解开");
+        assert!(
+            dpapi_unprotect(&wrapped, b"entropy-b").is_none(),
+            "熵不同不得解开"
+        );
+        assert!(
+            dpapi_unprotect(&[1, 2, 3, 4], b"entropy-a").is_none(),
+            "乱数据不得解开"
+        );
     }
 }
