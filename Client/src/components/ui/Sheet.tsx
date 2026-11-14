@@ -22,6 +22,23 @@ export interface SheetProps {
 }
 
 /**
+ * 覆盖面板的标题栏：侧边面板与房间抽屉共用一档高度与字重，标题落在标题层（半粗衬线），
+ * 两类面板并排出现时读起来是同一种东西。须放在 Radix Dialog 的 Content 里。
+ */
+export function OverlayPanelTitleBar({ title }: { title: ReactNode }) {
+  return (
+    <div className="flex h-12 shrink-0 items-center gap-3 border-b pl-4 pr-2">
+      <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-semibold">
+        {title}
+      </DialogPrimitive.Title>
+      <DialogPrimitive.Close asChild>
+        <CloseButton aria-label="关闭面板" />
+      </DialogPrimitive.Close>
+    </div>
+  );
+}
+
+/**
  * 覆盖式侧边面板。基于 Radix Dialog：焦点锁在面板内、Esc 与点背板关闭、
  * 读屏读得到标题，关闭后焦点回到打开它的元素，这些都由 Radix 保证。
  *
@@ -80,14 +97,7 @@ export function Sheet({
                     : "left-0 border-r [--tw-ring-shadow:-1rem_0_0_0_var(--color-popover)]"
                 )}
               >
-                <div className="flex h-12 shrink-0 items-center gap-3 border-b pl-4 pr-2">
-                  <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-semibold">
-                    {title}
-                  </DialogPrimitive.Title>
-                  <DialogPrimitive.Close asChild>
-                    <CloseButton aria-label="关闭面板" />
-                  </DialogPrimitive.Close>
-                </div>
+                <OverlayPanelTitleBar title={title} />
                 <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
                   {children}
                 </div>

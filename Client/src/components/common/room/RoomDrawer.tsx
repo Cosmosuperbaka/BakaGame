@@ -1,8 +1,8 @@
 import { useRef, type ReactNode, type RefObject } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
-import { CloseButton } from "@/components/ui/CloseButton";
 import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
+import { OverlayPanelTitleBar } from "@/components/ui/Sheet";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
 import { sheetSlide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
@@ -90,14 +90,7 @@ export function RoomDrawer({
                   className ?? (side === "left" ? "w-72" : "w-80")
                 )}
               >
-                <div className="flex h-10 shrink-0 items-center justify-between border-b pl-3 pr-1">
-                  <DialogPrimitive.Title className="text-sm font-medium">
-                    {title}
-                  </DialogPrimitive.Title>
-                  <DialogPrimitive.Close asChild>
-                    <CloseButton aria-label="关闭面板" />
-                  </DialogPrimitive.Close>
-                </div>
+                <OverlayPanelTitleBar title={title} />
                 <div className="min-h-0 flex-1">{children}</div>
               </motion.aside>
             </DialogPrimitive.Content>
