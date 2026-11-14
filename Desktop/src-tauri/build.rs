@@ -17,8 +17,9 @@ use std::process::Command;
 /// 与 `src/notice.rs` 的 `CLIENT_NOTICE` 保持一致的完整条款；`{CANARY}` 由本脚本替换。
 const NOTICE_TEMPLATE: &str = r#"# BakaGame 桌面客户端 · 条款与告知
 
-> 本文件由 `build.rs` 在每次构建时生成，请勿手工编辑：改文案要改 `build.rs` 里的模板，
-> 否则会在下一次构建被覆盖。运行时条款在 `src/notice.rs`，构建身份在 `src/main.rs`。
+> 本文件由 `build.rs` 在每次构建时生成到构建输出目录（`OUT_DIR`），请勿手工编辑：改文案要改
+> `build.rs` 里的模板。仓库里 `src-tauri/CLIENT_NOTICE.md` 只是占位，不会被构建改写。
+> 运行时条款在 `src/notice.rs`，构建身份在 `src/main.rs`。
 
 本客户端带完整性校验与唯一构建标记。
 
@@ -182,12 +183,14 @@ fn derived_random8() -> String {
     format!("{:08x}", (hasher.finish() & 0xFFFF_FFFF) as u32)
 }
 
+/// 带真实蜜标的条款文件写到构建输出目录：被追踪的 `CLIENT_NOTICE.md` 只是占位，
+/// 构建回写它会让工作树变脏，误提交还会把每次不同的蜜标带进历史。
 fn write_notice(canary: &str) {
-    let manifest = match env::var("CARGO_MANIFEST_DIR") {
+    let out_dir = match env::var("OUT_DIR") {
         Ok(v) => v,
         Err(_) => return,
     };
-    let path = std::path::Path::new(&manifest).join("CLIENT_NOTICE.md");
+    let path = std::path::Path::new(&out_dir).join("CLIENT_NOTICE.md");
     let content = NOTICE_TEMPLATE.replace("{CANARY}", canary);
     let previous = std::fs::read_to_string(&path).ok();
     if previous.as_deref() == Some(content.as_str()) {

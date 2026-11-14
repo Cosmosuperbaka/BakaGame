@@ -5,7 +5,7 @@
 //! `CLIENT_NOTICE.md` 一致（那份文件多一段「由 build.rs 生成」的前言）—— **两处要一起改**。
 //!
 //! 蜜标 `BKG-CANARY-<buildId>-<random8>` 由 `build.rs` 注入（`cargo:rustc-env`），
-//! 同时出现在 `.rodata` 与 `CLIENT_NOTICE.md` 里；在外挂或泄露包中发现某条标记，
+//! 同时出现在 `.rodata` 与构建输出目录里的 `CLIENT_NOTICE.md` 里；在外挂或泄露包中发现某条标记，
 //! 就能定位到具体的构建与分发批次。
 
 /// 条款正文常量（`.rodata`，`strings` 可读）
@@ -89,6 +89,20 @@ fn redact_proxy(proxy: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 仓库里被追踪的 CLIENT_NOTICE.md 必须保持「尚未构建」的占位：构建生成的带真实蜜标的版本
+    /// 只能写到构建输出目录。构建回写被追踪文件，会让工作树变脏，误提交还会把蜜标带进历史
+    #[test]
+    fn tracked_notice_file_stays_the_unbuilt_placeholder() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("CLIENT_NOTICE.md");
+        let text = std::fs::read_to_string(&path).expect("应能读到 CLIENT_NOTICE.md");
+        assert!(
+            text.contains("BKG-CANARY-unbuilt-00000000"),
+            "CLIENT_NOTICE.md 被构建改写成了真实蜜标：{}",
+            crate::config::canary()
+        );
+        assert!(!text.contains(crate::config::canary()));
+    }
 
     /// 代理凭据不得落进日志
     #[test]

@@ -57,7 +57,8 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 ### 蜜标与构建批次
 
 `build.rs` 每次构建生成一枚构建标记，同时写进二进制 `.rodata`（`notice.rs` 的 `CLIENT_NOTICE` 与
-`main.rs` 的构建标记常量）和 `src-tauri/CLIENT_NOTICE.md`。
+`main.rs` 的构建标记常量）和构建输出目录（`OUT_DIR`）里的 `CLIENT_NOTICE.md`。仓库里的
+`src-tauri/CLIENT_NOTICE.md` 只是占位，构建不会改写它，也不要把构建生成的版本提交进来。
 
 CI 必须显式传批次标识与随机段两个变量，否则同一发布批次的每个制品标记都不一样，追溯时会误判成多个批次。
 未提供时由短提交号与本机熵派生，只保证「每次构建互不相同」。
