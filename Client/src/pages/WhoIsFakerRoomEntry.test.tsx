@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import { deferred } from "@/test/Deferred";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore, initWhoIsFakerWs } from "@/stores/UseWhoIsFakerStore";
 import type { ServerMessage } from "@bakagame/shared";
@@ -42,15 +43,6 @@ vi.mock("@/components/whoisfaker/layout/FakerAssignedWord", () => ({
   FakerAssignedWord: () => null,
 }));
 const initial = useWhoIsFakerStore.getState();
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 /** 进房 ack 只有身份三元组；首屏快照与私有态走 event 通道，见 `WhoIsFakerRoomEnterAck`。 */
 const receipt = () => ({ roomId: "1234", playerId: "player-1", sessionToken: "fixture-token" });
 function mount(strict = false, roomId = "1234") {

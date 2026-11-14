@@ -13,7 +13,7 @@ import {
 } from "../src/shared/CEE";
 import type { CEERankedCommand } from "../src/shared/CEERanked";
 import { FixtureRoom, originalCharacter as character, originalData } from "./CEEOriginalFixtures";
-import { deferred } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 
 const services: CEEOriginalService[] = [];
 afterEach(() => services.splice(0).forEach((service) => service.close()));

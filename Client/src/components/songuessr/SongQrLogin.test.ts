@@ -1,16 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import { deferred } from "@/test/Deferred";
 import { SongQrLogin, type QrLoginDeps } from "./SongQrLogin";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 const qr = (key: string) => ({
   key,

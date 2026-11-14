@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import type { ServerMessage } from "@bakagame/shared";
 const sockets = vi.hoisted(() => {
   const make = () => ({
@@ -55,15 +56,6 @@ import {
 import { wifSnapshot, wifPrivate, WIF_PEOPLE } from "@/stories/fixtures/WhoIsFaker";
 import { songSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
-const deferred = <T>() => {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-};
 const params = {
   roomId: "1234",
   name: "取消入房",

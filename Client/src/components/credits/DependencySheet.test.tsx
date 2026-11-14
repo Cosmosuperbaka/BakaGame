@@ -11,6 +11,7 @@ import {
   CREDITS_FIXTURE_LICENSES,
   loadFixtureLicense,
 } from "./CreditsFixtures";
+import { deferred } from "@/test/Deferred";
 import { DependencySheet } from "./DependencySheet";
 
 const byName = creditDependencyIndex(CREDITS_FIXTURE_DEPENDENCIES);
@@ -19,14 +20,6 @@ function fixtureDependency(name: string): CreditDependency {
   const dependency = byName.get(name);
   if (!dependency) throw new Error(`夹具缺少依赖 ${name}`);
   return dependency;
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
 }
 
 function renderSheet({

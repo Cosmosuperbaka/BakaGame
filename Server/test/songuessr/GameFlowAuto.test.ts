@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   connection,
   createRoom,
-  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -15,6 +14,7 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { type SonGuessrPrivateState, type SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { type SongSearchResult } from "../../src/shared/SonGuessr";
 import { type MusicProvider } from "../../src/infrastructure/music/MusicProvider";
+import { deferred } from "../support/Deferred";
 
 describe("SonGuessrService", () => {
   test("自动出题按歌单与歌手交集随机选择歌曲且所有正式玩家都可猜", async () => {
@@ -719,7 +719,7 @@ describe("SonGuessrService", () => {
   });
 
   test("自动出题取歌期间房间被关闭，候选循环不再继续回源", async () => {
-    const gate = deferredServiceResult<void>();
+    const gate = deferred<void>();
     const calls: string[] = [];
     // 曲名各不相同：同名的候选会被并成一首，循环就只有一个候选了。
     const candidates = ["c1", "c2", "c3"].map((id) => makeSong(id, `候选${id}`, 2020));
@@ -782,7 +782,7 @@ describe("SonGuessrService", () => {
     afterEach(() => releaseGate?.());
     /** 开局复核卡在 getLoginStatus：此时阶段仍是 waiting，但房间已经在开局。 */
     const setupStarting = async (questionMode: "manual" | "automatic", startNow = true) => {
-      const gate = deferredServiceResult<void>();
+      const gate = deferred<void>();
       let hold = false;
       const slowProvider: MusicProvider = {
         ...provider,

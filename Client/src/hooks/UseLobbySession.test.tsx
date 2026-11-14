@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import { useLobbySession } from "./UseLobbySession";
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
@@ -12,15 +13,6 @@ const room: { roomId: string; name: string; hasPassword?: boolean } = {
 const event = {
   currentTarget: document.createElement("button"),
 } as unknown as React.MouseEvent<HTMLElement>;
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((a, b) => {
-    resolve = a;
-    reject = b;
-  });
-  return { promise, resolve, reject };
-}
 function setup(overrides = {}) {
   const options = {
     gamePath: "/cee",

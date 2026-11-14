@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ceeTestHarness, character, deferred, type CEETestClient } from "./CEENativeFixtures";
+import { ceeTestHarness, character, type CEETestClient } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 import type { GameRecorder } from "../src/domain/GameRecord";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
 import {

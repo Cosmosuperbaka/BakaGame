@@ -1,6 +1,7 @@
 import { StrictMode, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import { deferred } from "@/test/Deferred";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SonGuessrMusicPoolView,
@@ -30,15 +31,6 @@ vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate })
 vi.mock("@/lib/SonGuessrWs", () => ({ waitForConnection: waitConnection, send }));
 vi.mock("@/lib/Random", () => ({ randomRoomId: randomId }));
 const initial = useSonGuessrStore.getState();
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 const receipt = (roomId = "1234") => ({
   roomId,
   sessionToken: "fixture-token",

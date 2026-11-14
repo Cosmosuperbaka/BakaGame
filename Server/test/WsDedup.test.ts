@@ -4,6 +4,7 @@ import { AppError } from "../src/domain/Errors";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ServerMessage } from "../src/shared/Protocol";
 import { createCommandDeduplicator } from "../src/transport/ws/Dedup";
+import { deferred } from "./support/Deferred";
 
 const logger = {
   logOperation: () => {},
@@ -19,16 +20,6 @@ const createSocket = () => {
 const options = { ackTtlMs: 60_000, ackMax: 8, inFlightMax: 8, logger };
 
 const message = (id: string) => ({ id, type: "demo", traceId: `trace-${id}` });
-
-const deferred = () => {
-  let resolve!: (value: unknown) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<unknown>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-};
 
 test("同一连接重复发同一命令：只执行一次，第二次回放同一个 ACK", async () => {
   const dedup = createCommandDeduplicator(options);
@@ -165,7 +156,7 @@ test("完成缓存到期后不再回放", async () => {
 test("飞行中表封顶：挤掉最旧的条目后，该命令的重发不再被去重", async () => {
   const dedup = createCommandDeduplicator({ ...options, inFlightMax: 2 });
   const { ws } = createSocket();
-  const gates = [deferred(), deferred(), deferred()];
+  const gates = [deferred<string>(), deferred<string>(), deferred<string>()];
   let oldestRuns = 0;
   const pending = [
     dedup.run({

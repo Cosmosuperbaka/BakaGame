@@ -1,17 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { deferred } from "@/test/Deferred";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<void>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 describe("usePhaseAction", () => {
   it("同一同步批次的重复与冲突提交只执行首个命令，ACK后恢复可提交", async () => {

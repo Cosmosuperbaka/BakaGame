@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import type {
   BangumiSongCandidate,
   BangumiSubjectSearchResult,
@@ -16,16 +17,6 @@ afterEach(() => {
   // setState 的普通 action 替换不属于 vi.restoreAllMocks 的还原范围。
   useSonGuessrStore.setState(initial, true);
 });
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((onResolve, onReject) => {
-    resolve = onResolve;
-    reject = onReject;
-  });
-  return { resolve, reject, promise };
-}
 
 const STAR: SongSearchResult = {
   id: "song-1",

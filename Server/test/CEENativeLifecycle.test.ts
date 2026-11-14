@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ceeTestHarness, character, deferred } from "./CEENativeFixtures";
+import { ceeTestHarness, character } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 import { ROOM_ID_TEST_MODE, type CEECharacterView } from "../src/shared/Index";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
 import {

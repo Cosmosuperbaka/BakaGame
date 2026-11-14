@@ -9,11 +9,11 @@ import {
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { SonGuessrPrivateState, SonGuessrRoomSnapshot, SongDetails } from "../../src/shared/Index";
 import { TEST_ROOMS_ON } from "../TestRoomPolicy";
+import { deferred } from "../support/Deferred";
 import {
   TestConnection,
   connection,
   createRoom,
-  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -418,7 +418,7 @@ describe("SonGuessrService", () => {
     });
 
     test("回座刷新播放地址的等待期间，缺状态的回座者不被当作已作答完毕", async () => {
-      const hold = deferredServiceResult<SongDetails>();
+      const hold = deferred<SongDetails>();
       let holding = false;
       const musicProvider: MusicProvider = {
         ...provider,
@@ -472,7 +472,7 @@ describe("SonGuessrService", () => {
   describe("建私密房期间（口令摘要尚未算完）", () => {
     /** 把摘要停在手里：测试决定它何时算完，窗口内的一切读写都发生在 await 之间。 */
     const holdDigest = () => {
-      const digest = deferredServiceResult<string>();
+      const digest = deferred<string>();
       const hasher = {
         hash: () => digest.promise,
         verify: async (password: string, stored: string) => stored === `digest:${password}`,

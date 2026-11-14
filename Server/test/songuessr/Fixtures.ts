@@ -183,16 +183,6 @@ export const startRound = async (
   });
 };
 
-export const deferredServiceResult = <T>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-};
-
 export interface AnimeSoloOptions {
   musicProvider: MusicProvider;
   bangumiProvider: BangumiDataProvider;

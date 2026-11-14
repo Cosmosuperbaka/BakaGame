@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { deferred } from "@/test/Deferred";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -18,16 +19,6 @@ const fakerMemory: FakerRoomSettingsMemory = {
   spectatorsSeeAnswers: false,
   roleConfig: { undercoverCount: 2, hasAngel: false, hasBlank: true },
 };
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((a, b) => {
-    resolve = a;
-    reject = b;
-  });
-  return { promise, resolve, reject };
-}
 
 describe("useRoomSettingsRestore", () => {
   // 记忆的形状校验按需动态加载共享 schema：先暖好模块缓存，用例里的等待才不被首次加载拖超时。

@@ -12,8 +12,8 @@ import {
   createRoom,
   joinRoom,
   startRound,
-  deferredServiceResult,
 } from "./Fixtures";
+import { deferred } from "../support/Deferred";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   type BangumiSubjectDetails,
@@ -32,7 +32,7 @@ import { type BangumiDataProvider } from "../../src/infrastructure/BangumiDataPr
 describe("SonGuessr service 异步归属回归", () => {
   for (const fails of [false, true]) {
     test("自动下一轮迟到" + (fails ? "失败" : "成功") + "不得覆盖返回等待", async () => {
-      const pending = deferredServiceResult<{
+      const pending = deferred<{
         info: { id: string; name: string; songCount: number };
         songs: SongDetails[];
       }>();
@@ -96,8 +96,8 @@ describe("SonGuessr service 异步归属回归", () => {
 
   for (const kind of ["song", "anime"] as const) {
     test(kind + "校验中拒绝放弃且不接受跨命令竞态", async () => {
-      const songPending = deferredServiceResult<SongDetails>();
-      const animePending = deferredServiceResult<BangumiSubjectDetails>();
+      const songPending = deferred<SongDetails>();
+      const animePending = deferred<BangumiSubjectDetails>();
       let delay = false;
       const service = new SonGuessrService({
         musicProvider: { ...provider, getSongMetadata: async () => songPending.promise },
@@ -194,11 +194,9 @@ describe("SonGuessr service 音乐认证意图", () => {
     for (const action of ["clear", "replace", "leave"] as const) {
       test(kind + "迟到认证不能覆盖" + action, async () => {
         const pending =
-          deferredServiceResult<
-            Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>
-          >();
+          deferred<Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>>();
         const qrPending =
-          deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["checkQrLogin"]>>>>();
+          deferred<Awaited<ReturnType<NonNullable<MusicProvider["checkQrLogin"]>>>>();
         let delay = false;
         let usedCookie: MusicCookieInput | undefined;
         const service = new SonGuessrService({
@@ -603,8 +601,7 @@ describe("SonGuessr service 音乐认证意图", () => {
 
 describe("房主变更与他人的在途登录", () => {
   test("房主转让时，其他玩家正在进行的登录不被作废", async () => {
-    const pending =
-      deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>>();
+    const pending = deferred<Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>>();
     let delay = false;
     const service = new SonGuessrService({
       musicProvider: {
@@ -649,7 +646,7 @@ describe("房主变更与他人的在途登录", () => {
 
 describe("开局加载期间新登录的账号", () => {
   test("自动开局加载中登录的账号默认不入池", async () => {
-    const gate = deferredServiceResult<void>();
+    const gate = deferred<void>();
     let hold = false;
     const service = new SonGuessrService({
       musicProvider: {
@@ -873,10 +870,8 @@ test("SonGuessr 全体音频从未就绪仍在准备宽限后获得完整答题�
 });
 
 test("SonGuessr 被撤销的下一轮 finally 不解除新开局锁", async () => {
-  const old =
-    deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
-  const current =
-    deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
+  const old = deferred<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
+  const current = deferred<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
   let calls = 0;
   const playlist = { info: { id: "42", name: "fixture", songCount: 1 }, songs: [songs.answer] };
   const service = new SonGuessrService({
@@ -940,8 +935,7 @@ test("SonGuessr 被撤销的下一轮 finally 不解除新开局锁", async () =
 });
 
 test("SonGuessr 下一轮房主转移再返回也不得恢复旧操作", async () => {
-  const pending =
-    deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
+  const pending = deferred<Awaited<ReturnType<NonNullable<MusicProvider["getPlaylistSongs"]>>>>();
   let delay = false;
   const playlist = { info: { id: "42", name: "fixture", songCount: 1 }, songs: [songs.answer] };
   const service = new SonGuessrService({

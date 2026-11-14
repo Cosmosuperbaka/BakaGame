@@ -5,7 +5,6 @@ import {
   TestConnection,
   connection,
   createRoom,
-  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -13,6 +12,7 @@ import {
   songs,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { deferred } from "../support/Deferred";
 import {
   createManualLyricClip,
   createSongLyricClip,
@@ -760,7 +760,7 @@ describe("手动出题片段", () => {
   describe("开局加载期间停机再恢复", () => {
     /** 卡在开局复核的那一刻导出快照（带 JSON 往返，和真实落盘一致），再在新进程里恢复。 */
     const restoreWhileStarting = async (questionMode: "manual" | "automatic") => {
-      const gate = deferredServiceResult<void>();
+      const gate = deferred<void>();
       let hold = false;
       const slowProvider: MusicProvider = {
         ...provider,

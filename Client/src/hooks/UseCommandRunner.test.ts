@@ -1,17 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { deferred } from "@/test/Deferred";
 import { useCommandRunner } from "./UseCommandRunner";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 
 describe("useCommandRunner", () => {
   it("同一命令在途时重复调用被忽略，落定后解锁并回传结果", async () => {

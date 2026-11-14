@@ -1,16 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import { createRoomEntry } from "./RoomEntry";
 
 /** 手动落定的 Promise：用来把「请求在途」的窗口卡在测试想要的位置。 */
-const deferred = <T>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-};
 
 const flush = async () => {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();

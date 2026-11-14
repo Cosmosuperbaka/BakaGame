@@ -1,16 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ceeWsClient } from "@/lib/CEEWs";
+import { deferred } from "@/test/Deferred";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEEAction } from "./UseCEEAction";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => {
-    resolve = yes;
-  });
-  return { promise, resolve };
-}
 
 afterEach(() => {
   useCEEStore.getState().resetRoom();

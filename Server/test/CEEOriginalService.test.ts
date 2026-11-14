@@ -16,7 +16,7 @@ import {
   originalData as data,
   FixtureRoom,
 } from "./CEEOriginalFixtures";
-import { deferred } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 import type { CEECharacterView } from "../src/shared/CEE";
 
 const services: CEEOriginalService[] = [];

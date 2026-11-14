@@ -7,6 +7,7 @@ import ts from "typescript";
 import { eachGame } from "../../src/application/GameRegistry";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "../../src/config/Constants";
 import { GAME_IDS } from "../../src/shared/Protocol";
+import { deferred } from "../support/Deferred";
 
 export const indexSourcePath = path.resolve(import.meta.dir, "../../src/Index.ts");
 export const finalStages = [
@@ -28,14 +29,6 @@ export const finalStages = [
   "logs.close",
 ] as const;
 export type Stage = (typeof finalStages)[number];
-
-export function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 /** 执行完整真实 Index 源码，仅在模块边界注入隔离替身；不 import 应用、不 readEnv、不打开端口。 */
 export async function createIndexShutdownHarness(

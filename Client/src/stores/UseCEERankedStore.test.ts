@@ -10,6 +10,7 @@ import type {
 } from "@bakagame/shared";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { deferred } from "@/test/Deferred";
 import { useAccountStore } from "./UseAccountStore";
 
 // 只假到最底层的 WS 客户端与壳通道：`@/lib/CEEWs` 用真实实现，这样排位准入命令的
@@ -183,14 +184,6 @@ const patchFrame = (
 const callsOf = (command: string) =>
   socket.send.mock.calls.filter((call: unknown[]) => call[0] === command);
 const firstPayloadOf = (command: string) => callsOf(command)[0]?.[1];
-
-const deferred = <T>() => {
-  const box: { resolve?: (value: T) => void } = {};
-  const promise = new Promise<T>((resolve) => {
-    box.resolve = resolve;
-  });
-  return { promise, resolve: (value: T) => box.resolve?.(value) };
-};
 
 /** 门面上有好几层 await：用一个宏任务把在途 Promise 一次性冲干净。 */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));

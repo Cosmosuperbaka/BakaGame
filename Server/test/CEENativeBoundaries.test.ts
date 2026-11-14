@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import sharp from "sharp";
 import { CEEImageHints } from "../src/infrastructure/CEEImageHints";
-import { ceeTestHarness, character, deferred } from "./CEENativeFixtures";
+import { ceeTestHarness, character } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 import { ensureRoomId } from "../src/domain/Rules";
 import { TEST_ROOMS_DISABLED } from "../src/domain/TestRooms";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from "../src/config/Constants";

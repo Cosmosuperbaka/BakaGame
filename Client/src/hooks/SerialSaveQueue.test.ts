@@ -1,15 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import { SerialSaveQueue } from "./SerialSaveQueue";
-
-const deferred = () => {
-  let resolve!: () => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-};
 const make = (
   overrides: Partial<ConstructorParameters<typeof SerialSaveQueue<string>>[1]> = {}
 ) => {

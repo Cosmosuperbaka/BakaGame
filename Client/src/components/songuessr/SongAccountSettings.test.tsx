@@ -12,6 +12,7 @@ import type {
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { deferred } from "@/test/Deferred";
 import { SongAccountSettings } from "./SongAccountSettings";
 
 const snapshot = (musicAccountReady: boolean) =>
@@ -19,16 +20,6 @@ const snapshot = (musicAccountReady: boolean) =>
     roomId: "1234",
     musicAccountReady,
   }) as SonGuessrRoomSnapshot;
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 
 const qrResponse = (key: string) => ({
   key,

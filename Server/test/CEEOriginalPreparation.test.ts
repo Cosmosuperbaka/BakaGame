@@ -8,7 +8,7 @@ import {
   type CEERoomClientMessage,
   type CEERoomSnapshot,
 } from "../src/shared/CEE";
-import { deferred } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 import {
   FixtureRoom,
   FixtureSocket,

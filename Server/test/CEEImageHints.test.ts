@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import sharp from "sharp";
 import { CEEImageHints } from "../src/infrastructure/CEEImageHints";
-import { deferred } from "./CEENativeFixtures";
+import { deferred } from "./support/Deferred";
 
 const bitmap = async () => {
   const width = 480,
