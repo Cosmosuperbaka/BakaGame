@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { AppError } from "../src/domain/Errors";
+import type { TimerSeam } from "../src/application/room/RoomTimers";
 import { isAgentPagePath } from "../src/shared/AgentPages";
 import type { SitePageCommand, SitePageView } from "../src/shared/AgentActivity";
 import type { ServerMessage } from "../src/shared/Protocol";
@@ -45,6 +46,28 @@ const setup = (options: SitePagesOptions = {}) => {
 
 const answer = (pages: SitePages, connectionId: string, command: SitePageCommand) =>
   pages.recordResult(connectionId, { id: command.id, ok: true });
+
+/** 手动到点的假时钟：到点与取消都由用例推进，不依赖墙钟等待。 */
+const createClock = () => {
+  let now = 0;
+  let pending: { at: number; fire: () => void; cancelled: boolean }[] = [];
+  const seam: TimerSeam = (fire, delayMs) => {
+    const entry = { at: now + delayMs, fire, cancelled: false };
+    pending.push(entry);
+    return {
+      cancel: () => {
+        entry.cancelled = true;
+      },
+    };
+  };
+  const advance = (ms: number) => {
+    now += ms;
+    const due = pending.filter((entry) => entry.at <= now).sort((a, b) => a.at - b.at);
+    pending = pending.filter((entry) => entry.at > now);
+    for (const entry of due) if (!entry.cancelled) entry.fire();
+  };
+  return { seam, advance };
+};
 
 describe("配对码", () => {
   it("8 位、一次有效；认领后页面收到接管通知，标签页进入接管状态", () => {
@@ -132,10 +155,12 @@ describe("指令", () => {
   });
 
   it("别的连接猜中指令号也写不进结果", async () => {
-    const { pages, page, opened } = setup({ commandTimeoutMs: 20 });
+    const clock = createClock();
+    const { pages, page, opened } = setup({ commandTimeoutMs: 20, setTimer: clock.seam });
     pages.claim(opened.code, "agent-1", "A");
     const pending = pages.dispatch("agent-1", { action: "read" });
     expect(answer(pages, "conn-other", lastCommand(page.sent))).toBe(false);
+    clock.advance(20);
     await expect(pending).rejects.toMatchObject({ code: "PAGE_TIMEOUT" });
   });
 
@@ -209,11 +234,12 @@ describe("刷新与断线", () => {
     expect(pages.isTabControlled("tab-1")).toBe(true);
   });
 
-  it("页面迟迟不回来，等待期满后接管结束", async () => {
-    const { pages, opened, changes } = setup({ reattachGraceMs: 5 });
+  it("页面迟迟不回来，等待期满后接管结束", () => {
+    const clock = createClock();
+    const { pages, opened, changes } = setup({ reattachGraceMs: 5, setTimer: clock.seam });
     pages.claim(opened.code, "agent-1", "A");
     pages.dropConnection("conn-1");
-    await Bun.sleep(20);
+    clock.advance(5);
     expect(pages.isControlling("agent-1")).toBe(false);
     expect(pages.attach("tab-1", "conn-2", recorder().send)).toBe(false);
     expect(changes).toEqual([
@@ -259,17 +285,45 @@ describe("结束接管", () => {
   });
 
   it("Agent 长时间没有动作时自动收回，动作会续期", async () => {
-    const { pages, page, opened } = setup({ leaseIdleMs: 30 });
+    const clock = createClock();
+    const { pages, page, opened } = setup({ leaseIdleMs: 30, setTimer: clock.seam });
     pages.claim(opened.code, "agent-1", "A");
-    await Bun.sleep(15);
+    clock.advance(15);
     const pending = pages.dispatch("agent-1", { action: "read" });
     answer(pages, "conn-1", lastCommand(page.sent));
     await pending;
-    await Bun.sleep(15);
+    clock.advance(15);
     expect(pages.isControlling("agent-1")).toBe(true);
-    await Bun.sleep(40);
+    clock.advance(15);
     expect(pages.isControlling("agent-1")).toBe(false);
     expect(leaseOf(page.sent).at(-1)).toEqual({ controlled: false, reason: "expired" });
+  });
+
+  it("缺省仍挂真实定时器，且不拖住进程退出", async () => {
+    const original = globalThis.setTimeout;
+    const created: ReturnType<typeof setTimeout>[] = [];
+    globalThis.setTimeout = ((handler: () => void, delay?: number) => {
+      const timer = original(handler, delay);
+      created.push(timer);
+      return timer;
+    }) as typeof setTimeout;
+    try {
+      const expired = Promise.withResolvers<void>();
+      const pages = new SitePages({
+        leaseIdleMs: 1,
+        onControlChange: (_tabKey, controlled) => {
+          if (!controlled) expired.resolve();
+        },
+      });
+      const opened = pages.open("tab-1", "conn-1", recorder().send);
+      pages.claim(opened.code, "agent-1", "A");
+      expect(created).toHaveLength(1);
+      expect(created[0].hasRef()).toBe(false);
+      await expired.promise;
+      expect(pages.isControlling("agent-1")).toBe(false);
+    } finally {
+      globalThis.setTimeout = original;
+    }
   });
 });
 

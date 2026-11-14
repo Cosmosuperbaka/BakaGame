@@ -17,6 +17,7 @@ import {
 } from "../shared/AgentPages";
 import type { ServerMessage } from "../shared/Protocol";
 import { AppError } from "../domain/Errors";
+import type { TimerSeam } from "../application/room/RoomTimers";
 import { createEvent } from "./Packets";
 
 /** 配对码有效期：只够人类复制给 Agent 再用一次，未认领时页面刷新也会作废。 */
@@ -45,12 +46,21 @@ const CONTROL_ID = /^[A-Za-z0-9_.:-]{1,96}$/;
 
 type Send = (payload: ServerMessage) => void;
 
+type TimerHandle = ReturnType<TimerSeam>;
+
+/** 进程退出不等这些定时器：租约只在内存里，重启后本来就全部失效。 */
+const realTimer: TimerSeam = (fire, delayMs) => {
+  const timer = setTimeout(fire, delayMs);
+  timer.unref();
+  return { cancel: () => clearTimeout(timer) };
+};
+
 const fail = (code: string, message: string): AppError => new AppError(code, message);
 
 interface PendingCommand {
   resolve: (result: SitePageResult) => void;
   reject: (reason: AppError) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: TimerHandle;
 }
 
 interface PageRecord {
@@ -69,8 +79,8 @@ interface PageRecord {
   lastControl?: string;
   commandSeq: number;
   pending: Map<string, PendingCommand>;
-  graceTimer?: ReturnType<typeof setTimeout>;
-  idleTimer?: ReturnType<typeof setTimeout>;
+  graceTimer?: TimerHandle;
+  idleTimer?: TimerHandle;
 }
 
 export interface PageLease {
@@ -83,6 +93,7 @@ export interface SitePagesOptions {
   reattachGraceMs?: number;
   leaseIdleMs?: number;
   commandTimeoutMs?: number;
+  setTimer?: TimerSeam;
   /** 认领前的准入：标签页坐在没开 MCP 的房间时由它抛错。 */
   admitTab?: (tabKey: string) => void;
   /** 标签页进入或离开接管：三款游戏据此更新座位徽标与进房准入。 */
@@ -174,6 +185,7 @@ export class SitePages {
   private readonly reattachGraceMs: number;
   private readonly leaseIdleMs: number;
   private readonly commandTimeoutMs: number;
+  private readonly setTimer: TimerSeam;
   private readonly admitTab: (tabKey: string) => void;
   private readonly onControlChange: (tabKey: string, controlled: boolean) => void;
 
@@ -182,6 +194,7 @@ export class SitePages {
     this.reattachGraceMs = options.reattachGraceMs ?? PAGE_REATTACH_GRACE_MS;
     this.leaseIdleMs = options.leaseIdleMs ?? PAGE_LEASE_IDLE_MS;
     this.commandTimeoutMs = options.commandTimeoutMs ?? PAGE_COMMAND_TIMEOUT_MS;
+    this.setTimer = options.setTimer ?? realTimer;
     this.admitTab = options.admitTab ?? (() => undefined);
     this.onControlChange = options.onControlChange ?? (() => undefined);
   }
@@ -268,7 +281,7 @@ export class SitePages {
     delete record.connectionId;
     delete record.send;
     this.rejectPending(record, "PAGE_DETACHED", "页面正在重新连接，稍后重试");
-    record.graceTimer = this.schedule(this.reattachGraceMs, () => this.forget(record));
+    record.graceTimer = this.setTimer(() => this.forget(record), this.reattachGraceMs);
   }
 
   /** Agent 用配对码认领：一次有效，认领后码立即作废；一个会话只驱动一张标签页。 */
@@ -304,7 +317,7 @@ export class SitePages {
     };
     if (step.control) record.lastControl = step.control;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = this.setTimer(() => {
         record.pending.delete(command.id);
         reject(fail("PAGE_TIMEOUT", "页面没有在时限内执行完这一步"));
       }, this.commandTimeoutMs);
@@ -318,7 +331,7 @@ export class SitePages {
     const record = this.byConnection.get(connectionId);
     const pending = record?.pending.get(result.id);
     if (!record || !pending) return false;
-    clearTimeout(pending.timer);
+    pending.timer.cancel();
     record.pending.delete(result.id);
     this.touch(record);
     pending.resolve(result.view ? { ...result, view: restrictView(result.view) } : result);
@@ -352,7 +365,7 @@ export class SitePages {
     const wasControlled = record.controllerId !== undefined;
     this.forgetCode(record);
     this.clearGrace(record);
-    if (record.idleTimer) clearTimeout(record.idleTimer);
+    record.idleTimer?.cancel();
     delete record.idleTimer;
     this.byPageId.delete(record.pageId);
     this.byTab.delete(record.tabKey);
@@ -370,13 +383,13 @@ export class SitePages {
   }
 
   private clearGrace(record: PageRecord): void {
-    if (record.graceTimer) clearTimeout(record.graceTimer);
+    record.graceTimer?.cancel();
     delete record.graceTimer;
   }
 
   private rejectPending(record: PageRecord, code: string, message: string): void {
     for (const pending of record.pending.values()) {
-      clearTimeout(pending.timer);
+      pending.timer.cancel();
       pending.reject(fail(code, message));
     }
     record.pending.clear();
@@ -384,18 +397,11 @@ export class SitePages {
 
   /** Agent 的任何动作都算活着；到期后页面解锁并告诉人类原因。 */
   private touch(record: PageRecord): void {
-    if (record.idleTimer) clearTimeout(record.idleTimer);
-    record.idleTimer = this.schedule(this.leaseIdleMs, () => {
+    record.idleTimer?.cancel();
+    record.idleTimer = this.setTimer(() => {
       this.forget(record);
       this.notifyLease(record, { controlled: false, reason: "expired" });
-    });
-  }
-
-  /** 进程退出不等这些定时器：租约只在内存里，重启后本来就全部失效。 */
-  private schedule(delayMs: number, task: () => void): ReturnType<typeof setTimeout> {
-    const timer = setTimeout(task, delayMs);
-    (timer as { unref?: () => void }).unref?.();
-    return timer;
+    }, this.leaseIdleMs);
   }
 
   private notifyLease(record: PageRecord, lease: SitePageLease): void {
