@@ -16,6 +16,7 @@ import {
 import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 // 纯值住在 SonGuessrValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
 import { ALL_BANGUMI_TRACK_KINDS } from "./SonGuessrValues";
+import { SONG_SUBJECT_LIMIT_BOUNDS, SUBJECT_YEAR_BOUNDS } from "./SettingBounds";
 export * from "./SonGuessrValues";
 
 export const SONGUESSR_PHASES = [
@@ -137,10 +138,19 @@ const trackKindSchema = schemaUnion(ALL_BANGUMI_TRACK_KINDS.map((kind) => t.Lite
 
 const AnimeAutoFiltersSchema = t.Object(
   {
-    startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
-    endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
+    startYear: t.Optional(
+      t.Integer({ minimum: SUBJECT_YEAR_BOUNDS.min, maximum: SUBJECT_YEAR_BOUNDS.max })
+    ),
+    endYear: t.Optional(
+      t.Integer({ minimum: SUBJECT_YEAR_BOUNDS.min, maximum: SUBJECT_YEAR_BOUNDS.max })
+    ),
     ranking: t.Optional(t.Union([t.Literal("all"), t.Literal("year")])),
-    subjectLimit: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
+    subjectLimit: t.Optional(
+      t.Integer({
+        minimum: SONG_SUBJECT_LIMIT_BOUNDS.min,
+        maximum: SONG_SUBJECT_LIMIT_BOUNDS.max,
+      })
+    ),
     songMinPopularity: t.Optional(MinPopularitySchema),
     trackKinds: t.Optional(t.Array(trackKindSchema, { maxItems: ALL_BANGUMI_TRACK_KINDS.length })),
   },

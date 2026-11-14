@@ -1,4 +1,5 @@
 import type { CEESettings } from "@bakagame/shared";
+import { CEE_SETTING_BOUNDS, SUBJECT_YEAR_BOUNDS } from "@bakagame/shared/values";
 import type { useCEEAction } from "@/hooks/UseCEEAction";
 import { AnimatePresence, motion } from "framer-motion";
 import { BookOpen, Filter, Users, X } from "lucide-react";
@@ -143,6 +144,8 @@ export function CEEQuestionPanel({
             label="年份范围"
             start={values.startYear}
             end={values.endYear}
+            minimum={SUBJECT_YEAR_BOUNDS.min}
+            maximum={SUBJECT_YEAR_BOUNDS.max}
             disabled={scopedByDirectory}
             onChange={(start, end) =>
               setDraft((current) => ({
@@ -155,8 +158,8 @@ export function CEEQuestionPanel({
           <SettingStepper
             label="热度前几部"
             value={values.topNSubjects}
-            minimum={1}
-            maximum={1000}
+            minimum={CEE_SETTING_BOUNDS.topNSubjects.min}
+            maximum={CEE_SETTING_BOUNDS.topNSubjects.max}
             step={5}
             disabled={scopedByDirectory}
             format={(value) => `前 ${value} 部`}
@@ -191,8 +194,8 @@ export function CEEQuestionPanel({
             label="每部候选角色数"
             unit="人"
             value={values.characterNum}
-            minimum={1}
-            maximum={100}
+            minimum={CEE_SETTING_BOUNDS.characterNum.min}
+            maximum={CEE_SETTING_BOUNDS.characterNum.max}
             onChange={(value) => change("characterNum", value)}
           />
         </SettingsSection>

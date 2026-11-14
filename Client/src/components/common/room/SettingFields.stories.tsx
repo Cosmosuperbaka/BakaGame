@@ -20,6 +20,7 @@ import {
   SettingToggleChips,
 } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import { SUBJECT_YEAR_BOUNDS } from "@bakagame/shared/values";
 
 const meta = {
   title: "公共组件/SettingFields",
@@ -226,12 +227,21 @@ export const Choices: Story = {
         format={formatHeat}
         onChange={fn()}
       />
-      <SettingYearRange label="作品年份" start={2010} end={2024} onChange={fn()} />
+      <SettingYearRange
+        label="作品年份"
+        start={2010}
+        end={2024}
+        minimum={SUBJECT_YEAR_BOUNDS.min}
+        maximum={SUBJECT_YEAR_BOUNDS.max}
+        onChange={fn()}
+      />
       <SettingYearRange
         label="番剧年份"
         start={undefined}
         end={2020}
         optional
+        minimum={SUBJECT_YEAR_BOUNDS.min}
+        maximum={SUBJECT_YEAR_BOUNDS.max}
         description="留空表示不限。"
         onChange={fn()}
       />
@@ -309,7 +319,14 @@ export const ReadOnly: Story = {
           format={formatHeat}
           onChange={fn()}
         />
-        <SettingYearRange label="作品年份" start={2010} end={2024} onChange={fn()} />
+        <SettingYearRange
+          label="作品年份"
+          start={2010}
+          end={2024}
+          minimum={SUBJECT_YEAR_BOUNDS.min}
+          maximum={SUBJECT_YEAR_BOUNDS.max}
+          onChange={fn()}
+        />
         <SettingToggleChips
           label="歌曲类型"
           options={SONG_TYPES}

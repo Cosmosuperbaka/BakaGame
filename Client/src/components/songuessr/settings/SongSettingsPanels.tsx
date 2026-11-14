@@ -32,7 +32,12 @@ import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/motion/Choreography";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@bakagame/shared/values";
+import {
+  ALL_BANGUMI_TRACK_KINDS,
+  BANGUMI_TRACK_KIND_LABELS,
+  SONG_SUBJECT_LIMIT_BOUNDS,
+  SUBJECT_YEAR_BOUNDS,
+} from "@bakagame/shared/values";
 import type {
   AnimeAutoFilters,
   BangumiMusicTrackKind,
@@ -456,6 +461,8 @@ function AnimeFilters({
         optional
         start={filters.startYear}
         end={filters.endYear}
+        minimum={SUBJECT_YEAR_BOUNDS.min}
+        maximum={SUBJECT_YEAR_BOUNDS.max}
         onChange={(startYear, endYear) => onChange({ startYear, endYear })}
       />
       <SettingSegmented
@@ -468,8 +475,8 @@ function AnimeFilters({
         label="作品数量"
         unit="部"
         value={filters.subjectLimit ?? 50}
-        minimum={1}
-        maximum={1000}
+        minimum={SONG_SUBJECT_LIMIT_BOUNDS.min}
+        maximum={SONG_SUBJECT_LIMIT_BOUNDS.max}
         step={10}
         format={(value) => `前 ${value} 部`}
         onChange={(subjectLimit) => onChange({ subjectLimit })}

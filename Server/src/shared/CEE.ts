@@ -8,24 +8,26 @@ import {
   type CEERankedCommand,
   type CEERankedResponse,
 } from "./CEERanked";
+import { CEE_SETTING_BOUNDS, SUBJECT_YEAR_BOUNDS } from "./SettingBounds";
 
 // 默认值住在 CEEDefaults.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
 export * from "./CEEDefaults";
 
 const strict = { additionalProperties: false } as const;
 const integer = (minimum: number, maximum: number) => t.Integer({ minimum, maximum });
+const bounded = (bounds: { min: number; max: number }) => integer(bounds.min, bounds.max);
 export const CEESettingsSchema = t.Object(
   {
-    startYear: integer(1900, 2200),
-    endYear: integer(1900, 2200),
-    topNSubjects: integer(1, 1000),
+    startYear: bounded(SUBJECT_YEAR_BOUNDS),
+    endYear: bounded(SUBJECT_YEAR_BOUNDS),
+    topNSubjects: bounded(CEE_SETTING_BOUNDS.topNSubjects),
     useSubjectPerYear: t.Boolean(),
     metaTags: t.Array(t.String({ maxLength: 40 }), { maxItems: 3 }),
     useIndex: t.Boolean(),
     indexId: t.Union([integer(1, 2147483647), t.Null()]),
     addedSubjects: t.Array(integer(1, 2147483647), { maxItems: 500 }),
     mainCharacterOnly: t.Boolean(),
-    characterNum: integer(1, 100),
+    characterNum: bounded(CEE_SETTING_BOUNDS.characterNum),
     maxAttempts: integer(1, 100),
     timeLimit: integer(0, 120),
     subjectSearch: t.Boolean(),

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsReadOnly } from "@/components/common/room/settings/Layout";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { songSnapshot } from "@/stories/fixtures/SonGuessr";
+import { songSettings, songSnapshot } from "@/stories/fixtures/SonGuessr";
+import { SONG_SUBJECT_LIMIT_BOUNDS, SUBJECT_YEAR_BOUNDS } from "@bakagame/shared/values";
 import { SongGameSettings, SongQuestionSettings, SongRoomSettings } from "./SongSettingsPanels";
 
 vi.mock("@/lib/RoomSettingsMemory", async (importOriginal) => ({
@@ -194,5 +195,25 @@ describe("猜歌设置面板的自动保存", () => {
     await settle();
     expect(sendCommand).not.toHaveBeenCalled();
     expect(updateRoomSettingsMemory).not.toHaveBeenCalled();
+  });
+});
+
+describe("番剧筛选的数值界限", () => {
+  it("作品数量与年份范围都取共享契约的界限", () => {
+    const anime = songSnapshot({
+      phase: "waiting",
+      settings: songSettings({ questionMode: "automatic", questionType: "anime" }),
+    });
+    useSonGuessrStore.setState({ snapshot: anime });
+    render(<SongQuestionSettings snapshot={anime} />);
+
+    const limit = screen.getByRole("spinbutton", { name: "作品数量（部）" });
+    expect(limit).toHaveAttribute("aria-valuemin", String(SONG_SUBJECT_LIMIT_BOUNDS.min));
+    expect(limit).toHaveAttribute("aria-valuemax", String(SONG_SUBJECT_LIMIT_BOUNDS.max));
+    for (const name of ["年份范围起始", "年份范围结束"]) {
+      const year = screen.getByRole("spinbutton", { name });
+      expect(year).toHaveAttribute("aria-valuemin", String(SUBJECT_YEAR_BOUNDS.min));
+      expect(year).toHaveAttribute("aria-valuemax", String(SUBJECT_YEAR_BOUNDS.max));
+    }
   });
 });

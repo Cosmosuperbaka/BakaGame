@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultCEESettings } from "@bakagame/shared/values";
+import {
+  CEE_SETTING_BOUNDS,
+  SUBJECT_YEAR_BOUNDS,
+  createDefaultCEESettings,
+} from "@bakagame/shared/values";
 import type { CEESettings } from "@bakagame/shared";
 import { ceeWsClient } from "@/lib/CEEWs";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -120,6 +124,46 @@ describe("CEE 设置草稿与服务端同步", () => {
         expect.any(Object)
       )
     );
+  });
+});
+
+describe("CEE 设置字段的数值界限", () => {
+  it("热度前几部、每部候选角色数与年份范围都取共享契约的界限", async () => {
+    const user = userEvent.setup();
+    inRoom(base());
+    render(panel(base()));
+    await user.click(screen.getByRole("button", { name: /题目设置/ }));
+
+    const top = screen.getByRole("spinbutton", { name: "热度前几部" });
+    expect(top).toHaveAttribute("aria-valuemin", String(CEE_SETTING_BOUNDS.topNSubjects.min));
+    expect(top).toHaveAttribute("aria-valuemax", String(CEE_SETTING_BOUNDS.topNSubjects.max));
+    const characters = screen.getByRole("spinbutton", { name: "每部候选角色数（人）" });
+    expect(characters).toHaveAttribute(
+      "aria-valuemin",
+      String(CEE_SETTING_BOUNDS.characterNum.min)
+    );
+    expect(characters).toHaveAttribute(
+      "aria-valuemax",
+      String(CEE_SETTING_BOUNDS.characterNum.max)
+    );
+    for (const name of ["年份范围起始", "年份范围结束"]) {
+      const year = screen.getByRole("spinbutton", { name });
+      expect(year).toHaveAttribute("aria-valuemin", String(SUBJECT_YEAR_BOUNDS.min));
+      expect(year).toHaveAttribute("aria-valuemax", String(SUBJECT_YEAR_BOUNDS.max));
+    }
+  });
+
+  it("手输超出共享上限的值被夹回上限，与服务端接受的范围一致", async () => {
+    const user = userEvent.setup();
+    inRoom(base());
+    render(panel(base()));
+    await user.click(screen.getByRole("button", { name: /题目设置/ }));
+
+    const top = screen.getByRole("spinbutton", { name: "热度前几部" });
+    await user.clear(top);
+    await user.type(top, "5000");
+    await user.tab();
+    expect(top).toHaveValue(String(CEE_SETTING_BOUNDS.topNSubjects.max));
   });
 });
 

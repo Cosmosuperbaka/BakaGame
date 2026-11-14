@@ -343,6 +343,7 @@ function YearInput({
 /**
  * 年份范围：起止两格收在一条凹槽里，与步进器同一形态，中间用「至」相连。
  * `optional` 时任一格可留空表示不限（猜歌的番剧年份）；否则两格必填（CEE 的抽题年份）。起止顺序由调用处校验。
+ * 界限由调用方从共享契约取，组件里不放默认值：默认值会与服务端 schema 各留一份数字。
  */
 export function SettingYearRange({
   label,
@@ -350,8 +351,8 @@ export function SettingYearRange({
   end,
   onChange,
   optional = false,
-  minimum = 1900,
-  maximum = 2200,
+  minimum,
+  maximum,
   description,
   disabled = false,
 }: {
@@ -360,8 +361,8 @@ export function SettingYearRange({
   end: number | undefined;
   onChange: (start: number | undefined, end: number | undefined) => void;
   optional?: boolean;
-  minimum?: number;
-  maximum?: number;
+  minimum: number;
+  maximum: number;
   description?: string;
   disabled?: boolean;
 }) {
