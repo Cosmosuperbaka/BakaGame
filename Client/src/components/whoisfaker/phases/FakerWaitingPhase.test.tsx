@@ -82,6 +82,7 @@ describe("waiting room sharing", () => {
 
   afterEach(() => {
     try {
+      vi.useRealTimers();
       cleanup();
     } finally {
       useWhoIsFakerStore.setState(initialStoreState, true);
@@ -261,6 +262,119 @@ describe("waiting room sharing", () => {
       "room.updateSettings",
       expect.objectContaining({ revealRoleOnDeath: false })
     );
+  });
+
+  it("房主改设置：防抖 400 毫秒到点才发一条更新设置", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(399);
+    });
+    expect(sendCommand).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false })
+    );
+  });
+
+  it("房主连续改房名：防抖窗口内只发最后一次草稿", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    const name = screen.getByRole("textbox", { name: "房间名称" });
+    fireEvent.change(name, { target: { value: "第一个名字" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fireEvent.change(name, { target: { value: "最后的名字" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ name: "最后的名字" })
+    );
+  });
+
+  it("房主设置保存被拒：弹出服务端给的原因", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    const showToast = vi.fn();
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+      showToast,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(showToast).toHaveBeenCalledWith("设置不合法", "error");
+  });
+
+  it("非房主只读：服务端设置变化也不会发出保存", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand });
+
+    render(<FakerWaitingPhase />);
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: {
+          ...snapshot,
+          settings: { ...snapshot.settings, revealRoleOnDeath: false },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("房主移交后新房主的草稿是服务端当前房名", () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand });
+
+    render(<FakerWaitingPhase />);
+    // 原房主改了房名，随后把房主移交给我。
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: {
+          ...snapshot,
+          name: "改过的房名",
+          hostPlayerId: "guest",
+          players: snapshot.players.map((p) => ({ ...p, isHost: p.id === "guest" })),
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("改过的房名");
   });
 
   it("房主可以单独打开旁观者局中看答案的开关", async () => {

@@ -55,6 +55,29 @@ describe("猜歌设置面板的自动保存", () => {
     expect(updateRoomSettingsMemory).toHaveBeenCalledTimes(1);
   });
 
+  it("房主改题型：防抖 400 毫秒到点才发保存", async () => {
+    render(<SongQuestionSettings snapshot={snapshot()} />);
+    pickAnime();
+    await act(() => vi.advanceTimersByTimeAsync(399));
+    expect(sendCommand).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("房主连续改两项：防抖窗口内只发最后一次草稿", async () => {
+    render(<SongQuestionSettings snapshot={snapshot()} />);
+    pickAnime();
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    fireEvent.click(screen.getByRole("radio", { name: "自动出题" }));
+    await act(() => vi.advanceTimersByTimeAsync(400));
+
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+    expect(sendCommand).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ questionType: "anime", questionMode: "automatic" })
+    );
+  });
+
   it("单人模式照常保存，但不写多人房间的记忆", async () => {
     render(<SongQuestionSettings snapshot={snapshot()} solo />);
     pickAnime();

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -94,6 +94,77 @@ describe("等待页的房间设置草稿", () => {
     return snapshot;
   };
   const me = ceePrivateState({ playerId: "me" });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const advance = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it("房主改房名：防抖 400 毫秒到点才发保存", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    fireEvent.click(screen.getByText("房间设置", { exact: true }));
+    fireEvent.change(screen.getByRole("textbox", { name: "房间名称" }), {
+      target: { value: "新房名" },
+    });
+
+    await advance(399);
+    expect(send).not.toHaveBeenCalled();
+    await advance(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.update",
+      expect.objectContaining({ name: "新房名" }),
+      expect.any(Object)
+    );
+  });
+
+  it("房主连续改房名：防抖窗口内只发最后一次草稿", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    fireEvent.click(screen.getByText("房间设置", { exact: true }));
+    const name = screen.getByRole("textbox", { name: "房间名称" });
+    fireEvent.change(name, { target: { value: "第一个名字" } });
+    await advance(200);
+    fireEvent.change(name, { target: { value: "最后的名字" } });
+    await advance(400);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.update",
+      expect.objectContaining({ name: "最后的名字" }),
+      expect.any(Object)
+    );
+  });
+
+  it("房间设置保存被拒：面板里显示服务端给的原因", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "BAD", message: "房名不合法" });
+    render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    fireEvent.click(screen.getByText("房间设置", { exact: true }));
+    fireEvent.change(screen.getByRole("textbox", { name: "房间名称" }), {
+      target: { value: "新房名" },
+    });
+    await advance(400);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("房名不合法");
+  });
+
+  it("非房主只读：防抖到点也不发房间设置", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    render(<CEEWaiting snapshot={room("房名", "old-host")} privateState={me} />);
+    await advance(1_000);
+
+    expect(send).not.toHaveBeenCalled();
+  });
 
   it("成为房主后显示服务端当前房名，保存不会把进房时的旧房名写回去", async () => {
     const user = userEvent.setup();

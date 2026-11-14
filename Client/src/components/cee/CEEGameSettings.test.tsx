@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -40,6 +40,7 @@ const panel = (settings: CEESettings, props: { waiting?: boolean; readOnly?: boo
 );
 
 afterEach(() => {
+  vi.useRealTimers();
   useCEEStore.getState().resetRoom();
   vi.restoreAllMocks();
 });
@@ -124,6 +125,78 @@ describe("CEE 设置草稿与服务端同步", () => {
         expect.any(Object)
       )
     );
+  });
+});
+
+describe("CEE 设置自动保存的防抖与失败", () => {
+  /** 展开猜测设置并点一个开关，草稿进入防抖窗口。 */
+  const edit = (label: string) => {
+    fireEvent.click(screen.getByRole("button", { name: /猜测设置/ }));
+    fireEvent.click(screen.getByRole("switch", { name: label }));
+  };
+  const advance = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it("房主改一项：防抖 400 毫秒到点才发保存", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    inRoom(base());
+    render(panel(base()));
+    edit("同步模式");
+
+    await advance(399);
+    expect(send).not.toHaveBeenCalled();
+    await advance(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.settings",
+      { settings: expect.objectContaining({ syncMode: true }) },
+      expect.any(Object)
+    );
+  });
+
+  it("房主连续改两项：防抖窗口内只发最后一次草稿", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    inRoom(base());
+    render(panel(base()));
+    edit("同步模式");
+    await advance(200);
+    fireEvent.click(screen.getByRole("switch", { name: "血战模式" }));
+    await advance(400);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.settings",
+      { settings: expect.objectContaining({ syncMode: true, nonstopMode: true }) },
+      expect.any(Object)
+    );
+  });
+
+  it("玩法设置保存被拒：把服务端给的原因交给全局提示", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    inRoom(base());
+    const showToast = vi.fn();
+    useCEEStore.setState({ showToast });
+    render(panel(base()));
+    edit("同步模式");
+    await advance(400);
+
+    expect(showToast).toHaveBeenCalledWith("设置不合法");
+  });
+
+  it("非房主只读：防抖到点也不发保存", async () => {
+    vi.useFakeTimers();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    inRoom(base());
+    render(panel(base(), { readOnly: true }));
+    await advance(1_000);
+
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

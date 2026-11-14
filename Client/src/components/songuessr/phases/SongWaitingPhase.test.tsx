@@ -61,6 +61,42 @@ describe("猜歌等待页开局条件", () => {
   });
 });
 
+describe("猜歌等待页的设置草稿", () => {
+  const initialStoreState = useSonGuessrStore.getState();
+
+  afterEach(() => {
+    useSonGuessrStore.setState(initialStoreState, true);
+  });
+
+  it("房主移交后新房主的草稿是服务端当前房名", () => {
+    useSonGuessrStore.setState({ sendCommand: vi.fn().mockResolvedValue({}) });
+    const view = render(
+      <SongWaitingPhase
+        snapshot={songSnapshot({ name: "进房时的房名", players: readyPlayers() })}
+        me={readyPlayers()[1]}
+        isHost={false}
+        run={run}
+      />
+    );
+    // 原房主改了房名，随后把房主移交给我。
+    view.rerender(
+      <SongWaitingPhase
+        snapshot={songSnapshot({
+          name: "改过的房名",
+          hostPlayerId: me.id,
+          players: readyPlayers(),
+        })}
+        me={songPlayer(me, { isReady: true, isHost: true })}
+        isHost
+        run={run}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("改过的房名");
+  });
+});
+
 describe("猜歌等待页的 MCP 接入开关", () => {
   const initialStoreState = useSonGuessrStore.getState();
   const hostSnapshot = () => songSnapshot({ players: readyPlayers() });
