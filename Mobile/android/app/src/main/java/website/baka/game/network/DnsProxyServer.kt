@@ -39,7 +39,11 @@ class DnsProxyServer private constructor(
 
     private val running = AtomicBoolean(true)
 
-    /** 同时存在的连接数（含读头阶段与已建立的隧道）。 */
+    /**
+     * 处于「读请求头、解析、连上游」阶段的连接数。回 200 进入隧道之前就归还名额：
+     * 名额要挡的是读头阶段的慢连接，已建立的隧道（对局的长连接）不占，
+     * 否则网络切换留下的悬挂隧道会慢慢占满名额，后来的新连接全部被拒。
+     */
     private val active = AtomicInteger(0)
 
     init {
@@ -61,11 +65,16 @@ class DnsProxyServer private constructor(
                     }
                     continue
                 }
+                // 名额只归还一次：处理函数在进入隧道前主动归还，线程结束时的 finally 再调用也无副作用
+                val released = AtomicBoolean(false)
+                val release: () -> Unit = {
+                    if (released.compareAndSet(false, true)) active.decrementAndGet()
+                }
                 thread(name = "baka-dns-proxy-conn", isDaemon = true) {
                     try {
-                        handle(client)
+                        handle(client, release)
                     } finally {
-                        active.decrementAndGet()
+                        release()
                     }
                 }
             }
@@ -80,7 +89,7 @@ class DnsProxyServer private constructor(
         }
     }
 
-    private fun handle(socket: Socket) {
+    private fun handle(socket: Socket, releaseSlot: () -> Unit) {
         var upstream: Socket? = null
         try {
             socket.use { client ->
@@ -138,6 +147,9 @@ class DnsProxyServer private constructor(
                     )
                 }
                 write(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
+                // 读头阶段结束：归还名额，隧道的寿命不占并发额度（前面连上游失败的路径提前返回，
+                // 由线程结束时的归还兜底，计数不会重复减）
+                releaseSlot()
                 client.soTimeout = 0
                 // 读头用的是带缓冲的流，已预读的字节只在它里面：隧道必须从同一个流读，不能回到原始 socket 流
                 tunnel(client, input, upstream)
@@ -206,8 +218,8 @@ class DnsProxyServer private constructor(
         private const val MAX_HEADER_BYTES = 8 * 1024
 
         /**
-         * 同时存在的连接数上限。Chromium 对单个代理的并发连接本身就有限（量级几十），
-         * 留 4 倍余量，页面正常使用不会碰到，只挡失控的本机连接；与桌面壳取同一个值。
+         * 读头阶段的连接数上限，只挡慢连接占满处理线程；回 200 之后名额即归还。
+         * Chromium 对单个代理的并发连接本身就有限（量级几十），留 4 倍余量。
          */
         private const val MAX_CONNECTIONS = 128
         private const val BUFFER_BYTES = 16 * 1024

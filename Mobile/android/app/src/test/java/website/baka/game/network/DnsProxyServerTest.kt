@@ -123,10 +123,53 @@ class DnsProxyServerTest {
         assertTrue(response, response.isEmpty() || response.startsWith("HTTP/1.1 4"))
     }
 
+    private fun connectTunnel(proxy: DnsProxyServer, echoPort: Int): Socket {
+        val client = connectToProxy(proxy)
+        client.getOutputStream().write(
+            "CONNECT game.example.com:$echoPort HTTP/1.1\r\nHost: game.example.com\r\n\r\n"
+                .toByteArray(Charsets.ISO_8859_1),
+        )
+        client.getOutputStream().flush()
+        val head = readHead(client.getInputStream())
+        assertTrue(head, head.startsWith("HTTP/1.1 200"))
+        return client
+    }
+
+    /**
+     * 已经建立并保持着的隧道不占并发名额：名额只挡读头阶段的慢连接，
+     * 长连接（对局的 WebSocket）整局都在隧道里，不能把名额一直占住。
+     */
+    @Test fun establishedTunnelsDoNotHoldConnectionSlots() {
+        val echoPort = startEcho()
+        val proxy = DnsProxyServer.start(loopbackResolver, maxConnections = 2)
+        closers += { proxy.close() }
+        // 建立满额条数的隧道并保持不关
+        val tunnels = (0 until 2).map { connectTunnel(proxy, echoPort) }
+        // 再来一条：名额已不被隧道占用，必须拿到 200 并能回显
+        val extra = connectTunnel(proxy, echoPort)
+        extra.getOutputStream().write("PING".toByteArray(Charsets.ISO_8859_1))
+        extra.getOutputStream().flush()
+        val reply = ByteArray(4)
+        var read = 0
+        while (read < 4) {
+            val n = extra.getInputStream().read(reply, read, 4 - read)
+            assertTrue("回显提前结束", n >= 0)
+            read += n
+        }
+        assertEquals("PING", String(reply, Charsets.ISO_8859_1))
+        assertEquals(2, tunnels.size)
+    }
+
     @Test fun connectionsBeyondTheLimitAreRefusedAndReleased() {
         val proxy = DnsProxyServer.start(loopbackResolver, maxConnections = 2)
         closers += { proxy.close() }
-        val held = (0 until 2).map { connectToProxy(proxy) }
+        // 只发半截请求头：连接停在读头阶段，占着名额
+        val held = (0 until 2).map {
+            connectToProxy(proxy).also {
+                it.getOutputStream().write("CONNECT game.exam".toByteArray(Charsets.ISO_8859_1))
+                it.getOutputStream().flush()
+            }
+        }
         val refused = connectToProxy(proxy)
         val response = readAll(refused)
         assertTrue(response, response.startsWith("HTTP/1.1 503"))
