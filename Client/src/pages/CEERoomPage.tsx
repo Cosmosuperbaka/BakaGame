@@ -24,7 +24,8 @@ export default function CEERoomPage() {
   const [replayEnabled] = useState(() => isCeeReplayEnabled());
   const replayRounds = useCEERoundHistory(replayEnabled ? snapshot : null);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
-  const showError = (error: unknown) => useCEEStore.getState().showToast(ceeErrorMessage(error));
+  const showError = (error: unknown) =>
+    useCEEStore.getState().showToast(ceeErrorMessage(error), "error");
   const sendChat = async (text: string) => {
     await useCEEStore.getState().sendCommand("cee.chat.send", { text });
   };
@@ -51,7 +52,8 @@ export default function CEERoomPage() {
   // 密码步的失败写在密码框下（RoomJoinGate 的 passwordError）；其余加入失败（房间已满、已关闭等）以提示条报出。
   const passwordFailure = CEE_PASSWORD_ERROR_CODES.has(lifecycle.errorCode);
   useEffect(() => {
-    if (lifecycle.error && !passwordFailure) useCEEStore.getState().showToast(lifecycle.error);
+    if (lifecycle.error && !passwordFailure)
+      useCEEStore.getState().showToast(lifecycle.error, "error");
   }, [lifecycle.error, passwordFailure]);
 
   if (!ready) {

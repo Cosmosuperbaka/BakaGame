@@ -226,7 +226,7 @@ function reportFailure(error: unknown): void {
     cee.reportError(error);
     return;
   }
-  cee.showToast(rankedText);
+  cee.showToast(rankedText, "error");
 }
 
 export const useCEERankedStore = create<CEERankedStore>((set, get) => {

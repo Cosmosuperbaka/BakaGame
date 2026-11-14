@@ -15,7 +15,7 @@ import { CEE_REPLAY_STORAGE_KEY } from "@/lib/CeeReplay";
 import CEERoomPage from "./CEERoomPage";
 
 // 房间页的入房流程由 UseCEERoomLifecycle 的测试负责；这里只关心「在房间里」时页面对壳做了什么。
-const lifecycle = vi.hoisted(() => ({ roomId: "1234" }));
+const lifecycle = vi.hoisted(() => ({ roomId: "1234", error: "" }));
 vi.mock("@/hooks/UseCEERoomLifecycle", () => ({
   CEE_PASSWORD_ERROR_CODES: new Set<string>(),
   useCEERoomLifecycle: () => ({
@@ -27,7 +27,7 @@ vi.mock("@/hooks/UseCEERoomLifecycle", () => ({
     setName: vi.fn(),
     password: "",
     setPassword: vi.fn(),
-    error: "",
+    error: lifecycle.error,
     errorCode: "",
     join: vi.fn(),
     leave: vi.fn(),
@@ -80,6 +80,7 @@ afterEach(() => {
   gameArea.mockClear();
   window.localStorage.clear();
   lifecycle.roomId = "1234";
+  lifecycle.error = "";
 });
 
 describe("CEE 房间页的窗口级防截屏", () => {
@@ -195,6 +196,30 @@ describe("CEE 房间页的聊天与断线提示", () => {
       expect(sendCommand).toHaveBeenCalledWith("cee.chat.send", { text: "这波我猜到了" })
     );
     await waitFor(() => expect(input).toHaveValue(""));
+  });
+
+  it("聊天发送失败以错误提示报出", async () => {
+    const sendCommand = vi.fn().mockRejectedValue({ code: "BAD", message: "发送太快了" });
+    enterRoom(false);
+    useCEEStore.setState({ sendCommand: sendCommand as unknown as GameSendCommand<CEECommandMap> });
+    mount();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "聊天消息" }), {
+      target: { value: "这波我猜到了" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() =>
+      expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+        text: "发送太快了",
+        type: "error",
+      })
+    );
+  });
+
+  it("加入失败（非密码步）以错误提示报出", () => {
+    lifecycle.error = "房间已满";
+    mount();
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "房间已满", type: "error" });
   });
 
   it("原版房上游断线时顶栏报原版重连，上游恢复后收起", async () => {

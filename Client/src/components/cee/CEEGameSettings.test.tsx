@@ -200,7 +200,7 @@ describe("CEE 设置自动保存的防抖与失败", () => {
     edit("同步模式");
     await advance(400);
 
-    expect(showToast).toHaveBeenCalledWith("设置不合法");
+    expect(showToast).toHaveBeenCalledWith("设置不合法", "error");
   });
 
   it("非房主只读：防抖到点也不发保存", async () => {

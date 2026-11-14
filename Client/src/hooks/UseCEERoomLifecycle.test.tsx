@@ -223,7 +223,7 @@ it("直链加入被非密码类拒绝时回大厅并提示", async () => {
     ),
   });
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
-  expect(useCEEStore.getState().toasts[0]?.text).toBe("房间已满");
+  expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "房间已满", type: "error" });
   await waitFor(() => expect(h.result.current.joining).toBe(false));
 });
 it("恢复会话临时失败时回大厅提示，不卡在正在加入", async () => {
@@ -244,7 +244,7 @@ it("恢复会话临时失败时回大厅提示，不卡在正在加入", async (
     ),
   });
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
-  expect(useCEEStore.getState().toasts[0]?.text).toBe("连接已断开");
+  expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "连接已断开", type: "error" });
   await waitFor(() => expect(h.result.current.joining).toBe(false));
 });
 
@@ -384,7 +384,10 @@ describe("CEE 直链入房的分支与去向（补充）", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee", { replace: true })
     );
-    expect(useCEEStore.getState().toasts[0]?.text).toBe("房间数已达上限");
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+      text: "房间数已达上限",
+      type: "error",
+    });
     await waitFor(() => expect(h.result.current.joining).toBe(false));
   });
   it("入房被 store 以取消拒绝：不提示也不退出", async () => {

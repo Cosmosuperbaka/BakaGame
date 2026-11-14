@@ -48,7 +48,7 @@ export function useCEERoomLifecycle() {
   };
   /** 无法就地解决的失败：提示后回大厅，不把玩家留在永不结束的「正在加入」里。 */
   const leaveWithNotice = (failure: unknown) => {
-    useCEEStore.getState().showToast(ceeErrorMessage(failure));
+    useCEEStore.getState().showToast(ceeErrorMessage(failure), "error");
     void navigate("/cee", { replace: true });
   };
   const cancelled = (failure: unknown, controller: AbortController) =>

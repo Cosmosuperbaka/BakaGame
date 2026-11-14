@@ -201,7 +201,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
           .subscribeLobby()
           .catch((error: unknown) => {
             if (runtime.isInitialized() && generation === runtime.generation() && get().connected)
-              get().showToast(ceeErrorMessage(error));
+              get().showToast(ceeErrorMessage(error), "error");
           });
       },
       restore: { by: "page" },
@@ -220,13 +220,13 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       privateState: (privateState) => set({ privateState }),
       roomEnded: (text) => {
         get().resetRoom(true);
-        get().showToast(text);
+        get().showToast(text, "error");
       },
       shutdown: (payload) => {
         // 原地待命：不清会话、不重置房间、也不作废在途入房。重启后由 useCEERoomLifecycle
         // 带原票据重进；真回不去时会走会话结束分支。
         const { message, reason } = payload as { message?: string; reason?: string };
-        get().showToast(message ?? reason ?? "服务正在重启，稍后将自动重连");
+        get().showToast(message ?? reason ?? "服务正在重启，稍后将自动重连", "error");
       },
     },
   });
@@ -244,7 +244,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     requestLoginAt: 0,
     promptLogin: () => set({ requestLoginAt: Date.now() }),
     reportError: (error) => {
-      get().showToast(ceeErrorMessage(error));
+      get().showToast(ceeErrorMessage(error), "error");
       if (isProtocolError(error) && isLoginRequiredCode(error.code)) get().promptLogin();
     },
     subscribeLobby: async () => {
@@ -278,7 +278,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
           removeCEESession(roomId);
           get().resetRoom(roomIsGone(error));
           // 原版房的会话过期码不在共享表里，文案仍用服务端给的那句。
-          if (isPermanentRoomError(error)) get().showToast(permanentRoomErrorMessage(error));
+          if (isPermanentRoomError(error))
+            get().showToast(permanentRoomErrorMessage(error), "error");
           else get().reportError(error);
           return true;
         },

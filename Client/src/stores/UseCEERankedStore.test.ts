@@ -529,7 +529,8 @@ describe("排位命令", () => {
 
     await useCEERankedStore.getState().queue();
     expect(socket.showToast).toHaveBeenCalledWith(
-      `排位赛需要使用 BakaGame 客户端，请下载安装后再参与：${BAKA_CLIENT_DOWNLOAD_URL}`
+      `排位赛需要使用 BakaGame 客户端，请下载安装后再参与：${BAKA_CLIENT_DOWNLOAD_URL}`,
+      "error"
     );
     expect(socket.reportError).not.toHaveBeenCalled();
   });

@@ -56,7 +56,7 @@ export default function CEEPage() {
         return undefined;
       })
       .catch((failure) => {
-        if (active) store.showToast(ceeErrorMessage(failure));
+        if (active) store.showToast(ceeErrorMessage(failure), "error");
       })
       .finally(() => {
         if (active) setLeaving(false);

@@ -49,7 +49,7 @@ it("停机时原地待命：保留房间会话，只提示等待重连", () => {
   // 服务端会落盘房间，重连后由 useCEERoomLifecycle 带原票据重进；清掉会话就真回不去了。
   expect(useCEEStore.getState().roomId).toBe("1234");
   expect(readCEESession("1234")).toBe("cee-token");
-  expect(useCEEStore.getState().toasts[0]?.text).toBe("服务器维护中");
+  expect(useCEEStore.getState().toasts[0]).toMatchObject({ text: "服务器维护中", type: "error" });
 });
 
 it("停机不作废在途入房：晚到 ACK 照常落座", async () => {
@@ -125,7 +125,10 @@ describe("CEE 状态同步", () => {
     });
     await useCEEStore.getState().reconnectRoom("1234");
     expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
-    expect(useCEEStore.getState().toasts[0]?.text).toBe("房间已解散或不存在");
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+      text: "房间已解散或不存在",
+      type: "error",
+    });
   });
 
   it("网络类错误不算永久失效，本地凭据留着下次再试", async () => {
@@ -175,6 +178,29 @@ describe("CEE 状态同步", () => {
       lobbyReady: false,
       roomId: null,
     });
+  });
+
+  it("连上后订阅大厅失败：以错误提示报出", async () => {
+    let status: (connected: boolean) => void = () => {};
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+      status = handler;
+      return () => {};
+    });
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+    vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {});
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "BAD", message: "大厅暂不可用" });
+    const cleanup = initCEEWs();
+    try {
+      status(true);
+      await vi.waitFor(() =>
+        expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+          text: "大厅暂不可用",
+          type: "error",
+        })
+      );
+    } finally {
+      cleanup();
+    }
   });
 
   it("卸载先断连接再退订阅：断线回调仍把连接态与展示态清干净", () => {
@@ -1125,13 +1151,13 @@ it("房间结束事件带房号且与当前一致时，清该房会话并退房"
 it.each(["cee.room.closed", "cee.player.kicked", "session.replaced"])(
   "%s 的提示优先用服务端句子，其次原因，都没有才兜底",
   (event) => {
-    const shown = () => useCEEStore.getState().toasts.map((toast) => toast.text);
+    const shown = () => useCEEStore.getState().toasts.at(-1);
     handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
-    expect(shown()).toEqual(["服务端句子"]);
+    expect(shown()).toMatchObject({ text: "服务端句子", type: "error" });
     handleCEEMessage({ type: "event", event, payload: { reason: "原因" } });
-    expect(shown()).toEqual(["原因"]);
+    expect(shown()).toMatchObject({ text: "原因", type: "error" });
     handleCEEMessage({ type: "event", event, payload: {} });
-    expect(shown()).toEqual(["房间会话已结束，请重新加入"]);
+    expect(shown()).toMatchObject({ text: "房间会话已结束，请重新加入", type: "error" });
   }
 );
 it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
@@ -1295,12 +1321,15 @@ describe("CEE 反作弊文案与旁观审批", () => {
   it("reportError 触发提示，LOGIN_REQUIRED 顺带请求打开登录弹窗", () => {
     const before = useCEEStore.getState().requestLoginAt;
     useCEEStore.getState().reportError({ code: "LOGIN_REQUIRED", message: "服务端原文" });
-    expect(useCEEStore.getState().toasts[0]?.text).toBe("该房间要求登录后再创建、加入或旁观");
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+      text: "该房间要求登录后再创建、加入或旁观",
+      type: "error",
+    });
     expect(useCEEStore.getState().requestLoginAt).toBeGreaterThan(before);
     // 非登录类错误不动登录弹窗时间戳。
     useCEEStore.getState().reportError({ code: "CLIENT_REQUIRED", message: "服务端原文" });
     expect(useCEEStore.getState().requestLoginAt).toBe(useCEEStore.getState().requestLoginAt);
-    expect(useCEEStore.getState().toasts[0]?.text).toContain(BAKA_CLIENT_DOWNLOAD_URL);
+    expect(useCEEStore.getState().toasts.at(-1)?.text).toContain(BAKA_CLIENT_DOWNLOAD_URL);
   });
 
   it("handleCEEMessage 消费 spectateResult：批准走成功提示，拒绝走错误提示", () => {
@@ -1309,7 +1338,7 @@ describe("CEE 反作弊文案与旁观审批", () => {
       event: "cee.player.spectateResult",
       payload: { approved: true },
     });
-    expect(useCEEStore.getState().toasts[0]).toMatchObject({
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
       text: "房主已同意旁观",
       type: "success",
     });
@@ -1318,7 +1347,7 @@ describe("CEE 反作弊文案与旁观审批", () => {
       event: "cee.player.spectateResult",
       payload: { approved: false },
     });
-    expect(useCEEStore.getState().toasts[0]).toMatchObject({
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
       text: "房主未同意旁观",
       type: "error",
     });

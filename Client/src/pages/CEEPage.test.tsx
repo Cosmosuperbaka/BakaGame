@@ -85,6 +85,22 @@ it("StrictMode 返回大厅只退房一次，当前挂载在退房完成后订�
   await waitFor(() => expect(screen.getByRole("button", { name: "加入房间" })).toBeEnabled());
   expect(fixture.subscribe).toHaveBeenCalledOnce();
 });
+it("回大厅时退房失败以错误提示报出", async () => {
+  useCEEStore.setState({
+    roomId: "1234",
+    connected: true,
+    lobbyReady: true,
+    leaveRoom: vi.fn().mockRejectedValue({ code: "BAD", message: "退房失败" }),
+    subscribeLobby: vi.fn().mockResolvedValue(undefined),
+  });
+  render(<CEEPage />);
+  await waitFor(() =>
+    expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({
+      text: "退房失败",
+      type: "error",
+    })
+  );
+});
 it("大厅已经卸载时退房晚响应不再订阅", async () => {
   const fixture = releaseFixture();
   const h = render(<CEEPage />);
