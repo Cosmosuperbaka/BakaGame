@@ -49,11 +49,22 @@ fn start_with_limit(
                             continue;
                         };
                         let resolver = resolver.clone();
-                        std::thread::spawn(move || {
-                            if let Err(err) = handle(stream, resolver, slot) {
-                                eprintln!("[baka-dns-proxy] {err}");
+                        // 线程创建失败（资源耗尽）不能让接受循环退出，否则隧道从此停止服务：
+                        // 能回就回 503，名额随闭包一起被丢弃而归还，继续接受后续连接
+                        let reply = stream.try_clone().ok();
+                        let spawned = std::thread::Builder::new()
+                            .name("baka-dns-proxy-conn".to_string())
+                            .spawn(move || {
+                                if let Err(err) = handle(stream, resolver, slot) {
+                                    eprintln!("[baka-dns-proxy] {err}");
+                                }
+                            });
+                        if let Err(err) = spawned {
+                            eprintln!("[baka-dns-proxy] 创建处理线程失败：{err}");
+                            if let Some(stream) = reply {
+                                let _ = write_response(&stream, "503 Service Unavailable");
                             }
-                        });
+                        }
                     }
                     Err(err) => {
                         eprintln!("[baka-dns-proxy] accept 失败：{err}");
@@ -65,7 +76,7 @@ fn start_with_limit(
     Ok(address)
 }
 
-/// 并发连接名额：持有期间计数加一，释放（含处理线程 panic）时自动减一。
+/// 并发连接名额：持有期间计数加一，释放（含处理线程 panic、线程创建失败）时自动减一。
 /// 所有权随连接移动，只会释放一次；处理函数在进入隧道前主动丢弃它。
 struct ConnectionSlot(Arc<AtomicUsize>);
 
