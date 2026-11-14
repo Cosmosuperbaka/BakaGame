@@ -115,11 +115,29 @@ for (const [specifier, files] of imports) {
   assert.ok(!isUnder(file, serverTree), `${specifier} 不得从 Server 的安装树解析，实际 ${file}`);
 }
 
+// 两端各自声明的同名依赖必须写同一个版本：共享代码在两边各编译一次，漏改一端就会按不同版本编译，
+// 协议与校验库的版本分叉尤其难查。这里直接比对两份清单，不引入额外的版本目录机制。
+const serverPackage = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, "Server", "package.json"), "utf8")
+);
+const versionsOf = (pkg) => ({ ...pkg.dependencies, ...pkg.devDependencies });
+const clientVersions = versionsOf(clientPackage);
+const serverVersions = versionsOf(serverPackage);
+const common = Object.keys(clientVersions).filter((name) => name in serverVersions);
+assert.ok(common.length > 0, "两端应当有同名依赖可比对（清单读取路径写错时这里会空转）");
+for (const name of common) {
+  assert.equal(
+    clientVersions[name],
+    serverVersions[name],
+    `${name} 在 Client 与 Server 的 package.json 里版本不一致（${clientVersions[name]} 对 ${serverVersions[name]}），升级时两端要一起改`
+  );
+}
+
 // 反向验证：解析结果必须真的能被找到，避免上面的断言因路径写错而空转通过。
 assert.ok(
   ts.sys.fileExists(path.join(root, "tsconfig.app.json")),
   "tsconfig.app.json must exist for the paths mapping check"
 );
 console.log(
-  `Shared imports (${[...imports.keys()].join(", ")}) are wired to Client's own installation.`
+  `Shared imports (${[...imports.keys()].join(", ")}) are wired to Client's own installation; ${common.length} common dependencies are version-aligned.`
 );
