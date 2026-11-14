@@ -57,7 +57,10 @@ export interface CEERankedStore {
   leaderboardLoading: boolean;
   /** 正在提交的命令（按钮的进行中锁与加载反馈用）；同一时刻同类命令只有一条。 */
   pending: Partial<Record<CEERankedAction, true>>;
-  /** 进入排位页时调用：发 `cee.ranked.status`，之后服务端推送 `cee.ranked.state`。返回释放函数（离开页面时调用，停止响应推送并清理本地状态）。 */
+  /**
+   * 进入排位页时调用：连接可用时发 `cee.ranked.status`（没连上就等连上再发），之后服务端推送 `cee.ranked.state`。
+   * 断线不必释放，重连自动重取。返回释放函数（离开页面时调用，停止响应推送并清理本地状态）。
+   */
   attach: () => () => void;
   /** 状态请求失败后由玩家触发：再发一次 `cee.ranked.status`，已有请求在途时不重复发。 */
   retryStatus: () => Promise<void>;
@@ -208,11 +211,12 @@ function handleRankedMessage(generation: number, message: ServerMessage): void {
 function handleRankedStatus(generation: number, connected: boolean): void {
   if (!attached(generation)) return;
   if (!connected) {
-    // 断线即基线作废：修订号与状态一起清掉，重连后以新连接的第一份全量重新起算。
+    // 断线即基线作废，但上一份状态留着只读展示（页面给断线提示），不换回连接中占位；
+    // 修订号一并清掉，重连后的差量都对不上，只等新连接的第一份全量整体替换。
     rawState = null;
     stateRevision = undefined;
     disconnects += 1;
-    useCEERankedStore.setState({ ready: false, state: null, syncFailed: false });
+    useCEERankedStore.setState({ syncFailed: false });
     return;
   }
   void requestStatus();
@@ -280,10 +284,10 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
       attachCount += 1;
       if (!unsubscribeMessage)
         unsubscribeMessage = ws.onMessage((message) => handleRankedMessage(generation, message));
+      // 已连接时 onStatus 注册即回调「已连上」并取状态；没连上就等真正连上再取，
+      // 不发一条注定以「未连接」失败的请求，免得页面先闪一次失败说明。
       if (!unsubscribeStatus)
         unsubscribeStatus = ws.onStatus((connected) => handleRankedStatus(generation, connected));
-      // 已连接时 onStatus 注册即回调并取状态，这里对被节流掉；未连接则等真正连上再取。
-      void requestStatus();
       return () => {
         attachCount = Math.max(0, attachCount - 1);
         if (attachCount > 0) return;

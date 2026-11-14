@@ -1,12 +1,12 @@
 import { useId, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, WifiOff, type LucideIcon } from "lucide-react";
+import { ArrowLeft, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
+import { ConnectionIssue } from "./ConnectionIssue";
 import { useSharedElementName } from "@/hooks/UsePageTransition";
 import { popover } from "@/lib/motion/Choreography";
-import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 
 /** 移动端顶栏入口：各自在对应面板常驻显示的断点以下出现。 */
@@ -232,38 +232,7 @@ export function RoomHeader({
       </div>
 
       <div className="flex items-center justify-end gap-0 md:gap-1">
-        {/* 断线提示：sm 起写成文字，更窄时收成一枚图标（可访问名即文案），两者都随断线出现、恢复后收起。 */}
-        <AnimatePresence initial={false}>
-          {connectionIssue ? (
-            <motion.span
-              key="text"
-              variants={readoutSwap}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              role="status"
-              className="mr-1 hidden shrink-0 text-xs text-destructive motion-safe:animate-breathe sm:inline"
-            >
-              {connectionIssue}
-            </motion.span>
-          ) : null}
-          {connectionIssue ? (
-            <motion.span
-              key="icon"
-              variants={popover}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              role="status"
-              aria-label={connectionIssue}
-              className="mr-1 flex shrink-0 text-destructive sm:hidden"
-            >
-              <WifiOff className="h-4 w-4" aria-hidden="true" />
-              {/* 播报读的是区域里的文字，aria-label 只作可访问名；两者同一份文案。 */}
-              <span className="sr-only">{connectionIssue}</span>
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
+        <ConnectionIssue text={connectionIssue} />
         {actions}
         {toggles.map((toggle) => (
           <HeaderToggle key={toggle.key} toggle={toggle} />

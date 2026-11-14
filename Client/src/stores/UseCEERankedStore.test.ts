@@ -21,6 +21,8 @@ const socket = vi.hoisted(() => {
   const statusHandlers: Array<(connected: boolean) => void> = [];
   // 订阅过的消息处理函数另存一份：释放后仍要能直接调用它，验证「晚到的推送被忽略」。
   const seenHandlers: Array<(message: ServerMessage) => void> = [];
+  // 与真实客户端一致：连接可用时注册状态监听会立刻回调一次「已连上」。
+  const link = { up: true };
   const drop = <T>(list: T[], item: T): T[] => list.filter((candidate) => candidate !== item);
   const client = {
     send,
@@ -39,6 +41,7 @@ const socket = vi.hoisted(() => {
     },
     onStatus(handler: (connected: boolean) => void) {
       statusHandlers.push(handler);
+      if (link.up) handler(true);
       return () => {
         const next = drop(statusHandlers, handler);
         statusHandlers.length = 0;
@@ -60,10 +63,15 @@ const socket = vi.hoisted(() => {
       for (const handler of [...messageHandlers]) handler(message);
     },
     emitStatus(connected: boolean) {
+      link.up = connected;
       for (const handler of [...statusHandlers]) handler(connected);
+    },
+    setLink(up: boolean) {
+      link.up = up;
     },
     lastSeenHandler: () => seenHandlers[seenHandlers.length - 1],
     resetHandlers() {
+      link.up = true;
       messageHandlers.length = 0;
       statusHandlers.length = 0;
       seenHandlers.length = 0;
@@ -305,19 +313,42 @@ describe("排位状态同步", () => {
     expect(callsOf("cee.ranked.status")).toHaveLength(1);
   });
 
-  it("断线清空状态与修订号，重连后自动重新请求全量", async () => {
+  it("断线保留上一份状态只读展示；重连后自动请求全量，以服务端为准整体替换", async () => {
     attachRanked();
     await settle();
     socket.emit(fullFrame(1, queuedState));
     await settle();
 
     socket.emitStatus(false);
-    expect(useCEERankedStore.getState().ready).toBe(false);
-    expect(useCEERankedStore.getState().state).toBeNull();
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, state: queuedState });
+
+    const fresh = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? fresh.promise : Promise.resolve({})
+    );
+    socket.emitStatus(true);
+    // 全量回来之前到的差量不能续在断线前的那份上：基线已作废，只等全量。
+    socket.emit(patchFrame(2, 1, [{ op: "replace", path: "/window", value: 9 }]));
+    await settle();
+    expect(useCEERankedStore.getState().state).toEqual(queuedState);
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+
+    fresh.resolve(idleState);
+    await settle();
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, state: idleState });
+  });
+
+  it("没连上时挂上排位页：不发注定失败的状态请求，连上后再取", async () => {
+    socket.setLink(false);
+    attachRanked();
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(0);
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: false, syncFailed: false });
+    expect(socket.reportError).not.toHaveBeenCalled();
 
     socket.emitStatus(true);
     await settle();
-    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
     expect(useCEERankedStore.getState().ready).toBe(true);
   });
 

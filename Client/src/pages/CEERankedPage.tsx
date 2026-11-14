@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CircleAlert, RotateCw } from "lucide-react";
 import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
+import { ConnectionIssue } from "@/components/common/room/ConnectionIssue";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { Button } from "@/components/ui/Button";
 import { BackToHomeButton } from "@/components/common/BackToHomeButton";
@@ -17,6 +18,7 @@ import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/components/cee/CEEDataSource";
 import { isBakaClient } from "@/lib/BakaChannel";
+import { CONNECTION_LOST_TEXT } from "@/lib/ConnectionCopy";
 import { dropIn, fadeSwap, seriesStart } from "@/lib/motion/NamedMoves";
 import { phaseSwap } from "@/lib/motion/Choreography";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
@@ -135,10 +137,11 @@ export default function CEERankedPage() {
   const inSeries = useCEERankedStore((state) => state.state?.status === "series");
   const client = isBakaClient();
   const eligible = client && accountStatus === "signedIn";
+  // 挂着就一直挂着：断线不释放，上一份状态留着只读展示，重连由 store 自动重取全量。
   useEffect(() => {
-    if (!eligible || !connected) return;
+    if (!eligible) return;
     return useCEERankedStore.getState().attach();
-  }, [eligible, connected]);
+  }, [eligible]);
 
   return (
     <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto">
@@ -159,6 +162,8 @@ export default function CEERankedPage() {
             </span>
           </h1>
           <div className="ml-auto flex shrink-0 items-center">
+            {/* 还没就绪时正文的连接中占位已经说明了，断线提示只陪着保留下来的那份状态出现。 */}
+            <ConnectionIssue text={eligible && ready && !connected ? CONNECTION_LOST_TEXT : null} />
             <SettingsEntry />
           </div>
         </div>
@@ -169,6 +174,7 @@ export default function CEERankedPage() {
           accountStatus={accountStatus}
           ready={ready}
           inSeries={inSeries}
+          connected={connected}
         />
       </main>
     </div>
@@ -241,11 +247,13 @@ function RankedBody({
   accountStatus,
   ready,
   inSeries,
+  connected,
 }: {
   client: boolean;
   accountStatus: AccountStatus;
   ready: boolean;
   inSeries: boolean;
+  connected: boolean;
 }) {
   const promptLogin = () => useCEEStore.getState().promptLogin();
   if (!client) return <CEERankedGate reason="client" onLogin={promptLogin} />;
@@ -260,6 +268,8 @@ function RankedBody({
         initial="initial"
         animate="animate"
         exit="exit"
+        // 断线时这是上一份状态的只读展示：看得见、点不动，顶栏说明原因；连上并取回全量后恢复。
+        inert={!connected}
       >
         {/* 刷新或重连后直接落在系列赛里时整块是首屏那一项：边界让之后换上的局分标记照常入场 */}
         <PresenceBoundary>

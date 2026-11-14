@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, MemoryRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -135,6 +135,47 @@ describe("CEERankedPage", () => {
 
     expect(screen.getByRole("button", { name: "开始匹配" })).toBeInTheDocument();
     expect(screen.getByText("1532")).toBeInTheDocument();
+  });
+
+  it("断线时保留上一份状态只读展示：顶栏报断线，正文不可操作；连上后撤下", async () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEEStore.setState({ connected: false });
+    useCEERankedStore.setState({
+      ready: true,
+      state: { status: "series", series: rankedSeries("playing") },
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    // 不换回「正在连接排位…」占位：比分与对局照旧在，只是整块不可操作。
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    const guesses = screen.getByRole("region", { name: "你的猜测" });
+    expect(guesses.closest("[inert]")).not.toBeNull();
+    expect(screen.getAllByText("断线中...").length).toBeGreaterThan(0);
+
+    act(() => useCEEStore.setState({ connected: true }));
+    expect(screen.getByRole("region", { name: "你的猜测" }).closest("[inert]")).toBeNull();
+    await waitFor(() => expect(screen.queryAllByText("断线中...")).toEqual([]));
+  });
+
+  it("对局中途断线不释放排位页：上一份状态留着，不退回连接中占位", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEEStore.setState({ connected: true });
+    useCEERankedStore.setState({
+      ready: true,
+      state: { status: "series", series: rankedSeries("playing") },
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+    expect(screen.getByLabelText("比分 0 比 1")).toBeInTheDocument();
+
+    act(() => useCEEStore.setState({ connected: false }));
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("比分 0 比 1")).toBeInTheDocument();
   });
 
   it("系列赛进行中时换成顶栏比分与对局主体", () => {
