@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AccountProfile,
   AdminAntiCheatReview,
+  AdminFeedbackDetail,
   AdminOverview,
   AdminRoom,
   AdminRuntimeSetting,
@@ -152,6 +153,19 @@ const review: AdminAntiCheatReview = {
   createdAt: "2026-10-18T10:05:00.000Z",
 };
 
+/** 一条登录用户提交的反馈；详情比列表多正文、UA 与回复线程。 */
+const feedback: Omit<AdminFeedbackDetail, "content" | "userAgent" | "replies"> = {
+  id: "fb-1",
+  kind: "bug",
+  title: "歌词不同步",
+  status: "open",
+  createdAt: "2026-10-13T00:00:00.000Z",
+  lastReplyAt: null,
+  user: { id: "u-1", name: "Alice", qqNumber: "10001", image: null },
+  page: "/songuessr",
+  sentryEventId: null,
+};
+
 /** 每个旋钮给一种典型状态：跟随缺省、库内覆盖、布尔项、没有环境变量的模式开关。 */
 const runtimeSettings: AdminRuntimeSetting[] = [
   {
@@ -253,7 +267,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.clearAllMocks();
+  // 只清调用记录会留下上一次用例 mockRejectedValue/mockResolvedValue 的实现，
+  // 后续依赖缺省桩的用例会被悄悄污染。
+  vi.resetAllMocks();
   resetAccountStoreForTest();
 });
 
@@ -519,6 +535,65 @@ describe("管理后台", () => {
     expect(within(dialog).getAllByText(/第 1 回合/).length).toBeGreaterThan(0);
     expect(within(dialog).getByText("本局总分")).toBeInTheDocument();
     expect(admin.games.get).toHaveBeenCalledWith({ id: "rec-1" });
+
+    // 合并时间线不渲染也算「详情加载成功」，这里逐列锁定：距离开局、回合、类型与其余字段。
+    const timeline = within(dialog)
+      .getByRole("heading", { name: "关键事件（1）" })
+      .closest("section") as HTMLElement;
+    expect(within(timeline).getByText("1:00")).toBeInTheDocument();
+    expect(within(timeline).getByText("第 1 回合")).toBeInTheDocument();
+    expect(within(timeline).getByText("guess")).toBeInTheDocument();
+    expect(within(timeline).getByText('{"name":"Bob","result":"wrong"}')).toBeInTheDocument();
+  });
+
+  it("反馈列表点开后可回复：失败留在弹窗，成功后展示回复并清空输入", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const detail: AdminFeedbackDetail = {
+      ...feedback,
+      content: "副歌提前了半拍",
+      userAgent: "测试浏览器",
+      replies: [],
+    };
+    const replied: AdminFeedbackDetail = {
+      ...detail,
+      status: "processing",
+      lastReplyAt: "2026-10-13T01:00:00.000Z",
+      replies: [
+        {
+          id: 1,
+          content: "已修复，请刷新",
+          createdAt: "2026-10-13T01:00:00.000Z",
+          author: { id: "u-admin", name: "管理员", qqNumber: "90001", image: null },
+        },
+      ],
+    };
+    admin.feedback.list.mockResolvedValue({ items: [feedback], total: 1 });
+    admin.feedback.get.mockResolvedValue(detail);
+    admin.feedback.reply.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(replied);
+
+    const events = renderAdmin("/admin?tab=feedback");
+    const table = await screen.findByRole("table", { name: "反馈列表" });
+    await events.click(within(table).getByRole("button", { name: /歌词不同步/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("副歌提前了半拍")).toBeInTheDocument();
+    expect(admin.feedback.get).toHaveBeenCalledWith({ id: "fb-1" });
+
+    const reply = within(dialog).getByLabelText("回复");
+    await events.type(reply, "已修复，请刷新");
+    await events.click(within(dialog).getByRole("button", { name: "发送回复" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("回复失败，请稍后重试");
+    expect(admin.feedback.reply).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "发送回复" }));
+    expect(admin.feedback.reply).toHaveBeenLastCalledWith({
+      id: "fb-1",
+      content: "已修复，请刷新",
+    });
+    expect(await within(dialog).findByRole("region", { name: "回复记录" })).toHaveTextContent(
+      "已修复，请刷新"
+    );
+    expect(reply).toHaveValue("");
+    expect(admin.feedback.list).toHaveBeenCalledTimes(2);
   });
 
   it("QQ 昵称来源：显示 NapCat 在线状态，可刷新全部昵称", async () => {
