@@ -132,8 +132,16 @@ test("landing game entries stack cleanly and stay clear of the footer", async ({
 
     // 顶部不遮挡 header
     expect(resolvedBoxes[0]!.y).toBeGreaterThanOrEqual(headerBox!.y);
-    // 底部不与最后一张卡片重叠
-    expect(footerBox!.y).toBeGreaterThanOrEqual(resolvedBoxes[2]!.y + resolvedBoxes[2]!.height);
+    // 页脚固定在视口底部，矮视口下内容从它下面滚过。要守的是滚到底之后末张卡片整张露在页脚上方。
+    await entries[2]!.hover();
+    await page.mouse.wheel(0, 10_000);
+    await expect
+      .poll(async () => {
+        const last = await entries[2]!.boundingBox();
+        const footer = await page.locator("footer").boundingBox();
+        return footer!.y - (last!.y + last!.height);
+      })
+      .toBeGreaterThanOrEqual(0);
   }
 });
 
