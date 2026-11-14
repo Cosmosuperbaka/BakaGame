@@ -42,6 +42,34 @@ describe("useCEEAction", () => {
     );
   });
 
+  it("不同命令互不阻塞，pending 各自登记、落定各自移除", async () => {
+    const answer = deferred<Record<string, unknown>>();
+    const hint = deferred<Record<string, unknown>>();
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockImplementation((type: string) =>
+        type === "cee.game.setAnswer" ? answer.promise : hint.promise
+      );
+    const h = renderHook(() => useCEEAction());
+
+    act(() => {
+      void h.result.current.run("cee.game.setAnswer", { characterId: 1, hints: [] });
+      void h.result.current.run("cee.game.imageHint", {});
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect([...h.result.current.pending].sort()).toEqual([
+      "cee.game.imageHint",
+      "cee.game.setAnswer",
+    ]);
+    expect(h.result.current.busy).toBe(true);
+
+    await act(async () => answer.resolve({ accepted: true }));
+    expect([...h.result.current.pending]).toEqual(["cee.game.imageHint"]);
+    await act(async () => hint.resolve({ imageUrl: "x" }));
+    expect(h.result.current.pending.size).toBe(0);
+    expect(h.result.current.busy).toBe(false);
+  });
+
   it("失败经统一上报落提示并拉起登录，解锁后可再次提交", async () => {
     const send = vi
       .spyOn(ceeWsClient, "send")

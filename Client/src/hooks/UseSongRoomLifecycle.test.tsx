@@ -125,6 +125,33 @@ describe("runCommand 的进行中锁与失败提示", () => {
     expect(callsOf("song.game.start")[0][2]).toMatchObject({ timeout: 0 });
   });
 
+  it("不同命令互不阻塞，进行中各自登记、落定各自解锁", async () => {
+    const ready = deferred<Record<string, unknown>>();
+    const spectator = deferred<Record<string, unknown>>();
+    send.mockImplementation((type: string) =>
+      type === "song.player.setReady"
+        ? ready.promise
+        : type === "song.player.setSpectator"
+          ? spectator.promise
+          : Promise.resolve(receipt())
+    );
+    const h = mount();
+    act(() => {
+      void h.result.current.runCommand("song.player.setReady", { ready: true });
+      void h.result.current.runCommand("song.player.setSpectator", { spectator: true });
+    });
+    expect(callsOf("song.player.setReady")).toHaveLength(1);
+    expect(callsOf("song.player.setSpectator")).toHaveLength(1);
+    expect(h.result.current.isPending("song.player.setReady")).toBe(true);
+    expect(h.result.current.isPending("song.player.setSpectator")).toBe(true);
+
+    await act(async () => ready.resolve({}));
+    expect(h.result.current.isPending("song.player.setReady")).toBe(false);
+    expect(h.result.current.isPending("song.player.setSpectator")).toBe(true);
+    await act(async () => spectator.resolve({}));
+    expect(h.result.current.isPending("song.player.setSpectator")).toBe(false);
+  });
+
   it("普通失败落服务端文案、不带客户端超时，并且解锁", async () => {
     send.mockImplementation((type: string) =>
       type === "song.player.setReady"

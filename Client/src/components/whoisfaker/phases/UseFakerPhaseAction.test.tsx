@@ -170,5 +170,40 @@ describe("usePhaseAction", () => {
         await first;
       });
     });
+
+    it("同一命令连点只发一次，落定解锁后可再发", async () => {
+      const ack = deferred();
+      const send = vi.fn(() => ack.promise);
+      const { hook } = setup(send);
+      let first!: Promise<void>;
+      act(() => {
+        first = hook.result.current.exec("game.submitVote", { targetId: "p1" });
+        void hook.result.current.exec("game.submitVote", { targetId: "p1" });
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(hook.result.current.pending).toBe("game.submitVote");
+      await act(async () => {
+        ack.resolve();
+        await first;
+      });
+      expect(hook.result.current.pending).toBeNull();
+      await act(async () => {
+        await hook.result.current.exec("game.submitVote", { targetId: "p1" });
+      });
+      expect(send).toHaveBeenCalledTimes(2);
+    });
+
+    it("发命令不带超时选项：无载荷只发命令名，有载荷只带载荷", async () => {
+      const send = vi.fn().mockResolvedValue({});
+      const { hook } = setup(send);
+      await act(async () => {
+        await hook.result.current.exec("game.advancePhase");
+      });
+      expect(send).toHaveBeenNthCalledWith(1, "game.advancePhase");
+      await act(async () => {
+        await hook.result.current.exec("game.submitVote", { targetId: "p1" });
+      });
+      expect(send).toHaveBeenNthCalledWith(2, "game.submitVote", { targetId: "p1" });
+    });
   });
 });
