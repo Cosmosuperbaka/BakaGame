@@ -69,6 +69,18 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     expect(isClientSentryEnabled()).toBe(false);
   });
 
+  // 命令信封靠这个全零号认出「没有活动跨度」再自造追踪号：这里交出别的值，
+  // 那个值就会被当成真追踪号发给服务端，与上报侧对不上。
+  it("SDK 未就绪时 withClientSpan 交出追踪号全零的惰性跨度，回调照常执行", async () => {
+    let traceId = "";
+    const result = await withClientSpan("WS 测试", (span) => {
+      traceId = span.spanContext().traceId;
+      return 7;
+    });
+    expect(result).toBe(7);
+    expect(traceId).toBe("0".repeat(32));
+  });
+
   it("支持通过 options 传入自定义 DSN 与 serverUrl 规范初始化", () => {
     const mockDriver = createMockDriver();
 
