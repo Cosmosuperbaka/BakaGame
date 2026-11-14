@@ -236,6 +236,46 @@ describe("等待页的房间设置草稿", () => {
     expect(screen.queryByText("旁观者可见答案")).not.toBeInTheDocument();
   });
 
+  it("房主开 MCP 接入：走房间设置命令，整份设置只改这一项", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const snapshot = room("房名", "me");
+    render(<CEEWaiting snapshot={snapshot} privateState={me} />);
+    await user.click(screen.getByText("MCP 设置", { exact: true }));
+    await user.click(screen.getByRole("switch", { name: "允许 MCP 接入" }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "cee.room.settings",
+        { settings: { ...snapshot.settings, allowAgents: true } },
+        expect.any(Object)
+      )
+    );
+  });
+
+  it("MCP 接入保存失败：原样显示服务端文案，开关解锁后可重试", async () => {
+    const user = userEvent.setup();
+    const send = vi
+      .spyOn(ceeWsClient, "send")
+      .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以这样做" })
+      .mockResolvedValue({});
+    render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    await user.click(screen.getByText("MCP 设置", { exact: true }));
+    const toggle = screen.getByRole("switch", { name: "允许 MCP 接入" });
+    await user.click(toggle);
+    expect(await screen.findByRole("alert")).toHaveTextContent("只有房主可以这样做");
+    expect(toggle).toBeEnabled();
+    await user.click(toggle);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+  });
+
+  it("非房主只看到 MCP 开关的说明，没有可点的开关", async () => {
+    const user = userEvent.setup();
+    render(<CEEWaiting snapshot={room("房名", "old-host")} privateState={me} />);
+    await user.click(screen.getByText("MCP 设置", { exact: true }));
+    expect(screen.getByText("房主尚未开启 MCP 接入。")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "允许 MCP 接入" })).not.toBeInTheDocument();
+  });
+
   it("玩法设置的自动保存保留房间里当前的旁观可见答案，不被旧草稿改回去", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});

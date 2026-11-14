@@ -360,9 +360,11 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
       </SettingsAccordion>
 
       <McpSettingsSection
-        game="faker"
         allowAgents={snapshot.settings.allowAgents === true}
         isHost={!readOnly}
+        onChangeAllowAgents={async (value) => {
+          await sendCommand("room.updateSettings", { allowAgents: value });
+        }}
       />
     </SettingsStack>
   );

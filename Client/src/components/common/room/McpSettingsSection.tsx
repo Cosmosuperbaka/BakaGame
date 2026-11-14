@@ -1,38 +1,11 @@
-import type { GameId } from "@bakagame/shared";
 import { useState } from "react";
 import { Bot } from "lucide-react";
 import { McpPairingPanel } from "@/components/common/McpPairingPanel";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { usePageControl } from "@/stores/UsePageControl";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { useCEEStore } from "@/stores/UseCEEStore";
 
-const sendForGame = async (game: GameId, type: string, payload: Record<string, unknown> = {}) => {
-  if (game === "faker")
-    return useWhoIsFakerStore.getState().sendCommand(type as never, payload as never);
-  if (game === "song")
-    return useSonGuessrStore.getState().sendCommand(type as never, payload as never);
-  return useCEEStore.getState().sendCommand(type as never, payload as never);
-};
-
-const updateAllowAgents = async (game: GameId, value: boolean): Promise<void> => {
-  if (game === "faker") {
-    await sendForGame(game, "room.updateSettings", { allowAgents: value });
-    return;
-  }
-  if (game === "song") {
-    await sendForGame(game, "song.room.updateSettings", { allowAgents: value });
-    return;
-  }
-  const snapshot = useCEEStore.getState().snapshot;
-  if (!snapshot) throw new Error("尚未收到房间快照");
-  await sendForGame(game, "cee.room.settings", {
-    settings: { ...snapshot.settings, allowAgents: value },
-  });
-};
-
+// 房间命令的失败是协议错误体（普通对象），不是 ORPCError，文案直接取 message。
 const errorMessage = (failure: unknown, fallback: string): string =>
   (failure as { message?: string } | null)?.message ?? fallback;
 
@@ -66,13 +39,13 @@ function McpToggle({
 }
 
 function McpSettingsBody({
-  game,
   allowAgents,
   isHost,
+  onChangeAllowAgents,
 }: {
-  game: GameId;
   allowAgents: boolean;
   isHost: boolean;
+  onChangeAllowAgents: (value: boolean) => Promise<void>;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -81,7 +54,7 @@ function McpSettingsBody({
     setPending(true);
     setError("");
     try {
-      await updateAllowAgents(game, value);
+      await onChangeAllowAgents(value);
     } catch (failure) {
       setError(errorMessage(failure, "保存 MCP 设置失败"));
     } finally {
@@ -111,15 +84,16 @@ function McpSettingsBody({
  * 房间的 MCP 设置项：房主的房间开关在这里，交给 Agent 的入口与任何页面是同一块，
  * 不再出现在建房弹窗或通用房间设置里，也不向玩家展示接入文档。
  * 整组不设只读：配对是每位玩家自己的事，房主开关对非房主本来就只是一行说明。
+ * 保存路径由各玩法的等待页给出：三款玩法的房间设置命令与载荷形状不同，公共块不该认识它们。
  */
 export function McpSettingsSection({
-  game,
   allowAgents,
   isHost,
+  onChangeAllowAgents,
 }: {
-  game: GameId;
   allowAgents: boolean;
   isHost: boolean;
+  onChangeAllowAgents: (value: boolean) => Promise<void>;
 }) {
   const { status } = usePageControl();
   const [open, setOpen] = useState(false);
@@ -135,7 +109,11 @@ export function McpSettingsSection({
       open={open}
       onOpenChange={setOpen}
     >
-      <McpSettingsBody game={game} allowAgents={allowAgents} isHost={isHost} />
+      <McpSettingsBody
+        allowAgents={allowAgents}
+        isHost={isHost}
+        onChangeAllowAgents={onChangeAllowAgents}
+      />
     </SettingsAccordion>
   );
 }

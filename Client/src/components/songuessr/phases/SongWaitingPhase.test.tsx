@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SONG_PEOPLE, songPlayer, songSnapshot } from "@/stories/fixtures/SonGuessr";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongWaitingPhase } from "./SongWaitingPhase";
 
 const { host, me } = SONG_PEOPLE;
@@ -57,5 +58,68 @@ describe("猜歌等待页开局条件", () => {
       />
     );
     expect(screen.getByRole("button", { name: "请先登录网易云或 QQ 音乐账号" })).toBeDisabled();
+  });
+});
+
+describe("猜歌等待页的 MCP 接入开关", () => {
+  const initialStoreState = useSonGuessrStore.getState();
+  const hostSnapshot = () => songSnapshot({ players: readyPlayers() });
+
+  afterEach(() => {
+    useSonGuessrStore.setState(initialStoreState, true);
+  });
+
+  it("房主开 MCP 接入：单独一条房间设置命令，只带这一项", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand });
+    render(<SongWaitingPhase snapshot={hostSnapshot()} me={readyPlayers()[0]} isHost run={run} />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "允许 MCP 接入" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("song.room.updateSettings", {
+        allowAgents: true,
+      })
+    );
+  });
+
+  it("单人房同样能开 MCP 接入", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand });
+    render(<SongWaitingPhase snapshot={songSnapshot({ solo: true })} isHost run={run} />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "允许 MCP 接入" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("song.room.updateSettings", {
+        allowAgents: true,
+      })
+    );
+  });
+
+  it("MCP 接入保存失败：原样显示服务端文案，开关解锁后可重试", async () => {
+    const sendCommand = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以这样做" })
+      .mockResolvedValue({});
+    useSonGuessrStore.setState({ sendCommand });
+    render(<SongWaitingPhase snapshot={hostSnapshot()} me={readyPlayers()[0]} isHost run={run} />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    const toggle = screen.getByRole("switch", { name: "允许 MCP 接入" });
+    fireEvent.click(toggle);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("只有房主可以这样做");
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(sendCommand).toHaveBeenCalledTimes(2));
+  });
+
+  it("非房主只看到 MCP 开关的说明，没有可点的开关", () => {
+    render(
+      <SongWaitingPhase snapshot={hostSnapshot()} me={readyPlayers()[1]} isHost={false} run={run} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    expect(screen.getByText("房主尚未开启 MCP 接入。")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "允许 MCP 接入" })).not.toBeInTheDocument();
   });
 });

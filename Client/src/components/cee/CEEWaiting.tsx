@@ -104,6 +104,18 @@ async function saveSpectatorsSeeAnswers(roomId: string, value: boolean): Promise
   }));
 }
 
+/**
+ * MCP 开关是房间级设置，不进玩法草稿：点一下就把房间里当前的整份设置改这一项后发出。
+ * 读的是点击那一刻的快照，不是渲染时的 props，免得把别处刚改过的设置写回旧值。
+ */
+async function saveAllowAgents(value: boolean): Promise<void> {
+  const snapshot = useCEEStore.getState().snapshot;
+  if (!snapshot) throw new Error("尚未收到房间快照");
+  await useCEEStore.getState().sendCommand("cee.room.settings", {
+    settings: { ...snapshot.settings, allowAgents: value },
+  });
+}
+
 /** 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */
 const visibilityIcon = (
   source: CEERoomSnapshot["source"],
@@ -422,9 +434,9 @@ export function CEEWaiting({
 
         {snapshot.source === "native" ? (
           <McpSettingsSection
-            game="cee"
             allowAgents={snapshot.settings.allowAgents === true}
             isHost={isHost}
+            onChangeAllowAgents={saveAllowAgents}
           />
         ) : null}
       </SettingsStack>

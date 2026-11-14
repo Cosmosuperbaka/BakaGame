@@ -25,6 +25,13 @@ import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 const notifyCopyFailed = () =>
   useSonGuessrStore.getState().showToast("复制失败，请手动复制", "error");
 
+/** MCP 开关是房间级设置，单独一条命令改这一项，不进题目与猜测的草稿。 */
+const saveAllowAgents = async (value: boolean): Promise<void> => {
+  await useSonGuessrStore
+    .getState()
+    .sendCommand("song.room.updateSettings", { allowAgents: value });
+};
+
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
  * 单人模式没有房间设置，但保留 MCP 接入——把唯一那个座位交给 Agent 是单人练习的合法用法。
@@ -91,9 +98,9 @@ function SongSettingsGroups({
       ) : null}
       {/* 单人房同样可以交给 Agent：房里只有自己那一个座位，凭证仍是自己的会话。 */}
       <McpSettingsSection
-        game="song"
         allowAgents={snapshot.settings.allowAgents === true}
         isHost={!readOnly}
+        onChangeAllowAgents={saveAllowAgents}
       />
     </SettingsStack>
   );

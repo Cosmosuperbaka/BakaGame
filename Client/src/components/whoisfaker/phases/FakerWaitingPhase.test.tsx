@@ -282,6 +282,52 @@ describe("waiting room sharing", () => {
     );
   });
 
+  it("房主开 MCP 接入：单独一条房间设置命令，只带这一项", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "允许 MCP 接入" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
+        allowAgents: true,
+      })
+    );
+  });
+
+  it("MCP 接入保存失败：原样显示服务端文案，开关解锁后可重试", async () => {
+    const sendCommand = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以这样做" })
+      .mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    const toggle = screen.getByRole("switch", { name: "允许 MCP 接入" });
+    fireEvent.click(toggle);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("只有房主可以这样做");
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(sendCommand).toHaveBeenCalledTimes(2));
+  });
+
+  it("非房主只看到 MCP 开关的说明，没有可点的开关", () => {
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    expect(screen.getByText("房主尚未开启 MCP 接入。")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "允许 MCP 接入" })).not.toBeInTheDocument();
+  });
+
   it("新建房间的等待页先套用上次设置，落定后才出设置面板", async () => {
     markPendingRestore("faker", "1234");
     saveRoomSettingsMemory("faker", {
