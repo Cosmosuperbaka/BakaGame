@@ -11,6 +11,7 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
+import { countOnlineByMembership } from "../room/RoomSummaries";
 import { isGhostChatActive, isRoundActive, spectatorReadsGhostChat } from "./RoomAccess";
 import { getConfigurableParticipantCount, getCurrentSpeechState } from "./RoundRules";
 import type { WhoIsFakerContext } from "./Context";
@@ -26,12 +27,9 @@ export const buildRoomSummary = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): WhoIsFakerRoomSummary => {
-  const activeCount = Object.values(room.players).filter(
-    (player) => player.membership === "active" && player.online
-  ).length;
-  const spectatorCount = Object.values(room.players).filter(
-    (player) => player.membership === "spectator" && player.online
-  ).length;
+  const { active: activeCount, spectator: spectatorCount } = countOnlineByMembership(
+    Object.values(room.players)
+  );
   return {
     roomId: room.id,
     name: room.settings.name,

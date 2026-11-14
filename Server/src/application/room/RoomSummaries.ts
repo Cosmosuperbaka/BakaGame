@@ -11,6 +11,23 @@ export const countOnline = (seats: Iterable<SeatCore>): number => {
   return count;
 };
 
+/**
+ * 大厅摘要要把在线人数拆成玩家与旁观两栏，离线与被移出的同样不计。
+ * 一次遍历：座位容器可能只给单次迭代器（`Map.values()`），分两次数会漏掉后半截。
+ */
+export const countOnlineByMembership = (
+  seats: Iterable<SeatCore>
+): { active: number; spectator: number } => {
+  let active = 0;
+  let spectator = 0;
+  for (const seat of seats) {
+    if (!seat.online) continue;
+    if (seat.membership === "active") active += 1;
+    else if (seat.membership === "spectator") spectator += 1;
+  }
+  return { active, spectator };
+};
+
 /** 后台房间视图：成员映射三款逐字段相同，被移出的记录不列出；令牌、身份与对局秘密不进视图。 */
 export const adminRoomView = (
   room: RoomCore,

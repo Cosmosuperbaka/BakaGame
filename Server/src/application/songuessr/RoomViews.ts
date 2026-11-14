@@ -15,7 +15,7 @@ import type {
 } from "../../shared/Index";
 import type { AdminRoomView } from "../../domain/AdminRoom";
 import { canSeeRoundSecrets } from "../../domain/Visibility";
-import { adminRoomView, countOnline } from "../room/RoomSummaries";
+import { adminRoomView, countOnline, countOnlineByMembership } from "../room/RoomSummaries";
 import { audioTicketUrl } from "./AudioTicket";
 import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicPool";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
@@ -28,12 +28,9 @@ export const buildRoomSummary = (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord
 ): SonGuessrRoomSummary => {
-  const activeCount = Object.values(room.players).filter(
-    (player) => player.membership === "active" && player.online
-  ).length;
-  const spectatorCount = Object.values(room.players).filter(
-    (player) => player.membership === "spectator" && player.online
-  ).length;
+  const { active: activeCount, spectator: spectatorCount } = countOnlineByMembership(
+    Object.values(room.players)
+  );
   return {
     roomId: room.id,
     name: room.name,

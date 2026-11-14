@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   adminRoomView,
   countOnline,
+  countOnlineByMembership,
   requireAdminRoom,
 } from "../../src/application/room/RoomSummaries";
 import { expectAppError, makeRoom, makeSeat } from "./RoomKernelFixtures";
@@ -18,6 +19,22 @@ describe("在线计数", () => {
     expect(countOnline(seats)).toBe(2);
     expect(countOnline(new Map(seats.map((seat) => [seat.id, seat])).values())).toBe(2);
     expect(countOnline([])).toBe(0);
+  });
+
+  test("按身份分开数在线人数：离线与被移出的都不计，单次迭代器同样吃得下", () => {
+    const seats = [
+      makeSeat("a"),
+      makeSeat("b", { online: false }),
+      makeSeat("c", { membership: "spectator" }),
+      makeSeat("d", { membership: "spectator", online: false }),
+      makeSeat("k", { membership: "kicked" }),
+      makeSeat("ks", { membership: "kicked", online: false }),
+    ];
+    expect(countOnlineByMembership(seats)).toEqual({ active: 1, spectator: 1 });
+    expect(countOnlineByMembership(new Map(seats.map((seat) => [seat.id, seat])).values())).toEqual(
+      { active: 1, spectator: 1 }
+    );
+    expect(countOnlineByMembership([])).toEqual({ active: 0, spectator: 0 });
   });
 });
 

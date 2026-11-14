@@ -1720,6 +1720,12 @@ describe("补充：提交、成员、巡检的剩余边界", () => {
     const late = Object.values(open.room().players).find((player) => player.name === "晚到B")!;
     expect(late.membership).toBe("spectator");
     expect(open.lobbyFrames()).toBeGreaterThan(before);
+    // 三个数字是分别下发的字段，只断言在线总数会让玩家栏与旁观栏悄悄互换。
+    expect(open.service.getRoomSummaries()[0]).toMatchObject({
+      playerCount: 2,
+      spectatorCount: 1,
+      onlineCount: 3,
+    });
   });
 
   test("离开房间：写公告并更新活动时间；最后一人离开时关房并发大厅更新", async () => {
