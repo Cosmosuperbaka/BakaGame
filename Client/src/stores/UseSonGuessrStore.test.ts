@@ -1199,6 +1199,30 @@ describe("状态同步", () => {
     expect(requestSyncCalls()).toHaveLength(1);
   });
 
+  it("清理让连接代次前进：清理时还在途的入房，晚到的 ACK 不再写入身份", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const cleanup = initSonGuessrWs();
+    const joined = useSonGuessrStore
+      .getState()
+      .joinRoom("1234", "玩家")
+      .then(
+        () => null,
+        (error: unknown) => error
+      );
+    cleanup();
+    resolveAck({ roomId: "1234", sessionToken: "late-token" });
+
+    expect(await joined).toMatchObject({ name: "AbortError" });
+    expect(useSonGuessrStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+  });
+
   describe("入房往返期间收到过别的房间的推送", () => {
     let resolveAck!: (value: unknown) => void;
     let joined: Promise<unknown>;
