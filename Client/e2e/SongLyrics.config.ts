@@ -18,6 +18,8 @@ export default defineConfig({
     command: "npx vite --config e2e/SongLyrics.vite.ts --host 127.0.0.1 --port 5177 --strictPort",
     // HTML 可先于真实生产 CSS 编译完成；就绪探针等待这个必要资源，而非让首例承担冷编译。
     url: "http://127.0.0.1:5177/src/index.css",
+    // 就绪探针等的是整份样式表的冷编译：机器被别的任务占着时一分钟不够，等不到会让整组用例直接不跑。
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
 });
