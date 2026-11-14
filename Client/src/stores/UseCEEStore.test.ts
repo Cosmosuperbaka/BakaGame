@@ -52,6 +52,34 @@ it("停机时原地待命：保留房间会话，只提示等待重连", () => {
   expect(useCEEStore.getState().toasts[0]?.text).toBe("服务器维护中");
 });
 
+it("停机不作废在途入房：晚到 ACK 照常落座", async () => {
+  let resolveAck!: (value: Record<string, unknown>) => void;
+  const ack = new Promise<Record<string, unknown>>((resolve) => {
+    resolveAck = resolve;
+  });
+  const send = vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const joined = useCEEStore.getState().joinRoom("1234", "玩家");
+
+  handleCEEMessage({
+    type: "event",
+    event: "server.shutdown",
+    payload: { message: "服务器维护中" },
+  });
+  resolveAck({
+    source: "native",
+    roomId: "1234",
+    sessionToken: "late-token",
+    snapshot,
+    privateState: null,
+  });
+  await joined;
+
+  // CEE 停机后由页面带原票据重进，入房意图不作废：晚到的 ACK 照常安装身份，不额外发离房。
+  expect(send.mock.calls.map(([command]) => command)).toEqual(["cee.room.join"]);
+  expect(readCEESession("1234")).toBe("late-token");
+  expect(useCEEStore.getState()).toMatchObject({ roomId: "1234", sessionToken: "late-token" });
+});
+
 afterEach(() => {
   resetCEEStateSync();
   useCEEStore.getState().resetRoom();
@@ -1108,6 +1136,80 @@ it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口"
   await vi.waitFor(() => expect(requestSyncCalls()).toHaveLength(2));
 });
 
+describe("CEE 连接生命周期", () => {
+  const live = { messages: 0, statuses: 0 };
+  let connects = 0;
+  let status: (connected: boolean) => void = () => {};
+
+  beforeEach(() => {
+    live.messages = 0;
+    live.statuses = 0;
+    connects = 0;
+    status = () => {};
+    vi.spyOn(ceeWsClient, "onMessage").mockImplementation(() => {
+      live.messages += 1;
+      return () => {
+        live.messages -= 1;
+      };
+    });
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
+      live.statuses += 1;
+      status = handler;
+      return () => {
+        live.statuses -= 1;
+      };
+    });
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {
+      connects += 1;
+    });
+    vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => {});
+  });
+
+  it("重复初始化不叠加第二路消息与状态订阅", () => {
+    const cleanup = initCEEWs();
+    const again = initCEEWs();
+    expect(live).toEqual({ messages: 1, statuses: 1 });
+    expect(connects).toBe(1);
+    // 第二次调用交回的清理是空操作，不能把第一次的订阅退掉。
+    again();
+    expect(live).toEqual({ messages: 1, statuses: 1 });
+    cleanup();
+    expect(live).toEqual({ messages: 0, statuses: 0 });
+  });
+
+  it("清理之后可以重新初始化", () => {
+    initCEEWs()();
+    expect(live).toEqual({ messages: 0, statuses: 0 });
+    const next = initCEEWs();
+    expect(live).toEqual({ messages: 1, statuses: 1 });
+    expect(connects).toBe(2);
+    next();
+  });
+
+  it("大厅订阅的晚到 ACK 换了代次就不写就绪标记", async () => {
+    let resolveSubscribe!: (value: Record<string, unknown>) => void;
+    const subscribe = new Promise<Record<string, unknown>>((resolve) => {
+      resolveSubscribe = resolve;
+    });
+    vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(subscribe).mockResolvedValue({});
+    useCEEStore.setState({ lobbyReady: false, originalAvailable: false });
+    const cleanup = initCEEWs();
+    try {
+      status(true);
+      // 订阅回包还没到，连接就又断了一次：旧连接的就绪标记不能落到新连接上。
+      status(false);
+      resolveSubscribe({ originalAvailable: true });
+      await subscribe;
+      expect(useCEEStore.getState()).toMatchObject({
+        lobbyReady: false,
+        originalAvailable: false,
+      });
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe("CEE 反作弊文案与旁观审批", () => {
   it("ceeErrorMessage 按错误码给出可归因文案，CLIENT_REQUIRED 附带下载地址", () => {
     expect(ceeErrorMessage({ code: "CLIENT_REQUIRED", message: "服务端原文" })).toContain(
@@ -1211,5 +1313,17 @@ describe("CEE 提示行为", () => {
   it("默认类型是 error", () => {
     useCEEStore.getState().showToast("默认类型");
     expect(shownToasts().map((t) => t.type)).toEqual(["error"]);
+  });
+
+  it("房间结束没有服务端句子时用兜底文案，按默认五秒消失", () => {
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot });
+    handleCEEMessage({ type: "event", event: "cee.player.kicked", payload: {} });
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([
+      ["房间会话已结束，请重新加入", "error"],
+    ]);
+    vi.advanceTimersByTime(4999);
+    expect(shownToasts()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
   });
 });
