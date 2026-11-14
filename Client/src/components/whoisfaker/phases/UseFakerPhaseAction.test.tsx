@@ -155,6 +155,14 @@ describe("usePhaseAction", () => {
       expect(showToast).toHaveBeenCalledWith("返回房间失败", "error");
     });
 
+    it("没给兜底文案、错误也没有文案时，提示「操作失败」", async () => {
+      const { hook, showToast } = setup(vi.fn().mockRejectedValue({}));
+      await act(async () => {
+        await hook.result.current.exec("game.advancePhase");
+      });
+      expect(showToast).toHaveBeenCalledExactlyOnceWith("操作失败", "error");
+    });
+
     it("在途时再发任何命令都被同一把锁挡住", async () => {
       const ack = deferred();
       const send = vi.fn(() => ack.promise);
