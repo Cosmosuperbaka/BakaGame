@@ -15,6 +15,7 @@ import { useMinWidth } from "@/hooks/UseMinWidth";
 import { useUnreadCount } from "@/hooks/UseUnreadCount";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { isCeeReplayEnabled } from "@/lib/CeeReplay";
+import { CONNECTION_LOST_TEXT } from "@/lib/ConnectionCopy";
 import { CEE_SOURCE_LABELS, ceeDisplayRound, ceePerspective, ceeRoomPath } from "@/lib/CEESession";
 
 export default function CEERoomPage() {
@@ -50,9 +51,9 @@ export default function CEERoomPage() {
     />
   );
 
-  // 尚未握手成功：与原版重连中同为断线语义，文案区分来源。
+  // 与本站断开用三款同一句；原版房上游断开是原版服务器那一侧的状态，保留自己的说法。
   const connectionIssue = !lifecycle.connected
-    ? "重连中..."
+    ? CONNECTION_LOST_TEXT
     : ready && !snapshot.upstreamConnected
       ? "原版重连中..."
       : null;

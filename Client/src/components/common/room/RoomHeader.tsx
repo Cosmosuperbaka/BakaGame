@@ -180,7 +180,7 @@ export function RoomHeader({
   center?: ReactNode;
   /** 右侧常驻操作（如音量），放在连接状态之后、移动端入口之前 */
   actions?: ReactNode;
-  /** 断线提示文案，例如「断线中...」；为空表示连接正常 */
+  /** 断线提示文案（与本站断开时用 `CONNECTION_LOST_TEXT`）；为空表示连接正常 */
   connectionIssue?: string | null;
   toggles?: RoomHeaderToggle[];
 }) {

@@ -19,6 +19,7 @@ import { useSongRoom } from "@/components/songuessr/UseSongRoom";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { CONNECTION_LOST_TEXT } from "@/lib/ConnectionCopy";
 
 /**
  * 播放器只关心「现在该播哪一段」：进行中取回合本身，结算取总结里的歌曲，
@@ -226,7 +227,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             <RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />
           </>
         }
-        connectionIssue={connected ? null : "断线中..."}
+        connectionIssue={connected ? null : CONNECTION_LOST_TEXT}
         player={solo ? undefined : <PlayerColumn>{playerList}</PlayerColumn>}
         game={
           <SongGameArea

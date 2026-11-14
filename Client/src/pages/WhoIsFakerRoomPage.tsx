@@ -27,6 +27,7 @@ import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import type { WhoIsFakerRole } from "@bakagame/shared";
+import { CONNECTION_LOST_TEXT } from "@/lib/ConnectionCopy";
 
 export default function WhoIsFakerRoomPage() {
   const { roomId: routeRoomId } = useParams<{ roomId: string }>();
@@ -220,7 +221,7 @@ export default function WhoIsFakerRoomPage() {
           />
         }
         actions={<RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />}
-        connectionIssue={connected ? null : "断线中..."}
+        connectionIssue={connected ? null : CONNECTION_LOST_TEXT}
         player={
           <FakerRoomPlayerAside
             historyAvailable={historyAvailable}

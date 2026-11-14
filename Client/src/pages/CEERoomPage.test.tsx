@@ -269,13 +269,15 @@ describe("CEE 房间页的聊天与断线提示", () => {
     expect(useCEEStore.getState().toasts.at(-1)).toMatchObject({ text: "房间已满", type: "error" });
   });
 
-  it("断线时保留房间画面，顶栏报断线", () => {
+  it("断线时保留房间画面，顶栏报断线，与另两款同一句", () => {
     enterRoom(false);
     lifecycle.connected = false;
     mount();
     expect(gameArea).toHaveBeenCalled();
     expect(screen.getByRole("combobox", { name: "聊天消息" })).toBeInTheDocument();
-    expect(screen.getAllByText("重连中...").length).toBeGreaterThan(0);
+    // 断线与另两款同一句；原版房上游那句另算，见下一条。
+    expect(screen.getAllByText("断线中...").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("重连中...")).toEqual([]);
   });
 
   it("原版房上游断线时顶栏报原版重连，上游恢复后收起", async () => {
