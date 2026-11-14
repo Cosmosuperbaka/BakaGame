@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
 import { errorText } from "@/lib/ErrorMessage";
+import { WHOISFAKER_COMMAND_POLICY, type WhoIsFakerCommandMap } from "@/lib/WhoIsFakerWs";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useCommandRunner } from "@/hooks/UseCommandRunner";
 import type { WhoIsFakerCommand, WhoIsFakerPayload } from "@bakagame/shared";
 
 /** `exec` 的附加选项。 */
@@ -22,41 +24,34 @@ export interface PhaseExecOptions {
 export function useFakerPhaseAction() {
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const showToast = useWhoIsFakerStore((s) => s.showToast);
-  const inFlight = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
-  const run = useCallback(async (action: () => Promise<void>) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    try {
-      await action();
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-    }
-  }, []);
+  const {
+    run: send,
+    guard: run,
+    pendingKey,
+    busy,
+  } = useCommandRunner<WhoIsFakerCommandMap>({
+    send: sendCommand,
+    policy: WHOISFAKER_COMMAND_POLICY,
+    onError: (error) => showToast(errorText(error, "操作失败"), "error"),
+    lock: "single",
+  });
   const exec = useCallback(
     <TCommand extends WhoIsFakerCommand>(
       type: TCommand,
       payload?: WhoIsFakerPayload<TCommand>,
-      { key, onSuccess, fallback = "操作失败" }: PhaseExecOptions = {}
+      { key, onSuccess, fallback }: PhaseExecOptions = {}
     ) =>
-      run(async () => {
-        setPending(key ?? type);
-        try {
-          // 无载荷的命令不带第二个参数，与逐处手写时的调用形状一致
-          await (payload === undefined ? sendCommand(type) : sendCommand(type, payload));
-          onSuccess?.();
-        } catch (error) {
-          showToast(errorText(error, fallback), "error");
-        } finally {
-          setPending(null);
-        }
+      send(type, payload, {
+        key,
+        onSuccess,
+        onError:
+          fallback === undefined
+            ? undefined
+            : (error) => showToast(errorText(error, fallback), "error"),
       }),
-    [run, sendCommand, showToast]
+    [send, showToast]
   );
-  return { run, exec, busy, pending };
+  return { run, exec, busy, pending: pendingKey };
 }
 
 export type PhaseAction = ReturnType<typeof useFakerPhaseAction>;

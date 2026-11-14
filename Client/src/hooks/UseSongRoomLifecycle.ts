@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useCommandRunner } from "@/hooks/UseCommandRunner";
 import { useSongMusicSessionSync } from "@/components/songuessr/UseSongMusicSessionSync";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { waitForConnection } from "@/lib/SonGuessrWs";
+import {
+  SONGUESSR_COMMAND_POLICY,
+  waitForConnection,
+  type SonGuessrCommandMap,
+} from "@/lib/SonGuessrWs";
 import {
   clearSongSoloRoomId,
   getSavedUsername,
@@ -17,15 +21,9 @@ import { isValidRoomId, ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
 import type { SonGuessrCommand, SonGuessrPayload } from "@bakagame/shared";
 import { errorCode, errorText } from "@/lib/ErrorMessage";
 
-const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
-const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
-
 /** 密码缺失与密码错误都要重新弹出密码框，而不是直接退出房间。 */
 const needsPasswordPrompt = (code?: string): boolean =>
   code === "PASSWORD_INCORRECT" || code === "PASSWORD_REQUIRED";
-
-export const isLongRunningCommand = (type: string): boolean =>
-  (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
 
 /**
  * 「发一条指令，失败落到横幅提示」的组件侧形状：命令名与载荷沿用 store `sendCommand` 的约束，
@@ -82,7 +80,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     showToast,
   });
 
-  const { run: runLocked, pending: pendingCommands } = useCommandRunner<string>({
+  const { run, isPending } = useCommandRunner<SonGuessrCommandMap>({
+    send: sendCommand,
+    policy: SONGUESSR_COMMAND_POLICY,
+    pollSync: () => {
+      void sendCommand("song.room.requestSync").catch(() => {});
+    },
     onError: (error) => {
       if (errorCode(error) === "MUSIC_SESSION_INVALID") {
         cancelMusicSessionUpload();
@@ -91,22 +94,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       }
       showToast(errorText(error, "操作失败"), "error");
     },
+    lock: "command",
   });
-
-  const isPending = useCallback((type: string) => pendingCommands.has(type), [pendingCommands]);
-
-  const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => pendingCommands.has(type));
-  // 轮询定时器在 effect 内创建，用 Effect Event 读最新的 sendCommand，不让它进依赖导致定时器重建。
-  const pollSync = useEffectEvent(() => {
-    void sendCommand("song.room.requestSync").catch(() => {});
-  });
-  useEffect(() => {
-    if (!longRunningPending) return;
-    const timer = setInterval(() => {
-      pollSync();
-    }, LONG_RUNNING_POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [longRunningPending]);
 
   /** 房间不存在时就地建房：建房成功或流程已中断都算收尾，只有建房失败才让调用方继续走退出。 */
   const createMissingRoom = useCallback(
@@ -321,9 +310,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   };
 
   const runCommand: SongRunCommand = async (type, payload, success) => {
-    await runLocked(type, async () => {
-      await sendCommand(type, payload, isLongRunningCommand(type) ? { timeout: 0 } : undefined);
-      if (success) showToast(success, "success");
+    await run(type, payload, {
+      onSuccess: success ? () => showToast(success, "success") : undefined,
     });
   };
 

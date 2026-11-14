@@ -11,6 +11,8 @@ export const RECONNECT_MIN_INTERVAL_MS = 1000;
 /** 连接业务可用后稳定存活这么久，才算上一轮重连成功、退避清零。 */
 export const RECONNECT_STABLE_MS = 10000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
+/** pollSync 命令在途期间的全量同步轮询间隔（Spec §6）：长任务不设客户端超时，靠轮询对齐进度。 */
+export const COMMAND_POLL_INTERVAL_MS = 3000;
 export const CONNECT_WAIT_TIMEOUT_MS = 8000;
 /** 站点 HTTP JSON 接口（状态页、客户端包、站点配置）的默认超时：后端挂起时最多等这么久。 */
 export const HTTP_JSON_TIMEOUT_MS = 5000;

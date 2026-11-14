@@ -2,7 +2,6 @@ import { resolveEndedRoom } from "./RoomEndedEvent";
 import { createToastSlice, type ToastState } from "./room/ToastSlice";
 import { create } from "zustand";
 import type {
-  CEECommand,
   CEEPayload,
   CEEPrivateState,
   CEEResponse,
@@ -123,15 +122,6 @@ let entryGeneration = 0;
  */
 const isPermanentCEEError = (error: unknown): boolean =>
   isPermanentRoomError(error) || protocolErrorCode(error) === "SESSION_EXPIRED";
-const serverTimedCommands = new Set<CEECommand>([
-  "cee.game.start",
-  "cee.game.next",
-  "cee.game.setAnswer",
-  "cee.game.imageHint",
-  "cee.character.image",
-  "cee.subject.image",
-  "cee.directory.import",
-]);
 
 export function resetCEEStateSync() {
   stateSync.reset();
@@ -325,12 +315,13 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     },
     clearRoomClosed: () => set({ roomClosedAt: null }),
     cancelEntry,
-    sendCommand: (command, payload = {}) => {
+    sendCommand: (command, payload = {}, options) => {
       const { roomId, sessionToken } = get();
       return ws.send(command, payload, {
         roomId: roomId ?? undefined,
         sessionToken: sessionToken ?? undefined,
-        timeout: serverTimedCommands.has(command) ? 0 : undefined,
+        // 取图、目录同步这类直接调用不经命令执行器，超时口径同样只落在策略表一处。
+        timeout: options?.timeout ?? ws.CEE_COMMAND_POLICY[command]?.timeout,
       });
     },
     searchCharacters: (keyword) =>

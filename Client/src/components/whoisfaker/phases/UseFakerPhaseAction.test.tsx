@@ -96,7 +96,7 @@ describe("usePhaseAction", () => {
       const send = vi.fn(() => ack.promise);
       const { hook } = setup(send);
       const onSuccess = vi.fn();
-      let done!: Promise<void>;
+      let done!: Promise<unknown>;
       act(() => {
         done = hook.result.current.exec("game.advancePhase", undefined, {
           key: "advance",
@@ -118,7 +118,7 @@ describe("usePhaseAction", () => {
     it("键默认取命令名，载荷原样透传", async () => {
       const ack = deferred();
       const { hook } = setup(vi.fn(() => ack.promise));
-      let done!: Promise<void>;
+      let done!: Promise<unknown>;
       act(() => {
         done = hook.result.current.exec("game.submitVote", { targetId: "p1" });
       });
@@ -159,7 +159,7 @@ describe("usePhaseAction", () => {
       const ack = deferred();
       const send = vi.fn(() => ack.promise);
       const { hook } = setup(send);
-      let first!: Promise<void>;
+      let first!: Promise<unknown>;
       act(() => {
         first = hook.result.current.exec("game.advancePhase");
         void hook.result.current.exec("game.cancelVote");
@@ -175,7 +175,7 @@ describe("usePhaseAction", () => {
       const ack = deferred();
       const send = vi.fn(() => ack.promise);
       const { hook } = setup(send);
-      let first!: Promise<void>;
+      let first!: Promise<unknown>;
       act(() => {
         first = hook.result.current.exec("game.submitVote", { targetId: "p1" });
         void hook.result.current.exec("game.submitVote", { targetId: "p1" });

@@ -1,12 +1,6 @@
-import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import { SONGUESSR_COMMAND_POLICY, type SonGuessrCommandMap } from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import type { SongClipRange, SongQuestionType } from "@bakagame/shared";
-
-/**
- * 出题与取详情不设请求超时：回源取题（含歌词、音频与猜番解析）耗时由上游决定，
- * 默认超时会把一次正常的慢提交报成「提交失败」，题目其实还在后端装配。
- */
-export const NO_REQUEST_TIMEOUT = { timeout: 0 } as const;
 
 /** 聚合检索给出的备用音源与会员标记，随出题请求回传给服务端做兜底。 */
 export interface SongPick {
@@ -43,25 +37,26 @@ export async function sendSongChoice(
   choice: SongChoice
 ) {
   const submit = choice.mode === "submit";
-  const options = submit ? NO_REQUEST_TIMEOUT : undefined;
   if (choice.questionType === "anime") {
+    const type = submit ? "song.game.submitAnime" : "song.game.guessAnime";
     await send(
-      submit ? "song.game.submitAnime" : "song.game.guessAnime",
+      type,
       {
         subjectId: choice.id,
         ...(submit && choice.extraId ? { songId: choice.extraId } : {}),
       },
-      options
+      SONGUESSR_COMMAND_POLICY[type]
     );
     return;
   }
+  const type = submit ? "song.game.submitSong" : "song.game.guess";
   await send(
-    submit ? "song.game.submitSong" : "song.game.guess",
+    type,
     {
       songId: choice.id,
       ...(submit && choice.clip ? { clip: choice.clip } : {}),
       ...(submit ? songPickFields(choice.pick) : {}),
     },
-    options
+    SONGUESSR_COMMAND_POLICY[type]
   );
 }

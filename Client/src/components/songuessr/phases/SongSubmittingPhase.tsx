@@ -4,7 +4,8 @@ import { Film, Music2 } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
-import { NO_REQUEST_TIMEOUT, songPickFields } from "@/components/songuessr/SongSubmission";
+import { songPickFields } from "@/components/songuessr/SongSubmission";
+import { SONGUESSR_COMMAND_POLICY } from "@/lib/SonGuessrWs";
 import { phaseSwap } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -55,7 +56,7 @@ export function SongSubmittingPhase({
       "song.music.detail",
       payload,
       // 与提交出题同口径：回源取音频与歌词的耗时由上游决定，不拿默认超时误报失败。
-      NO_REQUEST_TIMEOUT
+      SONGUESSR_COMMAND_POLICY["song.music.detail"]
     );
     setPreview(detail);
   };

@@ -28,7 +28,11 @@ const { navigate, waitConnection, send, randomId } = vi.hoisted(() => ({
   randomId: vi.fn(),
 }));
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
-vi.mock("@/lib/SonGuessrWs", () => ({ waitForConnection: waitConnection, send }));
+vi.mock("@/lib/SonGuessrWs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/SonGuessrWs")>()),
+  waitForConnection: waitConnection,
+  send,
+}));
 vi.mock("@/lib/Random", () => ({ randomRoomId: randomId }));
 const initial = useSonGuessrStore.getState();
 const receipt = (roomId = "1234") => ({

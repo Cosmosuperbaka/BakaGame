@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
-import { NO_REQUEST_TIMEOUT, sendSongChoice, songPickFields } from "./SongSubmission";
+import { sendSongChoice, songPickFields } from "./SongSubmission";
 
 const setup = () => {
   const send = vi.fn().mockResolvedValue({});
@@ -38,7 +38,7 @@ describe("sendSongChoice", () => {
     expect(send).toHaveBeenCalledWith(
       "song.game.submitSong",
       { songId: "s1", clip, sources: ["s1", "qq:2"], requiresVip: true },
-      NO_REQUEST_TIMEOUT
+      { timeout: 0 }
     );
   });
 
@@ -48,7 +48,7 @@ describe("sendSongChoice", () => {
     expect(send).toHaveBeenCalledWith(
       "song.game.submitSong",
       { songId: "s1", requiresVip: false },
-      NO_REQUEST_TIMEOUT
+      { timeout: 0 }
     );
   });
 
@@ -70,7 +70,7 @@ describe("sendSongChoice", () => {
     expect(send).toHaveBeenCalledWith(
       "song.game.submitAnime",
       { subjectId: "sub1", songId: "song-op" },
-      NO_REQUEST_TIMEOUT
+      { timeout: 0 }
     );
   });
 
@@ -80,7 +80,7 @@ describe("sendSongChoice", () => {
     expect(send).toHaveBeenLastCalledWith(
       "song.game.submitAnime",
       { subjectId: "sub1" },
-      NO_REQUEST_TIMEOUT
+      { timeout: 0 }
     );
     await call({ questionType: "anime", mode: "guess", id: "sub2", extraId: "ignored" });
     expect(send).toHaveBeenLastCalledWith("song.game.guessAnime", { subjectId: "sub2" }, undefined);
