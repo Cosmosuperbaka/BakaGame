@@ -112,7 +112,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 - 变量名、默认值与取值规则以 `Server/src/config/env/Registry.ts`（`Server/.env.example` 由它生成）、`Client/.env.example` 和 `Server/src/config/env/` 的解析代码为准，文档不维护变量清单。
 - 每个变量在注册表里必须表态属于哪一层：`T0` 进程拓扑与 `T1` 引导凭据只能是环境变量（建数据库连接之前就得有值），`T2` 部署期可调项缺省即正确、只在配置新实例需要知道时才进 `.env.example`，`DEV` 与已废弃项不进。代码读到没登记的名字、或 `.env.example` 与生成结果不一致时 `EnvRegistry` 测试直接报红。
 - **`T3` 运行期旋钮**的生效值存数据库 `app_setting`，环境变量同名项退为缺省（只为临时止血的模式开关不设环境变量，缺省为开），管理员在后台「运行期旋钮」改，不需要重建容器。入选只有一条判据：改它的时候正好在停机窗口外，且改了只影响后续行为。凭据、监听地址、来源名单永远不进；键与校验规则见 `Server/src/shared/RuntimeSettings.ts`。
-- **真实凭据、私有域名与生产配置一律不进被追踪文件**（`.env.example`、文档、测试只用虚构占位符或留空安全缺省）；代码默认值不得携带任何现网标识。详见根 `AGENTS.md`。
+- **真实凭据、私有域名与生产配置一律不进被追踪文件**（`.env.example`、文档、测试只用虚构占位符或留空安全缺省）；代码默认值不得携带任何现网标识；玩家访问的站点地址与客户端下载地址这类公开入口除外，只在共享契约与对应的配置默认值里写一处。详见根 `AGENTS.md`。
 - 番剧图片的对外前缀写死为站内图床路径，**没有环境变量开关**（原因见 [BangumiApi](../Server/docs/BangumiApi.md)）。
 - 客户端接口基址的唯一入口是 `VITE_SERVER_URL`，取值语义见 `Client/src/lib/ServerEndpoint.ts` 及其测试；同源还是跨域属部署口径，切换前提见 [Deployment](Deployment.md)。
 - 遥测环境由统一的读取函数解析（显式环境变量优先，缺省为 development）；生产必须显式注入 production，不按操作系统猜测环境；Sentry 与 OTLP 消费同一结果。release 以仓库 Git/changelog 为准，无证据时为空，不硬编码版本、不采信任意 release 字符串。
