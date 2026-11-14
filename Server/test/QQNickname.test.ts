@@ -9,6 +9,7 @@ import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createAccountTestApp, createNapCatFetcher } from "./AccountFixtures";
 import { until } from "./support/Until";
+import { fakeFetch } from "./support/Fetch";
 
 const ADMIN_QQ = "90001";
 
@@ -38,11 +39,13 @@ const clientOf = () => {
 
 /** 反向代理挡住请求时回的是 HTML 错误页，不是 OneBot 的 JSON 信封。 */
 const htmlFetcher = (status: number) =>
-  (async () =>
-    new Response("<html><head><title>403 Forbidden</title></head><body>openresty</body></html>", {
-      status,
-      headers: { "content-type": "text/html" },
-    })) as unknown as typeof fetch;
+  fakeFetch(
+    async () =>
+      new Response("<html><head><title>403 Forbidden</title></head><body>openresty</body></html>", {
+        status,
+        headers: { "content-type": "text/html" },
+      })
+  );
 
 describe("NapCat 昵称客户端", () => {
   test("逐个查昵称，查不到的号不出现", async () => {

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BangumiImageStore } from "../src/infrastructure/BangumiImageStore";
 import { R2ImageStore, R2ImageUploader } from "../src/infrastructure/R2ImageStore";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 const AVIF = new Uint8Array([
   0, 0, 0, 32, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66, 1, 2, 3, 4,
@@ -27,13 +29,12 @@ const uploader = () => new R2ImageUploader({ accountId: "acc", apiToken: "tok", 
 test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", async () => {
   const directory = shards();
   const seen: Array<{ url: string; init: RequestInit }> = [];
-  const spy = spyOn(globalThis, "fetch").mockImplementation((async (
-    url: string,
-    init: RequestInit
-  ) => {
-    seen.push({ url, init });
-    return new Response("{}", { status: 200 });
-  }) as unknown as typeof fetch);
+  const spy = spyOn(globalThis, "fetch").mockImplementation(
+    fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: requestUrlText(input), init: init ?? {} });
+      return new Response("{}", { status: 200 });
+    })
+  );
   try {
     const store = new R2ImageStore(
       BangumiImageStore.open(directory, { now: () => 3 })!,
@@ -66,7 +67,7 @@ test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", as
 test("上传失败退回本地：图不丢，且不会被标成 remote（否则 302 到 404）", async () => {
   const directory = shards();
   const spy = spyOn(globalThis, "fetch").mockImplementation(
-    (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch
+    fakeFetch(async () => new Response("boom", { status: 500 }))
   );
   try {
     const store = new R2ImageStore(BangumiImageStore.open(directory)!, uploader());

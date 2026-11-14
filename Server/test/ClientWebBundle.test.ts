@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { ClientWebBundle, parseManifest } from "../src/infrastructure/ClientWebBundle";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 const MANIFEST_URL = "https://cdn.test/files/BakaGame-web-latest.json";
 
@@ -13,8 +15,8 @@ const manifest = {
   publishedAt: "2026-10-26T08:00:00.000Z",
 };
 
-const json = (body: unknown, ok = true, status = 200) =>
-  ({ ok, status, json: async () => body }) as unknown as Response;
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 test("清单把裸文件名解析成清单同目录的绝对地址", () => {
   expect(parseManifest(manifest, MANIFEST_URL)).toEqual({
@@ -60,10 +62,10 @@ test("TTL 内复用同一份清单，失败也缓存，避免壳每次启动都�
     manifestUrl: MANIFEST_URL,
     ttlMs: 30_000,
     now: () => clock.now,
-    fetcher: (async (url: string) => {
-      calls.push(url);
+    fetcher: fakeFetch(async (input: RequestInfo | URL) => {
+      calls.push(requestUrlText(input));
       return json(manifest);
-    }) as unknown as typeof fetch,
+    }),
   });
 
   await Promise.all([bundle.current(), bundle.current()]);
@@ -75,9 +77,9 @@ test("TTL 内复用同一份清单，失败也缓存，避免壳每次启动都�
 
   const failing = new ClientWebBundle({
     manifestUrl: MANIFEST_URL,
-    fetcher: (async () => {
+    fetcher: fakeFetch(async () => {
       throw new Error("offline");
-    }) as unknown as typeof fetch,
+    }),
   });
   expect(await failing.current()).toBeUndefined();
   expect(await failing.current()).toBeUndefined();
@@ -87,10 +89,10 @@ test("没配清单地址时不发请求：显式关闭热更新的实例不该�
   let called = false;
   const bundle = new ClientWebBundle({
     manifestUrl: "",
-    fetcher: (async () => {
+    fetcher: fakeFetch(async () => {
       called = true;
       return json(manifest);
-    }) as unknown as typeof fetch,
+    }),
   });
   expect(await bundle.current()).toBeUndefined();
   expect(called).toBe(false);

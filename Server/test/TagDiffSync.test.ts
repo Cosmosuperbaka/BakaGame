@@ -8,7 +8,9 @@ import {
   scheduleTagDiffSync,
   syncTagDiff,
 } from "../src/infrastructure/TagDiffSync";
+import { requestUrlText } from "./RequestFixtures";
 import { until } from "./support/Until";
+import { fakeFetch } from "./support/Fetch";
 
 /** 差分是「相对上一版」的增量：基线对不上时宁可不应用，也不能静默漏掉中间轮次。 */
 test("基线不匹配判为 stale，绝不套用增量", () => {
@@ -43,8 +45,7 @@ test("应用增量后记录版本，重复拉取不再写入", async () => {
       changed: { "2": ["主角"] },
       removed: [3],
     };
-    const fetcher = (async () =>
-      new Response(JSON.stringify(payload), { status: 200 })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(async () => new Response(JSON.stringify(payload), { status: 200 }));
 
     const first = await syncTagDiff({
       repository,
@@ -79,7 +80,7 @@ test("上游非 2xx 时抛错，不写状态文件", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
   try {
     const statePath = join(directory, "state.json");
-    const fetcher = (async () => new Response("nope", { status: 502 })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(async () => new Response("nope", { status: 502 }));
     await expect(
       syncTagDiff({
         repository: { applyTagChanges: async () => {}, replaceAllTags: async () => {} },
@@ -99,8 +100,7 @@ test("定时同步：首跑延后一分钟，之后每 6 小时一轮，stop 后
     const statePath = join(directory, "state.json");
     let applied = 0;
     const payload = { baseSha256: null, targetSha256: "v1", added: { "1": ["蓝发"] } };
-    const fetcher = (async () =>
-      new Response(JSON.stringify(payload), { status: 200 })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(async () => new Response(JSON.stringify(payload), { status: 200 }));
     const info: string[] = [];
     const spy = spyOn(globalThis, "setTimeout");
     try {
@@ -161,8 +161,7 @@ test("每轮结果回报给状态页：已是最新算成功，基线不匹配�
       spy.mockRestore();
     }
   };
-  const respondWith = (payload: unknown) =>
-    (async () => Response.json(payload)) as unknown as typeof fetch;
+  const respondWith = (payload: unknown) => fakeFetch(async () => Response.json(payload));
 
   try {
     const first = { baseSha256: null, targetSha256: "v1", added: { "1": ["蓝发"] } };
@@ -176,9 +175,7 @@ test("每轮结果回报给状态页：已是最新算成功，基线不匹配�
     const stale = await runOnce(respondWith({ baseSha256: "aaa", targetSha256: "v2" }));
     expect(stale.ok).toBe(false);
     expect(stale.summary).toContain("增量同步失败");
-    const failed = await runOnce(
-      (async () => new Response(null, { status: 503 })) as unknown as typeof fetch
-    );
+    const failed = await runOnce(fakeFetch(async () => new Response(null, { status: 503 })));
     expect(failed).toMatchObject({ ok: false, summary: "增量同步失败" });
     expect(failed.error).toContain("503");
   } finally {
@@ -196,11 +193,12 @@ test("基线不匹配时拉全量重建并写入 targetSha256，下一轮增量�
     await withState(statePath, { appliedSha256: "old" });
     const calls: string[] = [];
     const full = { "1": ["蓝发"], "2": ["主角", "眼镜"] };
-    const fetcher = (async (url: string) => {
+    const fetcher = fakeFetch(async (input: RequestInfo | URL) => {
+      const url = requestUrlText(input);
       calls.push(url);
       if (url.endsWith("id_tags.json")) return Response.json(full);
       return Response.json({ baseSha256: "missed", targetSha256: "v3", added: { "9": ["x"] } });
-    }) as unknown as typeof fetch;
+    });
     const rebuilt: Array<Array<[number, string[]]>> = [];
     const applied: number[] = [];
     const repository = {
@@ -235,12 +233,13 @@ test("基线不匹配时拉全量重建并写入 targetSha256，下一轮增量�
     expect(readTagDiffState(statePath).appliedSha256).toBe("v3");
 
     // 下一轮：上游的 diff 以 v3 为基线，走普通增量。
-    const next = (async () =>
+    const next = fakeFetch(async () =>
       Response.json({
         baseSha256: "v3",
         targetSha256: "v4",
         changed: { "1": ["紫发"] },
-      })) as unknown as typeof fetch;
+      })
+    );
     const second = await syncTagDiff({
       repository,
       diffUrl: "https://example.invalid/outputs/id_tags.diff.json",
@@ -260,10 +259,12 @@ test("没有状态文件而 diff 有非空基线时同样走全量，不拿任�
     const statePath = join(directory, "state.json");
     const rebuilt: number[] = [];
     const applied: number[] = [];
-    const fetcher = (async (url: string) =>
-      url.endsWith("id_tags.json")
+    const fetcher = fakeFetch(async (input: RequestInfo | URL) => {
+      const url = requestUrlText(input);
+      return url.endsWith("id_tags.json")
         ? Response.json({ "1": ["蓝发"] })
-        : Response.json({ baseSha256: "aaa", targetSha256: "bbb" })) as unknown as typeof fetch;
+        : Response.json({ baseSha256: "aaa", targetSha256: "bbb" });
+    });
     const result = await syncTagDiff({
       repository: {
         applyTagChanges: async () => void applied.push(1),
@@ -287,12 +288,13 @@ test("显式配置的全量地址优先于由 diff 地址推导的", async () =>
     const statePath = join(directory, "state.json");
     await withState(statePath, { appliedSha256: "old" });
     const calls: string[] = [];
-    const fetcher = (async (url: string) => {
+    const fetcher = fakeFetch(async (input: RequestInfo | URL) => {
+      const url = requestUrlText(input);
       calls.push(url);
       return url.includes("full.example")
         ? Response.json({ "1": ["蓝发"] })
         : Response.json({ baseSha256: "aaa", targetSha256: "bbb" });
-    }) as unknown as typeof fetch;
+    });
     await syncTagDiff({
       repository: { applyTagChanges: async () => {}, replaceAllTags: async () => {} },
       diffUrl: "https://example.invalid/a/id_tags.diff.json",
@@ -311,10 +313,12 @@ test("全量产物形状不对时报错且不写状态，基线继续卡着等�
   try {
     const statePath = join(directory, "state.json");
     await withState(statePath, { appliedSha256: "old" });
-    const fetcher = (async (url: string) =>
-      url.endsWith("id_tags.json")
+    const fetcher = fakeFetch(async (input: RequestInfo | URL) => {
+      const url = requestUrlText(input);
+      return url.endsWith("id_tags.json")
         ? Response.json({ "1": "不是数组" })
-        : Response.json({ baseSha256: "aaa", targetSha256: "bbb" })) as unknown as typeof fetch;
+        : Response.json({ baseSha256: "aaa", targetSha256: "bbb" });
+    });
     await expect(
       syncTagDiff({
         repository: { applyTagChanges: async () => {}, replaceAllTags: async () => {} },
@@ -335,8 +339,7 @@ test("已应用到最新版本时，即使 diff 带非空基线也判为已是�
     const statePath = join(directory, "state.json");
     await withState(statePath, { appliedSha256: "v2" });
     let rebuilt = 0;
-    const fetcher = (async () =>
-      Response.json({ baseSha256: "v1", targetSha256: "v2" })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(async () => Response.json({ baseSha256: "v1", targetSha256: "v2" }));
     const result = await syncTagDiff({
       repository: {
         applyTagChanges: async () => {},
@@ -369,11 +372,12 @@ test("拉取 diff 与全量产物都带超时信号，挂起的上游不会让�
   try {
     const statePath = join(directory, "state.json");
     const signals: Array<AbortSignal | undefined> = [];
-    const fetcher = (async (url: string, init?: RequestInit) => {
+    const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrlText(input);
       signals.push(init?.signal ?? undefined);
       if (url.endsWith("id_tags.json")) return Response.json({ "1": ["蓝发"] });
       return Response.json({ baseSha256: "aaa", targetSha256: "bbb" });
-    }) as unknown as typeof fetch;
+    });
     await syncTagDiff({
       repository: { applyTagChanges: async () => {}, replaceAllTags: async () => {} },
       diffUrl: "https://example.invalid/id_tags.diff.json",
@@ -394,11 +398,11 @@ test("某一轮拉取挂起被超时中止后，定时链仍会续排下一轮",
   try {
     const results: Array<{ ok: boolean; summary: string; error: string | null }> = [];
     // 以「立刻被中止」代替真等 30 秒：fetcher 收到信号后马上以超时错误拒绝。
-    const fetcher = (async (_url: string, init?: RequestInit) => {
+    const fetcher = fakeFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const timeout = new Error("The operation timed out");
       timeout.name = "TimeoutError";
       return init?.signal ? Promise.reject(timeout) : hangUntilAborted(init);
-    }) as unknown as typeof fetch;
+    });
     const stop = scheduleTagDiffSync({
       repository: () => ({ applyTagChanges: async () => {}, replaceAllTags: async () => {} }),
       diffUrl: "https://example.invalid/diff.json",
@@ -427,8 +431,7 @@ test("回调自身抛错也不会断掉定时链", async () => {
   const statePath = join(directory, "state.json");
   const spy = spyOn(globalThis, "setTimeout");
   try {
-    const fetcher = (async () =>
-      Response.json({ baseSha256: null, targetSha256: "v1" })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(async () => Response.json({ baseSha256: null, targetSha256: "v1" }));
     const stop = scheduleTagDiffSync({
       repository: () => ({ applyTagChanges: async () => {}, replaceAllTags: async () => {} }),
       diffUrl: "https://example.invalid/diff.json",

@@ -5,6 +5,7 @@ import {
   parseYrc,
   mergeTranslations,
 } from "../../src/infrastructure/music/netease/NeteaseLyricParse";
+import { fakeFetch } from "../support/Fetch";
 import {
   isBopomofoOnlyLyricLine,
   isBracketedStageDirectionLine,
@@ -28,9 +29,9 @@ import { parseTTML } from "../../src/infrastructure/music/lyrics/LyricTtml";
 describe("歌词清洗与解析", () => {
   const originalFetch = globalThis.fetch;
   beforeEach(() => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = fakeFetch(async () => {
       throw new Error("测试禁止网络请求");
-    }) as unknown as typeof fetch;
+    });
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;

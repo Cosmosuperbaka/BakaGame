@@ -10,6 +10,8 @@ import type {
   BangumiSearchIndex,
   SubjectSearchDocument,
 } from "../src/infrastructure/BangumiSearchIndex";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 const DAY = 24 * 60 * 60 * 1_000;
 const HOUR = 60 * 60 * 1_000;
@@ -30,7 +32,8 @@ interface FetchSpec {
  */
 function upstream(spec: (url: string) => FetchSpec) {
   const calls: FetchCall[] = [];
-  const fetcher = (async (url: string, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = requestUrlText(input);
     calls.push({
       url,
       accept: String((init?.headers as Record<string, string> | undefined)?.Accept ?? ""),
@@ -41,7 +44,7 @@ function upstream(spec: (url: string) => FetchSpec) {
       ? new Uint8Array(matched.bytes)
       : JSON.stringify(matched.body ?? {});
     return new Response(payload, { status: matched.status ?? 200 });
-  }) as unknown as typeof fetch;
+  });
   return { calls, fetcher };
 }
 

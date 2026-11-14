@@ -29,6 +29,8 @@ import {
   type StatusRoutesDependencies,
 } from "../src/transport/routes/Status";
 import { createTestApp } from "./AppFixtures";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 const INTERNAL_SEARCH_URL = "http://10.23.45.67:7700";
 const DATASET_PATH = "/srv/bakagame/private/dataset.sqlite";
@@ -37,7 +39,7 @@ const readStatus = async (
   overrides: StatusRoutesDependencies = {}
 ): Promise<{ response: Response; body: PublicStatusSnapshot }> => {
   const app = statusRoutes({
-    fetcher: (async () => new Response(null, { status: 200 })) as unknown as typeof fetch,
+    fetcher: fakeFetch(async () => new Response(null, { status: 200 })),
     ...overrides,
   });
   const response = await app.handle(new Request("http://localhost/api/status"));
@@ -87,7 +89,7 @@ describe("公开状态接口", () => {
     const { body } = await readStatus({
       isServiceAvailable: () => false,
       meilisearchUrl: INTERNAL_SEARCH_URL,
-      fetcher: (async () => new Response(null, { status: 503 })) as unknown as typeof fetch,
+      fetcher: fakeFetch(async () => new Response(null, { status: 503 })),
       datasetPath: join(tmpdir(), `missing-dataset-${crypto.randomUUID()}.sqlite`),
       imageCache: { available: false },
     });
@@ -163,10 +165,10 @@ describe("公开状态接口", () => {
   test("短缓存合并重复请求，过期后重新探测", async () => {
     let fetches = 0;
     let at = 1_000;
-    const fetcher = (async () => {
+    const fetcher = fakeFetch(async () => {
       fetches += 1;
       return new Response(null, { status: 200 });
-    }) as unknown as typeof fetch;
+    });
     const app = statusRoutes({
       meilisearchUrl: INTERNAL_SEARCH_URL,
       fetcher,
@@ -224,11 +226,11 @@ describe("公开状态接口", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const fetcher = (async () => {
+    const fetcher = fakeFetch(async () => {
       fetches += 1;
       await gate;
       return new Response(null, { status: 200 });
-    }) as unknown as typeof fetch;
+    });
     const app = statusRoutes({ meilisearchUrl: INTERNAL_SEARCH_URL, fetcher });
 
     const requests = [
@@ -321,11 +323,13 @@ describe("公开状态实时条带", () => {
 
 describe("前端与搜索探测", () => {
   test("operational 时给出非负整数延迟，降级不给延迟", async () => {
-    const fetcher = (async () =>
-      new Response("<html></html>", {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(
+      async () =>
+        new Response("<html></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+    );
     const { body } = await readStatus({
       frontendUrl: "https://frontend.example.com/",
       meilisearchUrl: INTERNAL_SEARCH_URL,
@@ -340,11 +344,13 @@ describe("前端与搜索探测", () => {
   });
 
   test("前端非 HTML 或 5xx 时读作降级，延迟为空", async () => {
-    const fetcher = (async () =>
-      new Response(null, {
-        status: 503,
-        headers: { "content-type": "text/plain" },
-      })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(
+      async () =>
+        new Response(null, {
+          status: 503,
+          headers: { "content-type": "text/plain" },
+        })
+    );
     const { body } = await readStatus({
       frontendUrl: "https://frontend.example.com/",
       fetcher,
@@ -355,13 +361,13 @@ describe("前端与搜索探测", () => {
 
   test("前端探测不自动跟随跳转：跳离本站即降级，且只请求一次", async () => {
     const calls: { url: string; redirect: RequestInit["redirect"] }[] = [];
-    const fetcher = (async (input: string | URL, init?: RequestInit) => {
-      calls.push({ url: String(input), redirect: init?.redirect });
+    const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: requestUrlText(input), redirect: init?.redirect });
       return new Response(null, {
         status: 302,
         headers: { location: "https://elsewhere.example.com/" },
       });
-    }) as unknown as typeof fetch;
+    });
     const { body } = await readStatus({
       frontendUrl: "https://frontend.example.com/",
       fetcher,
@@ -519,10 +525,10 @@ describe("状态聚合并行探测", () => {
     const wait = () => new Promise((resolve) => setTimeout(resolve, delayMs));
     const aggregator = createStatusAggregator({
       meilisearchUrl: "http://127.0.0.1:9/",
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         await wait();
         return new Response("{}");
-      }) as unknown as typeof fetch,
+      }),
       externalProbe: {
         read: async () => {
           await wait();

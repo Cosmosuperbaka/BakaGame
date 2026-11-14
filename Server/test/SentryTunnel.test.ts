@@ -8,6 +8,7 @@ import {
 } from "../src/transport/routes/SentryTunnel";
 import { ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
 import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 /** 全仓统一的失败信封：`{ error: { code, message, traceId? } }`，独立挂载本路由时没有 traceId。 */
 type FailureBody = { error?: { code: string; message: string; traceId?: string } };
@@ -144,8 +145,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("应用级限流：请求频率超限时返回 429 Too Many Requests", async () => {
-    const mockFetcher = (async () =>
-      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const mockFetcher = fakeFetch(() => new Response("{}", { status: 200 }));
     const limiter = new ThreeTierRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 });
     const app = sentryTunnelRoutes({
       allowedProjectIds,
@@ -199,13 +199,13 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     let capturedHeaders: Record<string, string> = {};
     let capturedBody = "";
 
-    const mockFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const mockFetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
       capturedUrl = requestUrlText(input);
       capturedMethod = init?.method ?? "GET";
       capturedHeaders = (init?.headers as Record<string, string>) ?? {};
       capturedBody = await new Response(init?.body).text();
       return new Response(JSON.stringify({ id: "event-id-123" }), { status: 200 });
-    }) as unknown as typeof fetch;
+    });
 
     const app = sentryTunnelRoutes({ allowedProjectIds, fetcher: mockFetcher });
     const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{"type":"event"}\n{"message":"Test React Crash"}`;
@@ -228,8 +228,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("支持通过 allowedHosts 与 sentryDsn 配置企业私有 Sentry 域名", async () => {
-    const mockFetcher = (async () =>
-      new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const mockFetcher = fakeFetch(() => new Response("{}", { status: 200 }));
     const app = sentryTunnelRoutes({
       allowedProjectIds: ["200"],
       sentryDsn: "https://key@sentry.mycorp.example/200",
@@ -246,12 +245,12 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("上游 429 保留退避语义并转达 Retry-After，不透传上游响应体", async () => {
-    const mockFetcher = (async () => {
+    const mockFetcher = fakeFetch(() => {
       return new Response("Too Many Requests", {
         status: 429,
         headers: { "retry-after": "30", "x-sentry-rate-limits": "60:error:performance" },
       });
-    }) as unknown as typeof fetch;
+    });
 
     const app = sentryTunnelRoutes({ allowedProjectIds, fetcher: mockFetcher });
     const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
@@ -273,8 +272,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
 
   it("上游非 2xx 不透传状态码：4xx 折叠成 502，免得把 DSN 与项目状态透给匿名调用方", async () => {
     for (const upstreamStatus of [400, 403, 404, 413]) {
-      const mockFetcher = (async () =>
-        new Response("Denied", { status: upstreamStatus })) as unknown as typeof fetch;
+      const mockFetcher = fakeFetch(() => new Response("Denied", { status: upstreamStatus }));
       const app = sentryTunnelRoutes({ allowedProjectIds, fetcher: mockFetcher });
       const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
 
@@ -291,9 +289,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("上游 fetch 遇到网络或 DNS 异常时降级为 warn 并返回 502 Bad Gateway，绝不触发 error 告警", async () => {
-    const errorFetcher = (async () => {
+    const errorFetcher = fakeFetch(() => {
       throw new Error("DNS resolution failure to internal-network-secret:8080");
-    }) as unknown as typeof fetch;
+    });
 
     const loggedErrors: unknown[] = [];
     const loggedWarns: unknown[] = [];
@@ -327,9 +325,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("上游 fetch 采用 Bun 连接失败文案时同样降级为 warn 并返回 502，杜绝误报内部故障", async () => {
-    const bunErrorFetcher = (async () => {
+    const bunErrorFetcher = fakeFetch(() => {
       throw new Error("Unable to connect. Is the computer able to access the url?");
-    }) as unknown as typeof fetch;
+    });
 
     const loggedErrors: unknown[] = [];
     const loggedWarns: unknown[] = [];
@@ -361,12 +359,12 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("上游失败被包装在 cause 链并携带 errno 编号时仍识别为网络异常", async () => {
-    const wrappedErrorFetcher = (async () => {
+    const wrappedErrorFetcher = fakeFetch(() => {
       const socketError = Object.assign(new Error("ConnectionRefused"), {
         code: "ConnectionRefused",
       });
       throw new Error("Failed to send envelope", { cause: socketError });
-    }) as unknown as typeof fetch;
+    });
 
     const loggedErrors: unknown[] = [];
     const loggedWarns: unknown[] = [];
@@ -398,11 +396,11 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("上游 fetch 遭遇超时时降级为 warn 并返回 504 Gateway Timeout，绝不触发 error 告警", async () => {
-    const timeoutFetcher = (async () => {
+    const timeoutFetcher = fakeFetch(() => {
       const err = new Error("The operation was aborted due to timeout");
       err.name = "TimeoutError";
       throw err;
-    }) as unknown as typeof fetch;
+    });
 
     const loggedErrors: unknown[] = [];
     const loggedWarns: unknown[] = [];
@@ -434,10 +432,10 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   });
 
   it("未预期的内部异常返回 500 且使用 logger.error 记录并脱敏", async () => {
-    const internalErrorFetcher = (async () => {
+    const internalErrorFetcher = fakeFetch(() => {
       const err = new RangeError("Internal fatal memory exhaustion");
       throw err;
-    }) as unknown as typeof fetch;
+    });
 
     const loggedErrors: unknown[] = [];
     const mockLogger = {
@@ -502,9 +500,9 @@ it("二进制信封原字节转发且轮换来源仍受总预算限制", async (
 describe("信封读取边界", () => {
   it("非法UTF8头与非对象JSON头返回400而不触发上游", async () => {
     const app = sentryTunnelRoutes({
-      fetcher: (() => {
+      fetcher: fakeFetch(() => {
         throw new Error("禁止上游");
-      }) as unknown as typeof fetch,
+      }),
     });
     for (const body of [new Uint8Array([255, 10]), "null\n", "[]\n"]) {
       const response = await app.handle(
@@ -653,9 +651,9 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
     const reported: { code: string; status: number }[] = [];
     const app = sentryTunnelRoutes({
       allowedProjectIds,
-      fetcher: (async () => {
+      fetcher: fakeFetch(() => {
         throw new Error("fetch failed");
-      }) as unknown as typeof fetch,
+      }),
       failureReporter: {
         report: (failure) => reported.push({ code: failure.code, status: failure.status }),
       },
@@ -670,8 +668,7 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
     const reported: string[] = [];
     const app = sentryTunnelRoutes({
       allowedProjectIds,
-      fetcher: (async () =>
-        new Response("ingest down", { status: 503 })) as unknown as typeof fetch,
+      fetcher: fakeFetch(() => new Response("ingest down", { status: 503 })),
       failureReporter: { report: (failure) => reported.push(failure.code) },
     });
 
@@ -687,9 +684,9 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
     });
     const app = sentryTunnelRoutes({
       allowedProjectIds,
-      fetcher: (async () => {
+      fetcher: fakeFetch(() => {
         throw timeout;
-      }) as unknown as typeof fetch,
+      }),
       failureReporter: { report: (failure) => reported.push(failure.code) },
     });
 
@@ -702,7 +699,7 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
     const reported: string[] = [];
     const app = sentryTunnelRoutes({
       allowedProjectIds,
-      fetcher: (async () => new Response("Denied", { status: 403 })) as unknown as typeof fetch,
+      fetcher: fakeFetch(() => new Response("Denied", { status: 403 })),
       failureReporter: { report: (failure) => reported.push(failure.code) },
     });
 

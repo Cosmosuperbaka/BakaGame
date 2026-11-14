@@ -10,6 +10,8 @@ import {
 } from "../src/infrastructure/BangumiImageService";
 import { BangumiImageStore } from "../src/infrastructure/BangumiImageStore";
 import { bangumiImageRoutes } from "../src/transport/routes/BangumiImages";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 /** avif 只需前 16 字节内出现 `ftypav` 魔数。 */
 const AVIF = new Uint8Array([
@@ -56,11 +58,11 @@ test("缺失时回源抓 avif 并转交 Worker 落库", async () => {
   try {
     const persisted: Array<{ path: string; bytes: Uint8Array }> = [];
     const seen: string[] = [];
-    const fetcher = (async (url: string, init?: RequestInit) => {
-      seen.push(url);
+    const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(requestUrlText(input));
       expect(String((init?.headers as Record<string, string>).Accept)).toBe("image/avif");
       return new Response(AVIF, { status: 200 });
-    }) as unknown as typeof fetch;
+    });
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
@@ -89,7 +91,7 @@ test("回源拿到非 avif（错误页 / jpeg）不入库也不返回", async ()
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
-      fetcher: (async () => new Response(JPEG, { status: 200 })) as unknown as typeof fetch,
+      fetcher: fakeFetch(async () => new Response(JPEG, { status: 200 })),
       persist: () => {
         persisted += 1;
       },
@@ -133,10 +135,10 @@ test("在途请求合并：同一张图并发只回源一次", async () => {
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
-      }) as unknown as typeof fetch,
+      }),
       now: () => 0,
     });
     const results = await Promise.all([
@@ -160,10 +162,10 @@ test("全局回源预算耗尽回 limited，不是伪装成「没有这张图」
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
-      }) as unknown as typeof fetch,
+      }),
       upstreamPerMinute: 2,
       perClientPerMinute: 100,
       now: () => clock,
@@ -191,10 +193,10 @@ test("单客户端配额只烧自己的额度，别人照样能回源", async ()
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
-      }) as unknown as typeof fetch,
+      }),
       upstreamPerMinute: 120,
       perClientPerMinute: 2,
       now: () => 0,
@@ -218,7 +220,7 @@ test("配额耗尽对外是 429 与退避头，不再伪装成 404", async () =>
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
       sourceBase: "https://bangumi.baka.website",
-      fetcher: (async () => new Response(AVIF, { status: 200 })) as unknown as typeof fetch,
+      fetcher: fakeFetch(async () => new Response(AVIF, { status: 200 })),
       upstreamPerMinute: 1,
       perClientPerMinute: 1,
       now: () => 0,

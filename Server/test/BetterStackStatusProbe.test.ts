@@ -3,6 +3,8 @@ import {
   BetterStackStatusProbe,
   monitorReadings,
 } from "../src/infrastructure/BetterStackStatusProbe";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 /** 夹具假令牌：仅供本文件构造探针，不是任何环境的真实凭据。 */
 const fixtureToken = ["test", "token"].join("-");
@@ -31,8 +33,8 @@ describe("Better Stack 外部监测探针", () => {
   test("按只读令牌请求 monitors，映射到的组件各自读出等级与延迟", async () => {
     let seenUrl = "";
     let seenAuth = "";
-    const fetcher = (async (input: string | URL, init?: RequestInit) => {
-      seenUrl = String(input);
+    const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      seenUrl = requestUrlText(input);
       seenAuth = String((init?.headers as Record<string, string>).Authorization);
       return json([
         monitor("up", false, 132.4, "111"),
@@ -41,7 +43,7 @@ describe("Better Stack 外部监测探针", () => {
         monitor("up", false, "210", "444"),
         monitor("up", false, 50, "999"),
       ]);
-    }) as unknown as typeof fetch;
+    });
     const probe = new BetterStackStatusProbe({
       apiKey: fixtureToken,
       monitors,
@@ -82,11 +84,11 @@ describe("Better Stack 外部监测探针", () => {
   test("上游异常时回未知，失败结果只短暂缓存：期内不重打，期满恢复重试", async () => {
     let calls = 0;
     let clock = 1_000;
-    const fetcher = (async () => {
+    const fetcher = fakeFetch(async () => {
       calls += 1;
       if (calls === 1) return new Response("{}", { status: 503 });
       return json([monitor("up", false, 100, "111")]);
-    }) as unknown as typeof fetch;
+    });
     const probe = new BetterStackStatusProbe({
       apiKey: fixtureToken,
       monitors,
@@ -109,9 +111,9 @@ describe("Better Stack 外部监测探针", () => {
     const probe = new BetterStackStatusProbe({
       apiKey: fixtureToken,
       monitors,
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         throw new TypeError("fetch failed");
-      }) as unknown as typeof fetch,
+      }),
     });
     expect(await probe.read()).toBeNull();
   });
@@ -124,10 +126,10 @@ describe("Better Stack 外部监测探针", () => {
       monitors: { bangumi: "1" },
       now: () => clock,
       cacheTtlMs: 30_000,
-      fetcher: (async () => {
+      fetcher: fakeFetch(async () => {
         calls += 1;
         return json([monitor("up", false, 100, "1")]);
-      }) as unknown as typeof fetch,
+      }),
     });
 
     expect(await probe.read()).toEqual({ bangumi: { level: "operational", latencyMs: 100 } });

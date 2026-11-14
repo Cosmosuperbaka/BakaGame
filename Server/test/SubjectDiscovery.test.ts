@@ -4,6 +4,7 @@ import { BangumiSearchIndex } from "../src/infrastructure/BangumiSearchIndex";
 import { discoverNewSubjects } from "../src/infrastructure/SubjectDiscovery";
 import { infoboxToWikitext } from "../src/infrastructure/BangumiApiTypes";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 const BASE = "https://bgm.invalid";
 
@@ -22,7 +23,7 @@ const makeDb = () => {
 /** 假上游：搜索结果固定，按 URL 分派详情。 */
 const makeFetcher = (payloads: Record<string, unknown>) => {
   const calls: string[] = [];
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrlText(input);
     calls.push(init?.method === "POST" ? `POST ${url}` : url);
     if (url.includes("/v0/search/subjects")) {
@@ -31,7 +32,7 @@ const makeFetcher = (payloads: Record<string, unknown>) => {
     const body = payloads[url];
     if (body === undefined) return new Response(null, { status: 404 });
     return Response.json(body);
-  }) as unknown as typeof fetch;
+  });
   return { fetcher, calls };
 };
 
@@ -159,10 +160,10 @@ test("nsfw 条目一律不入库（匿名拿不到，仍显式挡一道）", asy
 test("搜索窗口按 since 组装 air_date 过滤（不是 sort: date —— 官方 sort 白名单里没有它）", async () => {
   const db = makeDb();
   const seen: string[] = [];
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     seen.push(requestBodyText(init));
     return Response.json({ data: [], total: 0 });
-  }) as unknown as typeof fetch;
+  });
   await discoverNewSubjects({ db, base: BASE, fetcher, since: "2026-09-15", pauseMs: 0 });
   expect(seen).toHaveLength(1);
   expect(JSON.parse(seen[0])).toMatchObject({
@@ -177,7 +178,7 @@ test("翻页走查询串且按 total 结束：上游单页压到 20 时也要取
   const allIds = Array.from({ length: 45 }, (_, index) => index + 1);
   const urls: string[] = [];
   const bodies: string[] = [];
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(requestUrlText(input));
     if (init?.method !== "POST") return new Response(null, { status: 404 });
     urls.push(url.search);
@@ -188,7 +189,7 @@ test("翻页走查询串且按 total 结束：上游单页压到 20 时也要取
       data: allIds.slice(offset, offset + size).map((id) => ({ id })),
       total: allIds.length,
     });
-  }) as unknown as typeof fetch;
+  });
 
   const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
 
@@ -200,19 +201,19 @@ test("翻页走查询串且按 total 结束：上游单页压到 20 时也要取
 
 test("搜索失败要抛出，不能伪装成这段时间没有新条目", async () => {
   const db = makeDb();
-  const fetcher = (async () => new Response(null, { status: 503 })) as unknown as typeof fetch;
+  const fetcher = fakeFetch(async () => new Response(null, { status: 503 }));
   await expect(discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 })).rejects.toThrow("503");
   db.close();
 });
 
 test("瞬时失败记为失败：限流不能把作品当成无角色裁掉", async () => {
   const db = makeDb();
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
     return requestUrlText(input).endsWith("/characters")
       ? new Response(null, { status: 429 })
       : Response.json([]);
-  }) as unknown as typeof fetch;
+  });
   const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
   expect(result).toMatchObject({ added: 0, skipped: 0, failed: 1 });
   db.close();
@@ -252,11 +253,11 @@ test("接口形态的字段按 dump 口径落库：infobox、关系码、角色�
       infobox: [{ key: "艺术家", value: [{ v: "甲" }, { v: "乙" }] }],
     },
   };
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
     const body = payloads[requestUrlText(input)];
     return body === undefined ? new Response(null, { status: 404 }) : Response.json(body);
-  }) as unknown as typeof fetch;
+  });
 
   expect(await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 })).toMatchObject({
     added: 1,
@@ -324,13 +325,13 @@ const countRows = (db: Database) => ({
 
 /** 搜索只返回 900001；`failing` 里的地址返回 500，其余按 payloads 分派。 */
 const makeSingleSubjectFetcher = (payloads: Record<string, unknown>, failing: Set<string>) =>
-  (async (input: string | URL | Request, init?: RequestInit) => {
+  fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrlText(input);
     if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
     if (failing.has(url)) return new Response(null, { status: 500 });
     const body = payloads[url];
     return body === undefined ? new Response(null, { status: 404 }) : Response.json(body);
-  }) as unknown as typeof fetch;
+  });
 
 test("角色详情中途失败时整部作品不落库，下次发现仍当作新作品重试", async () => {
   const db = makeDb();
@@ -386,7 +387,7 @@ const hang = (init?: RequestInit) =>
 
 test("搜索请求挂起时按请求超时中止并抛出，不会让每日任务永远不返回", async () => {
   const db = makeDb();
-  const fetcher = ((_: unknown, init?: RequestInit) => hang(init)) as unknown as typeof fetch;
+  const fetcher = fakeFetch((_: unknown, init?: RequestInit) => hang(init));
   const startedAt = Date.now();
   await expect(
     discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0, requestTimeoutMs: 30 })
@@ -397,10 +398,10 @@ test("搜索请求挂起时按请求超时中止并抛出，不会让每日任�
 
 test("详情请求挂起时该作品记为失败，其余流程继续", async () => {
   const db = makeDb();
-  const fetcher = (async (_input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (_input: string | URL | Request, init?: RequestInit) => {
     if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
     return hang(init);
-  }) as unknown as typeof fetch;
+  });
   const result = await discoverNewSubjects({
     db,
     base: BASE,
@@ -414,7 +415,7 @@ test("详情请求挂起时该作品记为失败，其余流程继续", async ()
 
 test("超过总预算后不再处理剩余候选，并如实记为失败", async () => {
   const db = makeDb();
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrlText(input);
     if (init?.method === "POST")
       return Response.json({ data: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }], total: 4 });
@@ -422,7 +423,7 @@ test("超过总预算后不再处理剩余候选，并如实记为失败", async
     return url.endsWith("/characters") || url.endsWith("/subjects")
       ? Response.json([])
       : Response.json({ id: 1, type: 2, name: "x" });
-  }) as unknown as typeof fetch;
+  });
   const result = await discoverNewSubjects({
     db,
     base: BASE,
@@ -452,7 +453,7 @@ test("同一部作品的角色与关联详情并发抓取，但不超过并发�
   };
   let inFlight = 0;
   let peak = 0;
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrlText(input);
     if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
     const isCharacterDetail = /\/v0\/characters\/\d+$/.test(url);
@@ -465,7 +466,7 @@ test("同一部作品的角色与关联详情并发抓取，但不超过并发�
     }
     const body = payloads[url];
     return body === undefined ? new Response(null, { status: 404 }) : Response.json(body);
-  }) as unknown as typeof fetch;
+  });
   const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
   expect(result.added).toBe(1);
   expect(peak).toBeGreaterThan(1);

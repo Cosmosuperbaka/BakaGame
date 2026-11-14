@@ -1,12 +1,13 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { NeteaseMusicProvider } from "../../src/infrastructure/music/netease/NeteaseMusicProvider";
+import { fakeFetch } from "../support/Fetch";
 
 describe("播放地址与解灰", () => {
   const originalFetch = globalThis.fetch;
   beforeEach(() => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = fakeFetch(async () => {
       throw new Error("测试禁止网络请求");
-    }) as unknown as typeof fetch;
+    });
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;

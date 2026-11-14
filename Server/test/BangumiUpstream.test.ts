@@ -9,17 +9,18 @@ import { LocalBangumiProvider } from "../src/infrastructure/LocalBangumiProvider
 import { SubjectUpdater } from "../src/infrastructure/SubjectUpdater";
 import { discoverNewSubjects } from "../src/infrastructure/SubjectDiscovery";
 import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 /** 假上游：按 URL 决定状态码，记录实际发出的请求与带上的头。 */
 const fakeUpstream = (status: (url: string) => number = () => 200) => {
   const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
     const url = requestUrlText(input);
     calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
     const code = status(url);
     if (code !== 200) return new Response(null, { status: code });
     return Response.json({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg" } });
-  }) as unknown as typeof fetch;
+  });
   return { calls, fetcher };
 };
 
@@ -53,10 +54,12 @@ describe("共享上游部件", () => {
   });
 
   test("请求超时按调用方给的时限中止", async () => {
-    const fetcher = ((_: unknown, init?: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason as Error));
-      })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(
+      (_: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal!.reason as Error));
+        })
+    );
     const upstream = new BangumiUpstream({ fetcher });
     await expect(
       upstream.fetch("https://api.invalid/slow", { timeoutMs: 20, priority: "interactive" })
@@ -90,11 +93,13 @@ describe("共享上游部件", () => {
   test("上游给了等待时长就按它冷却，且有上限", async () => {
     const clock = fakeClock();
     let retryAfter = "30";
-    const fetcher = (async () =>
-      new Response(null, {
-        status: 429,
-        headers: { "Retry-After": retryAfter },
-      })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(
+      async () =>
+        new Response(null, {
+          status: 429,
+          headers: { "Retry-After": retryAfter },
+        })
+    );
     const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
     await expect(
       upstream.fetch("https://api.invalid/a", { timeoutMs: 1000, priority: "interactive" })
@@ -132,10 +137,10 @@ describe("共享上游部件", () => {
 
   test("并发调用共用同一个限速时隙：按速率逐个排开", async () => {
     const sentAt: number[] = [];
-    const fetcher = (async () => {
+    const fetcher = fakeFetch(async () => {
       sentAt.push(performance.now());
       return Response.json({});
-    }) as unknown as typeof fetch;
+    });
     // 20 req/s：相邻请求至少隔 50ms。用真实时钟，只断言下界（定时器不会提前触发）。
     const upstream = new BangumiUpstream({ fetcher, rate: () => 20 });
     const run = (name: string) =>
@@ -183,11 +188,11 @@ const manualClock = () => {
 const deferredUpstream = () => {
   const sent: string[] = [];
   const waiting = new Map<string, (response: Response) => void>();
-  const fetcher = ((input: string | URL | Request) => {
+  const fetcher = fakeFetch((input: string | URL | Request) => {
     const url = requestUrlText(input);
     sent.push(url);
     return new Promise<Response>((resolve) => waiting.set(url, resolve));
-  }) as unknown as typeof fetch;
+  });
   const answer = (url: string, status: number, headers: Record<string, string> = {}) =>
     waiting.get(url)!(new Response(null, { status, headers }));
   return { sent, fetcher, answer };
@@ -440,7 +445,7 @@ describe("四个调用方共用一个上游部件", () => {
     const clock = fakeClock();
     let limited = true;
     const calls: string[] = [];
-    const fetcher = (async (input: string | URL | Request) => {
+    const fetcher = fakeFetch(async (input: string | URL | Request) => {
       const url = requestUrlText(input);
       calls.push(url);
       if (limited && url.endsWith("/v0/subjects/1")) {
@@ -448,7 +453,7 @@ describe("四个调用方共用一个上游部件", () => {
         return new Response(null, { status: 429 });
       }
       return Response.json({ name: "x" });
-    }) as unknown as typeof fetch;
+    });
     const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
     const db = new Database(":memory:");
     db.exec(`CREATE TABLE subjects (
@@ -484,12 +489,12 @@ describe("四个调用方共用一个上游部件", () => {
   test("新条目发现的出站同样等待共享冷却", async () => {
     const clock = fakeClock();
     const calls: string[] = [];
-    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const fetcher = fakeFetch(async (input: string | URL | Request, init?: RequestInit) => {
       const url = requestUrlText(input);
       calls.push(init?.method === "POST" ? `POST ${url}` : url);
       if (url.endsWith("/limited")) return new Response(null, { status: 429 });
       return Response.json({ data: [], total: 0 });
-    }) as unknown as typeof fetch;
+    });
     const upstream = new BangumiUpstream({ fetcher, now: clock.now, sleep: clock.sleep });
     // 别处（例如角色补全）先触发了冷却。
     await expect(

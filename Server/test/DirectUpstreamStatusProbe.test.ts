@@ -15,6 +15,8 @@ import {
   UPSTREAM_STATUS_COMPONENT_IDS,
   type UpstreamStatusComponentId,
 } from "../src/shared/Status";
+import { requestUrlText } from "./RequestFixtures";
+import { fakeFetch } from "./support/Fetch";
 
 interface Call {
   url: string;
@@ -23,11 +25,11 @@ interface Call {
 
 const makeFetcher = (respond: (call: Call) => Response | Promise<Response>) => {
   const calls: Call[] = [];
-  const fetcher = (async (input: string | URL, init?: RequestInit) => {
-    const call: Call = { url: String(input), init };
+  const fetcher = fakeFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const call: Call = { url: requestUrlText(input), init };
     calls.push(call);
     return respond(call);
-  }) as unknown as typeof fetch;
+  });
   return { calls, fetcher };
 };
 
