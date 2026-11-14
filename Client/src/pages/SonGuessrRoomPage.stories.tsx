@@ -104,6 +104,92 @@ export const PasswordDialog: Story = {
   },
 };
 
+/** 带密码的确认按这张表应答：第一次密码被拒写在框下，再交一次就停在在途。 */
+function lockedJoin(attempts: Array<{ code: string; message: string } | "pending">) {
+  let index = 0;
+  return (_roomId: string, _name: string, password?: string) => {
+    if (!password)
+      return rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" });
+    const step = attempts[Math.min(index, attempts.length - 1)];
+    index += 1;
+    return step === "pending" ? new Promise<never>(() => {}) : rejectedProtocol(step);
+  };
+}
+
+/** 在密码框里交一次密码；`settled` 是交完之后要等到的状态。 */
+async function submitPassword(
+  value: string,
+  settled: (dialog: ReturnType<typeof within>) => Promise<unknown>
+) {
+  const dialog = within(await screen.findByRole("dialog", { name: "输入房间密码" }));
+  await userEvent.type(dialog.getByLabelText("房间密码"), value);
+  await userEvent.click(dialog.getByRole("button", { name: "加入房间" }));
+  await settled(dialog);
+  dropFocus();
+}
+
+/** 输错密码：原因写在密码框下并标红，不另弹提示条，留在这一步重输。 */
+export const PasswordWrong: Story = {
+  name: "输入房间密码 · 密码错误",
+  tags: ["!page", "overlay"],
+  beforeEach: () => {
+    const restoreName = seedUsername(me.name);
+    const restoreConnection = connectInstantly();
+    stubSongActions({
+      joinRoom: lockedJoin([{ code: "PASSWORD_INCORRECT", message: "房间密码错误" }]),
+    });
+    return () => {
+      restoreConnection();
+      restoreName();
+    };
+  },
+  play: () => submitPassword("1234", (dialog) => dialog.findByText("房间密码错误")),
+};
+
+/** 尝试过多：留在密码步，原因写在框下但不标红（不是这次密码本身不对）。 */
+export const PasswordTooMany: Story = {
+  name: "输入房间密码 · 尝试过多",
+  tags: ["!page", "overlay"],
+  beforeEach: () => {
+    const restoreName = seedUsername(me.name);
+    const restoreConnection = connectInstantly();
+    stubSongActions({
+      joinRoom: lockedJoin([
+        { code: "TOO_MANY_ATTEMPTS", message: "密码错误次数过多，请稍后再试" },
+      ]),
+    });
+    return () => {
+      restoreConnection();
+      restoreName();
+    };
+  },
+  play: () => submitPassword("1234", (dialog) => dialog.findByText("密码错误次数过多，请稍后再试")),
+};
+
+/** 确认在途：密码框留着，确认钮转圈并挡住重复提交。 */
+export const PasswordPending: Story = {
+  name: "输入房间密码 · 确认在途",
+  tags: ["!page", "overlay"],
+  beforeEach: () => {
+    const restoreName = seedUsername(me.name);
+    const restoreConnection = connectInstantly();
+    stubSongActions({ joinRoom: lockedJoin(["pending"]) });
+    return () => {
+      restoreConnection();
+      restoreName();
+    };
+  },
+  play: () =>
+    submitPassword("1234", (dialog) =>
+      waitFor(() =>
+        expect(dialog.getByRole("button", { name: "加入房间" })).toHaveAttribute(
+          "aria-busy",
+          "true"
+        )
+      )
+    ),
+};
+
 // ==================== 等待阶段 ====================
 
 /** 等待页的开局按钮在设置组之下，桌面视口也看不到：滚到按钮露出，故事所说的状态才进得了截图。 */
