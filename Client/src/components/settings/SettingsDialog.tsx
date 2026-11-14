@@ -16,7 +16,7 @@ import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields
 import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { setCloudSyncEnabled, useCloudSyncEnabled } from "@/lib/CloudSync";
-import { mcpEndpoint, type McpGameId } from "@/lib/McpConfig";
+import { mcpEndpoint } from "@/lib/McpConfig";
 import { useSiteLinkConnected } from "@/lib/SiteWs";
 import { usePageControl } from "@/stores/UsePageControl";
 import {
@@ -28,9 +28,6 @@ import {
 import { setThemePreference, useThemePreference, type ThemePreference } from "@/lib/Theme";
 import type { OriginPoint } from "@/lib/motion/Origin";
 import { useAccountStore } from "@/stores/UseAccountStore";
-import { useCEEStore } from "@/stores/UseCEEStore";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
   { value: "light", label: "浅色" },
@@ -79,23 +76,15 @@ function McpConnectionDetails({ connected }: { connected: boolean }) {
   );
 }
 
-/** 房间内打开时要先看房主是否开启了 MCP；不在房间里没有这道限制。 */
-function useRoomAgentsBlocked(game: McpGameId | undefined): boolean {
-  const faker = useWhoIsFakerStore((state) => state.snapshot?.settings.allowAgents === true);
-  const song = useSonGuessrStore((state) => state.snapshot?.settings.allowAgents === true);
-  const cee = useCEEStore((state) => state.snapshot?.settings.allowAgents === true);
-  if (!game) return false;
-  return !(game === "faker" ? faker : game === "song" ? song : cee);
-}
-
 /** 交给 Agent 的入口在任何页面都是这一块；房间只多一条房主开关的限制。 */
-function McpSection({ game }: { game?: McpGameId }) {
-  const blocked = useRoomAgentsBlocked(game);
+function McpSection({ agentsBlocked }: { agentsBlocked?: boolean }) {
   const connected = useSiteLinkConnected();
   return (
     <SettingsSection title="MCP 连接" icon={Bot}>
       <McpPairingPanel
-        {...(blocked ? { blockedReason: "本房间未开启 MCP，房主开启后才能交给 Agent。" } : {})}
+        {...(agentsBlocked
+          ? { blockedReason: "本房间未开启 MCP，房主开启后才能交给 Agent。" }
+          : {})}
       />
       <Collapsible title="连接信息" size="sm">
         <McpConnectionDetails connected={connected} />
@@ -197,13 +186,13 @@ export function SettingsDialog({
   open,
   onOpenChange,
   origin,
-  game,
+  agentsBlocked,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   origin?: OriginPoint | null;
-  /** 在房间内打开时传入当前游戏：房主没开 MCP 时不能交给 Agent。 */
-  game?: McpGameId;
+  /** 在房间内打开时由房间顶栏按各自房主开关算出：没开 MCP 就不能交给 Agent。 */
+  agentsBlocked?: boolean;
 }) {
   const soundEnabled = useSoundEnabled();
   const { status } = usePageControl();
@@ -222,7 +211,7 @@ export function SettingsDialog({
         </DialogHeader>
 
         <div>
-          <McpSection {...(game ? { game } : {})} />
+          <McpSection agentsBlocked={agentsBlocked} />
 
           <SettingsSection title="外观" icon={SunMoon}>
             <ThemeField />

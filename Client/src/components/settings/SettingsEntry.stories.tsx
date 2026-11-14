@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, within } from "storybook/test";
-import type { McpGameId } from "@/lib/McpConfig";
 import { setSoundEnabled } from "@/lib/SoundEffects";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
@@ -26,9 +25,9 @@ type Story = StoryObj<typeof meta>;
 /** 入口只有一枚齿轮，打开后才是完整设置面板（见下一条故事）。 */
 export const Entry: Story = { name: "入口", tags: ["no-shot"] };
 
-function OpenSettings({ game }: { game?: McpGameId }) {
+function OpenSettings({ agentsBlocked }: { agentsBlocked?: boolean }) {
   const [open, setOpen] = useState(true);
-  return <SettingsDialog open={open} onOpenChange={setOpen} {...(game ? { game } : {})} />;
+  return <SettingsDialog open={open} onOpenChange={setOpen} agentsBlocked={agentsBlocked} />;
 }
 
 /** 统一设置面板：MCP、外观、提示音与云同步在同一处。 */
@@ -78,7 +77,7 @@ export const SoundOff: Story = {
 /** 在房间里打开、房主没开 MCP：配对区给出限制说明。 */
 export const RoomBlocked: Story = {
   name: "设置面板 · 房间未开 MCP",
-  render: () => <OpenSettings game="cee" />,
+  render: () => <OpenSettings agentsBlocked />,
   tags: ["overlay"],
   beforeEach: () => presetAccount({ status: "guest" }),
 };

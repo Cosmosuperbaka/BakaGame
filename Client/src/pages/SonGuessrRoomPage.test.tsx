@@ -216,6 +216,28 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.queryByText("房主小明")).not.toBeInTheDocument();
   });
 
+  it("房主没开 MCP 时，顶栏设置面板里的接管开关禁用并说明原因", async () => {
+    renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeDisabled();
+    expect(dialog).toHaveTextContent("本房间未开启 MCP");
+  });
+
+  it("房主开了 MCP 时，顶栏设置面板里的同一个开关可用", async () => {
+    const base = createMockSnapshot();
+    useSonGuessrStore.setState({
+      snapshot: createMockSnapshot({ settings: { ...base.settings, allowAgents: true } }),
+    });
+    renderRoomPage();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeEnabled();
+    expect(dialog).not.toHaveTextContent("本房间未开启 MCP");
+  });
+
   it("单人模式结算按答对轮数与已进行轮数统计", () => {
     window.sessionStorage.setItem("songuessr_solo_room", "4321");
     useSonGuessrStore.setState({

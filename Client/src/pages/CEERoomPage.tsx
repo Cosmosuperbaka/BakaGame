@@ -117,7 +117,7 @@ export default function CEERoomPage() {
             {perspective === "observer" ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
           </>
         }
-        actions={<RoomUtilityActions game="cee" />}
+        actions={<RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />}
         connectionIssue={connectionIssue}
         player={
           <PlayerColumn>

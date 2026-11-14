@@ -209,7 +209,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         actions={
           <>
             <SongVolumeControl volume={volume} onVolumeChange={setVolume} />
-            <RoomUtilityActions game="song" />
+            <RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />
           </>
         }
         connectionIssue={connected ? null : "断线中..."}

@@ -195,7 +195,7 @@ export default function WhoIsFakerRoomPage() {
             wordAnchorRef={wordAnchorRef}
           />
         }
-        actions={<RoomUtilityActions game="faker" />}
+        actions={<RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />}
         connectionIssue={connected ? null : "断线中..."}
         player={
           <FakerRoomPlayerAside

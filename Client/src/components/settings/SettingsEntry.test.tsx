@@ -12,10 +12,6 @@ import {
   SOUND_VOLUME_STORAGE_KEY,
 } from "@/lib/SoundEffects";
 import { setThemePreference, THEME_STORAGE_KEY } from "@/lib/Theme";
-import type { McpGameId } from "@/lib/McpConfig";
-import { useCEEStore } from "@/stores/UseCEEStore";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { SettingsEntry } from "./SettingsEntry";
 
 const resetPreferences = () => {
@@ -25,16 +21,13 @@ const resetPreferences = () => {
   setSoundVolume(1);
   setPageControl({ status: "off" });
   setCloudSyncEnabled(true);
-  useWhoIsFakerStore.setState({ snapshot: null, privateState: null });
-  useSonGuessrStore.setState({ snapshot: null, privateState: null });
-  useCEEStore.setState({ snapshot: null, privateState: null });
 };
 
 beforeEach(resetPreferences);
 
-const openSettings = async (game?: McpGameId) => {
+const openSettings = async (agentsBlocked?: boolean) => {
   const user = userEvent.setup();
-  render(<SettingsEntry game={game} />);
+  render(<SettingsEntry agentsBlocked={agentsBlocked} />);
   await user.click(screen.getByRole("button", { name: "设置" }));
   return { user, dialog: await screen.findByRole("dialog") };
 };
@@ -111,19 +104,13 @@ describe("SettingsEntry", () => {
   });
 
   it("房间内与任何页面是同一块配对入口；房主开了 MCP 才能交给 Agent", async () => {
-    useWhoIsFakerStore.setState({
-      snapshot: { settings: { allowAgents: true } } as never,
-    });
-    const { dialog } = await openSettings("faker");
+    const { dialog } = await openSettings(false);
     expect(within(dialog).getByRole("switch", { name: "交给 Agent 操作" })).toBeEnabled();
     expect(dialog).not.toHaveTextContent("会话凭证");
   });
 
   it("房间没开 MCP 时说明原因，开关不可用", async () => {
-    useWhoIsFakerStore.setState({
-      snapshot: { settings: { allowAgents: false } } as never,
-    });
-    const { dialog } = await openSettings("faker");
+    const { dialog } = await openSettings(true);
     expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeDisabled();
     expect(dialog).toHaveTextContent("本房间未开启 MCP");
   });
