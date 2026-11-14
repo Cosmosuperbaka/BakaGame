@@ -1,6 +1,8 @@
+import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
 import { writeCEESession } from "@/lib/CEESession";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEERoomLifecycle } from "./UseCEERoomLifecycle";
@@ -244,4 +246,149 @@ it("恢复会话临时失败时回大厅提示，不卡在正在加入", async (
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
   expect(useCEEStore.getState().toasts[0]?.text).toBe("连接已断开");
   await waitFor(() => expect(h.result.current.joining).toBe(false));
+});
+
+describe("CEE 直链入房的分支与去向（补充）", () => {
+  const mount = (strict = false) =>
+    renderHook(() => useCEERoomLifecycle(), {
+      wrapper: ({ children }) => {
+        const router = (
+          <MemoryRouter initialEntries={["/cee/room/1234"]}>
+            <Routes>
+              <Route path="/cee/room/:roomId" element={children} />
+            </Routes>
+          </MemoryRouter>
+        );
+        return strict ? <StrictMode>{router}</StrictMode> : router;
+      },
+    });
+  const ready = (overrides: Record<string, unknown> = {}) => {
+    const store = {
+      connected: true,
+      lobbyReady: true,
+      reconnectRoom: vi.fn().mockResolvedValue(false),
+      joinRoom: vi.fn().mockResolvedValue(undefined),
+      createRoom: vi.fn().mockResolvedValue(undefined),
+      leaveRoom: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+    useCEEStore.setState(store);
+    return store;
+  };
+  beforeEach(() => localStorage.setItem("bakagame:username", "玩家"));
+  afterEach(() => localStorage.clear());
+
+  it("严格模式下直链加入只发一次入房", async () => {
+    const { joinRoom } = ready();
+    const h = mount(true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(joinRoom).toHaveBeenCalledExactlyOnceWith("1234", "玩家", "", expect.any(AbortSignal));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("未连上或大厅未就绪时不入房，两者都就绪后才恢复与加入", async () => {
+    const { reconnectRoom, joinRoom } = ready({ connected: false });
+    const h = mount();
+    await act(async () => {});
+    expect(reconnectRoom).not.toHaveBeenCalled();
+    act(() => useCEEStore.setState({ connected: true, lobbyReady: false }));
+    await act(async () => {});
+    expect(reconnectRoom).not.toHaveBeenCalled();
+    act(() => useCEEStore.setState({ lobbyReady: true }));
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(reconnectRoom).toHaveBeenCalledTimes(1);
+    expect(joinRoom).toHaveBeenCalledTimes(1);
+  });
+  it("恢复途中断线：作废这次入房，重新就绪后从恢复重来", async () => {
+    const pending = deferred<boolean>();
+    const { reconnectRoom, joinRoom } = ready();
+    reconnectRoom.mockReturnValueOnce(pending.promise);
+    const h = mount();
+    await waitFor(() => expect(reconnectRoom).toHaveBeenCalledTimes(1));
+    const firstSignal = reconnectRoom.mock.calls[0][1] as AbortSignal;
+    act(() => useCEEStore.setState({ connected: false }));
+    expect(firstSignal.aborted).toBe(true);
+    await act(async () => pending.resolve(false));
+    expect(joinRoom).not.toHaveBeenCalled();
+    act(() => useCEEStore.setState({ connected: true }));
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(reconnectRoom).toHaveBeenCalledTimes(2);
+    expect(joinRoom).toHaveBeenCalledTimes(1);
+  });
+  it("尝试过多同样落到密码步，就地给出错误码", async () => {
+    ready({
+      joinRoom: vi.fn().mockRejectedValue({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" }),
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsJoin).toBe(true));
+    expect(h.result.current.errorCode).toBe("TOO_MANY_ATTEMPTS");
+    expect(h.result.current.error).toBe("尝试次数过多");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("密码步确认：在途时再次确认被忽略，成功后记住名字并收起密码步", async () => {
+    const retry = deferred<void>();
+    const { joinRoom } = ready({
+      joinRoom: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "PASSWORD_REQUIRED", message: "需要房间密码" })
+        .mockReturnValueOnce(retry.promise),
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsJoin).toBe(true));
+    act(() => h.result.current.setName("新名字"));
+    act(() => h.result.current.setPassword("secret"));
+    let first!: Promise<void>;
+    act(() => {
+      first = h.result.current.join();
+    });
+    expect(h.result.current.joining).toBe(true);
+    expect(h.result.current.errorCode).toBe("");
+    await act(async () => h.result.current.join());
+    expect(joinRoom).toHaveBeenCalledTimes(2);
+    expect(joinRoom.mock.calls[1]).toEqual(["1234", "新名字", "secret", expect.any(AbortSignal)]);
+    await act(async () => {
+      retry.resolve();
+      await first;
+    });
+    expect(h.result.current.needsJoin).toBe(false);
+    expect(h.result.current.joining).toBe(false);
+    expect(localStorage.getItem("bakagame:username")).toBe("新名字");
+  });
+  it("房间不存在且建房失败：提示后替换回大厅", async () => {
+    ready({
+      joinRoom: vi.fn().mockRejectedValue({ code: "ROOM_NOT_FOUND", message: "房间不存在" }),
+      createRoom: vi.fn().mockRejectedValue({ code: "ROOM_LIMIT", message: "房间数已达上限" }),
+    });
+    const h = mount();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee", { replace: true })
+    );
+    expect(useCEEStore.getState().toasts[0]?.text).toBe("房间数已达上限");
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+  });
+  it("入房被 store 以取消拒绝：不提示也不退出", async () => {
+    ready({
+      joinRoom: vi.fn().mockRejectedValue(new DOMException("入房操作已取消", "AbortError")),
+    });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(useCEEStore.getState().toasts).toHaveLength(0);
+    expect(h.result.current.needsJoin).toBe(false);
+  });
+  it("入房之后房间被关：替换回大厅", async () => {
+    const h = mount();
+    ready();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => useCEEStore.setState({ roomClosedAt: Date.now() + 1 }));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee", { replace: true });
+  });
+  it("点离开只回大厅（不替换历史），卸载时不退房", async () => {
+    const { leaveRoom } = ready();
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => h.result.current.leave());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee");
+    h.unmount();
+    expect(leaveRoom).not.toHaveBeenCalled();
+  });
 });
