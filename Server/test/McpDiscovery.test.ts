@@ -73,12 +73,11 @@ test("前端静态发现指针与后端生成的端点同源，不出现第二�
     canonical: string;
     serverCard: string;
   };
-  expect(pointer.mcpServers.bakagame).toEqual({
-    type: "http",
-    url: "https://game.baka.website/api/mcp",
-  });
-  expect(pointer.canonical).toBe("https://game.baka.website/api/.well-known/mcp.json");
-  expect(pointer.serverCard).toBe("https://game.baka.website/api/.well-known/mcp/server-card.json");
+  // 静态文件里是真实站点地址：测试只核对三处同源、路径对得上，不在测试里再写一遍站点字面量。
+  const origin = new URL(pointer.canonical).origin;
+  expect(pointer.mcpServers.bakagame).toEqual({ type: "http", url: `${origin}/api/mcp` });
+  expect(pointer.canonical).toBe(`${origin}/api/.well-known/mcp.json`);
+  expect(pointer.serverCard).toBe(`${origin}/api/.well-known/mcp/server-card.json`);
 });
 
 test("llms.txt 写到的 MCP 工具都真实存在，接管流程的工具一个不漏", () => {

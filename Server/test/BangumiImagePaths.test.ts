@@ -30,26 +30,26 @@ test("路径映射与构建脚本一致：作品 r200 / 角色 r400 / 角色 gri
 
 test("对外 URL：镜像前缀 + 缓存路径；映射不了就退回只换 host", () => {
   expect(
-    bangumiImageUrl("https://lain.bgm.tv/pic/cover/l/a.jpg", "https://img.baka.website/")
-  ).toBe("https://img.baka.website/r/200/pic/cover/l/a.jpg");
-  expect(bangumiImageUrl("https://lain.bgm.tv/pic/crt/l/b.jpg", "https://img.baka.website")).toBe(
-    "https://img.baka.website/r/400/pic/crt/l/b.jpg"
+    bangumiImageUrl("https://lain.bgm.tv/pic/cover/l/a.jpg", "https://img.example.com/")
+  ).toBe("https://img.example.com/r/200/pic/cover/l/a.jpg");
+  expect(bangumiImageUrl("https://lain.bgm.tv/pic/crt/l/b.jpg", "https://img.example.com")).toBe(
+    "https://img.example.com/r/400/pic/crt/l/b.jpg"
   );
-  expect(bangumiImageUrl("https://lain.bgm.tv/pic/crt/g/b.jpg", "https://img.baka.website")).toBe(
-    "https://img.baka.website/pic/crt/g/b.jpg"
+  expect(bangumiImageUrl("https://lain.bgm.tv/pic/crt/g/b.jpg", "https://img.example.com")).toBe(
+    "https://img.example.com/pic/crt/g/b.jpg"
   );
   // 历史行为：没配前缀 → 原样；非 lain 主机 → 原样
   expect(bangumiImageUrl("https://lain.bgm.tv/pic/cover/l/a.jpg", "")).toBe(
     "https://lain.bgm.tv/pic/cover/l/a.jpg"
   );
-  expect(bangumiImageUrl("https://other.example/x.jpg", "https://img.baka.website")).toBe(
+  expect(bangumiImageUrl("https://other.example/x.jpg", "https://img.example.com")).toBe(
     "https://other.example/x.jpg"
   );
   expect(bangumiImageUrl("", "https://x")).toBeUndefined();
   expect(bangumiImageUrl(null, "https://x")).toBeUndefined();
   // 未知形状 + 前缀 → 只换 host（交给路由的缺失回源兜底，不 404）
-  expect(bangumiImageUrl("https://lain.bgm.tv/pic/cover/m/a.jpg", "https://img.baka.website")).toBe(
-    "https://img.baka.website/pic/cover/m/a.jpg"
+  expect(bangumiImageUrl("https://lain.bgm.tv/pic/cover/m/a.jpg", "https://img.example.com")).toBe(
+    "https://img.example.com/pic/cover/m/a.jpg"
   );
 });
 

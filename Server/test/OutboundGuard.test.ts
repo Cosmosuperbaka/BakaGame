@@ -42,7 +42,7 @@ const allowed = [
   "q1.qlogo.cn",
   "1.1.1.1",
   "8.8.8.8",
-  "bangumi.baka.website",
+  "bangumi.example.com",
 ];
 
 /** 按地址表编排假响应，顺带记录请求顺序、init 与被放弃的响应体。 */

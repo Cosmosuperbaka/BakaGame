@@ -14,7 +14,7 @@ const smtpEnv: SmtpEnv = {
   port: 465,
   user: "bot@example.com",
   pass: "secret",
-  from: "BakaGame <noreply@baka.website>",
+  from: "BakaGame <noreply@example.com>",
 };
 
 const createLogger = () => {
@@ -54,7 +54,7 @@ describe("账号邮件投递", () => {
     await mailer.sendLoginCode({ to: "player@example.com", code: "123456" });
 
     expect(sent).toHaveLength(1);
-    expect(sent[0].from).toBe("BakaGame <noreply@baka.website>");
+    expect(sent[0].from).toBe("BakaGame <noreply@example.com>");
     expect(sent[0].to).toBe("player@example.com");
     expect(String(sent[0].subject)).toContain("123456");
     expect(String(sent[0].text)).toContain("你的 BakaGame 登录验证码是 123456");

@@ -13,7 +13,7 @@ import { isAllowedOrigin } from "../src/transport/Origin";
  *    都能提供的来源，必须继续走白名单判定，不能顺手一起放行。
  */
 
-const PROD = "https://game.baka.website";
+const PROD = "https://game.example.com";
 
 test("内嵌壳来源 https://localhost 在生产白名单下仍被信任", () => {
   expect(isAllowedOrigin("https://localhost", PROD)).toBe(true);

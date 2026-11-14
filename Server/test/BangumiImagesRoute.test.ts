@@ -65,7 +65,7 @@ test("缺失时回源抓 avif 并转交 Worker 落库", async () => {
     });
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher,
       persist: (path, image) => persisted.push({ path, bytes: image.bytes }),
       now: () => 0,
@@ -75,7 +75,7 @@ test("缺失时回源抓 avif 并转交 Worker 落库", async () => {
       new Request("http://localhost/api/bangumi/r/400/pic/crt/l/ab/cd/2.jpg")
     );
     expect(response.status).toBe(200);
-    expect(seen).toEqual(["https://bangumi.baka.website/r/400/pic/crt/l/ab/cd/2.jpg"]);
+    expect(seen).toEqual(["https://bangumi.example.com/r/400/pic/crt/l/ab/cd/2.jpg"]);
     expect(persisted).toHaveLength(1);
     expect(persisted[0]!.path).toBe("/r/400/pic/crt/l/ab/cd/2.jpg");
     service.close();
@@ -90,7 +90,7 @@ test("回源拿到非 avif（错误页 / jpeg）不入库也不返回", async ()
     let persisted = 0;
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher: fakeFetch(async () => new Response(JPEG, { status: 200 })),
       persist: () => {
         persisted += 1;
@@ -134,7 +134,7 @@ test("在途请求合并：同一张图并发只回源一次", async () => {
     let calls = 0;
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
@@ -161,7 +161,7 @@ test("全局回源预算耗尽回 limited，不是伪装成「没有这张图」
     let clock = 0;
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
@@ -192,7 +192,7 @@ test("单客户端配额只烧自己的额度，别人照样能回源", async ()
     let calls = 0;
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher: fakeFetch(async () => {
         calls += 1;
         return new Response(AVIF, { status: 200 });
@@ -219,7 +219,7 @@ test("配额耗尽对外是 429 与退避头，不再伪装成 404", async () =>
   try {
     const service = new BangumiImageService({
       directory: shards(join(directory, "images")),
-      sourceBase: "https://bangumi.baka.website",
+      sourceBase: "https://bangumi.example.com",
       fetcher: fakeFetch(async () => new Response(AVIF, { status: 200 })),
       upstreamPerMinute: 1,
       perClientPerMinute: 1,
@@ -320,7 +320,7 @@ test("已进 R2 的图回 302 到 CDN，不再吐字节", async () => {
 
     const service = new BangumiImageService({
       directory: join(directory, "images"),
-      cdnBase: "https://cdn.baka.website/files/bangumi/",
+      cdnBase: "https://cdn.example.com/files/bangumi/",
       now: () => 0,
     });
     const app = bangumiImageRoutes(service);
@@ -329,7 +329,7 @@ test("已进 R2 的图回 302 到 CDN，不再吐字节", async () => {
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
-      "https://cdn.baka.website/files/bangumi/r/200/pic/cover/l/ab/cd/1.jpg"
+      "https://cdn.example.com/files/bangumi/r/200/pic/cover/l/ab/cd/1.jpg"
     );
     // 一天而不是一年：换 CDN 或回滚时不用等一年才生效。
     expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
@@ -348,7 +348,7 @@ test("配了 CDN 但图还没搬走时仍回本地字节（迁移中途不裂图
 
     const service = new BangumiImageService({
       directory: join(directory, "images"),
-      cdnBase: "https://cdn.baka.website/files/bangumi",
+      cdnBase: "https://cdn.example.com/files/bangumi",
       now: () => 0,
     });
     const app = bangumiImageRoutes(service);
@@ -375,7 +375,7 @@ test("已进 R2 的路径只查一次索引；没搬走的路径每次都再查�
     store.close();
     const service = new BangumiImageService({
       directory: join(directory, "images"),
-      cdnBase: "https://cdn.baka.website/files/bangumi",
+      cdnBase: "https://cdn.example.com/files/bangumi",
       now: () => 0,
     });
     try {
