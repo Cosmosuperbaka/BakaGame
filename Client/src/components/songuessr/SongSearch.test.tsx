@@ -6,11 +6,13 @@ import type {
   BangumiSubjectSearchResult,
   SongSearchResult,
 } from "@bakagame/shared";
+import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { AnimeSearch, SongSearch } from "./SongSearch";
 
 const initial = useSonGuessrStore.getState();
 afterEach(() => {
+  vi.useRealTimers();
   // setState 的普通 action 替换不属于 vi.restoreAllMocks 的还原范围。
   useSonGuessrStore.setState(initial, true);
 });
@@ -51,18 +53,19 @@ const OP: BangumiSongCandidate = {
   track: { title: "夏空メロディー", artist: "コトノハ", kind: "opening" },
 };
 
-/**
- * 用真实时钟：面板的进退场是 framer-motion 动画，假时钟下不会推进。
- * 防抖窗口只有 350ms，等它过去再断言即可。
- */
 const setup = () => userEvent.setup();
-const flushDebounce = () =>
-  act(
-    () =>
-      new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 400);
-      })
-  );
+/**
+ * 派发输入并推进防抖窗口。只在这一次变更与推进期间冻住 setTimeout：
+ * userEvent 与 framer-motion 都依赖真实时钟，交互与进退场仍照常推进。
+ */
+const typeAndFlush = async (input: HTMLElement, value: string) => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  fireEvent.change(input, { target: { value } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(IDLE_SEARCH_MS + 50);
+  });
+  vi.useRealTimers();
+};
 
 describe("SongSearch", () => {
   it("输入即查，结果浮层里点整行提交，成功后清空收起", async () => {
@@ -74,8 +77,7 @@ describe("SongSearch", () => {
 
     const input = screen.getByRole("combobox", { name: "搜索歌曲" });
     expect(input).toHaveAttribute("data-agent-control", "song.guess.search.input");
-    await user.type(input, "夜");
-    await flushDebounce();
+    await typeAndFlush(input, "夜");
     expect(searchMusic).toHaveBeenCalledExactlyOnceWith("夜");
     // 行内副标题是歌手与专辑；已移除会员专享图标；没有单独的「猜这首」按钮。
     expect(screen.getByRole("option", { name: /夜空中最亮的星.*逃跑计划 · 世界/ })).toHaveAttribute(
@@ -100,8 +102,7 @@ describe("SongSearch", () => {
     useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([STAR]) });
     const onSelect = vi.fn().mockRejectedValue(new Error("本回合已结束"));
     render(<SongSearch mode="guess" onSelect={onSelect} />);
-    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "星");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "星");
     await user.click(screen.getByRole("option", { name: /夜空中最亮的星/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("本回合已结束");
     expect(screen.getByRole("option", { name: /夜空中最亮的星/ })).toBeInTheDocument();
@@ -112,8 +113,7 @@ describe("SongSearch", () => {
     useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([STAR, RAIN]) });
     const onSelect = vi.fn();
     render(<SongSearch mode="guess" guessedIds={[STAR.id]} onSelect={onSelect} />);
-    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "夜");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "夜");
     const guessed = screen.getByRole("option", { name: /夜空中最亮的星.*已猜过/ });
     expect(guessed).toHaveAttribute("aria-disabled", "true");
     await user.click(guessed);
@@ -121,7 +121,6 @@ describe("SongSearch", () => {
   });
 
   it("清空输入后在途请求晚到也不复活结果；新查询先回来时旧查询的失败被丢弃", async () => {
-    const user = setup();
     const first = deferred<SongSearchResult[]>();
     const second = deferred<SongSearchResult[]>();
     const searchMusic = vi
@@ -132,14 +131,12 @@ describe("SongSearch", () => {
     render(<SongSearch mode="guess" onSelect={vi.fn()} />);
     const input = screen.getByRole("combobox", { name: "搜索歌曲" });
 
-    await user.type(input, "A");
-    await flushDebounce();
+    await typeAndFlush(input, "A");
     expect(screen.getByRole("status")).toHaveTextContent("正在搜索歌曲");
-    await user.clear(input);
+    await typeAndFlush(input, "");
     // 面板收起有退场动画，等它退完。
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
-    await user.type(input, "B");
-    await flushDebounce();
+    await typeAndFlush(input, "B");
     await act(async () => {
       second.resolve([RAIN]);
       await second.promise;
@@ -153,7 +150,6 @@ describe("SongSearch", () => {
   });
 
   it("查询无结果与失败都显示在面板里", async () => {
-    const user = setup();
     const searchMusic = vi
       .fn()
       .mockResolvedValueOnce([])
@@ -161,31 +157,26 @@ describe("SongSearch", () => {
     useSonGuessrStore.setState({ searchMusic });
     render(<SongSearch mode="guess" onSelect={vi.fn()} />);
     const input = screen.getByRole("combobox", { name: "搜索歌曲" });
-    await user.type(input, "无");
-    await flushDebounce();
+    await typeAndFlush(input, "无");
     expect(screen.getByRole("status")).toHaveTextContent("没有找到匹配歌曲");
-    await user.type(input, "效");
-    await flushDebounce();
+    await typeAndFlush(input, "效");
     expect(screen.getByRole("alert")).toHaveTextContent("网易云暂时不可用");
   });
 
   it("检索候选展示对应音源平台标识徽章（QQ音乐与网易云）", async () => {
-    const user = setup();
     const qqSong: SongSearchResult = { id: "qq:001", title: "晴天", artist: "周杰伦" };
     const neteaseSong: SongSearchResult = { id: "netease:002", title: "七里香", artist: "周杰伦" };
     useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([qqSong, neteaseSong]) });
     render(<SongSearch mode="guess" onSelect={vi.fn()} />);
 
     const input = screen.getByRole("combobox", { name: "搜索歌曲" });
-    await user.type(input, "周杰伦");
-    await flushDebounce();
+    await typeAndFlush(input, "周杰伦");
 
     expect(screen.getByRole("option", { name: /晴天.*QQ音乐/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /七里香.*网易云/ })).toBeInTheDocument();
   });
 
   it("同一首有两个音源时并排展示两家平台标识", async () => {
-    const user = setup();
     const dual: SongSearchResult = {
       id: "netease:004",
       title: "双源曲",
@@ -195,8 +186,7 @@ describe("SongSearch", () => {
     useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([dual]) });
     render(<SongSearch mode="guess" onSelect={vi.fn()} />);
 
-    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "双源");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "双源");
 
     expect(
       screen.getByRole("option", { name: /双源曲.*网易云 \+ QQ 音乐双源/ })
@@ -204,7 +194,6 @@ describe("SongSearch", () => {
   });
 
   it("平台标识是带名称的图像角色，读屏读得出每个音源", async () => {
-    const user = setup();
     const songs: SongSearchResult[] = [
       { id: "qq:001", title: "晴天", artist: "周杰伦" },
       { id: "netease:002", title: "七里香", artist: "周杰伦" },
@@ -213,8 +202,7 @@ describe("SongSearch", () => {
     useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue(songs) });
     render(<SongSearch mode="guess" onSelect={vi.fn()} />);
 
-    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "周");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "周");
 
     const logoOf = (title: RegExp) =>
       within(screen.getByRole("option", { name: title })).getAllByRole("img");
@@ -240,8 +228,7 @@ describe("SongSearch", () => {
     const onSelect = vi.fn();
     render(<SongSearch mode="guess" onSelect={onSelect} />);
 
-    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "会员");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "会员");
 
     const option = screen.getByRole("option", { name: /会员限定曲.*不可播放/ });
     expect(option).toHaveAttribute("aria-disabled", "true");
@@ -256,8 +243,7 @@ describe("AnimeSearch", () => {
     useSonGuessrStore.setState({ searchBangumi: vi.fn().mockResolvedValue([SUMMER]) });
     const onSelect = vi.fn().mockResolvedValue(undefined);
     render(<AnimeSearch mode="guess" onSelect={onSelect} />);
-    await user.type(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
     await user.click(
       screen.getByRole("option", { name: /夏空旋律.*夏空メロディー · 2021 · 7\.8 分/ })
     );
@@ -273,8 +259,7 @@ describe("AnimeSearch", () => {
     });
     const onSelect = vi.fn().mockResolvedValue(undefined);
     render(<AnimeSearch mode="submit" onSelect={onSelect} />);
-    await user.type(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
 
     await user.click(screen.getByRole("option", { name: /夏空旋律/ }));
     expect(resolveAnimeSongs).toHaveBeenCalledWith(SUMMER.id);
@@ -301,8 +286,7 @@ describe("AnimeSearch", () => {
       resolveAnimeSongs: vi.fn().mockResolvedValue([]),
     });
     render(<AnimeSearch mode="submit" onSelect={vi.fn()} />);
-    await user.type(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
-    await flushDebounce();
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
     await user.click(screen.getByRole("option", { name: /夏空旋律/ }));
     expect(await screen.findByRole("status")).toHaveTextContent("该番剧未匹配到可播放的关联歌曲");
     expect(screen.getByRole("option", { name: /更换番剧/ })).toBeInTheDocument();

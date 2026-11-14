@@ -1,11 +1,15 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatThrow } from "@/lib/motion/Throw";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { STICKER_PREFIX } from "@/lib/Stickers";
 import type { ChatMessage } from "@bakagame/shared";
 import { ChatPanel } from "./ChatPanel";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // 表情名来自构建期清单：测试用一份最小清单，路径与清单里的表情名一一对应。
 vi.mock("virtual:sticker-manifest", () => ({
@@ -403,11 +407,22 @@ describe("ChatPanel (Common)", () => {
 
       const input = screen.getByRole("combobox", { name: "聊天消息" });
       fireEvent.change(input, { target: { value: "回显慢了一步" } });
+      // 只冻住等待窗口的定时器：胶囊收回仍按真实帧推进。
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
-      await waitFor(() => expect(handleSend).toHaveBeenCalledExactlyOnceWith("回显慢了一步"));
+      await act(async () => {});
+      expect(handleSend).toHaveBeenCalledExactlyOnceWith("回显慢了一步");
+      expect(screen.getByText("回显慢了一步")).toBeInTheDocument();
 
       // 越过视觉等待窗口：胶囊自己撤掉，但业务上这条已经发出去了
-      await new Promise((resolve) => setTimeout(resolve, chatThrow.waitMs + 300));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(chatThrow.waitMs + 300);
+      });
+      vi.useRealTimers();
+      // 等收回动画落地后再断言：已 ACK 的原文不能借收回动画写回输入框。
+      await waitFor(() => expect(screen.queryByText("回显慢了一步")).not.toBeInTheDocument(), {
+        timeout: 2000,
+      });
       expect(input).toHaveValue("");
       expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
       expect(onError).not.toHaveBeenCalled();
