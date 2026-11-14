@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { clipVolume } from "@/lib/ClipFade";
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { notifyPreferencesChanged, onPreferencesApplied } from "@/lib/PreferenceBus";
 import { SONG_VOLUME_KEY } from "@/lib/Storage";
 
@@ -35,7 +36,7 @@ export interface AudioClipPlayerOptions {
   currentClipStartTime?: number;
   currentClipEndTime?: number;
   isPlayingPhase: boolean;
-  sendCommand: SonGuessrSendCommand;
+  sendCommand: GameSendCommand<SonGuessrCommandMap>;
 }
 
 export function useAudioClipPlayer({

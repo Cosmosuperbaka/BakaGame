@@ -2,7 +2,8 @@ import { render, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CEECharacterSummary, CEESubjectSummary } from "@bakagame/shared";
 import type { ReactNode } from "react";
-import { ceeWsClient, type CEESendCommand } from "@/lib/CEEWs";
+import { ceeWsClient, type CEECommandMap } from "@/lib/CEEWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { clearCEERankedQueryCache, useCEERankedStore } from "@/stores/UseCEERankedStore";
@@ -99,7 +100,7 @@ describe("数据源缺省值", () => {
 
   it("多人房的图片命令沿用房间的 sendCommand", async () => {
     const sendCommand = vi.fn(async () => ({ imageUrl: "https://example.com/pic.jpg" }));
-    useCEEStore.setState({ sendCommand: sendCommand as unknown as CEESendCommand });
+    useCEEStore.setState({ sendCommand: sendCommand as unknown as GameSendCommand<CEECommandMap> });
 
     const { result } = renderHook(() => useCEEDataSource(), { wrapper: asIs });
     await expect(result.current.characterImage(41, "large")).resolves.toBe(

@@ -1,40 +1,22 @@
 import type { SonGuessrAck, SonGuessrCommand, SonGuessrPayload } from "@bakagame/shared";
 import { attachTabSession } from "@/lib/TabSession";
-import { createWebSocketClient, type SendOptions } from "@/lib/WebsocketClient";
+import { createWebSocketClient } from "@/lib/WebsocketClient";
+import { createGameWs, type CommandPolicy } from "@/lib/GameWs";
 
 export const sonGuessrWsClient = createWebSocketClient("/api/ws", { prelude: attachTabSession });
 
-/** 与卧底、CEE 同一组 facade 形状：连接、等待、发送、消息与状态订阅。 */
-export const connect = () => sonGuessrWsClient.connect();
-export const disconnect = () => sonGuessrWsClient.disconnect();
-export const waitForConnection = (timeoutMs?: number) =>
-  sonGuessrWsClient.waitForConnection(timeoutMs);
+export type SonGuessrCommandMap = {
+  [K in SonGuessrCommand]: { payload: SonGuessrPayload<K>; ack: SonGuessrAck<K> };
+};
 
-/**
- * 命令名、载荷与 ack 形状都由 shared 的派生契约锁定：拼错命令名或漏必填字段在编译期失败。
- */
-export function send<T extends SonGuessrCommand>(
-  type: T,
-  payload: SonGuessrPayload<T>,
-  options?: SendOptions
-): Promise<SonGuessrAck<T>> {
-  return sonGuessrWsClient.send(type, payload as Record<string, unknown>, options) as Promise<
-    SonGuessrAck<T>
-  >;
-}
+export const { connect, disconnect, waitForConnection, send, onMessage, onStatus } =
+  createGameWs<SonGuessrCommandMap>(sonGuessrWsClient);
 
-export const onMessage = (handler: Parameters<typeof sonGuessrWsClient.onMessage>[0]) =>
-  sonGuessrWsClient.onMessage(handler);
-export const onStatus = (handler: Parameters<typeof sonGuessrWsClient.onStatus>[0]) =>
-  sonGuessrWsClient.onStatus(handler);
-
-/**
- * store 的 `sendCommand` 与组件 props 之间传的是同一个函数，形状只在这里写一次：
- * 组件侧另写一份 `(type: string, payload?: Record<string, unknown>) => ...` 会把收紧的命令名与载荷又放宽回 string。
- */
-export type SonGuessrSendCommand = <TCommand extends SonGuessrCommand>(
-  type: TCommand,
-  payload?: SonGuessrPayload<TCommand>,
-  /** `timeout: 0` 表示不设请求超时，用于自动出题这类耗时由上游决定的长任务。 */
-  options?: { timeout?: number }
-) => Promise<SonGuessrAck<TCommand>>;
+/** 回源取题、取详情与自动出题的耗时由上游决定，客户端超时只会制造假失败（Spec §6）。 */
+export const SONGUESSR_COMMAND_POLICY: CommandPolicy<SonGuessrCommandMap> = {
+  "song.game.start": { timeout: 0, pollSync: true },
+  "song.game.nextRound": { timeout: 0, pollSync: true },
+  "song.game.submitSong": { timeout: 0 },
+  "song.game.submitAnime": { timeout: 0 },
+  "song.music.detail": { timeout: 0 },
+};

@@ -36,6 +36,7 @@ import {
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
 import * as ws from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
@@ -101,7 +102,7 @@ export interface SonGuessrStore {
   searchArtist: (keyword: string) => Promise<SongArtistSearchResult[]>;
   /** 解析歌单链接或 ID；同一输入在复用窗口内不会重复请求上游。 */
   resolvePlaylist: (value: string) => Promise<SongPlaylistInfo>;
-  sendCommand: ws.SonGuessrSendCommand;
+  sendCommand: GameSendCommand<ws.SonGuessrCommandMap>;
 }
 
 /** 进房凭据 = 服务端 ack（含首屏快照与私有态）+ 客户端自己记的旧 token。 */

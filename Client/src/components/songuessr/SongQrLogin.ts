@@ -1,5 +1,6 @@
 import type { SonGuessrAck, SonGuessrMusicAccount } from "@bakagame/shared";
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { createSignal } from "@/lib/Signal";
 import type { SongMusicPlatform } from "@/lib/SonGuessrMusicSession";
 import { errorMessage } from "./SongErrorMessage";
@@ -18,7 +19,7 @@ export interface QrLoginSnapshot {
 }
 
 export interface QrLoginDeps {
-  send: SonGuessrSendCommand;
+  send: GameSendCommand<SonGuessrCommandMap>;
   /** 扫码授权成功：调用方负责把凭据落到本机并提示 */
   onAuthorized: (
     platform: SongMusicPlatform,

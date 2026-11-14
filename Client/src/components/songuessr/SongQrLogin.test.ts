@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { deferred } from "@/test/Deferred";
 import { SongQrLogin, type QrLoginDeps } from "./SongQrLogin";
 
@@ -14,7 +15,7 @@ function setup(send: (type: string, payload?: unknown) => Promise<unknown>) {
   const onCreateFailed = vi.fn<QrLoginDeps["onCreateFailed"]>();
   const sendSpy = vi.fn(send);
   const login = new SongQrLogin({
-    send: sendSpy as unknown as SonGuessrSendCommand,
+    send: sendSpy as unknown as GameSendCommand<SonGuessrCommandMap>,
     onAuthorized,
     onCreateFailed,
   });

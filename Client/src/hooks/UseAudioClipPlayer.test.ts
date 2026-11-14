@@ -1,6 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { useAudioClipPlayer } from "./UseAudioClipPlayer";
 
 describe("useAudioClipPlayer", () => {
@@ -131,7 +132,7 @@ describe("useAudioClipPlayer", () => {
   describe("站内票据地址：上游地址过期后重新请求同一个地址", () => {
     const TICKET_URL = "https://api.example.com/api/songuessr/audio/1234/TICKET";
 
-    const mountPlayer = (sendCommand: SonGuessrSendCommand) => {
+    const mountPlayer = (sendCommand: GameSendCommand<SonGuessrCommandMap>) => {
       const load = vi.spyOn(mockAudio, "load").mockImplementation(() => {});
       const hook = renderHook(
         ({ audioUrl, roundNumber }) =>

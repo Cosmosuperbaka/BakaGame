@@ -13,6 +13,7 @@ import type {
 } from "@bakagame/shared";
 import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared/values";
 import * as ws from "@/lib/CEEWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import {
   normalizeCEERoomId,
   readCEESession,
@@ -86,7 +87,7 @@ export interface CEEStore {
   resetRoom: (closed?: boolean) => void;
   /** 清掉「房间已结束」标记；页面挂载与卸载时各调一次，避免旧标记把下次进入立刻弹回大厅。 */
   clearRoomClosed: () => void;
-  sendCommand: ws.CEESendCommand;
+  sendCommand: GameSendCommand<ws.CEECommandMap>;
   /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
   searchCharacters: (keyword: string) => Promise<CEEResponse<"cee.character.search">["results"]>;
   /** 搜作品；同一关键词在复用窗口内不会重复请求上游。 */
@@ -341,7 +342,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     },
     clearRoomClosed: () => set({ roomClosedAt: null }),
     cancelEntry,
-    sendCommand: (command, payload) => {
+    sendCommand: (command, payload = {}) => {
       const { roomId, sessionToken } = get();
       return ws.send(command, payload, {
         roomId: roomId ?? undefined,

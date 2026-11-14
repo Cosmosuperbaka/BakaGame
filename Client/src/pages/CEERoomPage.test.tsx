@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCEEStore } from "@/stores/UseCEEStore";
-import type { CEESendCommand } from "@/lib/CEEWs";
+import type { CEECommandMap } from "@/lib/CEEWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import {
   CEE_NATIVE_ROOM_ID,
   ceeOriginalRoom,
@@ -182,7 +183,7 @@ describe("CEE 房间页的聊天与断线提示", () => {
   it("聊天栏发出的命令带上输入的原文，发出后输入框清空", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
     enterRoom(false);
-    useCEEStore.setState({ sendCommand: sendCommand as unknown as CEESendCommand });
+    useCEEStore.setState({ sendCommand: sendCommand as unknown as GameSendCommand<CEECommandMap> });
     mount();
 
     const input = screen.getByRole("combobox", { name: "聊天消息" });

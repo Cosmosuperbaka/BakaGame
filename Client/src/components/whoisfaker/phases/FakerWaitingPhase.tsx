@@ -23,7 +23,8 @@ import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { WhoIsFakerSendCommand } from "@/lib/WhoIsFakerWs";
+import type { WhoIsFakerCommandMap } from "@/lib/WhoIsFakerWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
@@ -130,7 +131,7 @@ interface HostWaitingPanelProps {
   allReady: boolean;
   starting?: boolean;
   onStart: () => void;
-  sendCommand: WhoIsFakerSendCommand;
+  sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 
@@ -197,7 +198,7 @@ function effectiveRoleConfig(config: RoleConfig, limits: RoleLimits): RoleConfig
 interface FakerSettingsProps {
   snapshot: WhoIsFakerRoomSnapshot;
   readOnly: boolean;
-  sendCommand: WhoIsFakerSendCommand;
+  sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 

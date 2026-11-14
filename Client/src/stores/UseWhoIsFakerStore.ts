@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
 import { serverNow } from "./UseServerClock";
@@ -85,7 +86,7 @@ export interface WhoIsFakerGameState {
   ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
-  sendCommand: ws.WhoIsFakerSendCommand;
+  sendCommand: GameSendCommand<ws.WhoIsFakerCommandMap>;
 }
 
 /**

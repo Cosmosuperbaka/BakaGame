@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import { NO_REQUEST_TIMEOUT, sendSongChoice, songPickFields } from "./SongSubmission";
 
 const setup = () => {
@@ -7,7 +8,7 @@ const setup = () => {
   return {
     send,
     call: (choice: Parameters<typeof sendSongChoice>[1]) =>
-      sendSongChoice(send as unknown as SonGuessrSendCommand, choice),
+      sendSongChoice(send as unknown as GameSendCommand<SonGuessrCommandMap>, choice),
   };
 };
 

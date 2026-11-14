@@ -1,4 +1,5 @@
-import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
+import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
+import type { GameSendCommand } from "@/lib/GameWs";
 import type { SongClipRange, SongQuestionType } from "@bakagame/shared";
 
 /**
@@ -37,7 +38,10 @@ export interface SongChoice {
  * 把一次选歌或选番变成对应命令：题型与动作决定命令名，出题时才带片段、备用音源与关联曲，
  * 并且只有出题不设请求超时。
  */
-export async function sendSongChoice(send: SonGuessrSendCommand, choice: SongChoice) {
+export async function sendSongChoice(
+  send: GameSendCommand<SonGuessrCommandMap>,
+  choice: SongChoice
+) {
   const submit = choice.mode === "submit";
   const options = submit ? NO_REQUEST_TIMEOUT : undefined;
   if (choice.questionType === "anime") {

@@ -14,6 +14,7 @@ import {
 } from "@/lib/WebsocketClient";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
 import { attachTabSession } from "@/lib/TabSession";
+import { createGameWs, type CommandPolicy } from "@/lib/GameWs";
 
 // 原生客户端在每次建连时把通道凭据拼进握手 URL，网页环境拿到空串。
 // 走查询串而非进房载荷：CEE 命令 schema 是 strict 的塞不下额外字段，而共享 WS 客户端只把
@@ -111,30 +112,27 @@ function sendWithChannelProof(rawSend: RawSend): RawSend {
 
 export const ceeWsClient = client;
 
-/** 与卧底、猜歌同一组 facade 形状：连接、等待、发送、消息与状态订阅。 */
-export const connect = () => ceeWsClient.connect();
-export const disconnect = () => ceeWsClient.disconnect();
-export const waitForConnection = (timeoutMs?: number) => ceeWsClient.waitForConnection(timeoutMs);
+export type CEECommandMap = {
+  [K in CEECommand]: { payload: CEEPayload<K>; ack: CEEResponse<K> };
+};
 
-/** 命令名、载荷与 ack 形状一律由 shared 的命令表推导（`CEEResponse` 就定义在那张表旁边）。 */
-export function send<T extends CEECommand>(
-  type: T,
-  payload: CEEPayload<T>,
-  options?: SendOptions
-): Promise<CEEResponse<T>> {
-  return ceeWsClient.send(type, payload, options) as Promise<CEEResponse<T>>;
-}
-
-export const onMessage = (handler: Parameters<typeof ceeWsClient.onMessage>[0]) =>
-  ceeWsClient.onMessage(handler);
-export const onStatus = (handler: Parameters<typeof ceeWsClient.onStatus>[0]) =>
-  ceeWsClient.onStatus(handler);
+export const { connect, disconnect, waitForConnection, send, onMessage, onStatus } =
+  createGameWs<CEECommandMap>(ceeWsClient);
 
 /**
- * store 的 `sendCommand` 与组件 props 之间传的是同一个函数，形状只在这里写一次。
- * 房号、会话凭据与超时由 store 按当前房间补齐，调用方只给命令与载荷。
+ * 出题、取图与导入要回源上游，入房要等原版会话建立：耗时都由服务端决定，
+ * 客户端超时只会制造假失败（Spec §6）。
  */
-export type CEESendCommand = <T extends CEECommand>(
-  type: T,
-  payload: CEEPayload<T>
-) => Promise<CEEResponse<T>>;
+export const CEE_COMMAND_POLICY: CommandPolicy<CEECommandMap> = {
+  "cee.room.create": { timeout: 0 },
+  "cee.room.join": { timeout: 0 },
+  "cee.room.reconnect": { timeout: 0 },
+  "cee.game.start": { timeout: 0 },
+  "cee.game.next": { timeout: 0 },
+  "cee.game.setAnswer": { timeout: 0 },
+  "cee.game.imageHint": { timeout: 0 },
+  "cee.character.image": { timeout: 0 },
+  "cee.subject.image": { timeout: 0 },
+  "cee.directory.import": { timeout: 0 },
+  "cee.ranked.characterImage": { timeout: 0 },
+};
