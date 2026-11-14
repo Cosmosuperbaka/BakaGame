@@ -225,7 +225,8 @@ test("不同标签页是不同的人：同房各占一席，消息互不算自�
   await say(page, fromHost);
 
   await expect(bubble(guest, fromHost)).toBeVisible();
-  expect(await isOwnMessage(page, fromHost)).toBe(true);
+  // 自己的消息由掷出的胶囊交接后弹到右侧，交接途中它还悬在输入区上方：等它落定再判断。
+  await expect.poll(() => isOwnMessage(page, fromHost)).toBe(true);
   expect(await isOwnMessage(guest, fromHost)).toBe(false);
   expect(await waitForTabToken(page)).not.toBe(await waitForTabToken(guest));
 
