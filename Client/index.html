@@ -39,7 +39,7 @@
 
     <!--
       页面级元信息（title / description / canonical / og）一律不写在这里。
-      本站是 SPA，这些标签由各页面的 Seo 组件经 react-helmet-async 注入；
+      本站是 SPA，这些标签由各页面的 Seo 组件渲染进 <head>；
       若在入口 HTML 里再写一份，会在 <head> 中产生同名重复标签，
       搜索引擎遇到重复 canonical 会判定整组失效，比缺失更糟。
       此处只保留全站共通的站点级标签与首屏兜底标题。

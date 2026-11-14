@@ -11,10 +11,12 @@
  * 直接由数据生成 HTML 更简单也更可靠。
  *
  * 注入的 head 标签全部带 data-static-seo="1"：这些标签只服务不执行 JS 的爬虫，
- * 应用启动时会由 stripStaticSeo() 整体移除，再交给 react-helmet-async 写入当前路由的真值。
- * 为什么不是「让 Helmet 接管」：react-helmet-async v3 在 React 19 下不走 DOM 复用路径
- * （client.ts 里按 isEqualNode 复用旧标签的逻辑只在旧路径生效），它会直接渲染新标签，
- * 静态标签留在原地就会变成重复 canonical —— 搜索引擎遇到重复 canonical 会判定整组失效。
+ * 应用启动时会由 stripStaticSeo() 整体移除，再由运行时 Seo 渲染当前路由的真值。
+ * 为什么不是「让运行时复用这些标签」：React 19 把 Seo 渲染的 <meta>/<link> 当作新元素插进
+ * <head>，不会认领 DOM 里已有的同名标签，静态标签留在原地就会变成重复 canonical ——
+ * 搜索引擎遇到重复 canonical 会判定整组失效。
+ * <title> 例外：它不带标记、启动时不摘除。页面分块是按需下载的，摘掉标题会让标签页在
+ * 下载期间显示网址；运行时 Seo 直接改写这个已有 <title> 的文字，head 里始终只有一个。
  * JSON-LD 例外：结构化数据与 FAQPage 各用一个固定 id，Seo 的 useEffect 按同一 id 覆盖内容，不产生重复。
  *
  * 正文外壳必须在**首次绘制之前**从执行 JS 的客户端里消失，否则用户进站会先看到一段裸文本。
@@ -58,7 +60,7 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-/** 静态标签统一带 data-static-seo，应用启动时据此整体摘掉，再由 Helmet 写当前路由的真值。 */
+/** 静态标签统一带 data-static-seo，应用启动时据此整体摘掉，再由运行时 Seo 写当前路由的真值（<title> 除外，见文件头）。 */
 function serializeHeadTag(tag: HeadTag): string {
   const attrs = Object.entries(tag.attrs)
     .map(([name, value]) => `${name}="${escapeHtml(value)}"`)
@@ -103,7 +105,10 @@ function assertShareDescription(): void {
   }
 }
 
-/** index.html 的兜底标题：未登记的路径启动前显示它，登记页面在构建期替换成各自的标题。 */
+/**
+ * index.html 模板里的标题，只存在于产物被各路由外壳覆盖之前：登记页面与运行时页面
+ * 的外壳各自替换成自己的标题，未登记的路由回退拿到的是首页外壳，不会看到它。
+ */
 const FALLBACK_TITLE = `<title>${SITE_NAME}</title>`;
 
 /** 单页静态外壳：在 index.html 原文上补齐 head 元信息与正文，并给出双形态落盘路径。 */

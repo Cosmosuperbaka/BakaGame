@@ -2,7 +2,7 @@ import { SITE_ORIGIN } from "../src/data/PageMeta";
 import { test, expect, getLoopback, isLoopbackUrl } from "./fixtures/Isolation";
 
 // 该用例验证 SEO 元信息是否正确注入：
-// 本项目是 SPA，静态外壳提供爬虫正文与元信息，启动后由 react-helmet-async
+// 本项目是 SPA，静态外壳提供爬虫正文与元信息，启动后由 Seo 组件
 // 写入当前路由的 title/description/canonical/robots，真实浏览器同时验证没有重复标签。
 // 页面标题写页面是什么，不堆搜索词；toHaveTitle 用严格相等断言，防止被悄悄加长。
 test.describe("页面 SEO 元信息", () => {
