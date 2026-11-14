@@ -13,7 +13,19 @@ import type {
 } from "@bakagame/shared";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { deferred } from "@/test/Deferred";
+import { setCloudSyncEnabled } from "@/lib/CloudSync";
+import { useAccountStore } from "@/stores/UseAccountStore";
+import { STORY_PROFILE } from "@/stories/fixtures/Account";
 import { SongAccountSettings } from "./SongAccountSettings";
+
+const { saveMusicSession } = vi.hoisted(() => ({
+  saveMusicSession: vi.fn<(input: unknown) => Promise<{ updatedAt: string }>>(),
+}));
+
+vi.mock("@/lib/Api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/Api")>()),
+  api: { settings: { saveMusicSession } },
+}));
 
 const snapshot = (musicAccountReady: boolean) =>
   ({
@@ -47,6 +59,8 @@ describe("SongAccountSettings", () => {
 
   beforeEach(() => {
     clearStoredSongMusicSession();
+    saveMusicSession.mockReset();
+    saveMusicSession.mockResolvedValue({ updatedAt: "2026-01-01T00:00:00.000Z" });
     // framer-motion退出动画会请求恢复滚动位置，jsdom没有实现该浏览器API。
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     sendCommand = vi
@@ -61,6 +75,8 @@ describe("SongAccountSettings", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    setCloudSyncEnabled(true);
+    useAccountStore.setState({ status: "loading", profile: null });
     useSonGuessrStore.setState(initialStore, true);
   });
 
@@ -288,6 +304,74 @@ describe("SongAccountSettings", () => {
     });
     expect(getStoredSongMusicSession()).toBeNull();
     expect(showToast).toHaveBeenLastCalledWith("已退出网易云账号", "success");
+  });
+
+  describe("退出时删除云端凭据副本", () => {
+    const logoutNetease = async () => {
+      saveSongMusicSession(
+        { cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } },
+        true
+      );
+      sendCommand.mockImplementation(async (type: string) =>
+        type === "song.auth.qr.create" ? qrResponse("after-logout") : {}
+      );
+      render(<SongAccountSettings snapshot={snapshot(true)} />);
+      fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+      });
+    };
+
+    it("已登录且云同步关闭：照样删除云端副本", async () => {
+      useAccountStore.setState({ status: "signedIn", profile: STORY_PROFILE });
+      setCloudSyncEnabled(false);
+
+      await logoutNetease();
+
+      expect(saveMusicSession).toHaveBeenCalledWith({ platform: "netease", session: null });
+      expect(getStoredSongMusicSession()).toBeNull();
+      expect(showToast).toHaveBeenCalledWith("已退出网易云账号", "success");
+    });
+
+    it("游客没有云端副本，不发删除请求", async () => {
+      useAccountStore.setState({ status: "guest", profile: null });
+
+      await logoutNetease();
+
+      expect(saveMusicSession).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith("已退出网易云账号", "success");
+    });
+
+    it("云端删除失败：本机照常清除，并如实提示云端副本还在", async () => {
+      useAccountStore.setState({ status: "signedIn", profile: STORY_PROFILE });
+      saveMusicSession.mockRejectedValue(new Error("连接已断开"));
+
+      await logoutNetease();
+
+      expect(getStoredSongMusicSession()).toBeNull();
+      expect(showToast).toHaveBeenCalledTimes(1);
+      expect(showToast).toHaveBeenCalledWith(
+        "已退出网易云账号，但云端的凭据副本没有删除，请检查网络后重新登录再退出一次",
+        "error"
+      );
+    });
+
+    it("房间里的服务端清除失败：不动云端副本", async () => {
+      useAccountStore.setState({ status: "signedIn", profile: STORY_PROFILE });
+      saveSongMusicSession(
+        { cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } },
+        true
+      );
+      sendCommand.mockRejectedValueOnce(new Error("连接已断开"));
+      render(<SongAccountSettings snapshot={snapshot(true)} />);
+      fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+      });
+
+      expect(saveMusicSession).not.toHaveBeenCalled();
+      expect(getStoredSongMusicSession()).not.toBeNull();
+    });
   });
 
   // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，

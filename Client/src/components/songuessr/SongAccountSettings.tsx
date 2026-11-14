@@ -15,6 +15,8 @@ import {
   type SongMusicPlatform,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
+import { deleteCloudMusicSession } from "@/lib/CloudSync";
+import { useAccountStore } from "@/stores/UseAccountStore";
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { vipBadge, vipText } from "./SongAccountBadges";
@@ -381,6 +383,16 @@ function RoomAccountSettings({
     }
   };
 
+  const removeCloudCopy = async (platform: SongMusicPlatform): Promise<boolean> => {
+    if (useAccountStore.getState().status !== "signedIn") return true;
+    try {
+      await deleteCloudMusicSession(platform);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   /** 退出登录：清掉当前平台房间里的凭据与本机存储；服务端没清掉就什么都不动，让玩家重试。 */
   const logout = async () => {
     const platform = activePlatform;
@@ -392,7 +404,17 @@ function RoomAccountSettings({
       return;
     }
     clearStoredSongMusicSession(platform);
-    showToast(`已退出${SONG_PLATFORM_NAME[platform]}账号`, "success");
+    const name = SONG_PLATFORM_NAME[platform];
+    // 云端副本与云同步开关无关：已登录就一律删；游客没有云端副本。本机已清，删除失败只如实告知。
+    const cloudDeleted = await removeCloudCopy(platform);
+    if (cloudDeleted) {
+      showToast(`已退出${name}账号`, "success");
+    } else {
+      showToast(
+        `已退出${name}账号，但云端的凭据副本没有删除，请检查网络后重新登录再退出一次`,
+        "error"
+      );
+    }
     if (open) void login.start(platform, qqScanType);
   };
 

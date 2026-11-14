@@ -30,7 +30,8 @@ import { SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
  * 绝不上传到新账号；没有记录（游客登录音乐账号后注册）保持带入。
  *
  * 猜歌音乐账号：按平台比较，只有一边有时补到另一边；两边不同时以云端为准
- * （云端只在登录期间被改写，代表这个账号最近一次的登录）。之后本地登录或退出即上传或删除云端副本。
+ * （云端只在登录期间被改写，代表这个账号最近一次的登录）。之后本地登录或退出即上传或删除云端副本；
+ * 退出时不论云同步是否开着，都另由 deleteCloudMusicSession 删除云端副本。
  * 没勾选「保存登录状态」的本机凭据不上传：它在云端视同没有，所以改成不保存会删掉云端旧副本。
  */
 const PLATFORMS: MusicPlatform[] = ["netease", "qq"];
@@ -154,6 +155,18 @@ const bindAccount = (userId: string): void => {
   }
   localStore.set(ACCOUNT_BINDING_KEY, userId);
 };
+
+/**
+ * 退出音乐平台时删除云端的凭据副本。不看云同步开关：开关只管之后是否读写，
+ * 玩家对「退出」的预期是云端那份也没了；是否已登录由调用方判断（游客没有云端副本）。
+ * 删除失败向上抛出，由调用方告知玩家。
+ */
+export async function deleteCloudMusicSession(
+  platform: MusicPlatform,
+  client: ApiClient = api
+): Promise<void> {
+  await client.settings.saveMusicSession({ platform, session: null });
+}
 
 /** 开始同步，返回停止函数（退出登录或页面卸载时调用）。 */
 export function startCloudSync(userId: string, client: ApiClient = api): () => void {
