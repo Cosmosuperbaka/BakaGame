@@ -13,6 +13,7 @@ import java.security.cert.X509Certificate
 /**
  * 桥接原生层：页面可见的 window.__BAKA_CHANNEL__ 只转发 selfCheck 与 setSecureScreen；
  * 签名（sign）与注册所需的 getKeyInfo 只供桥脚本自己的换票闭环调用，不挂到页面可见的对象上。
+ * 这只是收口桥接面、与桌面壳口径一致，不是能力边界：页面脚本仍可经 Capacitor 直接调用本插件。
  * 密钥生成、链上报与验证分工见 Mobile/README.md「交给服务端的材料」。
  *
  * 通道证明闭环（challenge → sign → attest）在 `Mobile/bridge/baka-bridge.js` 里跑：

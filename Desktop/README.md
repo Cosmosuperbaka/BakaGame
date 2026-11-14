@@ -77,7 +77,7 @@ CI 必须显式传批次标识与随机段两个变量，否则同一发布批�
 - 密钥会被编进二进制。这是 HTTPDNS 的固有代价：轮换凭据必须重新构建并分发，不能靠改配置。
 - 解析结果按 HTTPDNS 返回的 TTL 缓存；查询失败回落系统 DNS，日志标 `degraded=true`，页面与接口继续可用。
 - 受管域名的 WebView 流量经回环 CONNECT 隧道转发：只替换解析结果，不终结 TLS，SNI 与证书校验仍是原域名。
-- 启用后 WebView 走该隧道，系统级 HTTP 代理不再生效；影响范围仅限壳内流量。壳自己的注册、领挑战与换票请求同样直连，与页面同出口：票据绑定签发时的来源地址，两条路径出口不同握手就会被拒。
+- 启用后 WebView 走该隧道，系统级 HTTP 代理不再生效；影响范围仅限壳内流量。壳自己的注册、领挑战与换票请求同样直连（不再读 `HTTP_PROXY` 等环境变量里的代理；壳内 HTTP 库本来就不读 Windows 的系统代理设置），与页面同出口：票据绑定签发时的来源地址，两条路径出口不同握手就会被拒。
 - 日志：`[baka-httpdns] source=httpdns|cache host=... ips=... ttl=...s took=...ms`；
   降级为 `degraded=true ... fallback=system`；`[baka-dns-proxy] CONNECT host=... source=... ttl=... degraded=... took=...ms`。
 

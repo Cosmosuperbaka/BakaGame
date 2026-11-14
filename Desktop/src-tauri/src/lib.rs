@@ -383,7 +383,7 @@ fn within_site(url: &str, base: &str) -> bool {
 /// 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
 /// 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
 ///
-/// 必须在设备引导线程启动之前调用：隧道直连目标、不经系统代理，启用后壳自己发的
+/// 应在设备引导线程启动之前调用：隧道直连目标、不读任何代理设置，启用后壳自己发的
 /// 注册、领挑战与换票请求也要直连（见 `http::mark_webview_tunnel_active`），
 /// 否则票据签发时的来源地址与页面握手时的来源地址可能不是同一个出口。
 fn start_webview_tunnel() -> Option<tauri::Url> {
@@ -488,7 +488,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = device::storage_dir();
-            // 先定下 WebView 的出口，再让设备引导线程发请求：共享 HTTP 客户端只构造一次
+            // 先定下 WebView 的出口，再让设备引导线程发请求：登记前发出的请求仍走带代理的客户端
             let tunnel = start_webview_tunnel();
             app.manage(AppState::new(dir.clone().unwrap_or_default()));
             match dir {
