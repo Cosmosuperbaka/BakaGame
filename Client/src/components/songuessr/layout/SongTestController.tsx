@@ -1,10 +1,5 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Bot, FlaskConical, Minus, Plus } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { headerTappable } from "@/lib/motion/Feedback";
-import { spring } from "@/lib/motion/Transitions";
+import { Bot } from "lucide-react";
+import { BotCountRow, TestControllerShell } from "@/components/common/room/TestControllerShell";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 
@@ -15,68 +10,30 @@ export interface SongTestControllerProps {
 }
 
 export function SongTestController({ snapshot, run, isPending }: SongTestControllerProps) {
-  const [open, setOpen] = useState(true);
   const botCount = snapshot.players.filter((player) => player.isBot).length;
 
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-drawer md:bottom-5 md:left-auto md:right-5">
       <div className="pointer-events-auto flex justify-end">
-        <motion.div
-          layout
-          transition={spring.settle}
-          className="w-full max-w-full overflow-hidden floating-surface shadow-lg md:w-96"
+        <TestControllerShell
+          title="测试控制器"
+          bodyClassName="space-y-2 border-t px-4 pb-4 pt-3"
+          headerFocusInset={false}
         >
-          <motion.button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            aria-expanded={open}
-            {...headerTappable}
-            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-          >
-            <FlaskConical className="h-4 w-4 text-primary" />
-            <span>测试控制器</span>
-            <DisclosureChevron open={open} className="ml-auto text-muted-foreground" />
-          </motion.button>
-          <CollapsibleRegion open={open}>
-            <div className="space-y-2 border-t px-4 pb-4 pt-3">
-              {/* 与谁是卧底测试控制器的组标题同一口径：标题标签 + xs 半粗弱化色，图标随文字取弱化色。
-                  中性分组不按氛围上色，暗色下天蓝图标会成为浮层里唯一的冷色点。 */}
-              <h3 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                测试人机
-              </h3>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 flex-1 gap-1 text-xs"
-                  aria-label="移除一个测试人机"
-                  disabled={botCount === 0 || isPending?.("song.test.removeBot")}
-                  loading={isPending?.("song.test.removeBot")}
-                  onClick={() => void run("song.test.removeBot", { count: 1 })}
-                >
-                  <Minus className="h-3 w-3" />
-                  减一个
-                </Button>
-                <span className="w-10 text-center text-sm font-medium tabular-nums">
-                  {botCount}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 flex-1 gap-1 text-xs"
-                  aria-label="添加一个测试人机"
-                  disabled={isPending?.("song.test.addBot")}
-                  loading={isPending?.("song.test.addBot")}
-                  onClick={() => void run("song.test.addBot", { count: 1 })}
-                >
-                  <Plus className="h-3 w-3" />
-                  加一个
-                </Button>
-              </div>
-            </div>
-          </CollapsibleRegion>
-        </motion.div>
+          {/* 与谁是卧底测试控制器的组标题同一口径：标题标签 + xs 半粗弱化色，图标随文字取弱化色。
+              中性分组不按氛围上色，暗色下天蓝图标会成为浮层里唯一的冷色点。 */}
+          <h3 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+            测试人机
+          </h3>
+          <BotCountRow
+            count={botCount}
+            addPending={isPending?.("song.test.addBot") ?? false}
+            removePending={isPending?.("song.test.removeBot") ?? false}
+            onAdd={() => void run("song.test.addBot", { count: 1 })}
+            onRemove={() => void run("song.test.removeBot", { count: 1 })}
+          />
+        </TestControllerShell>
       </div>
     </div>
   );
