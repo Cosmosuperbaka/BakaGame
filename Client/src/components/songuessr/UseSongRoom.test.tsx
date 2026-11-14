@@ -18,7 +18,7 @@ import {
 } from "@/lib/Storage";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { SONG_ACCOUNTS, songSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
-import { useSongRoomLifecycle } from "./UseSongRoomLifecycle";
+import { useSongRoom } from "./UseSongRoom";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
 const { navigate, waitConnection, send, randomId } = vi.hoisted(() => ({
@@ -52,7 +52,7 @@ function mount(solo = false, strict = false, routeRoomId = "1234") {
     );
     return strict ? <StrictMode>{router}</StrictMode> : router;
   };
-  return renderHook(() => useSongRoomLifecycle({ solo }), { wrapper });
+  return renderHook(() => useSongRoom({ solo }), { wrapper });
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -394,10 +394,10 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
     const h = mount();
     await waitFor(() => expect(h.result.current.needsName).toBe(true));
     act(() => h.result.current.setNameDraft("新玩家"));
-    await act(async () => h.result.current.handleConfirmName());
+    await act(async () => h.result.current.confirmName());
     expect(h.result.current.needsPassword).toBe(true);
     act(() => h.result.current.setPasswordDraft("fixture-password"));
-    await act(async () => h.result.current.handleConfirmPassword());
+    await act(async () => h.result.current.confirmPassword());
     expect(join.mock.calls[0]).toEqual(["1234", "新玩家", undefined, expect.any(AbortSignal)]);
     expect(join.mock.calls[1]).toEqual([
       "1234",

@@ -20,22 +20,29 @@ export interface RoomEntryState {
  */
 export interface RoomEntryAdapter {
   /** 在渲染里订阅入房流程关心的 store 状态。 */
-  useRoomState(roomId: string): RoomEntryState;
+  useRoomState: (roomId: string) => RoomEntryState;
   /** 等连接可用；超时以拒绝告知。 */
-  waitReady(): Promise<void>;
-  reconnect(roomId: string, signal: AbortSignal): Promise<boolean>;
-  join(
+  waitReady: () => Promise<void>;
+  reconnect: (roomId: string, signal: AbortSignal) => Promise<boolean>;
+  join: (
     roomId: string,
     name: string,
     password: string | undefined,
     signal: AbortSignal
-  ): Promise<void>;
+  ) => Promise<void>;
   /** 房号不存在时就地以该名字开一间。 */
-  createMissing(roomId: string, name: string, signal: AbortSignal): Promise<void>;
-  roomClosedAt(): number | null;
-  clearRoomClosed(): void;
-  leave(): Promise<void>;
-  showError(text: string): void;
+  createMissing: (roomId: string, name: string, signal: AbortSignal) => Promise<void>;
+  roomClosedAt: () => number | null;
+  clearRoomClosed: () => void;
+  leave: () => Promise<void>;
+  showError: (text: string) => void;
+  /**
+   * 单人房：不问名字也不加入，直接以这个房号建一间；返回最终房号（撞号时会换号）。
+   * 有它时入房流程不走名字、密码与就地建房。
+   */
+  enterSolo?: (roomId: string, signal: AbortSignal) => Promise<string>;
+  /** 房间被关或主动离开时忘掉本机记着的房号（单人房下次进来另开一间）。 */
+  forgetRoom?: () => void;
 }
 
 /** 三款之间本质或尚未拍板的差异，逐款取现状，不在入房流程里统一。 */
@@ -50,6 +57,10 @@ export interface RoomEntryPolicy {
   replaceOnExit: boolean;
   /** 不在入房、名字与密码步，而 store 已不挂任何房间时自行回大厅。 */
   exitWhenDetached: boolean;
+  /** 「房间被关」的检查排在入房 effect 之前还是之后。 */
+  closeCheck: "beforeEntry" | "afterEntry";
+  /** 主动离开之后才收到的房间被关：照常替换回大厅，还是不再理会。 */
+  closeAfterLeave: "exit" | "ignore";
 }
 
 const CONNECT_TIMEOUT_TEXT = "连接服务器超时，请刷新重试";
@@ -64,11 +75,14 @@ export function useRoomEntryFlow({
   exitPath,
   adapter,
   policy,
+  onRoomSwitched,
 }: {
   roomId: string;
   exitPath: string;
   adapter: RoomEntryAdapter;
   policy: RoomEntryPolicy;
+  /** 单人房撞号换号后、ACK 落定时告知最终房号；房号随之变化不会取消这次入房。 */
+  onRoomSwitched?: (roomId: string) => void;
 }) {
   const navigate = usePageNavigate();
   const { alreadyIn, attached, closedAt } = adapter.useRoomState(roomId);
@@ -84,6 +98,7 @@ export function useRoomEntryFlow({
   // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
   const [mountTime] = useState(() => Date.now());
   const entryRef = useRef<AbortController | null>(null);
+  const leavingRef = useRef(false);
 
   const exit = (replace = policy.replaceOnExit) => {
     if (replace) void navigate(exitPath, { replace: true });
@@ -101,13 +116,16 @@ export function useRoomEntryFlow({
   // 房间被服务端关闭或席位被替换：这是一个明确的事件，无论当前是否正在加入
   // 都必须立刻退回大厅，否则加入流程中被关闭会一直停在加载态。
   const onClosed = useEffectEvent(() => {
+    if (policy.closeAfterLeave === "ignore" && leavingRef.current) return;
     entryRef.current?.abort();
     adapter.clearRoomClosed();
+    adapter.forgetRoom?.();
     exit(true);
   });
+  const closeCheck = policy.closeCheck;
   useEffect(() => {
-    if (closedAt && closedAt >= mountTime) onClosed();
-  }, [mountTime, closedAt]);
+    if (closeCheck === "beforeEntry" && closedAt && closedAt >= mountTime) onClosed();
+  }, [closeCheck, mountTime, closedAt]);
 
   // 主动离开等其它原因导致的脱离房间。等用户填名字或密码的这段时间同样没有房间，
   // 但那是正常状态，不能当成房间已关闭。
@@ -152,6 +170,25 @@ export function useRoomEntryFlow({
     }
   };
 
+  const enterSolo = async (
+    create: NonNullable<RoomEntryAdapter["enterSolo"]>,
+    signal: AbortSignal
+  ) => {
+    let finalRoomId: string;
+    try {
+      finalRoomId = await create(roomId, signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      adapter.showError(errorText(error, "创建单人房间失败"));
+      exit();
+      return;
+    }
+    if (signal.aborted) return;
+    // ACK 落定后才切换房号，避免房号变化的清理取消本次重试。
+    if (finalRoomId !== roomId) onRoomSwitched?.(finalRoomId);
+    setJoining(false);
+  };
+
   /** 连上之后的入房：先恢复上次的座位，恢复不了再按名字加入。 */
   const enterWhenReady = async (signal: AbortSignal) => {
     // 首次挂载时 joining 本就为真；同一页面换到另一间房时旧快照的房号对不上，进房界面照样显示加载态，
@@ -175,6 +212,10 @@ export function useRoomEntryFlow({
     // 恢复被永久拒绝且房间已不在：由关闭分支退回大厅，这里不能再按房号开一间。
     const closed = adapter.roomClosedAt();
     if (closed !== null && closed >= mountTime) return;
+    if (adapter.enterSolo) {
+      await enterSolo(adapter.enterSolo, signal);
+      return;
+    }
 
     const name = getSavedUsername();
     if (!name) {
@@ -209,12 +250,16 @@ export function useRoomEntryFlow({
   useEffect(() => {
     const entry = new AbortController();
     entryRef.current = entry;
+    leavingRef.current = false;
     begin(entry.signal);
     return () => {
       entry.abort();
       if (entryRef.current === entry) entryRef.current = null;
     };
   }, [roomId]);
+  useEffect(() => {
+    if (closeCheck === "afterEntry" && closedAt && closedAt >= mountTime) onClosed();
+  }, [closeCheck, mountTime, closedAt]);
 
   const confirmName = async () => {
     const name = nameDraft.trim();
@@ -246,6 +291,8 @@ export function useRoomEntryFlow({
   }, [adapter, exiting]);
   const leave = () => {
     entryRef.current?.abort();
+    leavingRef.current = true;
+    adapter.forgetRoom?.();
     setExiting(true);
     exit();
   };

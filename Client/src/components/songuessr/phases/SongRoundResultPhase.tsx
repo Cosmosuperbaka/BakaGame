@@ -9,7 +9,7 @@ import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/Scor
 import { followDelay, listItem } from "@/lib/motion/Choreography";
 import { revealCard } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
-import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
+import type { SongRunCommand } from "@/components/songuessr/UseSongRoom";
 import {
   BANGUMI_TRACK_KIND_LABELS,
   hasMusicAccount,

@@ -20,7 +20,7 @@ import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { hasMusicAccount } from "@bakagame/shared/values";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@bakagame/shared";
-import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
+import type { SongRunCommand } from "@/components/songuessr/UseSongRoom";
 
 const notifyCopyFailed = () =>
   useSonGuessrStore.getState().showToast("复制失败，请手动复制", "error");

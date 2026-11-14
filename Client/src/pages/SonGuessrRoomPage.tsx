@@ -13,7 +13,7 @@ import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeContr
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
-import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
+import { useSongRoom } from "@/components/songuessr/UseSongRoom";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -68,13 +68,13 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     needsPassword,
     passwordDraft,
     setPasswordDraft,
-    handleConfirmName,
-    handleConfirmPassword,
+    confirmName,
+    confirmPassword,
     runCommand,
     isPending,
     leave,
     sendCommand,
-  } = useSongRoomLifecycle({ solo });
+  } = useSongRoom({ solo });
 
   const isPlayingPhase = snapshot?.phase === "playing";
   const playback = pickPlayback(snapshot, snapshot?.phase);
@@ -139,10 +139,10 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         needsPassword={needsPassword}
         nameDraft={nameDraft}
         onNameDraftChange={setNameDraft}
-        onConfirmName={() => void handleConfirmName()}
+        onConfirmName={() => void confirmName()}
         passwordDraft={passwordDraft}
         onPasswordDraftChange={setPasswordDraft}
-        onConfirmPassword={() => void handleConfirmPassword()}
+        onConfirmPassword={() => void confirmPassword()}
         onExit={() => void navigate("/songuessr", { replace: true })}
       >
         {seoNode}

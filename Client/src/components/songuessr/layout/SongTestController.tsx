@@ -1,7 +1,7 @@
 import { Bot } from "lucide-react";
 import { BotCountRow, TestControllerShell } from "@/components/common/room/TestControllerShell";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
-import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
+import type { SongRunCommand } from "@/components/songuessr/UseSongRoom";
 
 export interface SongTestControllerProps {
   snapshot: SonGuessrRoomSnapshot;

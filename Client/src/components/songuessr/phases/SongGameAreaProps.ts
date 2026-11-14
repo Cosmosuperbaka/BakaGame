@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
+import type { SongRunCommand } from "@/components/songuessr/UseSongRoom";
 import type {
   SongClipRange,
   SonGuessrPlayerView,
