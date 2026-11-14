@@ -1,17 +1,14 @@
 import { expect, test } from "bun:test";
 
-import { getCurrentSpeechState } from "../src/application/whoisfaker/RoundRules";
 import { PHASE_RESULT_DISPLAY_MS } from "../src/config/Constants";
 import { ROOM_ID_TEST_MODE } from "../src/shared/ModelValues";
 import { ABSTAIN_TARGET_ID } from "../src/shared/WhoIsFakerValues";
 import type {
-  PublicPlayerView,
   SpeechMode,
   WhoIsFakerClientMessage,
   WhoIsFakerPhase,
   WhoIsFakerPrivateState,
   WhoIsFakerRole,
-  WhoIsFakerRoomRecord,
   WhoIsFakerRoomSnapshot,
 } from "../src/shared/Index";
 import {
@@ -21,121 +18,6 @@ import {
   getLastEventPayload,
   type TestConnection,
 } from "./Helpers";
-
-// ==================== 预言机 ====================
-// 下面三段是客户端现行推导的原样副本（WhoIsFakerSpeech.ts、WhoIsFakerActionSignals.ts、
-// FakerWordSubmissionPhase.tsx）。抄进来是为了让「服务端下发的值」与「客户端今天自己算的值」
-// 在同一局里逐阶段对账，而不是让服务端自说自话。唯一的改动是页面托管态换成常量桩：
-// 服务端没有这个概念，托管只影响客户端要不要提醒，不影响玩法规则。
-// 对账完成后整段删除，换成逐阶段期望值。
-
-// 预言机按旧协议建模：这三个字段当时可选，非发言阶段整个不下发，所以这里保留可选形态。
-type SpeechStatus = Omit<
-  WhoIsFakerRoomSnapshot["status"],
-  "speechMode" | "speechOrder" | "submittedSpeechPlayerIds"
-> & {
-  speechMode?: SpeechMode;
-  speechOrder?: string[];
-  submittedSpeechPlayerIds?: string[];
-};
-
-const speechModeOf = (status: SpeechStatus): SpeechMode =>
-  status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : "normal");
-
-const speechOrderOf = (status: SpeechStatus): readonly string[] => status.speechOrder ?? [];
-
-const submittedOf = (status: SpeechStatus): Set<string> =>
-  new Set(status.submittedSpeechPlayerIds ?? []);
-
-type Snapshot = Omit<WhoIsFakerRoomSnapshot, "status"> & { status: SpeechStatus };
-
-const getPageControl = (): { status: string } => ({ status: "free" });
-
-function canSpeak(
-  snapshot: Snapshot,
-  privateState: WhoIsFakerPrivateState,
-  me: PublicPlayerView | undefined,
-  mode: SpeechMode
-): boolean {
-  if (!me || me.roundStatus !== "alive" || privateState.isQuestioner) return false;
-  if (submittedOf(snapshot.status).has(privateState.playerId)) return false;
-  if (mode === "normal") return true;
-  return speechOrderOf(snapshot.status).includes(privateState.playerId);
-}
-
-function canVote(
-  snapshot: Snapshot,
-  privateState: WhoIsFakerPrivateState,
-  me: PublicPlayerView | undefined
-): boolean {
-  if (!me || me.roundStatus !== "alive" || privateState.isQuestioner) return false;
-  if (privateState.myCurrentVoteTargetId) return false;
-  const isTieBreak = snapshot.status.phase === "tieBreak";
-  const candidates = snapshot.status.tieBreakCandidateIds ?? [];
-  return !isTieBreak || !candidates.includes(privateState.playerId);
-}
-
-function whoIsFakerNeedsAction(
-  snapshot: Snapshot | null,
-  privateState: WhoIsFakerPrivateState | null
-): boolean {
-  if (!snapshot || !privateState || getPageControl().status === "controlled") return false;
-  const phase = snapshot.status.phase;
-  const me = snapshot.players.find((player) => player.id === privateState.playerId);
-
-  if (phase === "assigningQuestioner") return me?.isHost === true;
-  if (phase === "wordSubmission") return privateState.isQuestioner;
-  if (phase === "description") {
-    return canSpeak(snapshot, privateState, me, speechModeOf(snapshot.status));
-  }
-  if (phase === "tieBreak") {
-    if (snapshot.status.tieBreakStage === "vote") return canVote(snapshot, privateState, me);
-    return canSpeak(snapshot, privateState, me, "tieBreak");
-  }
-  if (phase === "voting") return canVote(snapshot, privateState, me);
-  if (phase === "night") {
-    return Boolean(
-      me &&
-      me.roundStatus === "alive" &&
-      !privateState.isQuestioner &&
-      privateState.canActAtNight &&
-      !privateState.nightActionSubmitted
-    );
-  }
-  if (phase === "blankGuess") {
-    return privateState.canSubmitBlankGuess && snapshot.status.blankGuessPendingReview !== true;
-  }
-  if (phase === "feedback") return privateState.isQuestioner || snapshot.testMode;
-  return false;
-}
-
-const ROLE_KEYS: WhoIsFakerRole[] = ["civilian", "undercover", "angel", "blank"];
-
-function requiredRoleCountsOf(snapshot: Snapshot): Record<WhoIsFakerRole, number> {
-  const roleConfig = snapshot.settings.roleConfig;
-  const hasBlank = roleConfig.hasBlank;
-  const hasAngel = roleConfig.hasAngel;
-  const participants = snapshot.players.filter(
-    (p) => p.membership === "active" && p.id !== snapshot.status.questionerPlayerId
-  );
-  return {
-    civilian:
-      participants.length - roleConfig.undercoverCount - (hasAngel ? 1 : 0) - (hasBlank ? 1 : 0),
-    undercover: roleConfig.undercoverCount,
-    angel: hasAngel ? 1 : 0,
-    blank: hasBlank ? 1 : 0,
-  };
-}
-
-/** 改造前服务端对这三个字段的原表达式：只有发言阶段才有值，其余阶段整个不下发。 */
-const legacySpeechFields = (room: WhoIsFakerRoomRecord) => {
-  const speechState = room.round ? getCurrentSpeechState(room.round) : undefined;
-  return {
-    speechMode: room.round?.speechMode,
-    speechOrder: speechState ? [...speechState.order] : undefined,
-    submittedSpeechPlayerIds: speechState ? [...speechState.submittedPlayerIds] : undefined,
-  };
-};
 
 // ==================== 对局夹具 ====================
 
@@ -153,60 +35,6 @@ interface SeatView {
   privateState: WhoIsFakerPrivateState;
 }
 
-const roleCountsProblem = (
-  at: string,
-  snapshot: Snapshot,
-  privateState: WhoIsFakerPrivateState
-): string | undefined => {
-  const expected =
-    snapshot.status.phase === "wordSubmission" && privateState.isQuestioner
-      ? requiredRoleCountsOf(snapshot)
-      : undefined;
-  const actual = privateState.requiredRoleCounts;
-  const matches =
-    expected === undefined
-      ? actual === undefined
-      : actual !== undefined && ROLE_KEYS.every((role) => actual[role] === expected[role]);
-  return matches
-    ? undefined
-    : `${at}: requiredRoleCounts 下发 ${JSON.stringify(actual)}，旧推导 ${JSON.stringify(expected)}`;
-};
-
-/** 一个座位的对账结果：空数组表示下发值与客户端旧推导完全一致。 */
-const seatProblems = (
-  at: string,
-  snapshot: Snapshot,
-  privateState: WhoIsFakerPrivateState,
-  legacy: ReturnType<typeof legacySpeechFields>
-): string[] => {
-  const oldStatus = { ...snapshot.status, ...legacy };
-  const expected = whoIsFakerNeedsAction({ ...snapshot, status: oldStatus }, privateState);
-  const problems: string[] = [];
-  if (privateState.canAct !== expected) {
-    problems.push(`${at}: canAct 下发 ${String(privateState.canAct)}，旧推导 ${expected}`);
-  }
-  if (typeof privateState.canActAtNight !== "boolean") problems.push(`${at}: canActAtNight 未下发`);
-  // 类型上已经必填，这里钉的是线上载荷真的带了这三个字段。
-  const wire: Partial<SpeechStatus> = snapshot.status;
-  if (wire.speechMode === undefined) problems.push(`${at}: speechMode 未下发`);
-  if (wire.speechOrder === undefined) problems.push(`${at}: speechOrder 未下发`);
-  if (wire.submittedSpeechPlayerIds === undefined) {
-    problems.push(`${at}: submittedSpeechPlayerIds 未下发`);
-  }
-  if (speechModeOf(snapshot.status) !== speechModeOf(oldStatus)) {
-    problems.push(`${at}: 发言模式推导值与旧值不同`);
-  }
-  if (speechOrderOf(snapshot.status).join() !== speechOrderOf(oldStatus).join()) {
-    problems.push(`${at}: 应发言名单推导值与旧值不同`);
-  }
-  const now = [...submittedOf(snapshot.status)].sort().join();
-  const old = [...submittedOf(oldStatus)].sort().join();
-  if (now !== old) problems.push(`${at}: 已提交名单推导值与旧值不同`);
-  const counts = roleCountsProblem(at, snapshot, privateState);
-  if (counts) problems.push(counts);
-  return problems;
-};
-
 interface CheckpointRecord {
   label: string;
   phase: WhoIsFakerPhase;
@@ -217,6 +45,28 @@ interface CheckpointRecord {
   nightCapable: string[];
   roleCounts?: Record<WhoIsFakerRole, number>;
 }
+
+/**
+ * 必填不等于线上一定带：类型只约束编译期，这里钉的是每个座位的载荷真的带了这几位。
+ * 出词人数只在该阶段的出题人私有态里出现，别的阶段与座位多给一位也算错。
+ */
+const deliveryProblems = (at: string, view: SeatView): string[] => {
+  const problems: string[] = [];
+  const status: Partial<WhoIsFakerRoomSnapshot["status"]> = view.snapshot.status;
+  const priv: Partial<WhoIsFakerPrivateState> = view.privateState;
+  if (status.speechMode === undefined) problems.push(`${at}: speechMode 未下发`);
+  if (status.speechOrder === undefined) problems.push(`${at}: speechOrder 未下发`);
+  if (status.submittedSpeechPlayerIds === undefined) {
+    problems.push(`${at}: submittedSpeechPlayerIds 未下发`);
+  }
+  if (typeof priv.canAct !== "boolean") problems.push(`${at}: canAct 未下发`);
+  if (typeof priv.canActAtNight !== "boolean") problems.push(`${at}: canActAtNight 未下发`);
+  const wantCounts = view.snapshot.status.phase === "wordSubmission" && priv.isQuestioner === true;
+  if (wantCounts !== (priv.requiredRoleCounts !== undefined)) {
+    problems.push(`${at}: requiredRoleCounts 下发时机不对`);
+  }
+  return problems;
+};
 
 const ROLE_BY_LABEL: Record<string, WhoIsFakerRole> = {
   房主: "civilian",
@@ -295,28 +145,21 @@ const walkAllPhases = async (roomId: string): Promise<CheckpointRecord[]> => {
   const records: CheckpointRecord[] = [];
   const checkpoint = async (label: string) => {
     for (const seat of seats) await send(seat.client, { type: "room.requestSync", payload: {} });
-    const room = service.rooms.get(roomId);
-    if (!room) throw new Error(`房间 ${roomId} 不在册`);
-    const legacy = legacySpeechFields(room);
     const views: SeatView[] = seats.map((seat) => ({
       label: seat.label,
       snapshot: getLastEventPayload<WhoIsFakerRoomSnapshot>(seat.client, "room.snapshot")!,
       privateState: getLastEventPayload<WhoIsFakerPrivateState>(seat.client, "game.privateState")!,
     }));
 
-    expect(
-      views.flatMap((view) =>
-        seatProblems(`${label}/${view.label}`, view.snapshot, view.privateState, legacy)
-      )
-    ).toEqual([]);
+    expect(views.flatMap((view) => deliveryProblems(`${label}/${view.label}`, view))).toEqual([]);
 
     const status = views[0].snapshot.status;
     records.push({
       label,
       phase: status.phase,
-      speechMode: speechModeOf(status),
-      speechOrder: speechOrderOf(status).map(labelOf),
-      submitted: [...submittedOf(status)].map(labelOf),
+      speechMode: status.speechMode,
+      speechOrder: status.speechOrder.map(labelOf),
+      submitted: status.submittedSpeechPlayerIds.map(labelOf),
       acting: views.filter((view) => view.privateState.canAct === true).map((view) => view.label),
       nightCapable: views
         .filter((view) => view.privateState.canActAtNight === true)
@@ -468,16 +311,205 @@ const walkAllPhases = async (roomId: string): Promise<CheckpointRecord[]> => {
   return records;
 };
 
+// ==================== 逐阶段期望值 ====================
+// 这些名单是改造前客户端在同一局里逐阶段自行推导的结果，对账一致后固化成期望值。
+// 座位用名字而不是 id：id 每次跑都不同，名字与入房顺序一一对应。
+
+/** 入房顺序即首轮发言顺序；后续轮次按存活者依次去掉出局的人。 */
+const ALL_SEATS = ["房主", "玩家1", "玩家2", "玩家3", "玩家4", "玩家5", "玩家6", "玩家7"];
+const DAY2_ORDER = ["房主", "玩家1", "玩家3", "玩家4", "玩家5", "玩家6", "玩家7"];
+const DAY3_ORDER = ["房主", "玩家3", "玩家4", "玩家5", "玩家6", "玩家7"];
+const SUPPLEMENT_ORDER = ["玩家2", "玩家5"];
+const TIE_ORDER = ["玩家2", "玩家6"];
+const EVERYONE = [...ALL_SEATS, "出题人", "旁观者"];
+
+/** 有夜间行动资格的存活平民与卧底，随玩家2、玩家1、玩家6 依次出局而缩短。 */
+const NIGHT_CAPABLE_1 = ["房主", "玩家1", "玩家2", "玩家5", "玩家6", "玩家7"];
+const NIGHT_CAPABLE_2 = ["房主", "玩家1", "玩家5", "玩家6", "玩家7"];
+const NIGHT_CAPABLE_3 = ["房主", "玩家5", "玩家6", "玩家7"];
+const NIGHT_CAPABLE_4 = ["房主", "玩家5", "玩家7"];
+
+const FIRST_ROUND_DONE = ["玩家1", "房主", "玩家2", "玩家3", "玩家4", "玩家5", "玩家6", "玩家7"];
+const SECOND_ROUND_DONE = ["玩家1", "玩家5", "房主", "玩家3", "玩家4", "玩家6", "玩家7"];
+
+type RowRest = Partial<Omit<CheckpointRecord, "label" | "phase" | "acting">>;
+
+/** 非发言阶段的缺省形态：模式 normal，两份名单为空。 */
+const row = (
+  label: string,
+  phase: WhoIsFakerPhase,
+  acting: string[],
+  rest: RowRest = {}
+): CheckpointRecord => ({
+  label,
+  phase,
+  speechMode: "normal",
+  speechOrder: [],
+  submitted: [],
+  nightCapable: [],
+  ...rest,
+  acting,
+});
+
+const EXPECTED: CheckpointRecord[] = [
+  row("等待", "waiting", []),
+  row("指定出题人", "assigningQuestioner", ["房主"]),
+  row("出词", "wordSubmission", ["出题人"], {
+    roleCounts: { civilian: 4, undercover: 2, angel: 1, blank: 1 },
+  }),
+  row("首轮描述未开始", "description", ALL_SEATS, {
+    speechOrder: ALL_SEATS,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row(
+    "首轮描述进行中",
+    "description",
+    ["房主", "玩家2", "玩家3", "玩家4", "玩家5", "玩家6", "玩家7"],
+    {
+      speechOrder: ALL_SEATS,
+      submitted: ["玩家1"],
+      nightCapable: NIGHT_CAPABLE_1,
+    }
+  ),
+  row("首轮描述完成", "description", [], {
+    speechOrder: ALL_SEATS,
+    submitted: FIRST_ROUND_DONE,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("补充发言进行中", "description", SUPPLEMENT_ORDER, {
+    speechMode: "supplement",
+    speechOrder: SUPPLEMENT_ORDER,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("补充发言剩一人", "description", ["玩家5"], {
+    speechMode: "supplement",
+    speechOrder: SUPPLEMENT_ORDER,
+    submitted: ["玩家2"],
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("补充发言完成", "description", [], {
+    speechOrder: ALL_SEATS,
+    submitted: FIRST_ROUND_DONE,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("首轮投票未开始", "voting", ALL_SEATS, { nightCapable: NIGHT_CAPABLE_1 }),
+  row("首轮投票进行中", "voting", ["玩家2", "玩家4", "玩家5", "玩家6", "玩家7"], {
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("首轮投票完成", "voting", [], { nightCapable: NIGHT_CAPABLE_1 }),
+  row("平票反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_1 }),
+  row("平票发言未开始", "tieBreak", TIE_ORDER, {
+    speechMode: "tieBreak",
+    speechOrder: TIE_ORDER,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票发言进行中", "tieBreak", ["玩家6"], {
+    speechMode: "tieBreak",
+    speechOrder: TIE_ORDER,
+    submitted: ["玩家2"],
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票发言完成", "tieBreak", [], {
+    speechMode: "tieBreak",
+    speechOrder: TIE_ORDER,
+    submitted: TIE_ORDER,
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票投票未开始", "tieBreak", ["房主", "玩家1", "玩家3", "玩家4", "玩家5", "玩家7"], {
+    speechMode: "tieBreak",
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票投票进行中", "tieBreak", ["玩家1", "玩家3", "玩家4", "玩家5", "玩家7"], {
+    speechMode: "tieBreak",
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票投票完成", "tieBreak", [], {
+    speechMode: "tieBreak",
+    nightCapable: NIGHT_CAPABLE_1,
+  }),
+  row("平票淘汰反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("首夜未行动", "night", NIGHT_CAPABLE_2, { nightCapable: NIGHT_CAPABLE_2 }),
+  row("首夜部分行动", "night", ["房主", "玩家5", "玩家6", "玩家7"], {
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("首夜撤销后", "night", NIGHT_CAPABLE_2, { nightCapable: NIGHT_CAPABLE_2 }),
+  row("首夜行动完成", "night", [], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("首夜反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("次日描述未开始", "description", DAY2_ORDER, {
+    speechOrder: DAY2_ORDER,
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("次日描述进行中", "description", ["房主", "玩家3", "玩家4", "玩家6", "玩家7"], {
+    speechOrder: DAY2_ORDER,
+    submitted: ["玩家1", "玩家5"],
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("白板猜词打断", "blankGuess", ["玩家4"], {
+    speechOrder: DAY2_ORDER,
+    submitted: ["玩家1", "玩家5"],
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("白板草稿", "blankGuess", ["玩家4"], {
+    speechOrder: DAY2_ORDER,
+    submitted: ["玩家1", "玩家5"],
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("白板待裁定", "blankGuess", [], {
+    speechOrder: DAY2_ORDER,
+    submitted: ["玩家1", "玩家5"],
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("白板猜词反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("猜词失败回到描述", "description", ["房主", "玩家3", "玩家4", "玩家6", "玩家7"], {
+    speechOrder: DAY2_ORDER,
+    submitted: ["玩家1", "玩家5"],
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("次日描述完成", "description", [], {
+    speechOrder: DAY2_ORDER,
+    submitted: SECOND_ROUND_DONE,
+    nightCapable: NIGHT_CAPABLE_2,
+  }),
+  row("次日投票未开始", "voting", DAY2_ORDER, { nightCapable: NIGHT_CAPABLE_2 }),
+  row("次日投票进行中", "voting", ["玩家1", "玩家6", "玩家7"], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("次日投票完成", "voting", [], { nightCapable: NIGHT_CAPABLE_2 }),
+  row("次日淘汰反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_3 }),
+  row("次夜未行动", "night", NIGHT_CAPABLE_3, { nightCapable: NIGHT_CAPABLE_3 }),
+  row("次夜行动完成", "night", [], { nightCapable: NIGHT_CAPABLE_3 }),
+  row("次夜反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_3 }),
+  row("第三日描述未开始", "description", DAY3_ORDER, {
+    speechOrder: DAY3_ORDER,
+    nightCapable: NIGHT_CAPABLE_3,
+  }),
+  row("第三日描述完成", "description", [], {
+    speechOrder: DAY3_ORDER,
+    submitted: DAY3_ORDER,
+    nightCapable: NIGHT_CAPABLE_3,
+  }),
+  row("第三日投票未开始", "voting", DAY3_ORDER, { nightCapable: NIGHT_CAPABLE_3 }),
+  row("第三日投票完成", "voting", [], { nightCapable: NIGHT_CAPABLE_3 }),
+  row("卧底出局反馈", "feedback", ["出题人"], { nightCapable: NIGHT_CAPABLE_4 }),
+  row("结算", "gameOver", [], { nightCapable: NIGHT_CAPABLE_4 }),
+  row("回到等待", "waiting", []),
+];
+
+/** 测试房只放开反馈阶段：全房都能推进，其余阶段与普通房一字不差。 */
+const TEST_MODE_EXPECTED: CheckpointRecord[] = EXPECTED.map((record) =>
+  record.phase === "feedback" ? { ...record, acting: EVERYONE } : record
+);
+
 const expectFullCoverage = (records: CheckpointRecord[]) => {
   expect(new Set(records.map((record) => record.phase))).toEqual(new Set(ALL_PHASES));
 };
 
-test("普通房：服务端下发的可行动与发言名单逐阶段等于客户端旧推导", async () => {
+test("普通房：可行动与发言名单逐阶段等于期望值", async () => {
   const records = await walkAllPhases("8950");
   expectFullCoverage(records);
+  expect(records).toEqual(EXPECTED);
 });
 
-test("测试房：反馈阶段放开给全房，其余阶段仍与客户端旧推导一致", async () => {
+test("测试房：反馈阶段放开给全房，其余阶段与普通房一致", async () => {
   const records = await walkAllPhases(ROOM_ID_TEST_MODE);
   expectFullCoverage(records);
+  expect(records).toEqual(TEST_MODE_EXPECTED);
 });
