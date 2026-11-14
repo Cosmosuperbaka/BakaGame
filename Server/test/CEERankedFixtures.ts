@@ -17,6 +17,7 @@ import {
 import type { CEERankedPool, CEERankedPoolProvider } from "../src/application/CEERankedPool";
 import { AppError } from "../src/domain/Errors";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
+import { createTestConnection } from "./support/Connection";
 import {
   CEE_RANKED_PLACEMENT_SERIES,
   CEE_RANKED_STATE_EVENT,
@@ -334,8 +335,8 @@ export function rankedHarness(options: RankedHarnessOptions = {}) {
   const connect = (name: string, identity: RankedClientIdentity = {}): RankedClient => {
     const userId = identity.account?.userId ?? `u-${name}`;
     const sent: RankedClient["sent"] = [];
-    const record: ConnectionRecord = {
-      id: `${name}-${crypto.randomUUID()}`,
+    const id = `${name}-${crypto.randomUUID()}`;
+    const record = createTestConnection(id, {
       account: identity.account ?? { userId, image: null },
       clientIp: "127.0.0.1",
       clientChannel: identity.clientChannel ?? {
@@ -345,12 +346,11 @@ export function rankedHarness(options: RankedHarnessOptions = {}) {
         keyProtection: "hardware",
       },
       isAgent: identity.isAgent,
-      lobbySubscribed: false,
       send: (payload) => sent.push(structuredClone(payload) as RankedClient["sent"][number]),
       close: () => {
-        service.unregisterConnection(record.id);
+        service.unregisterConnection(id);
       },
-    };
+    });
     service.registerConnection(record);
     return { record, userId, sent };
   };

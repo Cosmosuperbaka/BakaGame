@@ -3,7 +3,8 @@ import { ceeTestHarness } from "./CEENativeFixtures";
 import { CEEService } from "../src/application/CEEService";
 import { AppError } from "../src/domain/Errors";
 import { CHAT_LIMIT } from "../src/config/Constants";
-import { ROOM_ID_TEST_MODE, type ConnectionRecord } from "../src/shared/Index";
+import { ROOM_ID_TEST_MODE } from "../src/shared/Index";
+import { createTestConnection } from "./support/Connection";
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
 const harness = (roomId?: string) => {
@@ -61,12 +62,7 @@ describe("CEE 房间聊天", () => {
         close() {},
       },
     });
-    const record: ConnectionRecord = {
-      id: "chatter",
-      lobbySubscribed: false,
-      send: () => {},
-      close: () => {},
-    };
+    const record = createTestConnection("chatter");
     service.registerConnection(record);
     const run = (message: Record<string, unknown>) =>
       service.execute(record.id, { id: crypto.randomUUID(), ...message } as never);

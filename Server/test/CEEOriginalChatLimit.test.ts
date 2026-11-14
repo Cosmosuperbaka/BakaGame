@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
 import { CEEService } from "../src/application/CEEService";
-import type { CEERoomEnterResult, ConnectionRecord } from "../src/shared/Index";
+import type { CEERoomEnterResult } from "../src/shared/Index";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
+import { createTestConnection } from "./support/Connection";
 
 const services: CEEService[] = [];
 afterEach(async () => {
@@ -32,12 +33,7 @@ describe("原版房聊天限流只在入口层", () => {
       now: () => now,
     });
     services.push(service);
-    const record: ConnectionRecord = {
-      id: "chatter",
-      lobbySubscribed: false,
-      send() {},
-      close() {},
-    };
+    const record = createTestConnection("chatter");
     service.registerConnection(record);
     const run = (message: Record<string, unknown>) =>
       service.execute(record.id, { id: crypto.randomUUID(), ...message } as never);
@@ -56,7 +52,7 @@ describe("原版房聊天限流只在入口层", () => {
         })) as CEERoomEnterResult
       ).sessionToken;
     const joinAs = async (id: string, roomId: string) => {
-      service.registerConnection({ id, lobbySubscribed: false, send() {}, close() {} });
+      service.registerConnection(createTestConnection(id));
       return (
         (await service.execute(id, {
           id: crypto.randomUUID(),

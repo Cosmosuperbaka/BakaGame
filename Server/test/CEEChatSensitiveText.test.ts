@@ -6,8 +6,9 @@ import {
   SensitiveTextFilter,
   setSensitiveTextFilterForTest,
 } from "../src/infrastructure/SensitiveText";
-import type { CEERoomEnterResult, ConnectionRecord } from "../src/shared/Index";
+import type { CEERoomEnterResult } from "../src/shared/Index";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
+import { createTestConnection } from "./support/Connection";
 
 // 只用占位词：测试文件里不出现真实敏感词。
 const BAD = "测试违禁词A";
@@ -32,7 +33,7 @@ function setup() {
   const service = new CEEService({ data: originalData, originalService: original });
   services.push(service);
   const connect = (id: string) => {
-    const record: ConnectionRecord = { id, lobbySubscribed: false, send() {}, close() {} };
+    const record = createTestConnection(id);
     service.registerConnection(record);
     return record.id;
   };

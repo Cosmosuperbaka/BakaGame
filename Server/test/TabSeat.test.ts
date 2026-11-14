@@ -11,6 +11,7 @@ import { ceeTestHarness, type CEETestClient } from "./CEENativeFixtures";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 import { connection as songConnection, lastEvent, provider } from "./songuessr/Fixtures";
+import { createTestConnection } from "./support/Connection";
 
 const TAB_A = "a".repeat(64);
 const TAB_B = "b".repeat(64);
@@ -455,13 +456,8 @@ describe("CEE 原版房：上游换号后聊天仍归同一标签页", () => {
       fetcher: async () => Response.json([{ id: "1234", isPublic: true, playerCount: 2 }]),
     });
     const target = { source: "original" as const, roomId: "1234", upstreamRoomId: "1234" };
-    const connection = (id: string): ConnectionRecord => ({
-      id,
-      lobbySubscribed: false,
-      tabKey: TAB_A,
-      send: () => undefined,
-      close: () => undefined,
-    });
+    const connection = (id: string): ConnectionRecord =>
+      createTestConnection(id, { tabKey: TAB_A });
     const keeper: ConnectionRecord = { ...connection("keeper"), tabKey: TAB_B };
     service.registerConnection(keeper);
     await service.join("keeper", target, { userName: "留守" });

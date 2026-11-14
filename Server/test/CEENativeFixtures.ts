@@ -27,6 +27,7 @@ import {
   type ConnectionRecord,
   type PlayerAccount,
 } from "../src/shared/Index";
+import { createTestConnection } from "./support/Connection";
 
 export const character = (id: number, shared = false): CEECharacterView => ({
   id,
@@ -146,18 +147,17 @@ export function ceeTestHarness(
   const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],
       closed: CEETestClient["closed"] = [];
-    const record: ConnectionRecord = {
-      id: `${name}-${crypto.randomUUID()}`,
-      lobbySubscribed: false,
+    const id = `${name}-${crypto.randomUUID()}`;
+    const record = createTestConnection(id, {
       account: identity.account,
       clientChannel: identity.clientChannel,
       send: (payload) => sent.push(structuredClone(payload) as Packet),
       sendStateSyncCalibration: (payload) => sent.push(structuredClone(payload) as Packet),
       close: (code, reason) => {
         closed.push({ code, reason });
-        service.unregisterConnection(record.id);
+        service.unregisterConnection(id);
       },
-    };
+    });
     service.registerConnection(record);
     return { record, sent, closed };
   };

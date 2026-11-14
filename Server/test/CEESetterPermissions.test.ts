@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
 import type { CEERoomClientMessage, CEERoomEnterResult } from "../src/shared/CEE";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
+import { createTestConnection } from "./support/Connection";
 
 test("原版手动出题：出题方式只记在本服务端，开始后进入选人阶段，出题人不必准备，可取消退回", async () => {
   const upstream = new FixtureRoom();
@@ -12,8 +13,7 @@ test("原版手动出题：出题方式只记在本服务端，开始后进入�
     socketFactory: upstream.factory,
     fetcher: async () => Response.json([{ id: "1234", isPublic: true }]),
   });
-  for (const id of ["host", "guest"])
-    service.registerConnection({ id, lobbySubscribed: false, send() {}, close() {} });
+  for (const id of ["host", "guest"]) service.registerConnection(createTestConnection(id));
   const send = (id: string, token: string, message: CEERoomClientMessage) =>
     service.execute(id, { ...message, sessionToken: token });
   const target = { source: "original" as const, roomId: "1234", upstreamRoomId: "1234" };

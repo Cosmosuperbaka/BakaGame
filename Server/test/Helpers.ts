@@ -5,6 +5,7 @@ import type { TimerSeam } from "../src/application/room/RoomTimers";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ConnectionRecord, WhoIsFakerClientMessage } from "../src/shared/Index";
+import { createTestConnection } from "./support/Connection";
 
 export interface TestConnection {
   record: ConnectionRecord;
@@ -78,16 +79,14 @@ export const countingTimers = () => {
 export const createConnection = (service: WhoIsFakerService, id: string): TestConnection => {
   const sent: unknown[] = [];
   const closed: Array<{ code?: number; reason?: string }> = [];
-  const record: ConnectionRecord = {
-    id,
-    lobbySubscribed: false,
+  const record = createTestConnection(id, {
     send: (payload) => {
       sent.push(payload);
     },
     close: (code?: number, reason?: string) => {
       closed.push({ code, reason });
     },
-  };
+  });
 
   service.registerConnection(record);
 

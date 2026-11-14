@@ -13,15 +13,11 @@ import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ConnectionRecord } from "../src/shared/Index";
 import { originalData } from "./CEEOriginalFixtures";
+import { createTestConnection } from "./support/Connection";
 
 /** 配额只用到 `id` 与 `clientIp` 两个字段，其余按最小形状构造。 */
-const connection = (id: string, clientIp?: string): ConnectionRecord => ({
-  id,
-  ...(clientIp ? { clientIp } : {}),
-  lobbySubscribed: false,
-  send: () => {},
-  close: () => {},
-});
+const connection = (id: string, clientIp?: string): ConnectionRecord =>
+  createTestConnection(id, clientIp ? { clientIp } : {});
 
 const harness = (connectionMax = 3) => {
   let clock = 1_000_000;

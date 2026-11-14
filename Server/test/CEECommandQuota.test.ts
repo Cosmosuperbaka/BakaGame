@@ -5,8 +5,8 @@ import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
 } from "../src/config/Constants";
-import type { ConnectionRecord } from "../src/shared/Index";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
+import { createTestConnection } from "./support/Connection";
 
 // 猜猜呗的每连接命令总额度与另外两款共用同一组常量：改一处，三款一起变。
 
@@ -32,7 +32,7 @@ test("满额度放行、多一条回 RATE_LIMITED、窗口过后恢复；额度�
   });
   services.push(service);
   const connect = (id: string) => {
-    const record: ConnectionRecord = { id, lobbySubscribed: false, send() {}, close() {} };
+    const record = createTestConnection(id);
     service.registerConnection(record);
     return record.id;
   };

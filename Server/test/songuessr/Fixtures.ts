@@ -10,6 +10,7 @@ import {
   type SongDetails,
   type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
+import { createTestConnection } from "../support/Connection";
 
 export const makeSong = (id: string, title: string, year: number): SongDetails => ({
   id,
@@ -74,12 +75,9 @@ export interface TestConnection {
 
 export const connection = (service: SonGuessrService, id: string): TestConnection => {
   const sent: TestConnection["sent"] = [];
-  const record: ConnectionRecord = {
-    id,
-    lobbySubscribed: false,
+  const record = createTestConnection(id, {
     send: (payload) => sent.push(payload as TestConnection["sent"][number]),
-    close: () => {},
-  };
+  });
   service.registerConnection(record);
   return { record, sent };
 };

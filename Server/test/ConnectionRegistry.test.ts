@@ -2,12 +2,12 @@
 
 import { ConnectionRegistry } from "../src/application/ConnectionRegistry";
 import { AppError } from "../src/domain/Errors";
-import { buildConnectionRecord } from "./ConnectionFixtures";
+import { createTestConnection } from "./support/Connection";
 
 describe("ConnectionRegistry", () => {
   test("注册、查询和注销连接会保持统计一致", () => {
     const registry = new ConnectionRegistry();
-    const connection = buildConnectionRecord("conn-1", { lobbySubscribed: true });
+    const connection = createTestConnection("conn-1", { lobbySubscribed: true });
 
     registry.registerConnection(connection);
 
@@ -35,13 +35,13 @@ describe("ConnectionRegistry", () => {
 
   test("大厅订阅者与房间连接互斥筛选", () => {
     const registry = new ConnectionRegistry();
-    const lobby = buildConnectionRecord("lobby", { lobbySubscribed: true });
-    const roomMember = buildConnectionRecord("room", {
+    const lobby = createTestConnection("lobby", { lobbySubscribed: true });
+    const roomMember = createTestConnection("room", {
       lobbySubscribed: true,
       roomId: "1234",
       playerId: "player-1",
     });
-    const idle = buildConnectionRecord("idle");
+    const idle = createTestConnection("idle");
     registry.registerConnection(lobby);
     registry.registerConnection(roomMember);
     registry.registerConnection(idle);
@@ -56,17 +56,17 @@ describe("ConnectionRegistry", () => {
   test("单个连接发送失败不会阻断其余广播", () => {
     const registry = new ConnectionRegistry();
     const delivered: Array<{ id: string; payload: unknown }> = [];
-    const failing = buildConnectionRecord("failing", {
+    const failing = createTestConnection("failing", {
       roomId: "1234",
       send: () => {
         throw new Error("offline");
       },
     });
-    const healthy = buildConnectionRecord("healthy", {
+    const healthy = createTestConnection("healthy", {
       roomId: "1234",
       send: (payload) => delivered.push({ id: "healthy", payload }),
     });
-    const otherRoom = buildConnectionRecord("other", {
+    const otherRoom = createTestConnection("other", {
       roomId: "5678",
       send: (payload) => delivered.push({ id: "other", payload }),
     });
@@ -83,10 +83,10 @@ describe("ConnectionRegistry", () => {
     const registry = new ConnectionRegistry();
     const delivered: string[] = [];
     registry.registerConnection(
-      buildConnectionRecord("first", { send: () => delivered.push("first") })
+      createTestConnection("first", { send: () => delivered.push("first") })
     );
     registry.registerConnection(
-      buildConnectionRecord("second", { send: () => delivered.push("second") })
+      createTestConnection("second", { send: () => delivered.push("second") })
     );
 
     registry.broadcastToAll({ type: "server.shutdown" });

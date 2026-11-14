@@ -9,9 +9,9 @@ import {
   setSensitiveTextFilterForTest,
   warmUpSensitiveText,
 } from "../src/infrastructure/SensitiveText";
-import type { ConnectionRecord } from "../src/shared/Index";
 import { createConnection, createTestContext, execute } from "./Helpers";
 import { connection as songConnection, provider } from "./songuessr/Fixtures";
+import { createTestConnection } from "./support/Connection";
 
 // 只用占位词：测试文件里不出现真实敏感词。
 const BAD = "测试违禁词A";
@@ -215,13 +215,8 @@ describe("入口拒绝", () => {
         close() {},
       },
     });
-    const record = (id: string): ConnectionRecord => {
-      const created: ConnectionRecord = {
-        id,
-        lobbySubscribed: false,
-        send: () => {},
-        close: () => {},
-      };
+    const record = (id: string) => {
+      const created = createTestConnection(id);
       service.registerConnection(created);
       return created;
     };

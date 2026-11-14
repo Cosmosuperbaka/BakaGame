@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
 import { originalRoomDisplayName } from "../src/application/CEEOriginalView";
-import type { ConnectionRecord } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtocol";
 import {
@@ -17,6 +16,7 @@ import {
   FixtureRoom,
 } from "./CEEOriginalFixtures";
 import { deferred } from "./support/Deferred";
+import { createTestConnection } from "./support/Connection";
 import type { CEECharacterView } from "../src/shared/CEE";
 
 const services: CEEOriginalService[] = [];
@@ -39,12 +39,8 @@ function setup(options: Partial<ConstructorParameters<typeof CEEOriginalService>
   });
   services.push(service);
   const packets: unknown[] = [];
-  const connection = (id: string): ConnectionRecord => ({
-    id,
-    lobbySubscribed: false,
-    send: (packet) => packets.push(packet),
-    close() {},
-  });
+  const connection = (id: string) =>
+    createTestConnection(id, { send: (packet) => packets.push(packet) });
   const first = connection("first");
   service.registerConnection(first);
   return { service, upstream, packets, first, connection };

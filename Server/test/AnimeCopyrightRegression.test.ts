@@ -3,14 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { SonGuessrService } from "../src/application/SonGuessrService";
 import { isSongTitleMatch } from "../src/application/songuessr/SongTitleMatching";
 import {
-  type ConnectionRecord,
   isBangumiCreditsEntry,
   type BangumiSubjectDetails,
   type SongDetails,
   type SonGuessrClientMessage,
 } from "../src/shared/Index";
 import type { MusicProvider } from "../src/infrastructure/music/MusicProvider";
-import { chosenSongId } from "./songuessr/Fixtures";
+import { chosenSongId, connection, type TestConnection } from "./songuessr/Fixtures";
 import type { BangumiDataProvider } from "../src/infrastructure/BangumiDataProvider";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({
@@ -55,23 +54,6 @@ const provider: MusicProvider = {
   getSong: async (id) => (id === "mfa" ? unrelated : correct),
   getSongMetadata: async (id) => (id === "mfa" ? unrelated : correct),
   getLoginStatus: async (cookie) => ({ cookie, account: { nickname: "测试账号" } }),
-};
-
-interface TestConnection {
-  record: ConnectionRecord;
-  sent: Array<{ type?: string; event?: string; payload?: unknown }>;
-}
-
-const connection = (service: SonGuessrService, id: string): TestConnection => {
-  const sent: TestConnection["sent"] = [];
-  const record: ConnectionRecord = {
-    id,
-    lobbySubscribed: false,
-    send: (payload) => sent.push(payload as TestConnection["sent"][number]),
-    close: () => {},
-  };
-  service.registerConnection(record);
-  return { record, sent };
 };
 
 const execute = (

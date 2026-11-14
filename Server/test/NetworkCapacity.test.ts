@@ -5,7 +5,6 @@ import { LOBBY_MERGE_WINDOW_MS, LobbyFanout } from "../src/application/LobbyFano
 import {
   WHOISFAKER_LOBBY_ROOMS_EVENT,
   WHOISFAKER_PHASES,
-  type ConnectionRecord,
   type WhoIsFakerRoomSummary,
 } from "../src/shared/Index";
 import { createAck } from "../src/transport/Packets";
@@ -13,6 +12,7 @@ import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
 import { decodeFrame, wireBytes } from "./StateSyncFixtures";
 import { ceeTestHarness, character } from "./CEENativeFixtures";
+import { createTestConnection } from "./support/Connection";
 
 const TARGET_PLAYERS = 150;
 const MUTATIONS_PER_SECOND = 12;
@@ -33,9 +33,7 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => 
 
   const createMeasuredConnection = (id: string): TestConnection => {
     const encoder = new StateSyncEncoder({ now: () => networkNow });
-    const record: ConnectionRecord = {
-      id,
-      lobbySubscribed: false,
+    const record = createTestConnection(id, {
       send(payload) {
         for (const packet of encoder.encode(payload)) {
           measuredBytes += websocketFrameBytes(wireBytes(packet));
@@ -47,8 +45,7 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => 
           measuredBytes += websocketFrameBytes(wireBytes(packet));
         }
       },
-      close: () => {},
-    };
+    });
     service.registerConnection(record);
     return { record, sent: [], closed: [] };
   };
@@ -199,16 +196,13 @@ test("大厅订阅风暴只按人数出帧：200 人进大厅不再放大成 200
   let lobbyBytes = 0;
   let lobbyFrames = 0;
   const metered = (id: string): TestConnection => {
-    const record: ConnectionRecord = {
-      id,
-      lobbySubscribed: false,
+    const record = createTestConnection(id, {
       send: (payload) => {
         if ((payload as { event?: string }).event !== WHOISFAKER_LOBBY_ROOMS_EVENT) return;
         lobbyFrames += 1;
         lobbyBytes += websocketFrameBytes(utf8Bytes(payload));
       },
-      close: () => {},
-    };
+    });
     service.registerConnection(record);
     return { record, sent: [], closed: [] };
   };

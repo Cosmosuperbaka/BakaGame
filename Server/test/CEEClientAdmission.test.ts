@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { requireCEEClientAdmission } from "../src/application/CEEClientAdmission";
 import { AppError } from "../src/domain/Errors";
 import type { ClientChannelProof, ConnectionRecord } from "../src/shared/Index";
+import { createTestConnection } from "./support/Connection";
 
 const channel = (patch: Partial<ClientChannelProof> = {}): ClientChannelProof => ({
   clientId: "client-1",
@@ -18,13 +19,7 @@ const record = (fields: {
   clientChannel?: ClientChannelProof;
   account?: ConnectionRecord["account"];
   isAgent?: boolean;
-}): ConnectionRecord => ({
-  id: "c1",
-  lobbySubscribed: false,
-  send: () => {},
-  close: () => {},
-  ...fields,
-});
+}): ConnectionRecord => createTestConnection("c1", fields);
 
 const codeOf = (run: () => void): string => {
   try {

@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ceeTestHarness, character, type CEETestClient } from "./CEENativeFixtures";
 import { deferred } from "./support/Deferred";
+import { createTestConnection } from "./support/Connection";
 import type { GameRecorder } from "../src/domain/GameRecord";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
-import {
-  ROOM_ID_TEST_MODE,
-  type CEECharacterView,
-  type ConnectionRecord,
-} from "../src/shared/Index";
+import { ROOM_ID_TEST_MODE, type CEECharacterView } from "../src/shared/Index";
 import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
@@ -133,13 +130,10 @@ describe("CEE 公共帧", () => {
   /** 不克隆载荷的连接：才能看出同一份公共帧是不是被各连接共用。 */
   const rawClient = (h: ReturnType<typeof ceeTestHarness>, name: string): CEETestClient => {
     const sent: CEETestClient["sent"] = [];
-    const record: ConnectionRecord = {
-      id: `${name}-${crypto.randomUUID()}`,
-      lobbySubscribed: false,
+    const record = createTestConnection(`${name}-${crypto.randomUUID()}`, {
       send: (payload) => sent.push(payload as CEETestClient["sent"][number]),
       sendStateSyncCalibration: (payload) => sent.push(payload as CEETestClient["sent"][number]),
-      close() {},
-    };
+    });
     h.service.registerConnection(record);
     return { record, sent, closed: [] };
   };

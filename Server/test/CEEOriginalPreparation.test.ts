@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
-import type { ConnectionRecord } from "../src/shared/Index";
 import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtocol";
 import { originalRequest } from "../src/infrastructure/CEEOriginalSocket";
 import {
@@ -9,6 +8,7 @@ import {
   type CEERoomSnapshot,
 } from "../src/shared/CEE";
 import { deferred } from "./support/Deferred";
+import { createTestConnection } from "./support/Connection";
 import {
   FixtureRoom,
   FixtureSocket,
@@ -89,12 +89,10 @@ async function setup(options: Partial<ConstructorParameters<typeof CEEOriginalSe
     ...options,
   });
   services.push(service);
-  const connection = (id: string): ConnectionRecord => ({
-    id,
-    lobbySubscribed: false,
-    send: (packet) => packets.push(packet as { event: string; payload: unknown }),
-    close() {},
-  });
+  const connection = (id: string) =>
+    createTestConnection(id, {
+      send: (packet) => packets.push(packet as { event: string; payload: unknown }),
+    });
   service.registerConnection(connection("first"));
   const target = { source: "original" as const, roomId: "1234", upstreamRoomId: "1234" };
   const entry = await service.create("first", target, {

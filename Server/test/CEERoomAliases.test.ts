@@ -14,10 +14,10 @@ import {
   type CEERoomEnterResult,
   type CEERoomSnapshot,
   type CEERoomSummary,
-  type ConnectionRecord,
 } from "../src/shared/Index";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
 import { TEST_ROOMS_ON } from "./TestRoomPolicy";
+import { createTestConnection } from "./support/Connection";
 
 const UUID_PUBLIC = "6b0d3c1e-2f4a-4e5b-9c7d-8e9f0a1b2c3d";
 const UUID_PRIVATE = "c4d5e6f7-0819-4a2b-8c3d-4e5f60718293";
@@ -81,13 +81,9 @@ function setup() {
   const connect = (id: string) => {
     const sent: unknown[] = [];
     outbox.set(id, sent);
-    const record: ConnectionRecord = {
-      id,
-      lobbySubscribed: false,
-      send: (packet) => sent.push(structuredClone(packet)),
-      close() {},
-    };
-    service.registerConnection(record);
+    service.registerConnection(
+      createTestConnection(id, { send: (packet) => sent.push(structuredClone(packet)) })
+    );
   };
   const send = async <T extends CEECommand>(
     id: string,

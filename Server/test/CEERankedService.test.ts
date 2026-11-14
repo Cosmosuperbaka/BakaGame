@@ -36,25 +36,20 @@ import {
   type RankedHarness,
 } from "./CEERankedFixtures";
 import { character } from "./CEENativeFixtures";
+import { createTestConnection } from "./support/Connection";
 
 /** 夹具之外还要能单独构造「没装配全」的服务，因此连接也按最小形状手写一份。 */
-const bareConnection = (id: string): ConnectionRecord => {
-  const clientChannel: ClientChannelProof = {
-    clientId: `client-${id}`,
-    clientType: "desktop",
-    clientVersion: "9.9.9",
-    keyProtection: "hardware",
-  };
-  return {
-    id,
+const bareConnection = (id: string): ConnectionRecord =>
+  createTestConnection(id, {
     account: { userId: "u1", image: null },
     clientIp: "127.0.0.1",
-    clientChannel,
-    lobbySubscribed: false,
-    send: () => {},
-    close: () => {},
-  };
-};
+    clientChannel: {
+      clientId: `client-${id}`,
+      clientType: "desktop",
+      clientVersion: "9.9.9",
+      keyProtection: "hardware",
+    } satisfies ClientChannelProof,
+  });
 
 const bareService = (options: { store?: CEERankedStore; pool?: CEERankedPoolProvider }) =>
   new CEERankedService({

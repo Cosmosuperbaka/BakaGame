@@ -14,6 +14,7 @@ import {
 import type { CEERankedCommand } from "../src/shared/CEERanked";
 import { FixtureRoom, originalCharacter as character, originalData } from "./CEEOriginalFixtures";
 import { deferred } from "./support/Deferred";
+import { createTestConnection } from "./support/Connection";
 
 const services: CEEOriginalService[] = [];
 afterEach(() => services.splice(0).forEach((service) => service.close()));
@@ -35,16 +36,15 @@ async function setup(
   const states = new Map<string, CEEPrivateState>();
   const listeners = new Set<() => void>();
   const connect = (id: string) =>
-    service.registerConnection({
-      id,
-      lobbySubscribed: false,
-      close() {},
-      send(value) {
-        const event = value as { event?: string; payload?: CEEPrivateState };
-        if (event.event === "cee.game.privateState") states.set(id, event.payload!);
-        for (const listener of listeners) listener();
-      },
-    });
+    service.registerConnection(
+      createTestConnection(id, {
+        send(value) {
+          const event = value as { event?: string; payload?: CEEPrivateState };
+          if (event.event === "cee.game.privateState") states.set(id, event.payload!);
+          for (const listener of listeners) listener();
+        },
+      })
+    );
   const send = async <T extends Exclude<CEECommand, CEERankedCommand>>(
     id: string,
     type: T,

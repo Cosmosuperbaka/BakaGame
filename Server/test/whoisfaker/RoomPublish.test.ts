@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ConnectionRecord } from "../../src/shared/Index";
 import { createTestContext, execute } from "../Helpers";
+import { createTestConnection } from "../support/Connection";
 import { createRoom, joinPlayers } from "./Fixtures";
 
 type Packet = { event?: string; payload?: unknown };
@@ -40,17 +40,14 @@ describe("房间快照发布", () => {
     const { service, advanceTime } = createTestContext();
     const sent: Packet[] = [];
     const calibrated: Packet[] = [];
-    const record: ConnectionRecord = {
-      id: "calibrated",
-      lobbySubscribed: false,
+    const record = createTestConnection("calibrated", {
       send: (payload) => {
         sent.push(payload as Packet);
       },
       sendStateSyncCalibration: (payload) => {
         calibrated.push(payload as Packet);
       },
-      close: () => {},
-    };
+    });
     service.registerConnection(record);
     await service.execute(record.id, {
       id: "create",
