@@ -210,73 +210,28 @@ export function createServer(
   // 标记缺省读作 development，与 `resolveDeploymentEnvironment` 的缺省一致。
   const statusEnvironment = env.otelDeploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
   const statusEvents = database ? new DatabaseStatusEventRepository(database) : undefined;
-  const account = createAccount(
+  const account = createAccount({
     env,
     database,
     logger,
-    games,
-    antiCheatReviews,
+    rooms: games,
+    reviews: antiCheatReviews,
     settings,
     statusEvents,
     statusEnvironment,
-    new BangumiMirrorMonitor({
+    bangumiMirror: new BangumiMirrorMonitor({
       snapshot: () =>
         data.client.request({ method: "mirror.status" }) as Promise<BangumiMirrorSnapshot>,
       provider: () => bangumi.status(),
-    })
-  );
-  // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
-  const clientChannel = new ClientChannel({
-    store: database ? new ClientChannelRepository(database) : new InMemoryClientChannelStore(),
-    minimumVersion: (clientType) =>
-      clientType === "desktop"
-        ? settings.version("clientMinDesktopVersion")
-        : settings.version("clientMinMobileVersion"),
-    // 完整性类告警显式归「安全」，并按阶段节流：旧版客户端或扫描会让同一件事一天成百上千次，
-    // 每个阶段每分钟只留一条，被压制的条数进指标与下一条的 suppressed。
-    onWarn: (message, detail) =>
-      logger.warnThrottled(
-        `${message}|${typeof detail?.stage === "string" ? detail.stage : ""}`,
-        60_000,
-        message,
-        {
-          ...detail,
-          scope: "安全",
-        }
-      ),
-    // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
-    attestation: env.androidAttestationPackage
-      ? createAndroidAttestationChecker({
-          packageName: env.androidAttestationPackage,
-          signatureDigests: env.androidAttestationSignatureDigests,
-          onWarn: (message, detail) => logger.warn(message, { detail }),
-        })
-      : undefined,
+    }),
   });
-  // 下载弹窗标的构建日期与文件大小来自制品本身：对配置里那两条公开别名发 HEAD，结果短缓存。
-  const clientArtifacts = new ClientArtifacts({
-    urls: {
-      windows: env.clientPackageWindowsUrl,
-      android: env.clientPackageAndroidUrl,
-    },
-  });
-  // 热更新清单与安装包清单分开：前者只影响移动壳能否换资源，后者只影响下载弹窗。
-  const clientWebBundle = new ClientWebBundle({
-    manifestUrl: env.clientWebBundleManifestUrl,
-  });
-  // 状态页的两本账：历史与实时样本都按部署环境标记分行，
-  // 开发与生产共用一个库也互不污染——开发实例的探测读不到生产的条带，反之亦然。
-  // 没库也照样在内存里记本次运行的账，页面有数据可读，只是重启后条带会空。
-  const statusHistory = new StatusHistoryStore({
-    environment: statusEnvironment,
+  const { clientChannel, clientArtifacts, clientWebBundle } = createClientDistribution({
+    env,
+    logger,
+    settings,
     database,
-    now: () => Date.now(),
   });
-  const statusSamples = new StatusSampleStore({
-    environment: statusEnvironment,
-    database,
-    now: () => Date.now(),
-  });
+  const { statusHistory, statusSamples } = createStatusLedgers(statusEnvironment, database);
   // 上游读数的探针在这里装配而非 createApp：单测直接 createApp 时不带探针，
   // 不会发起任何真实外网请求。配了 Better Stack 就以它定等级、用直连探测补延迟，
   // 没配就完全靠直连。
@@ -347,18 +302,31 @@ export function createServer(
   };
 }
 
+interface AccountWiring {
+  env: AppEnv;
+  database: Database | undefined;
+  logger: EventLogger;
+  rooms: Record<RecordedGame, AdminRoomControl>;
+  reviews: CEEAntiCheatReviewBoard;
+  settings: AppSettings;
+  statusEvents: DatabaseStatusEventRepository | undefined;
+  statusEnvironment: string;
+  bangumiMirror: BangumiMirrorMonitor;
+}
+
 /** 账号系统随数据库启用；`readEnv` 已保证有数据库时账号配置齐备。 */
-const createAccount = (
-  env: AppEnv,
-  database: Database | undefined,
-  logger: EventLogger,
-  rooms: Record<RecordedGame, AdminRoomControl>,
-  reviews: CEEAntiCheatReviewBoard,
-  settings: AppSettings,
-  statusEvents: DatabaseStatusEventRepository | undefined,
-  statusEnvironment: string,
-  bangumiMirror: BangumiMirrorMonitor
-) => {
+const createAccount = (wiring: AccountWiring) => {
+  const {
+    env,
+    database,
+    logger,
+    rooms,
+    reviews,
+    settings,
+    statusEvents,
+    statusEnvironment,
+    bangumiMirror,
+  } = wiring;
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
   // 建号钩子要解析 QQ 昵称、补系统徽章，而两个服务都在 auth 之后创建：用闭包延迟绑定。
@@ -477,3 +445,68 @@ const createAccount = (
   visits.start();
   return { auth, service, userData, admin, visits, ready: database.ready };
 };
+
+const createClientDistribution = (options: {
+  env: AppEnv;
+  logger: EventLogger;
+  settings: AppSettings;
+  database: Database | undefined;
+}) => {
+  const { env, logger, settings, database } = options;
+  // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
+  const clientChannel = new ClientChannel({
+    store: database ? new ClientChannelRepository(database) : new InMemoryClientChannelStore(),
+    minimumVersion: (clientType) =>
+      clientType === "desktop"
+        ? settings.version("clientMinDesktopVersion")
+        : settings.version("clientMinMobileVersion"),
+    // 完整性类告警显式归「安全」，并按阶段节流：旧版客户端或扫描会让同一件事一天成百上千次，
+    // 每个阶段每分钟只留一条，被压制的条数进指标与下一条的 suppressed。
+    onWarn: (message, detail) =>
+      logger.warnThrottled(
+        `${message}|${typeof detail?.stage === "string" ? detail.stage : ""}`,
+        60_000,
+        message,
+        {
+          ...detail,
+          scope: "安全",
+        }
+      ),
+    // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
+    attestation: env.androidAttestationPackage
+      ? createAndroidAttestationChecker({
+          packageName: env.androidAttestationPackage,
+          signatureDigests: env.androidAttestationSignatureDigests,
+          onWarn: (message, detail) => logger.warn(message, { detail }),
+        })
+      : undefined,
+  });
+  // 下载弹窗标的构建日期与文件大小来自制品本身：对配置里那两条公开别名发 HEAD，结果短缓存。
+  const clientArtifacts = new ClientArtifacts({
+    urls: {
+      windows: env.clientPackageWindowsUrl,
+      android: env.clientPackageAndroidUrl,
+    },
+  });
+  // 热更新清单与安装包清单分开：前者只影响移动壳能否换资源，后者只影响下载弹窗。
+  const clientWebBundle = new ClientWebBundle({
+    manifestUrl: env.clientWebBundleManifestUrl,
+  });
+  return { clientChannel, clientArtifacts, clientWebBundle };
+};
+
+// 状态页的两本账：历史与实时样本都按部署环境标记分行，
+// 开发与生产共用一个库也互不污染——开发实例的探测读不到生产的条带，反之亦然。
+// 没库也照样在内存里记本次运行的账，页面有数据可读，只是重启后条带会空。
+const createStatusLedgers = (environment: string, database: Database | undefined) => ({
+  statusHistory: new StatusHistoryStore({
+    environment,
+    database,
+    now: () => Date.now(),
+  }),
+  statusSamples: new StatusSampleStore({
+    environment,
+    database,
+    now: () => Date.now(),
+  }),
+});
