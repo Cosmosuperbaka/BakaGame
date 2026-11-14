@@ -206,7 +206,7 @@ const DEPENDENCY_BRANDS = new Map<string, CreditBrandId>([
   ["framer-motion", "framer"],
   ["lucide-react", "lucide"],
   ["zustand", "zustand"],
-  ["react-router-dom", "reactrouter"],
+  ["react-router", "reactrouter"],
   ["better-auth", "betterauth"],
   ["zod", "zod"],
   // 脚手架与开发辅助

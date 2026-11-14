@@ -75,7 +75,7 @@ export default defineConfig(({ command }) => {
               },
               {
                 name: "vendor-router",
-                test: /node_modules\/(react-router|react-router-dom)\//,
+                test: /node_modules\/react-router\//,
                 priority: 30,
               },
               { name: "vendor-sentry", test: /node_modules\/@sentry\//, priority: 30 },

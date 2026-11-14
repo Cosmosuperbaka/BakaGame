@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { STATUS_LIVE_GRACE_MS } from "@/components/status/UseStatusSnapshot";
 import { STATUS_POLL_INTERVAL_MS } from "@/lib/SystemStatus";

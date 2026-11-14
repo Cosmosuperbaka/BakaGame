@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router";
 import { RouteErrorFallback } from "@/components/common/AppErrorFallback";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { RootLayout } from "@/layouts/RootLayout";

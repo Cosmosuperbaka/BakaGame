@@ -4,7 +4,7 @@ import {
   useNavigate,
   type NavigateOptions,
   type To,
-} from "react-router-dom";
+} from "react-router";
 
 /**
  * 页面导航默认走 View Transitions：旧页定格成快照向前退出、新页自后方推入（见 `index.css` 的页面过渡）。

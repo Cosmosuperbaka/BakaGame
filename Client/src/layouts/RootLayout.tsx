@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { PageControlHost } from "@/components/common/PageControlHost";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { useAccountBootstrap } from "@/hooks/UseAccountBootstrap";

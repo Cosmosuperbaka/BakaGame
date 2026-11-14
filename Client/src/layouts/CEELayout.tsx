@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { initCEEWs } from "@/stores/UseCEEStore";
 import { ToastViewport } from "@/components/Toast";
 import { useCEEStore } from "@/stores/UseCEEStore";

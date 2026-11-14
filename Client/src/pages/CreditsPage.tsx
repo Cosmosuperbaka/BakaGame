@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router";
 import { Seo } from "@/components/common/Seo";
 import { CreditsView, type CreditsTab } from "@/components/credits/CreditsView";
 import changelogData from "@/data/changelog.json";

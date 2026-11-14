@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useActiveTabIntoView, useScrollFade } from "@/hooks/UseScrollFade";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { ArrowLeft, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";

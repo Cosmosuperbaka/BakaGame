@@ -191,7 +191,7 @@ export const CREDITS_FIXTURE_DEPENDENCIES: readonly CreditDependency[] = [
     dependencies: ["react", "scheduler"],
   }),
   dependency({
-    name: "react-router-dom",
+    name: "react-router",
     version: "7.18.4",
     description: "页面路由与导航。",
     url: "https://reactrouter.com",

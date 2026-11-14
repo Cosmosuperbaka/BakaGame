@@ -1,5 +1,5 @@
 import { useLayoutEffect, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 
 /** 故事内点击导航后落到的占位，只在开发工具里出现。 */
 export function NavigatedAway() {

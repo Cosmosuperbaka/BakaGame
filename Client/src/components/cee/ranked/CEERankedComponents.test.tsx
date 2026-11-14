@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import type { CEERankedGameSummary } from "@bakagame/shared";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";

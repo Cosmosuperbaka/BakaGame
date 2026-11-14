@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { startCloudSync, useCloudSyncEnabled } from "@/lib/CloudSync";
 import { reportVisit, visitSection } from "@/lib/VisitReport";
 import { useAccountStore } from "@/stores/UseAccountStore";

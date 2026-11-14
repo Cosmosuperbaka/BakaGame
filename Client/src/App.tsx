@@ -1,4 +1,4 @@
-import { RouterProvider } from "react-router-dom";
+import { RouterProvider } from "react-router/dom";
 import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { VersionUpdateNotice } from "@/components/VersionUpdateNotice";

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { SonGuessrProvider } from "@/contexts/SonGuessrContext";
 import { ToastViewport } from "@/components/Toast";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";

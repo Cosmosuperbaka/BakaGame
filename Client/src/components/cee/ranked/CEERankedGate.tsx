@@ -1,5 +1,5 @@
 import { Download, LogIn, MonitorSmartphone } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/Button";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 

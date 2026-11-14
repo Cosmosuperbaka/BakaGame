@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { TEST_ROOM_ID } from "@/config/Constants";
 import { getSavedUsername, guestName, saveUsername } from "@/lib/Storage";

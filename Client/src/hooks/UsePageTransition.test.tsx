@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router-dom";
+import { MemoryRouter, createMemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   usePageLinkClick,

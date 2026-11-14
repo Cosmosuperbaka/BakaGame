@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { History, Menu, MessageSquare } from "lucide-react";
 import { normalizeRoomId } from "@/lib/Storage";
 import { useMinWidth } from "@/hooks/UseMinWidth";

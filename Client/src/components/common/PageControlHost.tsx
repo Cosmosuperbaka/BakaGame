@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { onPageCommand, reportPageResult } from "@/lib/SiteWs";
 import { clearAgentFocus, markAgentIdle, usePageControl } from "@/stores/UsePageControl";
 import { AgentTakeoverLayer } from "@/components/common/AgentTakeoverLayer";

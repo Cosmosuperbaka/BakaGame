@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useRouteError } from "react-router-dom";
+import { useRouteError } from "react-router";
 import { recoverFromDomInvariant } from "@/lib/DomRecovery";
 import { captureClientException } from "@/lib/Sentry";
 

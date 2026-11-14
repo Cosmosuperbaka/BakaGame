@@ -1,7 +1,7 @@
 import type { Decorator, Preview } from "@storybook/react-vite";
 import { MotionConfig, MotionGlobalConfig } from "framer-motion";
 import { HelmetProvider } from "react-helmet-async";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { resetAllStores } from "@/stories/StorePresets";
 import { NavigatedAway, ThemeScope } from "./StoryShell";

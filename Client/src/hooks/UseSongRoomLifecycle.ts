@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { waitForConnection } from "@/lib/SonGuessrWs";

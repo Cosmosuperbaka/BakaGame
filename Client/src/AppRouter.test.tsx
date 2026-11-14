@@ -25,12 +25,12 @@ vi.mock("@/components/ui/Tooltip", () => ({
 }));
 vi.mock("@/components/VersionUpdateNotice", () => ({ VersionUpdateNotice: () => null }));
 vi.mock("@/layouts/RootLayout", async () => ({
-  RootLayout: (await import("react-router-dom")).Outlet,
+  RootLayout: (await import("react-router")).Outlet,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
 vi.mock("@/pages/NotFoundPage", () => ({ default: () => <h1>not-found-page</h1> }));
 vi.mock("@/layouts/SonGuessrLayout", async () => ({
-  default: (await import("react-router-dom")).Outlet,
+  default: (await import("react-router")).Outlet,
 }));
 vi.mock("@/pages/SonGuessrRoomPage", () => ({
   default: ({ solo }: { solo?: boolean }) => <h1>{solo ? "song-solo-room" : "song-room"}</h1>,

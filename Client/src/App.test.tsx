@@ -35,10 +35,10 @@ vi.mock("@/components/VersionUpdateNotice", () => ({
 // 路由回归隔离页面与游戏布局；否则首次懒加载布局会额外冷转换 Store/WS 依赖图，
 // 全套并行时可能仍在初始化，路由断言就已耗尽等待窗口。布局内的业务由专项测试覆盖。
 vi.mock("@/layouts/WhoIsFakerLayout", async () => ({
-  default: (await import("react-router-dom")).Outlet,
+  default: (await import("react-router")).Outlet,
 }));
 vi.mock("@/layouts/SonGuessrLayout", async () => ({
-  default: (await import("react-router-dom")).Outlet,
+  default: (await import("react-router")).Outlet,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
 vi.mock("@/pages/WhoIsFakerPage", () => ({ default: () => <h1>faker-lobby</h1> }));

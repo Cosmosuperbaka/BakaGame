@@ -109,7 +109,7 @@ const config: StorybookConfig = {
           "@icons-pack/react-simple-icons/icons/SiVitest",
           "@icons-pack/react-simple-icons/icons/SiZod",
           "framer-motion",
-          "react-router-dom",
+          "react-router",
           "zustand",
         ],
       },

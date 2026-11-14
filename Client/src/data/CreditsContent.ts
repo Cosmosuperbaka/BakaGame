@@ -375,7 +375,7 @@ export const CORE_TECH_STACK: readonly CoreTechEntry[] = [
     icon: "reactrouter",
     category: "frontend",
     url: "https://reactrouter.com",
-    packageName: "react-router-dom",
+    packageName: "react-router",
   },
   // 后端
   {

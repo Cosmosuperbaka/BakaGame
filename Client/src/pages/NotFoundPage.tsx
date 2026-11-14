@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { Button } from "@/components/ui/Button";
 import { Seo } from "@/components/common/Seo";
 import { usePageLinkClick, usePageTransitionEnds } from "@/hooks/UsePageTransition";

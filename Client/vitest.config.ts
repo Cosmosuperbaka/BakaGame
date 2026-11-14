@@ -48,6 +48,8 @@ export default defineConfig({
   resolve: {
     // 共享源码的运行依赖按客户端安装边界解析。
     dedupe: ["@sinclair/typebox"],
+    // 缺 module 条件时根入口取 CJS，其 dom-export 原生 require 又解析回 ESM，路由上下文会分成两份。
+    conditions: ["module"],
     alias: [
       // 更具体的前缀必须排在前面：运行时值走 Values.ts，类型仍从 Index.ts 取。
       {

@@ -336,7 +336,7 @@ describe("DependencyGlyph", () => {
       "@tailwindcss/vite",
       "framer-motion",
       "lucide-react",
-      "react-router-dom",
+      "react-router",
       "better-auth",
       "zod",
       "vite",
