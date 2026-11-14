@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCEESettings } from "@bakagame/shared/values";
 import type { CEERoomSnapshot } from "@bakagame/shared";
 import { ceeWsClient } from "@/lib/CEEWs";
@@ -12,6 +12,7 @@ import {
   useCEEStore,
 } from "./UseCEEStore";
 import { readCEESession, writeCEESession } from "@/lib/CEESession";
+import { toToastItems } from "@/layouts/ToastItems";
 
 const snapshot: CEERoomSnapshot = {
   roomId: "1234",
@@ -604,5 +605,63 @@ describe("CEE 反作弊文案与旁观审批", () => {
       text: "房主未同意旁观",
       type: "error",
     });
+  });
+});
+
+describe("CEE 提示行为", () => {
+  // 断言布局实际渲染的那份列表：同一句话连发是否重播入场，取决于其中的编号。
+  const shownToasts = () => toToastItems(useCEEStore.getState().toast);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useCEEStore.setState({ toast: null });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("连续两条不同提示只留最后一条", () => {
+    const { showToast } = useCEEStore.getState();
+    showToast("第一条");
+    showToast("第二条", "success");
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([["第二条", "success"]]);
+  });
+
+  it("连续两条相同提示仍是一条，编号不变", () => {
+    const { showToast } = useCEEStore.getState();
+    showToast("同一句");
+    const first = shownToasts()[0];
+    showToast("同一句");
+    expect(shownToasts().map((t) => t.text)).toEqual(["同一句"]);
+    expect(shownToasts()[0].id).toBe(first.id);
+    expect(first.id).toBe("error:同一句");
+  });
+
+  it("默认时长到点消失", () => {
+    useCEEStore.getState().showToast("到点消失");
+    vi.advanceTimersByTime(4999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["到点消失"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("每条提示各自按固定时长重新计时", () => {
+    const { showToast } = useCEEStore.getState();
+    showToast("先发的");
+    vi.advanceTimersByTime(3000);
+    showToast("后发的");
+    vi.advanceTimersByTime(2000);
+    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
+    vi.advanceTimersByTime(2999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("默认类型是 error", () => {
+    useCEEStore.getState().showToast("默认类型");
+    expect(shownToasts().map((t) => t.type)).toEqual(["error"]);
   });
 });

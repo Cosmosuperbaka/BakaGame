@@ -37,6 +37,7 @@ import {
 } from "@/lib/Storage";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { clearSonGuessrQueryCache, initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
+import { toToastItems } from "@/layouts/ToastItems";
 
 const initialState = useSonGuessrStore.getState();
 
@@ -727,4 +728,57 @@ it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初�
   const next = initSonGuessrWs();
   expect(wsMock.messageHandlers).toHaveLength(1);
   next();
+});
+
+describe("猜歌提示行为", () => {
+  // 断言布局实际渲染的那份列表：同一句话连发是否重播入场，取决于其中的编号。
+  const shownToasts = () => toToastItems(useSonGuessrStore.getState().toast);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useSonGuessrStore.setState({ toast: null });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("连续两条不同提示只留最后一条", () => {
+    const { showToast } = useSonGuessrStore.getState();
+    showToast("第一条");
+    showToast("第二条", "error");
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([["第二条", "error"]]);
+  });
+
+  it("连续两条相同提示仍是一条，编号不变", () => {
+    const { showToast } = useSonGuessrStore.getState();
+    showToast("同一句");
+    const first = shownToasts()[0];
+    showToast("同一句");
+    expect(shownToasts().map((t) => t.text)).toEqual(["同一句"]);
+    expect(shownToasts()[0].id).toBe(first.id);
+    expect(first.id).toBe("info:同一句");
+  });
+
+  it("默认时长到点消失", () => {
+    useSonGuessrStore.getState().showToast("到点消失");
+    vi.advanceTimersByTime(2999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["到点消失"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("手动传时长按传入值到点消失", () => {
+    useSonGuessrStore.getState().showToast("短提示", "error", 1000);
+    vi.advanceTimersByTime(999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["短提示"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("默认类型是 info", () => {
+    useSonGuessrStore.getState().showToast("默认类型");
+    expect(shownToasts().map((t) => t.type)).toEqual(["info"]);
+  });
 });

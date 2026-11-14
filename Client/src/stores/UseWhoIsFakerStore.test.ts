@@ -676,3 +676,61 @@ it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初�
   expect(wsMock.getMessageHandlers()).toHaveLength(1);
   next();
 });
+
+describe("卧底提示行为", () => {
+  const shownToasts = () => useWhoIsFakerStore.getState().toasts;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useWhoIsFakerStore.setState({ toasts: [] });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("连续两条不同提示并存，按发出先后排列", () => {
+    const { addToast } = useWhoIsFakerStore.getState();
+    addToast("第一条");
+    addToast("第二条", "error");
+    expect(shownToasts().map((t) => [t.text, t.type])).toEqual([
+      ["第一条", "info"],
+      ["第二条", "error"],
+    ]);
+  });
+
+  it("连续两条相同提示各自成条，编号互不相同", () => {
+    const { addToast } = useWhoIsFakerStore.getState();
+    addToast("同一句");
+    addToast("同一句");
+    expect(shownToasts().map((t) => t.text)).toEqual(["同一句", "同一句"]);
+    expect(new Set(shownToasts().map((t) => t.id)).size).toBe(2);
+  });
+
+  it("默认时长到点消失，多条各自计时", () => {
+    const { addToast } = useWhoIsFakerStore.getState();
+    addToast("先发的");
+    vi.advanceTimersByTime(1000);
+    addToast("后发的");
+    vi.advanceTimersByTime(1999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["先发的", "后发的"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts().map((t) => t.text)).toEqual(["后发的"]);
+    vi.advanceTimersByTime(1000);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("手动传时长按传入值到点消失", () => {
+    useWhoIsFakerStore.getState().addToast("短提示", "error", 1000);
+    vi.advanceTimersByTime(999);
+    expect(shownToasts().map((t) => t.text)).toEqual(["短提示"]);
+    vi.advanceTimersByTime(1);
+    expect(shownToasts()).toEqual([]);
+  });
+
+  it("默认类型是 info", () => {
+    useWhoIsFakerStore.getState().addToast("默认类型");
+    expect(shownToasts().map((t) => t.type)).toEqual(["info"]);
+  });
+});
