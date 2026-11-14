@@ -387,6 +387,8 @@ jobs:
             done
 
             say "拉取远端代码"
+            # 本轮修订起不来或不满足重启条件时要放回去的修订；仓库还没有提交时为空。
+            PREV_REV=$(git rev-parse HEAD 2>/dev/null || true)
             git fetch --no-tags origin "$REF"
             git reset --hard "$DEPLOY_REV" >/dev/null
             COMMIT=$(git rev-parse HEAD)
@@ -585,6 +587,22 @@ jobs:
               fi
             done
 
+            # ---------- 放回上一修订 ----------
+            # 本轮修订不满足重启条件、或重启后起不来时，把挂载树与 release 元数据放回上一修订：
+            # 进程（或下一次拉起）跑的代码与磁盘上的一致，之后的发布与回退都从干净状态出发。
+            # 没有可回的修订（首次部署，或本轮与上一轮是同一修订）时返回非 0，由调用方说明。
+            restore_previous_revision() {
+              if [ -z "${PREV_REV:-}" ] || [ "$PREV_REV" = "$COMMIT" ]; then return 1; fi
+              git reset --hard "$PREV_REV" >/dev/null
+              if [ -n "${PREV_RELEASE_JSON:-}" ]; then
+                PREV_RELEASE_TMP=$(mktemp Server/build/.release.XXXXXX)
+                printf '%s\n' "$PREV_RELEASE_JSON" > "$PREV_RELEASE_TMP"
+                chmod 644 "$PREV_RELEASE_TMP"
+                mv -f "$PREV_RELEASE_TMP" Server/build/release.json
+              fi
+              return 0
+            }
+
             # ---------- 停机容器恢复 ----------
             # 上一次发布若在重启后验收失败，容器会停在已退出状态；而 release 元数据、停机预告与探针
             # 都要在容器里执行。不先拉起来，之后的每一次发布（含回到旧修订）都会卡在下一步，只能人工上机。
@@ -619,6 +637,9 @@ jobs:
               exit 1
             fi
             chmod 644 "$RELEASE_TMP"
+            # 记下上一轮的元数据：本轮修订要放回去时一并放回，免得进程读到对不上修订的发布标记。
+            # 记在变量里而不是另存文件：构建目录里只应有当前这一份。
+            PREV_RELEASE_JSON=$(cat Server/build/release.json 2>/dev/null || true)
             mv -f "$RELEASE_TMP" Server/build/release.json
             RELEASE_TMP=""
             say "Release 元数据已原子写入"
@@ -658,6 +679,18 @@ jobs:
               if [ "$SHARD_REVIVED" = true ]; then
                 say "[$SHARD] 本轮已从停机状态拉起，跳过停机预告、排空与重启"
               else
+                # 先核对、后重启：容器内装的依赖与获验锁不一致时，新代码按这套依赖可能起不来。
+                # 在这里中止，线上进程原样继续跑；重启之后才发现，就只剩停机一条路。
+                if [ -n "${NPM_PINS:-}" ]; then
+                  say "[$SHARD] 重启之前核对容器内运行时依赖版本与 CI 获验锁一致"
+                  if ! sudo docker exec -i -e "NPM_PINS=$NPM_PINS" "$SHARD" \
+                    /app/node_modules/.bin/bun --no-env-file - < Server/scripts/NpmPinVerify.ts; then
+                    echo "❌ $SHARD 容器内实装的运行时依赖与本轮获验的 npm 锁不一致，本次发布中止，线上进程未重启"
+                    echo "   先在容器里装齐上面列出的版本，再重跑本次部署"
+                    if restore_previous_revision; then say "挂载树已放回上一修订 $PREV_REV"; fi
+                    exit 1
+                  fi
+                fi
                 say "[$SHARD] 向在线玩家广播停机维护通知并摘除就绪流量"
                 # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
                 # 脚本默认打本机回环上的后端端口，而 docker exec 打的是该容器自己命名空间的
@@ -684,8 +717,27 @@ jobs:
               # 分流只能靠真实链路验证。
               if ! sudo docker exec -i -e "DEPLOY_PROBE_BUDGET_MS=$PROBE_MS" "$SHARD" \
                 /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
-                echo "❌ $SHARD 重启后业务就绪失败；不自动二次重启或回滚，请运维处理"
+                echo "❌ $SHARD 重启后业务就绪失败"
                 sudo docker logs --tail 50 "$SHARD" || true
+                # 本轮修订起不来：放回上一修订再拉起一次，把停机压到一次重启的时长。
+                # 只回这一次；回去之后仍不就绪就停手交运维，不做第二轮自动动作。
+                if restore_previous_revision; then
+                  say "[$SHARD] 自动回到上一修订 $PREV_REV 并重新拉起"
+                  sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
+                  ROLLBACK_MS=$(( (BUDGET_JOB_S - BUDGET_RESERVE_S - $(elapsed)) * 1000 ))
+                  if [ "$ROLLBACK_MS" -gt "$BUDGET_PROBE_MAX_MS" ]; then ROLLBACK_MS=$BUDGET_PROBE_MAX_MS; fi
+                  if [ "$ROLLBACK_MS" -lt "$BUDGET_PROBE_MIN_MS" ]; then
+                    echo "⚠️ $SHARD 已按上一修订重新拉起，剩余预算不够验收，请人工确认业务就绪"
+                  elif sudo docker exec -i -e "DEPLOY_PROBE_BUDGET_MS=$ROLLBACK_MS" "$SHARD" \
+                    /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
+                    echo "⚠️ $SHARD 已自动回到上一修订并恢复服务；本轮修订 $COMMIT 没有上线"
+                  else
+                    echo "❌ $SHARD 回到上一修订后仍未就绪，需运维处理"
+                    sudo docker logs --tail 50 "$SHARD" || true
+                  fi
+                else
+                  echo "   没有可回的上一修订（首次部署，或上一轮停在同一修订），需运维处理"
+                fi
                 exit 1
               fi
               say "[$SHARD] 业务就绪检查通过"
