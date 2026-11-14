@@ -76,7 +76,7 @@ jobs:
             # 这个过滤集合必须覆盖 server 作业里所有测试**读到的仓库文件**，否则出现
             # 「测试在跑、但它守护的文件没被改到过滤里」的静默失效：
             # - ClientVersionConsistency.test.ts 读 Desktop/src-tauri/{tauri.conf.json,Cargo.toml,Cargo.lock}
-            #   与 Mobile/{package.json,android/app/build.gradle}（三端版本抬升时五处声明）；
+            #   与 Mobile/{package.json,android/app/build.gradle}（版本各只写一处，别处派生或对账）；
             # - Release 元数据（部署时由 deploy.yml 把 Client/src/data/changelog.json
             #   喂给 buildServerReleaseMetadata）没有稳定 semver 就中止发布，改日志要能在这里报错。
             # 依赖清单（pnpm-lock.yaml / pnpm-workspace.yaml / 根 package.json）会换掉
@@ -488,7 +488,8 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;36.0.0" "platform-tools"
 
-      # Mobile 不是 workspace 成员：依赖独立安装，产物注入 dist-web 并同步 versionName。
+      # Mobile 不是 workspace 成员：依赖独立安装，产物注入 dist-web（versionName 与 versionCode
+      # 由 Gradle 构建时直接读 Mobile/package.json 推导，不再有写回源码的步骤）。
       # 用 npm ci 而不是 npm install —— 签名产物必须是 Mobile/package-lock.json 冻结的那一棵树：
       # install 会按 ^7.4.0 浮动解析，上游一发新版，玩家拿到的 APK 内容与获验集合就不是同一份，
       # 还白送一次安装期脚本执行面。锁与 package.json 不同步时 npm ci 直接失败，这正是要的信号。
@@ -655,7 +656,8 @@ jobs:
           name: desktop-windows-installer
           path: inbound/desktop
 
-      # 版本号取安装包文件名里那一段（它来自 Desktop/src-tauri/tauri.conf.json 的 version）。
+      # 版本号取安装包文件名里那一段（tauri.conf.json 不声明 version，Tauri 回落到
+      # Desktop/src-tauri/Cargo.toml 的 version）。
       - name: Locate the installer
         id: win
         if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'

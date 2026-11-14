@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 // 应用模块：Capacitor 壳 + BakaChannel 原生插件（插件源码直接放 app 内，
 // 经 MainActivity 的 bridge.registerPlugin 注册，不做独立 npm 插件包）。
 apply plugin: 'com.android.application'
@@ -17,6 +19,20 @@ if (!bakaHttpDnsDomain && System.getenv("VITE_SERVER_URL")) {
         bakaHttpDnsDomain = ""
     }
 }
+// 版本只在 Mobile/package.json 写一处：versionName 直接取它，versionCode 由它推导为
+// major * 10000 + minor * 100 + patch（随版本单调上升，不用手抬）。minor 与 patch 各限 0-99，
+// 越界会让不同版本撞同一个 versionCode、升级包装不上，所以宁可让构建失败。
+def bakaVersionName = new JsonSlurper().parse(file('../../package.json')).version
+def bakaVersionParts = String.valueOf(bakaVersionName).tokenize('.')
+if (bakaVersionParts.size() != 3 || !bakaVersionParts.every { it ==~ /[0-9]{1,4}/ }) {
+    throw new GradleException("Mobile/package.json 的 version 必须是 major.minor.patch 三段数字：${bakaVersionName}")
+}
+def bakaVersionNumbers = bakaVersionParts.collect { it.toInteger() }
+if (bakaVersionNumbers[1] > 99 || bakaVersionNumbers[2] > 99) {
+    throw new GradleException("minor 与 patch 超过 99，versionCode 推导会撞码：${bakaVersionName}")
+}
+def bakaVersionCode =
+    bakaVersionNumbers[0] * 10000 + bakaVersionNumbers[1] * 100 + bakaVersionNumbers[2]
 // Java 字符串字面量转义：BuildConfig 是生成的 Java 源文件。
 def bakaJavaString = { String value ->
     '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
@@ -38,9 +54,9 @@ android {
         // Key Attestation 自 API 24 起可用，minSdk 与计划 P3.2 口径一致
         minSdk 24
         targetSdk 35
-        versionCode 3
-        // versionName 由 scripts/prepare-web.mjs 从 Mobile/package.json 同步，勿手改
-        versionName '0.1.2'
+        // 两项都由上面从 Mobile/package.json 推导，不在这里手写
+        versionCode bakaVersionCode
+        versionName bakaVersionName
 
         // 密钥进 DEX 的 BuildConfig，不进 Web 产物；空值表示本次构建未启用 HTTPDNS。
         buildConfigField "String", "HTTPDNS_APP_ID", bakaJavaString(bakaHttpDnsAppId)

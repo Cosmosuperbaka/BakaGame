@@ -26,7 +26,10 @@ type SelfCheckReport = {
 ```
 
 `clientVersion` 单一版本源是 `Mobile/package.json` 的 `version`：`scripts/prepare-web.mjs`
-同时替换桥接占位符与 `android/app/build.gradle` 的 `versionName`。发版只改这一处。
+替换桥接占位符，`android/app/build.gradle` 构建时直接读它——`versionName` 原样取用，`versionCode`
+按 `major*10000 + minor*100 + patch` 推导（minor、patch 各限 0-99，越界构建失败，免得不同版本撞码）。
+发版只改这一处，构建不再改写任何被追踪的源码；该推导值不得低于已发出去的 `versionCode`，
+规则的守卫在 `Server/test/ClientVersionConsistency.test.ts`。
 `selfCheck()` 的 `attestationLevel` 取自原生 `SelfCheck.check()`，只是壳内展示用的档位，准入判定在服务端。
 
 `channelTicket` 与桌面壳同构：它是**只读访问器属性**（`Object.defineProperty` 的 getter），

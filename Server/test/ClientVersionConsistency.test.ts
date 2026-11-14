@@ -4,17 +4,17 @@ import { resolve } from "node:path";
 import { CLIENT_VERSION_PATTERN } from "../src/transport/routes/ClientChannelRoutes";
 
 /**
- * 发布版本号的单一事实来源在两个壳各自的项目文件里，但每个壳都有**两个**消费方：
+ * 每个壳的版本值只在一处写，别处派生；这里守的是「派生关系没被改回手抄」，而不是三处相等：
  *
- * - 桌面：`tauri.conf.json` 的 version 决定 bundle 文件名（`BakaGame_<ver>_x64-setup.exe`），
- *   `ci.yml` 的发布作业正是从文件名里 `sed` 出这一版号推 R2；而壳层经
- *   `env!("CARGO_PKG_VERSION")` 把 `Cargo.toml` 的 version 作为 `clientVersion` 上报给服务端。
- * - 安卓：`Mobile/package.json` 的 version 被 `scripts/prepare-web.mjs` 写进桥接脚本，
- *   同时又（本应）同步到 `app/build.gradle` 的 versionName，后者决定 APK 文件名。
+ * - 桌面：版本只写在 `Cargo.toml`。`tauri.conf.json` 不声明 version，Tauri 回落到 Cargo 清单：
+ *   bundle 文件名（`BakaGame_<ver>_x64-setup.exe`，`ci.yml` 的发布作业正是从文件名里 `sed`
+ *   出这一版号推 R2）与壳层经 `env!("CARGO_PKG_VERSION")` 上报给服务端的 `clientVersion`
+ *   因此是同一个值。
+ * - 安卓：版本只写在 `Mobile/package.json`。桥接脚本由 `scripts/prepare-web.mjs` 取它，
+ *   `app/build.gradle` 构建时直接读它：versionName 原样取用，versionCode 由它推导。
  *
- * 两处只要有一处漏改，症状都很隐蔽：文件名是新的、上报的是旧的，于是服务端一直判定
- * "有新版本"，用户在最新包上反复收到更新提示。0.1.0 时两边恰好相等，掩盖了这个结构问题；
- * 这道测试就是为了让漏改在 CI 上直接红，而不是等上线后靠用户反馈发现。
+ * 漏改的症状都很隐蔽：文件名是新的、上报的是旧的，服务端一直判定"有新版本"，用户在最新包上
+ * 反复收到更新提示；versionCode 漏抬则升级包装不上。0.1.0 时各处恰好相等，掩盖了这个结构问题。
  */
 
 const repoRoot = resolve(import.meta.dir, "../..");
@@ -36,9 +36,6 @@ const cargoPackageVersion = (toml: string): string => {
   return matched?.[1] ?? "";
 };
 
-const gradleVersionName = (gradle: string): string =>
-  gradle.match(/^\s*versionName\s+['"]([^'"]+)['"]/m)?.[1] ?? "";
-
 /** 闸门取接口那一份：测试自己写一份，放宽会让预发布版本整个壳换不到票，收紧则误报漏改。 */
 const CLIENT_VERSION = new RegExp(CLIENT_VERSION_PATTERN);
 
@@ -51,12 +48,11 @@ test("版本号闸门与服务端接口同一口径：预发布与构建后缀�
   }
 });
 
-test("桌面壳：bundle 版本与上报版本一致", () => {
-  const bundleVersion = jsonVersion("Desktop/src-tauri/tauri.conf.json");
-  const reportedVersion = cargoPackageVersion(read("Desktop/src-tauri/Cargo.toml"));
-
-  expect(bundleVersion).toMatch(CLIENT_VERSION);
-  expect(reportedVersion).toBe(bundleVersion);
+test("桌面壳：版本只写在 Cargo.toml，tauri.conf.json 不再声明", () => {
+  // 声明了就多出第二个来源：bundle 文件名取它、上报取 Cargo.toml，漏改一处两者就分叉
+  expect(jsonVersion("Desktop/src-tauri/tauri.conf.json")).toBe("");
+  expect(read("Desktop/src-tauri/tauri.conf.json")).not.toMatch(/"version"\s*:/);
+  expect(cargoPackageVersion(read("Desktop/src-tauri/Cargo.toml"))).toMatch(CLIENT_VERSION);
 });
 
 test("桌面壳：Cargo.lock 记录的版本跟上了 Cargo.toml", () => {
@@ -66,21 +62,30 @@ test("桌面壳：Cargo.lock 记录的版本跟上了 Cargo.toml", () => {
   expect(entry?.[1]).toBe(cargoPackageVersion(read("Desktop/src-tauri/Cargo.toml")));
 });
 
-test("安卓壳：versionName 与 Mobile/package.json 一致", () => {
-  const packageVersion = jsonVersion("Mobile/package.json");
+/** 已发出去的最高 versionCode：推导值低于它，系统与应用商店会拒绝升级安装。发了新包就把它抬上来。 */
+const SHIPPED_VERSION_CODE_FLOOR = 3;
+
+test("安卓壳：versionName 与 versionCode 不手写，都由 Mobile/package.json 派生", () => {
   const gradle = read("Mobile/android/app/build.gradle");
 
-  expect(packageVersion).toMatch(CLIENT_VERSION);
-  expect(gradleVersionName(gradle)).toBe(packageVersion);
+  expect(gradle).toMatch(/JsonSlurper\(\)\.parse\(file\('\.\.\/\.\.\/package\.json'\)\)\.version/);
+  expect(gradle).toMatch(/^\s*versionName\s+bakaVersionName\s*$/m);
+  expect(gradle).toMatch(/^\s*versionCode\s+bakaVersionCode\s*$/m);
+  // 公式本身就是规则：改它等于改版本号语义，必须连同本测试一起改
+  expect(gradle).toContain(
+    "bakaVersionNumbers[0] * 10000 + bakaVersionNumbers[1] * 100 + bakaVersionNumbers[2]"
+  );
 });
 
-test("安卓壳：versionCode 是正整数（升级安装的前提）", () => {
-  // 不拿 Mobile/package-lock.json 比对：它由 npm 在壳目录里自行生成，
-  // 版本号以 package.json 为准，versionCode 本就与它无关。
-  const versionCode = read("Mobile/android/app/build.gradle").match(
-    /^\s*versionCode\s+(\d+)\s*$/m
-  )?.[1];
+test("安卓壳：package.json 版本能推导出不低于已发布值的 versionCode", () => {
+  const version = jsonVersion("Mobile/package.json");
+  expect(version).toMatch(CLIENT_VERSION);
 
-  expect(versionCode).toBeDefined();
-  expect(Number(versionCode)).toBeGreaterThanOrEqual(1);
+  const parts = version.split(".").map(Number);
+  // 推导只认三段，且 minor、patch 不超过 99，否则不同版本会撞同一个 versionCode
+  expect(parts).toHaveLength(3);
+  const [major = 0, minor = 0, patch = 0] = parts;
+  expect(minor).toBeLessThanOrEqual(99);
+  expect(patch).toBeLessThanOrEqual(99);
+  expect(major * 10000 + minor * 100 + patch).toBeGreaterThanOrEqual(SHIPPED_VERSION_CODE_FLOOR);
 });

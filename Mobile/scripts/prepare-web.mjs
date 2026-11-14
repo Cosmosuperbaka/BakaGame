@@ -2,7 +2,8 @@
 // 打包前处理（Mobile → Client 单向只读，绝不写 Client/**）：
 // 1. 把 Client 构建产物复制到 Mobile/dist-web；
 // 2. 注入 baka-bridge.js（classic、置于所有 module 脚本之前，保证 window.__BAKA_CHANNEL__ 先于应用代码就绪）；
-// 3. 把 Mobile/package.json 的 version 写入桥接层，并同步到 android 工程的 versionName（单一版本源）。
+// 3. 把 Mobile/package.json 的 version 写入桥接层（单一版本源；android 工程的 versionName 与 versionCode
+//    由 app/build.gradle 构建时直接读它推导，本脚本不再改写任何被追踪的源码）。
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -41,18 +42,5 @@ if (!html.includes(tag)) {
   html = html.replace(/<head[^>]*>/i, (m) => `${m}\n${tag}`);
   fs.writeFileSync(indexPath, html);
 }
-
-// 同步 versionName 到 app/build.gradle（android 的 build.gradle 是 Mobile 自己的文件，允许写）
-// 注意：Gradle 里单引号与双引号都合法，仓库里统一用单引号。只匹配一种引号会让替换静默失效，
-// 于是 build.gradle 的 versionName 变成"看起来会自动同步、实际是手抄的第二版本源"。
-// 写回也用单引号：否则每次本地跑一遍这个脚本都会在 git 里留下一处纯风格的脏改动。
-const buildGradle = path.resolve(mobile, "android/app/build.gradle");
-let gradle = fs.readFileSync(buildGradle, "utf8");
-gradle = gradle.replace(/versionName\s+['"][^'"]*['"]/, `versionName '${pkg.version}'`);
-if (!gradle.includes(`versionName '${pkg.version}'`)) {
-  console.error("[prepare-web] 未能写入 versionName，请检查 android/app/build.gradle");
-  process.exit(1);
-}
-fs.writeFileSync(buildGradle, gradle);
 
 console.log(`[prepare-web] dist-web 就绪（版本 ${pkg.version}）。接下来执行 pnpm run sync。`);

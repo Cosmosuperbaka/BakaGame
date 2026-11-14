@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "BakaGame",
-  "version": "0.1.2",
   "identifier": "website.baka.game.desktop",
   "build": {
     "frontendDist": "https://game.baka.website"

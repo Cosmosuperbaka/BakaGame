@@ -32,6 +32,9 @@ pnpm dlx @tauri-apps/cli dev             # 开发运行
 pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 ```
 
+版本只写在 `src-tauri/Cargo.toml`：`tauri.conf.json` 不声明 `version`，Tauri 回落到 Cargo 清单，
+安装包文件名、壳上报的 `clientVersion` 因此同源；发版改 `Cargo.toml` 后要把 `Cargo.lock` 里自身那一项带上。
+
 `Cargo.lock` 与源码一起进 Git：壳是要发布出去的二进制，锁住整套依赖版本才能让每次构建复现同一份代码。
 改完 `Cargo.toml` 要重跑一次 `cargo check` 把 lock 一起更新再提交，否则带 `--locked` 的构建会直接失败。
 
