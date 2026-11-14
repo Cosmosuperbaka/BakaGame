@@ -72,6 +72,20 @@ describe("掉线与恢复", () => {
     expect(
       snapshot?.players.find((player) => player.id === joined[0].joinResult.playerId)?.membership
     ).toBe("kicked");
+
+    // 掉线淘汰与房主踢人在快照上同样是 kicked，只有出局原因与历史记录能区分两者。
+    const round = service.rooms.get("5555")!.round!;
+    const removedId = joined[0].joinResult.playerId;
+    expect(round.assignments[removedId]?.eliminatedReason).toBe("掉线后被出题人移出");
+    expect(round.history.filter((entry) => entry.kind === "removal")).toEqual([
+      {
+        kind: "removal",
+        day: round.day,
+        createdAt: expect.any(Number),
+        playerId: removedId,
+        reason: "disconnected",
+      },
+    ]);
   });
 
   test("已提交描述的玩家掉线不暂停游戏，进入投票后才要求抉择", async () => {

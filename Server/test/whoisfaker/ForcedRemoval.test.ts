@@ -857,7 +857,7 @@ const runScenario = async (scenario: Scenario) => {
     房主: h.host.sent.length,
     路人1: h.human.connection.sent.length,
   };
-  await forceRemovePlayer(h.service.ctx, h.room, h.idOf(scenario.target), "kicked");
+  await forceRemovePlayer(h.service.ctx, h.room, h.idOf(scenario.target), "kick");
   // 强制移除函数自己发出的帧（调用方随后补发的发布不在内）：顺序与内容都是行为的一部分。
   const frames = {
     房主: summarizeFrames(h.host.sent.slice(before.房主)),

@@ -18,7 +18,7 @@ import { tabSeatId } from "../TabSeat";
 import { transferHost } from "../room/HostPolicy";
 import { assertAgentAdmission, assertSeatResumable, findSeat } from "../room/SeatBinding";
 import type { WhoIsFakerContext } from "./Context";
-import { forceRemovePlayer } from "./ForcedRemoval";
+import { KICK_ACTORS, type KickCause, forceRemovePlayer } from "./ForcedRemoval";
 import { handlePlayerOffline } from "./OfflineSettlement";
 import { clearPendingDisconnect } from "./PendingDisconnects";
 import { attachConnection } from "./RoomAttach";
@@ -436,7 +436,7 @@ export const kick = async (
 
   // 已被踢的记录只是等待清理的占位，重复踢不再重走一遍移除与日志。
   if (target.membership !== "kicked") {
-    await kickPlayer(ctx, room, target, "房主");
+    await kickPlayer(ctx, room, target, "hostKick");
   }
   return { playerId: target.id };
 };
@@ -446,13 +446,13 @@ export const kickPlayer = async (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   target: WhoIsFakerPlayerRecord,
-  by: "房主" | "管理员"
+  cause: KickCause
 ) => {
   if (isRoundActive(room) && room.round?.questionerPlayerId === target.id) {
-    await finishRound(ctx, room, "aborted", `出题人被${by}移出，本局中止`);
+    await finishRound(ctx, room, "aborted", `出题人被${KICK_ACTORS[cause]}移出，本局中止`);
   }
 
-  await forceRemovePlayer(ctx, room, target.id, `${by}已将其移出房间`);
+  await forceRemovePlayer(ctx, room, target.id, cause);
 
   publishRoom(ctx, room);
   publishLobby(ctx);

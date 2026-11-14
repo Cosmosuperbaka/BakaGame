@@ -372,7 +372,7 @@ export const testRemoveBot = async (
   // 走与房主踢人完全相同的路径：局内淘汰、房主改选、阵营夹取、人数不足中止
   // 全都由 forceRemovePlayer 负责，机器人不再有独立的移除逻辑。
   for (const bot of targets) {
-    await forceRemovePlayer(ctx, room, bot.id, "kicked");
+    await forceRemovePlayer(ctx, room, bot.id, "kick");
   }
 
   // 机器人被踢后只是标记为 kicked，测试房间要真正腾出名额，因此彻底删除记录。

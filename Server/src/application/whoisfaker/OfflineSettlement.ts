@@ -52,7 +52,7 @@ export const resolveDisconnect = async (
   clearPendingDisconnect(round, targetPlayerId);
 
   if (resolution === "eliminate") {
-    await forceRemovePlayer(ctx, room, targetPlayerId, "掉线后被出题人移出");
+    await forceRemovePlayer(ctx, room, targetPlayerId, "disconnect");
   } else {
     ctx.appendSystemMessage(
       room,

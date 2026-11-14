@@ -43,5 +43,5 @@ export const adminKickPlayer = async (
   const target = room.players[playerId];
   if (!target || target.membership === "kicked")
     throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
-  await kickPlayer(ctx, room, target, "管理员");
+  await kickPlayer(ctx, room, target, "adminKick");
 };

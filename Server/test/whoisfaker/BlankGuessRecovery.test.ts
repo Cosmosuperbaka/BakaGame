@@ -42,7 +42,7 @@ const removeThenFailGuess = async (scenario: Interrupted) => {
     draft: ["橙子", "梨"],
   };
 
-  await forceRemovePlayer(h.service.ctx, h.room, h.idOf(scenario.target), "kicked");
+  await forceRemovePlayer(h.service.ctx, h.room, h.idOf(scenario.target), "kick");
   publishRoom(h.service.ctx, h.room);
   const phaseOf = () => round.phase as GameRound["phase"];
   const phaseAfterRemoval = phaseOf();
@@ -152,7 +152,7 @@ const setupEndgameDuringGuess = async (kind: "pending" | "draft") => {
       },
     ];
   }
-  await forceRemovePlayer(h.service.ctx, h.room, h.idOf("机3"), "kicked");
+  await forceRemovePlayer(h.service.ctx, h.room, h.idOf("机3"), "kick");
   publishRoom(h.service.ctx, h.room);
   return { h, round };
 };

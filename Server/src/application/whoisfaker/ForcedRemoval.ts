@@ -30,7 +30,7 @@ type ForcedRemovalContext = {
   room: WhoIsFakerRoomRecord;
   playerId: string;
   player: WhoIsFakerPlayerRecord;
-  reason: string;
+  cause: RemovalCause;
   /** 抹除引用之后，回合上是否仍有没补完的补充发言（补充可能正好在这次抹除中被判定完成）。 */
   supplementActive: boolean;
 };
@@ -41,11 +41,33 @@ type ResumePhase = Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmiss
 /** 白板猜词者离场可能当场终局，此时必须跳过踢人收尾与日志。 */
 type ForcedRemovalFlow = "continue" | "done";
 
+/** 移人署名：中止文案与出局原因都要它，房主与后台共用同一条移除路径。 */
+export const KICK_ACTORS = { hostKick: "房主", adminKick: "管理员" } as const;
+export type KickCause = keyof typeof KICK_ACTORS;
+
+export type RemovalCause = KickCause | "disconnect" | "leave" | "timeout" | "kick";
+
+/**
+ * 移除原因表：出局原因与日志用的文案、历史记录用的码在同一行取，调用方只报原因。
+ * 拿文案当枚举时，改一个字就会让历史记录悄悄落到兜底的 kicked，而文案本身是对外契约。
+ */
+const REMOVAL_CAUSES: Record<
+  RemovalCause,
+  { text: string; history: Extract<RoundHistoryEntry, { kind: "removal" }>["reason"] }
+> = {
+  hostKick: { text: "房主已将其移出房间", history: "kicked" },
+  adminKick: { text: "管理员已将其移出房间", history: "kicked" },
+  disconnect: { text: "掉线后被出题人移出", history: "disconnected" },
+  leave: { text: "leave", history: "left" },
+  timeout: { text: "timeout", history: "timeout" },
+  kick: { text: "kicked", history: "kicked" },
+};
+
 export const forceRemovePlayer = async (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   playerId: string,
-  reason: string
+  cause: RemovalCause
 ) => {
   // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
   const player = room.players[playerId];
@@ -60,7 +82,7 @@ export const forceRemovePlayer = async (
   const supplementActive = room.round
     ? scrubPlayerFromRound(ctx, room, room.round, player.id)
     : false;
-  const flow: ForcedRemovalContext = { room, playerId, player, reason, supplementActive };
+  const flow: ForcedRemovalContext = { room, playerId, player, cause, supplementActive };
 
   recordRemovalHistory(ctx, flow);
 
@@ -159,17 +181,8 @@ const recordRemovalHistory = (ctx: WhoIsFakerContext, flow: ForcedRemovalContext
     day: round.day,
     createdAt: ctx.now(),
     playerId: flow.player.id,
-    reason: toRemovalHistoryReason(flow.reason),
+    reason: REMOVAL_CAUSES[flow.cause].history,
   });
-};
-
-const toRemovalHistoryReason = (
-  reason: string
-): Extract<RoundHistoryEntry, { kind: "removal" }>["reason"] => {
-  if (reason === "leave") return "left";
-  if (reason === "timeout") return "timeout";
-  if (reason === "掉线后被出题人移出") return "disconnected";
-  return "kicked";
 };
 
 /**
@@ -181,7 +194,12 @@ const recordFeedbackElimination = (
   flow: ForcedRemovalContext,
   round: GameRound
 ) => {
-  recordEliminations(round.assignments, [flow.player.id], flow.reason, ctx.now());
+  recordEliminations(
+    round.assignments,
+    [flow.player.id],
+    REMOVAL_CAUSES[flow.cause].text,
+    ctx.now()
+  );
   if (round.feedbackContinuation?.type === "blankFailed") {
     round.feedbackContinuation.rosterChanged = true;
   }
@@ -259,7 +277,12 @@ const eliminateAndSettle = async (
   round: GameRound,
   resumePhase: ResumePhase
 ) => {
-  recordEliminations(round.assignments, [flow.player.id], flow.reason, ctx.now());
+  recordEliminations(
+    round.assignments,
+    [flow.player.id],
+    REMOVAL_CAUSES[flow.cause].text,
+    ctx.now()
+  );
   publishRoom(ctx, flow.room);
 
   // 白板猜词未决（含已提交待裁定）：已有的猜词上下文原样保留，草稿与待裁定标记都不丢；
@@ -340,7 +363,7 @@ const finishForcedRemoval = async (ctx: WhoIsFakerContext, flow: ForcedRemovalCo
     roomId: room.id,
     playerId: flow.playerId,
     payload: {
-      reason: flow.reason,
+      reason: REMOVAL_CAUSES[flow.cause].text,
     },
   });
 };
