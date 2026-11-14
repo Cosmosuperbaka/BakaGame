@@ -411,6 +411,14 @@ fn key_bytes(key: &str) -> Result<[u8; 16], String> {
         .map_err(|_| "HTTPDNS AES 密钥必须是 16 字节".to_string())
 }
 
+/// 这一轮（换到下一个地址之前）还剩多少时间：已过截止时间返回 `None`，调用方就此退出；
+/// 否则返回这个地址的建连超时，取「固定建连超时」与「剩余时间」里较小的一个，
+/// 多个地址都慢时总耗时才不会累加成「地址数 × 建连超时」
+fn attempt_budget(now: Instant, deadline: Instant, connect_timeout: Duration) -> Option<Duration> {
+    let remaining = deadline.checked_duration_since(now)?;
+    (!remaining.is_zero()).then(|| connect_timeout.min(remaining))
+}
+
 /// 明文 HTTP 与 HTTPS 各一条路径；两条都使用系统 CA 校验服务端证书。
 fn get(endpoint: &str, query: &str, timeout: Duration) -> Result<String, String> {
     let separator = if endpoint.contains('?') { '&' } else { '?' };
@@ -430,15 +438,26 @@ fn get(endpoint: &str, query: &str, timeout: Duration) -> Result<String, String>
     let deadline = Instant::now() + timeout.saturating_mul(2);
     let mut last_error = String::from("HTTPDNS 地址没有可用 IP");
     for address in addresses {
-        let stream = match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+        // 每个地址的建连、握手、收发都不能越过同一个截止时间
+        let Some(budget) = attempt_budget(Instant::now(), deadline, CONNECT_TIMEOUT) else {
+            last_error = "HTTPDNS 请求超过总时限".to_string();
+            break;
+        };
+        let stream = match TcpStream::connect_timeout(&address, budget) {
             Ok(stream) => stream,
             Err(err) => {
                 last_error = format!("连接 {address} 失败：{err}");
                 continue;
             }
         };
-        let _ = stream.set_read_timeout(Some(timeout));
-        let _ = stream.set_write_timeout(Some(timeout));
+        // 握手阶段只受这两个读写超时约束，所以也要按剩余时间收紧
+        let io_timeout = timeout.min(deadline.saturating_duration_since(Instant::now()));
+        if io_timeout.is_zero() {
+            last_error = "HTTPDNS 请求超过总时限".to_string();
+            break;
+        }
+        let _ = stream.set_read_timeout(Some(io_timeout));
+        let _ = stream.set_write_timeout(Some(io_timeout));
         let result = if parsed.scheme() == "https" {
             let connector = native_tls::TlsConnector::new()
                 .map_err(|err| format!("TLS 初始化失败：{err}"))?;
@@ -854,6 +873,29 @@ mod tests {
         assert_eq!(parse_response(&exact).unwrap(), "1.2.3.4");
         let without = http_200("Connection: close\r\n", b"1.2.3.4");
         assert_eq!(parse_response(&without).unwrap(), "1.2.3.4");
+    }
+
+    /// 总时限管住建连：换地址前已过截止时间就不再尝试，建连超时不得超过剩余时间
+    #[test]
+    fn attempt_budget_respects_the_deadline() {
+        let now = Instant::now();
+        let connect = Duration::from_secs(3);
+        // 时间充裕：用固定建连超时
+        assert_eq!(
+            attempt_budget(now, now + Duration::from_secs(10), connect),
+            Some(connect)
+        );
+        // 剩余不足一个建连超时：只给剩余时间
+        assert_eq!(
+            attempt_budget(now, now + Duration::from_millis(800), connect),
+            Some(Duration::from_millis(800))
+        );
+        // 已到或已过截止时间：不再继续
+        assert_eq!(attempt_budget(now, now, connect), None);
+        assert_eq!(
+            attempt_budget(now + Duration::from_millis(1), now, connect),
+            None
+        );
     }
 
     #[test]
