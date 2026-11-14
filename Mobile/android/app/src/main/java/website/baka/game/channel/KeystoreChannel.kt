@@ -88,16 +88,29 @@ object KeystoreChannel {
     private fun keyPairGenerator() =
         KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, KEYSTORE)
 
+    /** 一次读取 Keystore 条目得到的事实：别名是否在、证书链读到没有。 */
+    private class EntrySnapshot(val aliasPresent: Boolean, val chain: Array<out java.security.cert.Certificate>?)
+
     /**
-     * 证书链（叶子在前）。密钥永久失效（bootloader 解锁、出厂重置类场景）时销毁重建，
-     * 新链会随下一次注册重新上报。
+     * 证书链（叶子在前）。只有条目**确实不存在**时才生成新密钥（首次使用）；读取异常一律向上报错。
+     *
+     * 为什么不能「读不到就重建」：重建会用同别名覆盖旧密钥，而本机缓存的 clientId 是旧公钥派生的，
+     * 服务端记的也是旧公钥——之后每次签名都对不上，设备永久拿不到票，只能清应用数据。
+     * Keystore 服务瞬时异常（系统升级后短暂不可用等）与「密钥真的不在了」必须分开：前者先重试几次，
+     * 仍失败就让调用方得到「密钥暂不可用」，下一轮再来，而不是悄悄换一把新密钥。
      */
     @Synchronized
     @WorkerThread
     fun ensureCertificateChain(context: Context): List<X509Certificate> {
-        val ks = keyStore()
-        val existing = runCatching { ks.getCertificateChain(ALIAS) }.getOrNull()
-        if (existing != null) return existing.map { it as X509Certificate }
+        val snapshot = KeyEntryPolicy.readWithRetry {
+            val ks = keyStore()
+            EntrySnapshot(ks.containsAlias(ALIAS), ks.getCertificateChain(ALIAS))
+        }
+        val chain = snapshot.chain
+        if (chain != null && chain.isNotEmpty()) return chain.map { it as X509Certificate }
+        if (!KeyEntryPolicy.mustGenerate(snapshot.aliasPresent, chain != null && chain.isNotEmpty())) {
+            throw ChannelKeyException("keystore entry exists but its certificate chain is unreadable")
+        }
         generateKey(context, newNonce())
         return keyStore().getCertificateChain(ALIAS)?.map { it as X509Certificate }
             ?: throw ChannelKeyException("attestation chain unavailable after generation")
@@ -116,5 +129,43 @@ object KeystoreChannel {
             update(challenge.toByteArray(Charsets.UTF_8))
             sign() // DER 编码 ECDSA 签名，JS 层转 base64 交给服务端
         }
+    }
+}
+
+/** 密钥条目的处置判据，纯函数，不依赖 Android。 */
+internal object KeyEntryPolicy {
+    private const val READ_ATTEMPTS = 3
+    private const val READ_PAUSE_MS = 50L
+
+    /** 只有别名不在、链也读不到才算「密钥确实不存在」，才允许生成新密钥。 */
+    fun mustGenerate(aliasPresent: Boolean, chainPresent: Boolean): Boolean =
+        !aliasPresent && !chainPresent
+
+    /**
+     * 读取 Keystore 的瞬时异常先重试；重试用尽仍失败就抛出，不当成「没有密钥」。
+     * 调用方在 `@WorkerThread` 上，短暂停顿可以接受。
+     */
+    fun <T> readWithRetry(
+        attempts: Int = READ_ATTEMPTS,
+        pauseMs: Long = READ_PAUSE_MS,
+        read: () -> T
+    ): T {
+        var last: Exception? = null
+        for (attempt in 1..attempts) {
+            try {
+                return read()
+            } catch (error: Exception) {
+                last = error
+                if (attempt < attempts && pauseMs > 0) {
+                    try {
+                        Thread.sleep(pauseMs)
+                    } catch (interrupted: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+            }
+        }
+        throw KeystoreChannel.ChannelKeyException("keystore read failed", last)
     }
 }
