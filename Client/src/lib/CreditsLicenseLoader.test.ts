@@ -71,4 +71,18 @@ describe("loadCreditsLicense", () => {
     await expect(loadCreditsLicense("react")).resolves.toEqual(mockState.buckets.r.react);
     expect(mockState.loaders.r).toHaveBeenCalledTimes(2);
   });
+
+  it("同一桶失败时，桶里其它包的缓存也一并作废，重试只重新加载一次桶", async () => {
+    const { loadCreditsLicense } = await loadModule();
+    mockState.loaders.r.mockRejectedValueOnce(new Error("chunk load failed"));
+
+    const react = loadCreditsLicense("react");
+    const radix = loadCreditsLicense("radix-ui");
+    await expect(react).rejects.toThrow("chunk load failed");
+    await expect(radix).rejects.toThrow("chunk load failed");
+
+    await expect(loadCreditsLicense("react")).resolves.toEqual(mockState.buckets.r.react);
+    await expect(loadCreditsLicense("radix-ui")).resolves.toBeNull();
+    expect(mockState.loaders.r).toHaveBeenCalledTimes(2);
+  });
 });

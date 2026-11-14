@@ -240,4 +240,11 @@ describe("云同步", () => {
     setCloudSyncEnabled(true);
     expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("1");
   });
+
+  it("云同步开关落盘的键名与取值是纯字符串，不是包了一层的对象", () => {
+    setCloudSyncEnabled(false);
+    expect(window.localStorage.getItem("bakagame:cloud-sync")).toBe("0");
+    setCloudSyncEnabled(true);
+    expect(window.localStorage.getItem("bakagame:cloud-sync")).toBe("1");
+  });
 });

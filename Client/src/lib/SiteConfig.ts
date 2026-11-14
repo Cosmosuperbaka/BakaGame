@@ -1,7 +1,9 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import type { SiteFeatures } from "@bakagame/shared";
 import { OPEN_SITE_FEATURES, SITE_FEATURE_KEYS, parseSiteFeatures } from "@bakagame/shared/values";
+import { createExternalStore } from "@/lib/ExternalStore";
 import { fetchJson } from "@/lib/HttpJson";
+import { createPromiseCache } from "@/lib/PromiseCache";
 
 export type { SiteFeatures };
 
@@ -18,9 +20,7 @@ export type { SiteFeatures };
 /** 缺省全开：与服务端未装配该依赖、以及读失败时的口径一致。 */
 const OPEN: SiteFeatures = OPEN_SITE_FEATURES;
 
-let snapshot: SiteFeatures = OPEN;
-let inflight: Promise<SiteFeatures> | null = null;
-const listeners = new Set<() => void>();
+const snapshot = createExternalStore<SiteFeatures>(OPEN);
 
 /** 失败回 `null`：这一次读不到就沿用上次的值，而不是把已经关掉的入口又亮出来。 */
 const request = async (): Promise<SiteFeatures | null> => {
@@ -33,43 +33,31 @@ const request = async (): Promise<SiteFeatures | null> => {
 };
 
 const apply = (next: SiteFeatures): void => {
-  if (SITE_FEATURE_KEYS.every((key) => next[key] === snapshot[key])) return;
-  snapshot = next;
-  for (const listener of listeners) listener();
+  const current = snapshot.get();
+  if (SITE_FEATURE_KEYS.every((key) => next[key] === current[key])) return;
+  snapshot.set(next);
 };
+
+const inflight = createPromiseCache<void, SiteFeatures>(async () => {
+  const next = await request();
+  inflight.invalidate();
+  if (next) apply(next);
+  return snapshot.get();
+});
 
 /** 一次页面加载只问一次；失败不缓存，下次挂载再试。 */
-export const loadSiteFeatures = (): Promise<SiteFeatures> => {
-  if (inflight) return inflight;
-  const pending = request().then((next) => {
-    if (inflight === pending) inflight = null;
-    if (next) apply(next);
-    return snapshot;
-  });
-  inflight = pending;
-  return pending;
-};
-
-const subscribe = (listener: () => void): (() => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
-
-const getSnapshot = (): SiteFeatures => snapshot;
+export const loadSiteFeatures = inflight.get;
 
 /** 订阅站点功能可见性；首次挂载时去服务端问一次。 */
 export const useSiteFeatures = (): SiteFeatures => {
   useEffect(() => {
     void loadSiteFeatures();
   }, []);
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return snapshot.use();
 };
 
 /** 仅供测试：清掉内存里的值，让每个用例从「全开」重新开始。 */
 export const resetSiteFeaturesForTest = (): void => {
-  snapshot = OPEN;
-  inflight = null;
-  listeners.clear();
+  snapshot.write(OPEN);
+  inflight.clear();
 };

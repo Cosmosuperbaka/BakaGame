@@ -94,6 +94,16 @@ describe("theme", () => {
     stop();
   });
 
+  it("落盘的键名与取值固定：三档都是纯字符串，首帧脚本才读得懂", () => {
+    stubMatchMedia(false);
+    const stop = initTheme();
+    for (const value of ["dark", "light", "system"] as const) {
+      setThemePreference(value);
+      expect(window.localStorage.getItem("bakagame:theme")).toBe(value);
+    }
+    stop();
+  });
+
   it("keeps theme restoration inline in index.html before the entry module", () => {
     const html = readIndexHtml();
     expect(html).toContain(`"${THEME_STORAGE_KEY}"`);

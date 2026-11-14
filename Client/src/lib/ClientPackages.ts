@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDateTime } from "@/lib/AdminFormat";
 import { fetchJson } from "@/lib/HttpJson";
+import { createPromiseCache } from "@/lib/PromiseCache";
 
 /**
  * 首页下载弹窗用的制品信息：地址、架构、文件大小与构建日期都由服务端
@@ -55,8 +56,6 @@ const parse = (body: unknown): ClientPackagesState => {
 };
 
 /** 一次首页加载只问一次：弹窗与更新提醒要的是同一份数据。失败不进缓存，留给「重试」再问的机会。 */
-let inflight: Promise<ClientPackagesState> | null = null;
-
 const request = async (): Promise<ClientPackagesState> => {
   try {
     return parse(await fetchJson("/api/client/packages", { label: "安装包接口" }));
@@ -65,15 +64,13 @@ const request = async (): Promise<ClientPackagesState> => {
   }
 };
 
-export const loadClientPackages = (): Promise<ClientPackagesState> => {
-  if (inflight) return inflight;
-  const pending = request().then((state) => {
-    if (state.failed && inflight === pending) inflight = null;
-    return state;
-  });
-  inflight = pending;
-  return pending;
-};
+const cache = createPromiseCache<void, ClientPackagesState>(async () => {
+  const state = await request();
+  if (state.failed) cache.invalidate();
+  return state;
+});
+
+export const loadClientPackages = cache.get;
 
 /** `enabled` 为假时不发请求：入口按钮不该替没点开弹窗的玩家先问一次。 */
 export const useClientPackages = (

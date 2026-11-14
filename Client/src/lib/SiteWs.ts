@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from "react";
 import type { ServerMessage, SitePageCommand, SitePageResult } from "@bakagame/shared";
 import {
   PAGE_REATTACH_GRACE_MS,
@@ -19,6 +18,7 @@ import {
   showPageNotice,
 } from "@/stores/UsePageControl";
 import { answerTabProbe, claimTabSession } from "@/lib/TabSession";
+import { createExternalStore } from "@/lib/ExternalStore";
 import { createWebSocketClient } from "@/lib/WebsocketClient";
 
 /**
@@ -153,13 +153,7 @@ siteWsClient.onMessage(applySiteMessage);
  * 站点连接的当前状态：设置面板的「连接信息」直接读它，不再自己挂一份状态监听。
  * 它表达的是**这条共享连接**是否打开，与游戏通道、房间是否允许 MCP 无关。
  */
-let linkConnected = false;
-const statusListeners = new Set<() => void>();
-
-const subscribeStatus = (listener: () => void): (() => void) => {
-  statusListeners.add(listener);
-  return () => statusListeners.delete(listener);
-};
+const linkConnected = createExternalStore(false);
 
 /**
  * 配对码随连接作废，马上清掉；已接管的租约按身份记账，断线后继续锁定等它认回来，
@@ -180,18 +174,14 @@ const holdLeaseWhileOffline = (): void => {
 };
 
 siteWsClient.onStatus((connected) => {
-  linkConnected = connected;
+  linkConnected.write(connected);
   if (!connected) holdLeaseWhileOffline();
-  for (const listener of statusListeners) listener();
+  linkConnected.emit();
 });
 
-export function getSiteLinkConnected(): boolean {
-  return linkConnected;
-}
+export const getSiteLinkConnected = linkConnected.get;
 
-export function useSiteLinkConnected(): boolean {
-  return useSyncExternalStore(subscribeStatus, getSiteLinkConnected, () => false);
-}
+export const useSiteLinkConnected = linkConnected.use;
 
 /**
  * 建立站点连接并订阅。返回解绑函数（只摘掉本次登记的状态监听，不关共享连接）。

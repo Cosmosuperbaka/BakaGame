@@ -229,6 +229,21 @@ describe("sound effects", () => {
     expect(ctx.oscillators).toHaveLength(2);
   });
 
+  it("落盘的键名与取值格式固定：开关是 0/1，音量是十进制串", () => {
+    stubAudio();
+    stop = initSoundEffects();
+
+    setSoundEnabled(false);
+    setSoundVolume(0.25);
+    expect(window.localStorage.getItem("bakagame:sound")).toBe("0");
+    expect(window.localStorage.getItem("bakagame:sound-volume")).toBe("0.25");
+
+    setSoundEnabled(true);
+    setSoundVolume(2);
+    expect(window.localStorage.getItem("bakagame:sound")).toBe("1");
+    expect(window.localStorage.getItem("bakagame:sound-volume")).toBe("1");
+  });
+
   it("restores a stored off preference without creating a context", () => {
     stubAudio();
     window.localStorage.setItem(SOUND_STORAGE_KEY, "0");

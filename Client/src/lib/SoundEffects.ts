@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { createExternalStore } from "@/lib/ExternalStore";
 
 /** 可播放的音效。新增时在 `RECIPES` 里补一条合成配方即可，不引入音频文件。 */
 export type SoundName = "roundStart" | "actionRequired" | "chatMessage";
@@ -121,9 +121,8 @@ const RECIPES: Record<SoundName, Recipe> = {
 
 const GESTURE_EVENTS = ["pointerdown", "keydown", "touchend"] as const;
 
-const listeners = new Set<() => void>();
-let enabled = true;
-let volume = DEFAULT_VOLUME;
+const enabled = createExternalStore(true);
+const volume = createExternalStore(DEFAULT_VOLUME);
 let context: AudioContext | null = null;
 let gestureArmed = false;
 let primed = false;
@@ -153,30 +152,13 @@ function readStoredVolume(): number {
   }
 }
 
-function emit(): void {
-  for (const listener of listeners) listener();
-}
+export const getSoundEnabled = enabled.get;
 
-export function getSoundEnabled(): boolean {
-  return enabled;
-}
+export const getSoundVolume = volume.get;
 
-export function getSoundVolume(): number {
-  return volume;
-}
+export const useSoundEnabled = enabled.use;
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-export function useSoundEnabled(): boolean {
-  return useSyncExternalStore(subscribe, getSoundEnabled, () => true);
-}
-
-export function useSoundVolume(): number {
-  return useSyncExternalStore(subscribe, getSoundVolume, () => DEFAULT_VOLUME);
-}
+export const useSoundVolume = volume.use;
 
 function onFirstInteraction(): void {
   unlock();
@@ -221,7 +203,7 @@ function attachContextState(ctx: AudioContext): void {
       context = null;
       primed = false;
     }
-    if (enabled) armGestureUnlock();
+    if (enabled.get()) armGestureUnlock();
   };
   ctx.addEventListener("statechange", stateListener);
 }
@@ -249,7 +231,7 @@ function ensureContext(): AudioContext | null {
 
 function resumeContext(): void {
   const ctx = context;
-  if (!ctx || !enabled) return;
+  if (!ctx || !enabled.get()) return;
   if (ctx.state === "running") {
     detachGestureUnlock();
     return;
@@ -258,11 +240,11 @@ function resumeContext(): void {
     () => {
       if (context !== ctx) return;
       if (ctx.state === "running") detachGestureUnlock();
-      else if (enabled) armGestureUnlock();
+      else if (enabled.get()) armGestureUnlock();
     },
     () => {
       if (context !== ctx) return;
-      if (enabled) armGestureUnlock();
+      if (enabled.get()) armGestureUnlock();
     }
   );
 }
@@ -272,13 +254,13 @@ function resumeContext(): void {
  * 下一次点击还能重试，不会永久静音。
  */
 function unlock(): void {
-  if (!enabled) return;
+  if (!enabled.get()) return;
   if (ensureContext()) resumeContext();
 }
 
 /** 播放一个音效。未解锁、已关闭、不支持或上下文不在运行态时静默返回。 */
 export function playSound(name: SoundName): void {
-  if (!enabled || volume === 0) return;
+  if (!enabled.get() || volume.get() === 0) return;
   const ctx = context;
   if (!ctx || ctx.state !== "running") {
     // 挂起时排程只会在恢复后补播一条过期提示音；交给下一次用户手势重新解锁。
@@ -288,7 +270,7 @@ export function playSound(name: SoundName): void {
   try {
     const recipe = RECIPES[name];
     const master = ctx.createGain();
-    master.gain.setValueAtTime(recipe.master * volume, ctx.currentTime);
+    master.gain.setValueAtTime(recipe.master * volume.get(), ctx.currentTime);
     master.connect(ctx.destination);
     for (const tone of recipe.tones) {
       const start = ctx.currentTime + tone.offset;
@@ -314,7 +296,7 @@ export function playSound(name: SoundName): void {
 }
 
 export function setSoundEnabled(next: boolean): void {
-  enabled = next;
+  enabled.write(next);
   try {
     window.localStorage.setItem(SOUND_STORAGE_KEY, next ? "1" : "0");
   } catch {
@@ -328,17 +310,17 @@ export function setSoundEnabled(next: boolean): void {
     detachGestureUnlock();
     if (context) void context.suspend().catch(() => {});
   }
-  emit();
+  enabled.emit();
 }
 
 export function setSoundVolume(next: number): void {
-  volume = clampVolume(next);
+  volume.write(clampVolume(next));
   try {
-    window.localStorage.setItem(SOUND_VOLUME_STORAGE_KEY, String(volume));
+    window.localStorage.setItem(SOUND_VOLUME_STORAGE_KEY, String(volume.get()));
   } catch {
     // 隐私模式写不进去：本次会话仍然生效。
   }
-  emit();
+  volume.emit();
 }
 
 /**
@@ -348,12 +330,12 @@ export function setSoundVolume(next: number): void {
 export function initSoundEffects(): () => void {
   if (typeof window === "undefined") return () => {};
   activeTeardown?.();
-  enabled = readStoredEnabled();
-  volume = readStoredVolume();
-  if (enabled) armGestureUnlock();
+  enabled.write(readStoredEnabled());
+  volume.write(readStoredVolume());
+  if (enabled.get()) armGestureUnlock();
 
   const onVisibilityChange = () => {
-    if (document.visibilityState !== "visible" || !enabled) return;
+    if (document.visibilityState !== "visible" || !enabled.get()) return;
     if (!context) return;
     if (context.state === "running") {
       detachGestureUnlock();

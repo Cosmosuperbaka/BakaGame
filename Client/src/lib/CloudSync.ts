@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { PREFERENCES_MAX_BYTES } from "@bakagame/shared/values";
 import type { CloudSettings, MusicPlatform } from "@bakagame/shared";
 import { api, type ApiClient } from "@/lib/Api";
+import { createExternalStore } from "@/lib/ExternalStore";
 import { notifyPreferencesApplied, onPreferencesChanged } from "@/lib/PreferenceBus";
 import { ROOM_MEMORY_SYNC_PREFIXES } from "@/lib/RoomSettingsMemory";
 import { localStore } from "@/lib/SafeStorage";
@@ -41,47 +42,38 @@ export const CLOUD_SYNC_STORAGE_KEY = "bakagame:cloud-sync";
 /** 本机记录「缓存属于哪个账号」；不在同步范围内，也不随账号切换被清掉。 */
 const ACCOUNT_BINDING_KEY = "bakagame:cloud-sync-user";
 
-const syncListeners = new Set<() => void>();
-let syncEnabled = true;
+const syncEnabled = createExternalStore(true);
 let syncInitialized = false;
 
 function ensureSyncPreference(): void {
   if (syncInitialized) return;
   syncInitialized = true;
+  // 首次读取可能发生在渲染期的 getSnapshot 里：只写值，不通知订阅者。
   try {
-    syncEnabled = window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY) !== "0";
+    syncEnabled.write(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY) !== "0");
   } catch {
-    syncEnabled = true;
+    syncEnabled.write(true);
   }
-}
-
-function emitSyncPreference(): void {
-  for (const listener of syncListeners) listener();
-}
-
-function subscribeSyncPreference(listener: () => void): () => void {
-  syncListeners.add(listener);
-  return () => syncListeners.delete(listener);
 }
 
 export function getCloudSyncEnabled(): boolean {
   ensureSyncPreference();
-  return syncEnabled;
+  return syncEnabled.get();
 }
 
 export function setCloudSyncEnabled(next: boolean): void {
-  syncEnabled = next;
+  syncEnabled.write(next);
   syncInitialized = true;
   try {
     window.localStorage.setItem(CLOUD_SYNC_STORAGE_KEY, next ? "1" : "0");
   } catch {
     // 隐私模式写不进去：本次会话仍然生效。
   }
-  emitSyncPreference();
+  syncEnabled.emit();
 }
 
 export function useCloudSyncEnabled(): boolean {
-  return useSyncExternalStore(subscribeSyncPreference, getCloudSyncEnabled, () => true);
+  return useSyncExternalStore(syncEnabled.subscribe, getCloudSyncEnabled, () => true);
 }
 
 const isSyncedKey = (key: string): boolean =>

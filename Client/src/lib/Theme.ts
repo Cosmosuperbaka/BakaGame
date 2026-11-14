@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { createExternalStore } from "@/lib/ExternalStore";
 
 /** 主题偏好。`system` 跟随 `prefers-color-scheme`，另两档固定。 */
 export type ThemePreference = "light" | "dark" | "system";
@@ -11,8 +11,7 @@ export type ResolvedTheme = "light" | "dark";
 export const THEME_STORAGE_KEY = "bakagame:theme";
 export const THEME_DARK_QUERY = "(prefers-color-scheme: dark)";
 
-const listeners = new Set<() => void>();
-let preference: ThemePreference = "system";
+const preference = createExternalStore<ThemePreference>("system");
 let activeTeardown: (() => void) | null = null;
 
 const isPreference = (value: unknown): value is ThemePreference =>
@@ -41,30 +40,19 @@ export function resolveTheme(pref: ThemePreference, systemDark: boolean): Resolv
   return pref;
 }
 
-function emit(): void {
-  for (const listener of listeners) listener();
-}
-
 /**
  * 把解析结果写到 `<html>`：`.dark` 驱动全部令牌，行内 `color-scheme` 让原生控件与滚动条
  * 在样式表接手前就是对的色。`index.css` 里另有同值的 `color-scheme` 声明，作为无脚本兜底。
  */
 function applyTheme(): void {
   if (typeof document === "undefined") return;
-  const resolved = resolveTheme(preference, systemPrefersDark());
+  const resolved = resolveTheme(preference.get(), systemPrefersDark());
   const root = document.documentElement;
   root.classList.toggle("dark", resolved === "dark");
   root.style.colorScheme = resolved;
 }
 
-export function getThemePreference(): ThemePreference {
-  return preference;
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+export const getThemePreference = preference.get;
 
 /**
  * 读取本地偏好、立即落位，并跟随系统主题与其它标签页的切换。
@@ -73,7 +61,7 @@ function subscribe(listener: () => void): () => void {
 export function initTheme(): () => void {
   if (typeof window === "undefined") return () => {};
   activeTeardown?.();
-  preference = readStoredPreference();
+  preference.write(readStoredPreference());
   applyTheme();
 
   const media = (() => {
@@ -84,15 +72,15 @@ export function initTheme(): () => void {
     }
   })();
   const onSystemChange = () => {
-    if (preference !== "system") return;
+    if (preference.get() !== "system") return;
     applyTheme();
-    emit();
+    preference.emit();
   };
   const onStorage = (event: StorageEvent) => {
     if (event.key !== THEME_STORAGE_KEY) return;
-    preference = readStoredPreference();
+    preference.write(readStoredPreference());
     applyTheme();
-    emit();
+    preference.emit();
   };
   media?.addEventListener("change", onSystemChange);
   window.addEventListener("storage", onStorage);
@@ -107,17 +95,15 @@ export function initTheme(): () => void {
 }
 
 export function setThemePreference(next: ThemePreference): void {
-  if (next === preference) return;
-  preference = next;
+  if (next === preference.get()) return;
+  preference.write(next);
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, next);
   } catch {
     // 隐私模式写不进去：本次会话仍然生效，只是刷新后回到默认。
   }
   applyTheme();
-  emit();
+  preference.emit();
 }
 
-export function useThemePreference(): ThemePreference {
-  return useSyncExternalStore(subscribe, getThemePreference, () => "system");
-}
+export const useThemePreference = preference.use;
