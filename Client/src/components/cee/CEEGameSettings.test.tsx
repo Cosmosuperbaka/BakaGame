@@ -83,6 +83,18 @@ describe("CEE 设置草稿与服务端同步", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("成为房主时草稿与服务端现值相同：没有提交任何东西，也不往下次建房的记忆里写", async () => {
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    window.localStorage.removeItem(CEE_MEMORY_KEY);
+    inRoom(base());
+    const view = render(panel(base(), { readOnly: true }));
+    const current = base({ maxAttempts: 7 });
+    inRoom(current);
+    view.rerender(panel(current, { readOnly: false }));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(window.localStorage.getItem(CEE_MEMORY_KEY)).toBeNull();
+  });
+
   it("房主没有未保存修改时，服务端设置变化会同步进草稿", async () => {
     const user = userEvent.setup();
     inRoom(base());
@@ -233,6 +245,21 @@ describe("CEE 设置自动保存的防抖与失败", () => {
     await advance(0);
     expect(JSON.parse(window.localStorage.getItem(CEE_MEMORY_KEY)!)).toMatchObject({
       settings: { syncMode: true },
+    });
+  });
+
+  it("记进下次建房的设置里 MCP 接入恒为关，不继承这间房的开关", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    window.localStorage.removeItem(CEE_MEMORY_KEY);
+    inRoom(base({ allowAgents: true }));
+    render(panel(base({ allowAgents: true })));
+    edit("同步模式");
+    await advance(400);
+    await advance(0);
+
+    expect(JSON.parse(window.localStorage.getItem(CEE_MEMORY_KEY)!)).toMatchObject({
+      settings: { syncMode: true, allowAgents: false },
     });
   });
 });
