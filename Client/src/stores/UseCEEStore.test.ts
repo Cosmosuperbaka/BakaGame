@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultCEESettings } from "@bakagame/shared/values";
+import { CLIENT_CHAT_WINDOW, createDefaultCEESettings } from "@bakagame/shared/values";
 import type { CEERoomSnapshot } from "@bakagame/shared";
 import { ceeWsClient } from "@/lib/CEEWs";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
@@ -1354,7 +1354,7 @@ describe("CEE 连接生命周期", () => {
         ).toHaveLength(1)
       );
       // 保留的画面停在断线前那一帧：补丁不落到它上面，等重连后的全量整体替换。
-      expect(useCEEStore.getState().snapshot).toBe(snapshot);
+      expect(useCEEStore.getState().snapshot).toEqual(snapshot);
     } finally {
       cleanup();
     }
@@ -1679,5 +1679,124 @@ describe("CEE 提示行为", () => {
     expect(shownToasts()).toHaveLength(1);
     vi.advanceTimersByTime(1);
     expect(shownToasts()).toEqual([]);
+  });
+});
+
+describe("CEE 聊天展示层续接历史", () => {
+  const message = (id: string, createdAt: number, text = id) => ({
+    id,
+    playerId: "p1",
+    playerName: "甲",
+    text,
+    createdAt,
+    system: false,
+  });
+  const full = (state: CEERoomSnapshot, revision = 1) =>
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: { mode: "full", revision, state },
+    });
+  const shownChat = () => useCEEStore.getState().snapshot?.chat.map((entry) => entry.id);
+
+  it("同房间的快照把服务端窗口续在本地历史后面，按 id 去重、按时间排序", () => {
+    useCEEStore.setState({
+      roomId: "1234",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, chat: [message("a", 1), message("b", 2)] },
+    });
+    full({ ...snapshot, chat: [message("c", 3), message("b", 2, "改写")] });
+    expect(shownChat()).toEqual(["a", "b", "c"]);
+    // 同 id 以服务端最新为准。
+    expect(useCEEStore.getState().snapshot?.chat[1].text).toBe("改写");
+  });
+
+  it("续接只在展示层：补丁仍按服务端窗口的下标落在原始基线上", () => {
+    useCEEStore.setState({
+      roomId: "1234",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, chat: [message("a", 1)] },
+    });
+    full({ ...snapshot, chat: [message("b", 2), message("c", 3)] });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        revision: 2,
+        baseRevision: 1,
+        operations: [{ op: "replace", path: "/chat/1/text", value: "补丁改的" }],
+      },
+    });
+    expect(shownChat()).toEqual(["a", "b", "c"]);
+    expect(useCEEStore.getState().snapshot?.chat[2].text).toBe("补丁改的");
+  });
+
+  it("换了房间不续上一间的聊天", () => {
+    useCEEStore.setState({
+      roomId: "1234",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, roomId: "9999", chat: [message("old", 1)] },
+    });
+    full({ ...snapshot, chat: [message("new", 2)] });
+    expect(shownChat()).toEqual(["new"]);
+  });
+
+  it("首次进入也守窗口上限：只留最近一段，原始基线不裁", () => {
+    const many = Array.from({ length: CLIENT_CHAT_WINDOW + 5 }, (_, index) =>
+      message(`m${index}`, index + 1)
+    );
+    useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+    full({ ...snapshot, chat: many });
+    expect(shownChat()).toHaveLength(CLIENT_CHAT_WINDOW);
+    expect(shownChat()?.[0]).toBe("m5");
+    handleCEEMessage({
+      type: "event",
+      event: "cee.room.snapshot",
+      payload: {
+        mode: "patch",
+        revision: 2,
+        baseRevision: 1,
+        operations: [
+          { op: "replace", path: `/chat/${CLIENT_CHAT_WINDOW + 4}/text`, value: "最后一条" },
+        ],
+      },
+    });
+    expect(useCEEStore.getState().snapshot?.chat.at(-1)?.text).toBe("最后一条");
+  });
+
+  it("入房确认装上展示态时同样续接：断线回座后聊天接着断线前的历史", async () => {
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, chat: [message("b", 2)] },
+      privateState: ceePrivateState(),
+    });
+    writeCEESession("1234", "tok");
+    useCEEStore.setState({
+      roomId: "1234",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, chat: [message("a", 1)] },
+    });
+    await useCEEStore.getState().reconnectRoom("1234");
+    expect(shownChat()).toEqual(["a", "b"]);
+  });
+
+  it("入房确认换了房间时不续接", async () => {
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({
+      source: "native",
+      roomId: "5678",
+      sessionToken: "tok",
+      snapshot: { ...snapshot, roomId: "5678", chat: [message("b", 2)] },
+      privateState: ceePrivateState(),
+    });
+    useCEEStore.setState({
+      roomId: "1234",
+      sessionToken: "old",
+      snapshot: { ...snapshot, chat: [message("a", 1)] },
+    });
+    await useCEEStore.getState().joinRoom("5678", "玩家");
+    expect(shownChat()).toEqual(["b"]);
   });
 });

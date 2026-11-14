@@ -14,7 +14,7 @@ import type {
   CEESource,
   ServerMessage,
 } from "@bakagame/shared";
-import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared/values";
+import { isPermanentRoomError, mergeChatWindow, protocolErrorCode } from "@bakagame/shared/values";
 import * as ws from "@/lib/CEEWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import {
@@ -126,11 +126,12 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       sync.privateState.adopt(result.privateState);
     }
     writeCEESession(result.roomId, result.sessionToken);
+    const baseline = sync.snapshot.baseline();
     set({
       source: result.source,
       roomId: result.roomId,
       sessionToken: result.sessionToken,
-      snapshot: sync.snapshot.baseline(),
+      snapshot: baseline && withChatHistory(baseline, get().snapshot),
       privateState: sync.privateState.baseline() ?? result.privateState,
       roomClosedAt: null,
     });
@@ -356,8 +357,20 @@ export const useCEEStore = create<CEEStore>((set, get) => {
   };
 });
 
+/**
+ * 聊天展示层：服务端快照只带最近一段聊天，同一房间里把它续在已展示的历史后面供玩家往回翻，
+ * 口径与另两款同一份（按 id 去重、按时间排序、保留有上限的条数）。只换展示态，原始基线不动，
+ * 补丁的下标仍对着服务端那一段。
+ */
+function withChatHistory(next: CEERoomSnapshot, shown: CEERoomSnapshot | null): CEERoomSnapshot {
+  return {
+    ...next,
+    chat: mergeChatWindow(shown?.roomId === next.roomId ? shown.chat : [], next.chat),
+  };
+}
+
 function applyCEESnapshotEvent(snapshot: CEERoomSnapshot, previous: CEERoomSnapshot | null): void {
-  useCEEStore.setState({ snapshot });
+  useCEEStore.setState({ snapshot: withChatHistory(snapshot, useCEEStore.getState().snapshot) });
   // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
   if (
     previous &&
