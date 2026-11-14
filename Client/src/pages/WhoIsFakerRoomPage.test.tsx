@@ -568,6 +568,8 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     const submit = screen.getByRole("button", { name: "提交猜测" });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText("词语 A"), { target: { value: "西瓜" } });
+    // 只填一个词还不够：两个词都要有。
+    expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText("词语 B"), { target: { value: "冬瓜" } });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
