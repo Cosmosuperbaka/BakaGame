@@ -1,4 +1,4 @@
-import { LegalSection } from "@/components/common/LegalPage";
+import { LegalSection } from "@/components/common/LegalSection";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
 export const PRIVACY_UPDATED_AT = "2026-11-14";

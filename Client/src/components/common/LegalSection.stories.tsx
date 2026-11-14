@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { LegalSection } from "./LegalPage";
+import { LegalSection } from "./LegalSection";
 
 const meta = {
   title: "公共组件/LegalSection",
