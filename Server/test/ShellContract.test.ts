@@ -35,6 +35,12 @@ const rust = {
   selfcheck: read("Desktop/src-tauri/src/selfcheck.rs"),
   bridge: read("Desktop/src-tauri/src/bridge.rs"),
 };
+/** 桌面注入脚本原文（`bridge.rs` 里的原始字符串）：对账只读它，不读文件头的契约注释。 */
+const desktopScript = (() => {
+  const match = /const BRIDGE_JS: &str = r#"([\s\S]*?)"#;/.exec(rust.bridge);
+  if (!match) throw new Error("没有在 bridge.rs 里找到桥接脚本原文");
+  return match[1];
+})();
 const mobileBridge = read("Mobile/bridge/baka-bridge.js");
 const selfCheckKt = read("Mobile/android/app/src/main/java/website/baka/game/channel/SelfCheck.kt");
 
@@ -71,8 +77,11 @@ const jsNumber = (source: string, name: string): number => {
   if (!match) throw new Error(`JS 源码里没有数值变量 ${name}`);
   return Number(match[1]);
 };
-/** 从锚点匹配文本里的第一个 `{` 起做括号匹配，取这一层对象字面量的键。 */
-const jsObjectKeys = (source: string, anchor: RegExp): string[] => {
+/**
+ * 从锚点匹配文本里的第一个 `{` 起做括号匹配，取这一层对象字面量的正文：
+ * 行注释剥掉（注释里可能写着同名的示例值），嵌套层剥掉，只留最外层。
+ */
+const jsObjectBody = (source: string, anchor: RegExp): string => {
   const found = anchor.exec(source);
   if (!found) throw new Error(`JS 源码里没有锚点 ${anchor}`);
   const open = found.index + found[0].indexOf("{");
@@ -83,15 +92,42 @@ const jsObjectKeys = (source: string, anchor: RegExp): string[] => {
     if (source[end] === "}") depth -= 1;
     if (depth === 0) break;
   }
-  // 剥掉嵌套层，只留最外层的键；先抹掉字符串，免得字符串里的冒号被当成键。
-  let flat = source.slice(open + 1, end).replace(/"[^"\n]*"/g, '""');
+  let flat = source.slice(open + 1, end).replace(/(^|[^:"])\/\/[^\n]*/g, "$1");
   for (;;) {
     const next = flat.replace(/\{[^{}]*\}/g, "");
     if (next === flat) break;
     flat = next;
   }
-  return [...flat.matchAll(/(?:^|[,\s])([A-Za-z]\w*)\s*:/g)].map((match) => match[1]);
+  return flat;
 };
+/** 对象字面量最外层的键；先抹掉字符串，免得字符串里的冒号被当成键。 */
+const jsObjectKeys = (source: string, anchor: RegExp): string[] =>
+  [
+    ...jsObjectBody(source, anchor)
+      .replace(/"[^"\n]*"/g, '""')
+      .matchAll(/(?:^|[,\s])([A-Za-z]\w*)\s*:/g),
+  ].map((match) => match[1]);
+/** 对象字面量最外层某个键的字符串值：取的是代码里的值，不会命中注释。 */
+const jsObjectValue = (source: string, anchor: RegExp, key: string): string => {
+  const match = new RegExp(`(?:^|[,\\s])${key}\\s*:\\s*"([^"]*)"`).exec(
+    jsObjectBody(source, anchor)
+  );
+  if (!match) throw new Error(`锚点 ${anchor} 的对象里没有字符串键 ${key}`);
+  return match[1];
+};
+/** 两个标记之间的源码片段（按调用点拆开取值用）。 */
+const between = (source: string, from: string, to: string): string => {
+  const start = source.indexOf(from);
+  const end = source.indexOf(to, start + from.length);
+  if (start < 0 || end < 0) throw new Error(`JS 源码里找不到片段 ${from} … ${to}`);
+  return source.slice(start, end);
+};
+/** 片段里 `unwrap(来源变量, "字段")` 的全部调用。 */
+const unwrapCalls = (fragment: string): Array<{ source: string; field: string }> =>
+  [...fragment.matchAll(/unwrap\(\s*(\w+),\s*"(\w+)"\s*\)/g)].map((match) => ({
+    source: match[1],
+    field: match[2],
+  }));
 
 // ——— 服务端权威：路由的请求体与查询 schema ———
 
@@ -219,20 +255,33 @@ describe("取值与词表", () => {
   test("客户端类型、平台与密钥算法：壳写的值都在服务端枚举与长度限制内", () => {
     const desktopType = rustString(rust.device, "CLIENT_TYPE");
     expect(clientTypes).toContain(desktopType);
-    expect(clientTypes).toContain(/clientType: "(\w+)",/.exec(mobileBridge)?.[1] ?? "");
+    // 移动壳的身份写在三处代码里：注册体、换票体、页面可见对象，三处必须一致且在枚举内
+    const mobileRegister = /var body = \{/;
+    const mobileAttest = /postJson\(ATTEST_PATH, \{/;
+    // 行首锚定：文件头注释里也有一份同样的示例，不能命中它
+    const mobileVisible = /^ {2}window\.__BAKA_CHANNEL__ = \{/m;
+    const mobileTypes = [mobileRegister, mobileAttest, mobileVisible].map((anchor) =>
+      jsObjectValue(mobileBridge, anchor, "clientType")
+    );
+    expect(new Set(mobileTypes).size).toBe(1);
+    expect(clientTypes).toContain(mobileTypes[0]);
+    const mobilePlatforms = [mobileRegister, mobileVisible].map((anchor) =>
+      jsObjectValue(mobileBridge, anchor, "platform")
+    );
+    expect(new Set(mobilePlatforms).size).toBe(1);
     expect(keyAlgorithms).toContain(rustString(rust.device, "KEY_ALGORITHM"));
-    expect(keyAlgorithms).toContain(/keyAlgorithm: "([\w-]+)",/.exec(mobileBridge)?.[1] ?? "");
+    expect(keyAlgorithms).toContain(jsObjectValue(mobileBridge, mobileRegister, "keyAlgorithm"));
     const platformLimit = (registerBody.properties?.platform as Schema).maxLength ?? 0;
-    for (const platform of [
-      rustString(rust.device, "PLATFORM"),
-      /platform: "(\w+)",/.exec(mobileBridge)?.[1] ?? "",
-    ]) {
+    for (const platform of [rustString(rust.device, "PLATFORM"), mobilePlatforms[0]]) {
       expect(platform.length).toBeGreaterThan(0);
       expect(platform.length).toBeLessThanOrEqual(platformLimit);
     }
-    // 桌面注入脚本对页面声明的身份与注册时上报的是同一个值
-    expect(/clientType: "(\w+)",/.exec(rust.bridge)?.[1]).toBe(desktopType);
-    expect(/platform: "(\w+)",/.exec(rust.bridge)?.[1]).toBe(rustString(rust.device, "PLATFORM"));
+    // 桌面注入脚本对页面声明的身份与注册时上报的是同一个值（取脚本里 channel 对象的代码取值）
+    const desktopChannel = /var channel = \{/;
+    expect(jsObjectValue(desktopScript, desktopChannel, "clientType")).toBe(desktopType);
+    expect(jsObjectValue(desktopScript, desktopChannel, "platform")).toBe(
+      rustString(rust.device, "PLATFORM")
+    );
   });
   test("移动壳认的证明档位词表与服务端一致", () => {
     const levels = enumOf(selfCheckSchema.properties?.attestationLevel as Schema);
@@ -275,7 +324,8 @@ describe("取值与词表", () => {
   test("桌面壳上报的 id 全部在服务端权重表里", () => {
     expect(desktopIds.all.length).toBeGreaterThan(0);
     expect(desktopIds.all.filter((id) => SELF_CHECK_WEIGHTS[id] === undefined)).toEqual([]);
-    for (const id of desktopIds.all) expect(id.length).toBeLessThanOrEqual(64);
+    for (const id of desktopIds.all)
+      expect(id.length).toBeLessThanOrEqual(CLIENT_SELF_CHECK_ID_MAX_LENGTH);
   });
   test("移动壳上报的 id 前缀全部在服务端权重表里", () => {
     expect(mobileIds.length).toBeGreaterThan(0);
@@ -295,10 +345,10 @@ describe("取值与词表", () => {
 });
 
 describe("票据时间常量", () => {
-  const poll = [rust.bridge, mobileBridge].map((source) => jsNumber(source, "TICKET_POLL_MS"));
+  const poll = [desktopScript, mobileBridge].map((source) => jsNumber(source, "TICKET_POLL_MS"));
   const margins = {
     desktopRust: rustNumber(rust.attest, "TICKET_MARGIN_MS"),
-    desktopScript: jsNumber(rust.bridge, "TICKET_MARGIN_MS"),
+    desktopScript: jsNumber(desktopScript, "TICKET_MARGIN_MS"),
     mobileScript: jsNumber(mobileBridge, "TICKET_MARGIN_MS"),
   };
   test("三处提前作废的余量都等于权威契约值", () => {
@@ -382,18 +432,37 @@ describe("响应字段", () => {
     );
     expect(rustFields(rust.attest, "AttestResponse").filter((n) => !has(attest)(n))).toEqual([]);
   });
+  test("桌面壳交给页面的票据载荷：Rust 结构体的字段与注入脚本读取的字段一致", () => {
+    const read = between(desktopScript, 'invoke("baka_ticket"', "}, function () {");
+    const scriptReads = [...read.matchAll(/\bvalue\.(\w+)/g)].map((match) => match[1]);
+    expect(sorted([...new Set(scriptReads)])).toEqual(
+      sorted(rustFields(rust.attest, "TicketPayload"))
+    );
+  });
   test("移动壳按名字读取的响应字段服务端都给", async () => {
     const { register, challenge, attest } = await serverResponses();
-    const read = [...mobileBridge.matchAll(/unwrap\(\s*(\w+),\s*"(\w+)"\s*\)/g)].map((match) => ({
-      source: match[1],
-      field: match[2],
-    }));
-    const bySource: Record<string, Record<string, unknown>> = {
-      json: { ...register, ...challenge },
-      attestJson: attest,
-    };
-    expect(read.length).toBeGreaterThan(0);
-    const missing = read.filter(({ source, field }) => !(field in (bySource[source] ?? {})));
-    expect(missing).toEqual([]);
+    // 按调用点拆开：注册响应、领挑战响应、换票响应各读各的，不能拿别家响应里的字段凑数
+    const registerReads = unwrapCalls(
+      between(mobileBridge, "async function registerDevice", "function ensureRegistered")
+    );
+    const challengeReads = unwrapCalls(
+      between(mobileBridge, "postJson(CHALLENGE_PATH", "signWithKeystore(challenge)")
+    );
+    const attestReads = unwrapCalls(mobileBridge).filter(({ source }) => source === "attestJson");
+    for (const [label, reads, response] of [
+      ["注册", registerReads, register],
+      ["领挑战", challengeReads, challenge],
+      ["换票", attestReads, attest],
+    ] as const) {
+      expect(reads.length, `${label}：没有读到任何响应字段`).toBeGreaterThan(0);
+      expect(
+        reads.filter(({ field }) => !(field in response)).map(({ field }) => field),
+        `移动壳${label}响应里读了服务端没给的字段`
+      ).toEqual([]);
+    }
+    // 拆开的片段要覆盖桥脚本里全部按名字读取的调用，不能有漏网的
+    expect(registerReads.length + challengeReads.length + attestReads.length).toBe(
+      unwrapCalls(mobileBridge).length
+    );
   });
 });
