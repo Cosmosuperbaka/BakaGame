@@ -1,7 +1,8 @@
 import type { JSX, ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { BotCountRow, TestControllerShell } from "./TestControllerShell";
+import { Bot } from "lucide-react";
+import { BotCountRow, TestControlGroup, TestControllerShell } from "./TestControllerShell";
 
 // 动效库在 jsdom 里会往 style 上写中间帧，逐字比对结构前把 motion.* 换成普通元素，
 // 只丢掉动效专用属性，className/style/ref/aria/data 原样保留（办法同 GameLayout.test.tsx）。
@@ -81,13 +82,9 @@ const normalizeIds = (html: string) => {
   });
 };
 
-const renderShell = (headerFocusInset: boolean) => {
+const renderShell = () => {
   const view = render(
-    <TestControllerShell
-      title="测试控制器"
-      bodyClassName="space-y-2 border-t px-4 pb-4 pt-3"
-      headerFocusInset={headerFocusInset}
-    >
+    <TestControllerShell title="测试控制器" bodyClassName="space-y-2 border-t px-4 pb-4 pt-3">
       <p>分组内容</p>
     </TestControllerShell>
   );
@@ -97,20 +94,14 @@ const renderShell = (headerFocusInset: boolean) => {
 const header = () => screen.getByRole("button", { name: /测试控制器/ });
 
 describe("TestControllerShell", () => {
-  it("默认展开，聚焦环不内收", () => {
-    expect(renderShell(false).html()).toMatchInlineSnapshot(
-      `"<div class="w-full max-w-full overflow-hidden floating-surface shadow-lg md:w-96"><button type="button" aria-expanded="true" class="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-flask-conical h-4 w-4 text-primary" aria-hidden="true"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"></path><path d="M6.453 15h11.094"></path><path d="M8.5 2h7"></path></svg><span>测试控制器</span><span aria-hidden="true" class="inline-flex ml-auto text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-4 w-4" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></span></button><div class=""><div class="space-y-2 border-t px-4 pb-4 pt-3"><p>分组内容</p></div></div></div>"`
-    );
-  });
-
-  it("聚焦环内收只多一个类，其余结构不变", () => {
-    expect(renderShell(true).html()).toMatchInlineSnapshot(
+  it("默认展开，折叠头的聚焦环向内收", () => {
+    expect(renderShell().html()).toMatchInlineSnapshot(
       `"<div class="w-full max-w-full overflow-hidden floating-surface shadow-lg md:w-96"><button type="button" aria-expanded="true" class="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-flask-conical h-4 w-4 text-primary" aria-hidden="true"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"></path><path d="M6.453 15h11.094"></path><path d="M8.5 2h7"></path></svg><span>测试控制器</span><span aria-hidden="true" class="inline-flex ml-auto text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-4 w-4" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></span></button><div class=""><div class="space-y-2 border-t px-4 pb-4 pt-3"><p>分组内容</p></div></div></div>"`
     );
   });
 
   it("收起后内容卸载", () => {
-    const { html } = renderShell(true);
+    const { html } = renderShell();
     fireEvent.click(header());
     expect(screen.queryByText("分组内容")).toBeNull();
     expect(html()).toMatchInlineSnapshot(
@@ -119,31 +110,24 @@ describe("TestControllerShell", () => {
   });
 
   it("再点一下回到展开", () => {
-    renderShell(false);
+    renderShell();
     fireEvent.click(header());
     fireEvent.click(header());
     expect(header()).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("分组内容")).toBeInTheDocument();
   });
+});
 
-  it("两款的聚焦环口径由参数决定，不写死", () => {
-    const flat = render(
-      <TestControllerShell title="甲" bodyClassName="a" headerFocusInset={false}>
-        <p>甲</p>
-      </TestControllerShell>
+describe("TestControlGroup", () => {
+  it("组标题与控件同在一个分组里，标题下留一档间距", () => {
+    const view = render(
+      <TestControlGroup label="测试人机" icon={Bot}>
+        <p>控件</p>
+      </TestControlGroup>
     );
-    expect(screen.getByRole("button", { name: "甲" }).className).not.toContain(
-      "focus-visible:-outline-offset-2"
-    );
-    flat.unmount();
-
-    render(
-      <TestControllerShell title="甲" bodyClassName="a" headerFocusInset>
-        <p>甲</p>
-      </TestControllerShell>
-    );
-    expect(screen.getByRole("button", { name: "甲" }).className).toContain(
-      "focus-visible:-outline-offset-2"
+    expect(screen.getByRole("heading", { level: 3, name: "测试人机" })).toBeInTheDocument();
+    expect(view.container.innerHTML).toMatchInlineSnapshot(
+      `"<section><h3 class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot h-3.5 w-3.5" aria-hidden="true"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>测试人机</h3><p>控件</p></section>"`
     );
   });
 });

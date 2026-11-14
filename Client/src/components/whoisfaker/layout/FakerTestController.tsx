@@ -1,7 +1,11 @@
 import { useCallback } from "react";
-import { Bot, Eye, ListOrdered, Shield, UserCog, type LucideIcon } from "lucide-react";
+import { Bot, Eye, ListOrdered, Shield, UserCog } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { BotCountRow, TestControllerShell } from "@/components/common/room/TestControllerShell";
+import {
+  BotCountRow,
+  TestControlGroup,
+  TestControllerShell,
+} from "@/components/common/room/TestControllerShell";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { errorText } from "@/lib/ErrorMessage";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
@@ -93,12 +97,8 @@ export function FakerTestController() {
   return (
     <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-drawer pointer-events-none">
       <div className="flex justify-end pointer-events-auto">
-        <TestControllerShell
-          title="阶段控制器"
-          bodyClassName="px-4 pb-4 pt-1 space-y-3"
-          headerFocusInset
-        >
-          <ControlGroup label="跳转游戏阶段" icon={ListOrdered}>
+        <TestControllerShell title="阶段控制器" bodyClassName="px-4 pb-4 pt-1 space-y-3">
+          <TestControlGroup label="跳转游戏阶段" icon={ListOrdered}>
             <div className="grid grid-cols-2 gap-1.5">
               {PHASES.map((p) => (
                 <Button
@@ -112,9 +112,9 @@ export function FakerTestController() {
                 </Button>
               ))}
             </div>
-          </ControlGroup>
+          </TestControlGroup>
 
-          <ControlGroup label="切换观察视角" icon={Eye}>
+          <TestControlGroup label="切换观察视角" icon={Eye}>
             <div className="grid grid-cols-3 gap-1.5">
               <Button
                 variant={currentPerspective === "player" ? "default" : "outline"}
@@ -142,10 +142,10 @@ export function FakerTestController() {
                 旁观视角
               </Button>
             </div>
-          </ControlGroup>
+          </TestControlGroup>
 
           {currentPerspective === "player" && (
-            <ControlGroup label="切换玩家身份" icon={UserCog}>
+            <TestControlGroup label="切换玩家身份" icon={UserCog}>
               <div className="grid grid-cols-4 gap-1.5">
                 {ROLES.map((r) => (
                   <Button
@@ -159,10 +159,10 @@ export function FakerTestController() {
                   </Button>
                 ))}
               </div>
-            </ControlGroup>
+            </TestControlGroup>
           )}
 
-          <ControlGroup label="测试人机" icon={Bot}>
+          <TestControlGroup label="测试人机" icon={Bot}>
             <BotCountRow
               count={botCount}
               addPending={false}
@@ -170,33 +170,9 @@ export function FakerTestController() {
               onAdd={() => void run("test.addBot", { count: 1 })}
               onRemove={() => void run("test.removeBot", { count: 1 })}
             />
-          </ControlGroup>
+          </TestControlGroup>
         </TestControllerShell>
       </div>
     </div>
-  );
-}
-
-/**
- * 控制器里的一组按钮。组标题取全站区块小标题的口径（标题标签、xs 半粗、弱化色，图标 3.5 与文字同色）：
- * 图标只是组的记号，不按氛围着色；选中按钮是主色实底，按钮里的图标随文字取前景色。
- */
-function ControlGroup({
-  label,
-  icon: Icon,
-  children,
-}: {
-  label: string;
-  icon: LucideIcon;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-        {label}
-      </h3>
-      {children}
-    </section>
   );
 }
