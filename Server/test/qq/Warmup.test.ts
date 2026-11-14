@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import type { SearchQuery } from "qqmusic-api-enhanced";
 import { qqStub } from "../support/Qqmusic";
 
 const originals = { search: qqmusic.search };
@@ -11,16 +12,17 @@ describe("QQ音乐上游预热（契约对齐网易云 warmUp）", () => {
   it("预热只探测一次匿名上游，重复调用不再发请求", async () => {
     let probes = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
-    qqmusic.search = qqStub.search(
-      mock(async () => {
-        probes += 1;
-        return { status: 200, body: { songs: [] } };
-      })
-    );
+    const search = mock(async (_query?: SearchQuery) => {
+      probes += 1;
+      return { status: 200, body: { songs: [] } };
+    });
+    qqmusic.search = qqStub.search(search);
 
     await provider.warmUp();
     await provider.warmUp();
     expect(probes).toBe(1);
+    // 探测结果不进检索缓存，只取一条垫付建连成本，不带任何账号凭据。
+    expect(search.mock.calls[0]?.[0]).toEqual({ keywords: "周杰伦", limit: 1 });
   });
 
   it("预热失败只记告警且不钉死重试，也不推进匿名熔断", async () => {

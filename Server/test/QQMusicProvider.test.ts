@@ -3,7 +3,14 @@ import { QQMusicProvider } from "../src/infrastructure/music/qq/QQMusicProvider"
 import { parseLrcLyrics, parseQrcLyrics } from "../src/infrastructure/music/qq/QQLyrics";
 import { stripHtmlTags } from "../src/infrastructure/music/qq/QQResponse";
 import qqmusic from "qqmusic-api-enhanced";
-import type { Response } from "qqmusic-api-enhanced";
+import type {
+  ArtistSongsQuery,
+  LoginRefreshQuery,
+  LyricQuery,
+  PlaylistDetailQuery,
+  Response,
+  SongDetailQuery,
+} from "qqmusic-api-enhanced";
 import { qqStub } from "./support/Qqmusic";
 
 const originals = {
@@ -318,14 +325,13 @@ describe("QQMusicProvider · getSongMetadata", () => {
         },
       }))
     );
-    qqmusic.lyric = qqStub.lyric(
-      mock(async () => ({
-        status: 200,
-        body: {
-          lyric: `<?xml version="1.0"?><QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,500]回到(0,250)过去(250,250)\\n"/></LyricInfo></QrcInfos>`,
-        },
-      }))
-    );
+    const lyric = mock(async (_query?: LyricQuery) => ({
+      status: 200,
+      body: {
+        lyric: `<?xml version="1.0"?><QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,500]回到(0,250)过去(250,250)\\n"/></LyricInfo></QrcInfos>`,
+      },
+    }));
+    qqmusic.lyric = qqStub.lyric(lyric);
 
     const meta = await provider.getSongMetadata("qq:0017K7gL4WYnw2");
     expect(meta.title).toBe("反方向的钟");
@@ -333,6 +339,28 @@ describe("QQMusicProvider · getSongMetadata", () => {
     expect(meta.album).toBe("范特西");
     expect(meta.releaseYear).toBe(2001);
     expect(meta.lyrics.length).toBeGreaterThan(0);
+    // qrc 关掉后上游只回普通 LRC，逐字时间轴会整体消失。
+    expect(lyric.mock.calls[0]?.[0]).toEqual({
+      id: "0017K7gL4WYnw2",
+      qrc: true,
+      cookie: undefined,
+    });
+  });
+
+  it("详情请求把曲目 MID 与账号凭据一起带给上游", async () => {
+    const provider = new QQMusicProvider(offlineAmll);
+    const detail = mock(async (_query?: SongDetailQuery) => ({
+      status: 200,
+      body: { data: { track_info: { name: "会员歌", singer: [{ name: "A" }] } } },
+    }));
+    qqmusic.song_detail = qqStub.song_detail(detail);
+    qqmusic.lyric = qqStub.lyric(mock(async () => ({ status: 200, body: { lyric: LRC } })));
+
+    await provider.getSongMetadata("qq:member1", "uin=1; qm_keyst=member");
+    expect(detail.mock.calls[0]?.[0]).toEqual({
+      id: "member1",
+      cookie: "uin=1; qm_keyst=member",
+    });
   });
 
   it("查无此曲时抛 INVALID_SONG", async () => {
@@ -512,12 +540,11 @@ describe("QQMusicProvider · getSong 与音频直链", () => {
 describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
   it("getPlaylistSongs 提取纯数字 ID 并映射曲目", async () => {
     const provider = new QQMusicProvider();
-    qqmusic.playlist_detail = qqStub.playlist_detail(
-      mock(async () => ({
-        status: 200,
-        body: { dirinfo: { title: "我的歌单" } },
-      }))
-    );
+    const detail = mock(async (_query?: PlaylistDetailQuery) => ({
+      status: 200,
+      body: { dirinfo: { title: "我的歌单" } },
+    }));
+    qqmusic.playlist_detail = qqStub.playlist_detail(detail);
     qqmusic.playlist_track_all = qqStub.playlist_track_all(
       mock(async () => ({
         status: 200,
@@ -541,6 +568,7 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     expect(songs[0].id).toBe("qq:101");
     expect(songs[0].title).toBe("晴天");
     expect(info.songCount).toBe(1);
+    expect(detail.mock.calls[0]?.[0]).toEqual({ id: "12345678", cookie: undefined });
   });
 
   it("getPlaylistSongs 同一歌单在缓存期内只读一次上游，截断结果记告警", async () => {
@@ -600,29 +628,34 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
 
   it("getArtistSongs 从 songInfo 嵌套结构映射曲目", async () => {
     const provider = new QQMusicProvider();
-    qqmusic.artist_songs = qqStub.artist_songs(
-      mock(async () => ({
-        status: 200,
-        body: {
-          songs: [
-            {
-              songInfo: {
-                mid: "201",
-                name: "轨迹",
-                singer: [{ name: "周杰伦" }],
-                album: { id: 9, name: "寻找周杰伦" },
-                interval: 300,
-              },
+    const artistSongs = mock(async (_query?: ArtistSongsQuery) => ({
+      status: 200,
+      body: {
+        songs: [
+          {
+            songInfo: {
+              mid: "201",
+              name: "轨迹",
+              singer: [{ name: "周杰伦" }],
+              album: { id: 9, name: "寻找周杰伦" },
+              interval: 300,
             },
-          ],
-        },
-      }))
-    );
+          },
+        ],
+      },
+    }));
+    qqmusic.artist_songs = qqStub.artist_songs(artistSongs);
 
     const songs = await provider.getArtistSongs("qq:artist1");
     expect(songs[0].id).toBe("qq:201");
     expect(songs[0].title).toBe("轨迹");
     expect(songs[0].album).toBe("寻找周杰伦");
+    // 上游单页上限就是 100，调小会让歌手题库凭空少一半。
+    expect(artistSongs.mock.calls[0]?.[0]).toEqual({
+      id: "artist1",
+      limit: 100,
+      cookie: undefined,
+    });
   });
 
   it("不提供专辑能力：依赖库没有专辑接口，不保留把专辑标识当关键词的检索", () => {
@@ -857,18 +890,19 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
         };
       })
     );
-    qqmusic.login_refresh = qqStub.login_refresh(
-      mock(async () => ({
-        status: 200,
-        body: { code: 200, cookieStr: "new_cookie" },
-      }))
-    );
+    const refresh = mock(async (_query?: LoginRefreshQuery) => ({
+      status: 200,
+      body: { code: 200, cookieStr: "new_cookie" },
+    }));
+    qqmusic.login_refresh = qqStub.login_refresh(refresh);
 
     const session = await provider.getLoginStatus("old_cookie");
     expect(session.cookie).toBe("new_cookie");
     expect(session.account.nickname).toBe("刷新后");
     expect(session.account.vipLevel).toBe(8);
     expect(statusCalls).toBe(2);
+    // 续期是一次性凭据换发，不带 Cookie 上游无从知道给谁续期。
+    expect(refresh.mock.calls[0]?.[0]).toEqual({ cookie: "old_cookie" });
   });
 
   it("forceRefresh 绕过缓存并主动换取新 Cookie", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import type { SearchQuery } from "qqmusic-api-enhanced";
 import { offlineAmll } from "./Fixtures";
 import { qqStub } from "../support/Qqmusic";
 
@@ -159,6 +160,24 @@ describe("QQ音乐歌手检索：缓存与条数钳制", () => {
     const second = await provider.searchArtists("歌手甲", 9_999);
     expect(second).toEqual(first);
     expect(seenLimits).toEqual([50]);
+  });
+
+  it("歌手检索按歌手类型取数，关键词、条数与凭据如实带给上游", async () => {
+    const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
+    const search = mock(async (_query?: SearchQuery) => ({
+      status: 200,
+      body: { data: { body: { singer: [{ singerMID: "s1", singerName: "歌手甲" }] } } },
+    }));
+    qqmusic.search = qqStub.search(search);
+
+    await provider.searchArtists("歌手甲", 10, "uin=1; qm_keyst=artist");
+    // type 不是歌手时上游回的是单曲或专辑，歌手列表会整体空掉。
+    expect(search.mock.calls[0]?.[0]).toEqual({
+      keywords: "歌手甲",
+      type: 1,
+      limit: 10,
+      cookie: "uin=1; qm_keyst=artist",
+    });
   });
 
   it("歌手曲目命中缓存，不重复回源", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/music/qq/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
+import type { LoginQrCheckQuery } from "qqmusic-api-enhanced";
 import { qqStub } from "../support/Qqmusic";
 
 const originals = {
@@ -29,12 +30,11 @@ describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", 
         };
       })
     );
-    qqmusic.login_qr_check = qqStub.login_qr_check(
-      mock(async ({ qrsig } = {}) => ({
-        status: 200,
-        body: { code: 200, cookieStr: `qm_keyst=done-${qrsig}` },
-      }))
-    );
+    const check = mock(async ({ qrsig }: LoginQrCheckQuery = {}) => ({
+      status: 200,
+      body: { code: 200, cookieStr: `qm_keyst=done-${qrsig}` },
+    }));
+    qqmusic.login_qr_check = qqStub.login_qr_check(check);
     qqmusic.login_status = qqStub.login_status(
       mock(async () => ({
         status: 200,
@@ -54,6 +54,11 @@ describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", 
     expect(resultB.status).toBe("authorized");
     expect(resultA.session?.cookie).toBe("qm_keyst=done-sig-1");
     expect(resultB.session?.cookie).toBe("qm_keyst=done-sig-2");
+    // ptqrtoken 与 qrsig 同源于建码那一步，轮询必须原样带回。
+    expect(check.mock.calls.map((call) => call[0])).toEqual([
+      { type: "qq", qrsig: "sig-1", ptqrtoken: "1" },
+      { type: "qq", qrsig: "sig-2", ptqrtoken: "2" },
+    ]);
   });
 
   it("过期二维码返回 expired 且不触发登录态校验", async () => {

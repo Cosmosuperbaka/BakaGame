@@ -262,6 +262,28 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
       withScopeSpy.mockRestore();
       captureSpy.mockRestore();
     });
+
+    it("captureServerMessage 上报前清洗消息文本里的凭据与直链签名", () => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(
+        fakeWithScope(fakeSentryScope())
+      );
+      const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+
+      captureServerMessage(
+        "取流失败 https://mxx.163.com/track/a.mp3?signature=dummysignaturevalue 凭据 token=dummytokenvalue",
+        "error"
+      );
+
+      const sent = captureSpy.mock.calls[0]?.[0];
+      expect(sent).not.toContain("dummysignaturevalue");
+      expect(sent).not.toContain("dummytokenvalue");
+      expect(sent).toContain("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+      expect(sent).toContain("token=***[REDACTED]");
+      expect(captureSpy.mock.calls[0]?.[1]).toBe("error");
+
+      withScopeSpy.mockRestore();
+      captureSpy.mockRestore();
+    });
   });
 
   describe("flushServerSentry & closeServerSentry 优雅停机排空", () => {
