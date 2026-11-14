@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CircleAlert, RotateCw } from "lucide-react";
 import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
@@ -16,7 +16,7 @@ import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/components/cee/CEEDataSource";
 import { isBakaClient } from "@/lib/BakaChannel";
-import { dropIn, seriesStart } from "@/lib/motion/NamedMoves";
+import { dropIn, fadeSwap, seriesStart } from "@/lib/motion/NamedMoves";
 import { phaseSwap } from "@/lib/motion/Choreography";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -183,7 +183,67 @@ export default function CEERankedPage() {
   );
 }
 
-/** 正文按准入与连接状态分支：门槛说明、连接中占位、首页或系列赛。 */
+/**
+ * 排位状态就绪之前的占位：连接中是一块呼吸的骨架加一行字，状态请求失败换成说明与重试。
+ * 两态同一块固定高度、叠在同一格里交叉显影，来回切换时下方不跳。
+ * 外层是常驻的 status 区：失败说明换上来时读屏会读到，焦点不被挪走；
+ * 失败的具体原因已由提示条说过，这里只说结论和能做什么。
+ */
+function RankedSyncSlot() {
+  const failed = useCEERankedStore((store) => store.syncFailed);
+  const retrying = useCEERankedStore((store) => store.syncRetrying);
+  // 重试发出即撤下失败标记；在途期间仍停在失败态，让入口自己转圈，不来回闪成骨架。
+  const showFailure = failed || retrying;
+  return (
+    <div role="status" className="grid h-40">
+      <AnimatePresence initial={false}>
+        {showFailure ? (
+          <motion.div
+            key="failed"
+            variants={fadeSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-muted/40 px-6 text-center [grid-area:1/1]"
+          >
+            <p className="flex items-center gap-1.5 text-sm text-destructive">
+              <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+              暂时读不到排位状态
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              loading={retrying}
+              onClick={() => void useCEERankedStore.getState().retryStatus()}
+            >
+              {/* 在途由按钮自己的转圈表示，刷新图标让位：两枚旋转图标并排读不出哪个在转。 */}
+              {retrying ? null : <RotateCw aria-hidden="true" />}
+              重试
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="connecting"
+            variants={fadeSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="relative flex items-center justify-center [grid-area:1/1]"
+          >
+            {/* 呼吸只落在底板上：文字不跟着明暗起伏，减弱动效下底板静止、文字照常说明状态。 */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 rounded-md bg-muted motion-safe:animate-breathe"
+            />
+            <p className="relative text-sm text-muted-foreground">正在连接排位…</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** 正文按准入与连接状态分支：门槛说明、连接中或失败占位、首页或系列赛。 */
 function RankedBody({
   client,
   accountStatus,
@@ -199,13 +259,7 @@ function RankedBody({
   if (!client) return <CEERankedGate reason="client" onLogin={promptLogin} />;
   if (accountStatus === "loading") return null;
   if (accountStatus !== "signedIn") return <CEERankedGate reason="login" onLogin={promptLogin} />;
-  if (!ready)
-    return (
-      <div
-        className="h-40 rounded-md bg-muted motion-safe:animate-breathe"
-        aria-label="正在连接排位"
-      />
-    );
+  if (!ready) return <RankedSyncSlot />;
   return (
     <AnimatePresence initial={false} mode="popLayout">
       <motion.div

@@ -41,6 +41,13 @@ export type CEERankedAction =
 export interface CEERankedStore {
   /** 已从服务端拿到过一次排位状态。 */
   ready: boolean;
+  /**
+   * 连接一直在、状态请求却失败了，且还没就绪：页面据此给失败说明与重试入口。
+   * 下一次请求发出、拿到状态或断线时撤下；断线后的恢复由重连自动重发负责，不算这种失败。
+   */
+  syncFailed: boolean;
+  /** 玩家点的重试正在途中：重试入口转圈并挡住连点。 */
+  syncRetrying: boolean;
   state: CEERankedState | null;
   profile: CEERankedProfile | null;
   profileLoading: boolean;
@@ -52,6 +59,8 @@ export interface CEERankedStore {
   pending: Partial<Record<CEERankedAction, true>>;
   /** 进入排位页时调用：发 `cee.ranked.status`，之后服务端推送 `cee.ranked.state`。返回释放函数（离开页面时调用，停止响应推送并清理本地状态）。 */
   attach: () => () => void;
+  /** 状态请求失败后由玩家触发：再发一次 `cee.ranked.status`，已有请求在途时不重复发。 */
+  retryStatus: () => Promise<void>;
   queue: () => Promise<void>;
   cancel: () => Promise<void>;
   playBot: () => Promise<void>;
@@ -79,6 +88,8 @@ let stateRevision: number | undefined;
 let syncPending = false;
 /** 事件流装入状态的次数：全量回包据此判断事件流是否已经抢先给过带修订号的基线。 */
 let streamInstalls = 0;
+/** 断线的次数：状态请求途中断过线，失败就交给重连后的自动重发，不记成「请求失败」。 */
+let disconnects = 0;
 /** 在途命令的归属代次：释放后晚到的回包一律忽略。 */
 let commandGeneration = 0;
 /**
@@ -102,7 +113,7 @@ const installState = (next: CEERankedState | null, revision: number | undefined)
   const previous = rawState;
   rawState = next;
   stateRevision = revision;
-  useCEERankedStore.setState({ state: next, ready: true });
+  useCEERankedStore.setState({ state: next, ready: true, syncFailed: false });
   if (settlementLanded(previous, next)) void fetchProfile(true);
 };
 
@@ -157,18 +168,28 @@ const ownsQuery = (generation: number, epoch: number): boolean =>
  * 再装一次只会把修订号清成 undefined，之后每个差量都对不上基线、白白再拉一次全量。
  * 事件流在请求途中装过状态就以它为准，回包只在事件丢失（例如积压丢帧）时兜底。
  */
-async function requestStatus(): Promise<void> {
+async function requestStatus(origin: "auto" | "retry" = "auto"): Promise<void> {
   if (syncPending) return;
   syncPending = true;
   const generation = commandGeneration;
   const installsBefore = streamInstalls;
+  const disconnectsBefore = disconnects;
+  // 新请求一发出就撤下上一次的失败：这次再失败会重新记上。
+  useCEERankedStore.setState({ syncFailed: false, syncRetrying: origin === "retry" });
   try {
     const state = await ws.send("cee.ranked.status", {});
     if (attached(generation) && streamInstalls === installsBefore) installState(state, undefined);
   } catch (error) {
-    if (attached(generation)) reportFailure(error);
+    if (attached(generation)) {
+      reportFailure(error);
+      // 途中断过线的失败由重连后的自动重发收拾，页面照旧显示连接中。
+      if (disconnects === disconnectsBefore && !useCEERankedStore.getState().ready)
+        useCEERankedStore.setState({ syncFailed: true });
+    }
   } finally {
     syncPending = false;
+    // 释放已把重试标记清掉并让代次作废；旧请求的收尾不能再动新一页的标记。
+    if (ownsGeneration(generation)) useCEERankedStore.setState({ syncRetrying: false });
   }
 }
 
@@ -190,7 +211,8 @@ function handleRankedStatus(generation: number, connected: boolean): void {
     // 断线即基线作废：修订号与状态一起清掉，重连后以新连接的第一份全量重新起算。
     rawState = null;
     stateRevision = undefined;
-    useCEERankedStore.setState({ ready: false, state: null });
+    disconnects += 1;
+    useCEERankedStore.setState({ ready: false, state: null, syncFailed: false });
     return;
   }
   void requestStatus();
@@ -244,6 +266,8 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
 
   return {
     ready: false,
+    syncFailed: false,
+    syncRetrying: false,
     state: null,
     profile: null,
     profileLoading: false,
@@ -275,6 +299,8 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
         syncPending = false;
         set({
           ready: false,
+          syncFailed: false,
+          syncRetrying: false,
           state: null,
           // 换号后再进页面不能短暂显示上一个账号的战绩与榜单。
           profile: null,
@@ -286,6 +312,7 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
         });
       };
     },
+    retryStatus: () => requestStatus("retry"),
     queue: async () => {
       await runAction("queue", "cee.ranked.queue", {});
     },
