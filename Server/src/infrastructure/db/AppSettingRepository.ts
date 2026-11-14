@@ -34,7 +34,7 @@ export class DatabaseAppSettingRepository implements AppSettingRepository {
 
   async set(key: string, value: string, updatedBy: string | null): Promise<void> {
     const db = await this.database.client();
-    // 显式给 updated_at：MySQL 的 ON DUPLICATE KEY UPDATE 不走 Drizzle 的 $onUpdateFn。
+    // 显式给 updated_at：覆盖写的时间不依赖表定义上的隐式钩子，与其它仓储的覆盖写同一写法。
     await db
       .insert(appSetting)
       .values({ key, value, updatedBy })
