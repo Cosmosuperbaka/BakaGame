@@ -31,10 +31,7 @@ import {
   SITE_SLOGAN,
   SITE_TAGLINE,
   type HeadTag,
-  type HeadTagInput,
-  type PageFaqItem,
   type PageMeta,
-  type PageShell,
   type RuntimePageMeta,
 } from "./pages/Shared.ts";
 
@@ -50,10 +47,7 @@ export {
   SITE_SLOGAN,
   SITE_TAGLINE,
   type HeadTag,
-  type HeadTagInput,
-  type PageFaqItem,
   type PageMeta,
-  type PageShell,
   type RuntimePageMeta,
 };
 

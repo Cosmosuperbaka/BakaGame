@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect } from "react";
-import { SITE_NAME, SITE_ORIGIN } from "@/data/PageMeta";
 import { resolveSeo } from "@/lib/ResolveSeo";
 
 /** 结构化数据脚本在 <head> 中的固定 id，用于跨页面切换时先移除旧数据再写入新数据。 */
@@ -106,5 +105,3 @@ export function Seo({
     </>
   );
 }
-
-export { SITE_ORIGIN, SITE_NAME };

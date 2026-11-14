@@ -52,8 +52,6 @@ function applyTheme(): void {
   root.style.colorScheme = resolved;
 }
 
-export const getThemePreference = preference.get;
-
 /**
  * 读取本地偏好、立即落位，并跟随系统主题与其它标签页的切换。
  * 返回停止函数；重复调用会先停掉上一份监听，保证只有一套订阅。

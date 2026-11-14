@@ -1,11 +1,5 @@
 import type { ChatMessage, PlayerAccount, RoomVisibility } from "../../shared/Model";
 import type { GameId } from "../../shared/Protocol";
-import type { GameRecorder } from "../../domain/GameRecord";
-import type { RandomSource } from "../../domain/Rules";
-import type { TestRoomPolicy } from "../../domain/TestRooms";
-import type { ConnectionRegistry } from "../ConnectionRegistry";
-import type { LobbyFanout } from "../LobbyFanout";
-import type { RoomIdReservations } from "./RoomIdReservations";
 
 /**
  * 公共房间内核的类型底座。
@@ -81,18 +75,4 @@ export interface RoomShape<TRoom extends RoomCore, TSeat extends SeatCore> {
    */
   sessionReplacedPayload(room: TRoom): unknown;
   readonly sessionReplacedCloseReason: string;
-}
-
-/** 玩法上下文的公共底座；每款在自己的 Context 里扩展它，只加数据与叶子工具。 */
-export interface RoomContextBase<TRoom extends RoomCore, TSeat extends SeatCore> {
-  readonly shape: RoomShape<TRoom, TSeat>;
-  readonly rooms: Map<string, TRoom>;
-  readonly reservations: RoomIdReservations;
-  readonly connections: ConnectionRegistry;
-  readonly now: () => number;
-  readonly random: RandomSource;
-  readonly testRooms: TestRoomPolicy;
-  /** 已包过「测试房不记」的对局记录器。 */
-  readonly recorder: GameRecorder;
-  readonly lobby: LobbyFanout;
 }
