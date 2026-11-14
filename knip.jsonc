@@ -57,7 +57,7 @@
   // 「导出但只在本文件内使用」不算问题：这类 export 关键字主要是历史习惯，
   // 清理收益极低而改动面很大；真正零引用的导出仍会被报出来。
   "ignoreExportsUsedInFile": true,
-  // 文件与依赖问题硬卡，导出/类型只提示：导出量级大且需要人工判断语义。
+  // 文件、依赖与零引用的导出、类型一律硬卡：零引用的导出就是死代码，留着只会越积越多。
   "rules": {
     "files": "error",
     "dependencies": "error",
@@ -67,7 +67,7 @@
     "binaries": "error",
     "unresolved": "error",
     "duplicates": "off",
-    "exports": "warn",
-    "types": "warn",
+    "exports": "error",
+    "types": "error",
   },
 }
