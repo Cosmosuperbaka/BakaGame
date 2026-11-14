@@ -16,7 +16,7 @@ import {
 import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 // 纯值住在 SonGuessrValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
 import { ALL_BANGUMI_TRACK_KINDS } from "./SonGuessrValues";
-import { SONG_SUBJECT_LIMIT_BOUNDS, SUBJECT_YEAR_BOUNDS } from "./SettingBounds";
+import { SONG_SUBJECT_LIMIT_BOUNDS, SONG_TEAM_BOUNDS, SUBJECT_YEAR_BOUNDS } from "./SettingBounds";
 export * from "./SonGuessrValues";
 
 export const SONGUESSR_PHASES = [
@@ -462,9 +462,6 @@ export interface SonGuessrRoundSummary {
   breakdown?: SonGuessrScoreBreakdown;
 }
 
-/** 协议允许的队伍号，与 CEE 一致；`null` 是个人游玩。 */
-export const SONGUESSR_MAX_TEAM = 8;
-
 /**
  * 一个玩家在一轮里的结局。
  *
@@ -635,7 +632,12 @@ export const SonGuessrPayloadSchemas = {
   "song.player.setReady": t.Object({ ready: t.Boolean() }, strict),
   "song.player.setSpectator": t.Object({ spectator: t.Boolean() }, strict),
   "song.player.setTeam": t.Object(
-    { team: t.Union([t.Integer({ minimum: 1, maximum: SONGUESSR_MAX_TEAM }), t.Null()]) },
+    {
+      team: t.Union([
+        t.Integer({ minimum: SONG_TEAM_BOUNDS.min, maximum: SONG_TEAM_BOUNDS.max }),
+        t.Null(),
+      ]),
+    },
     strict
   ),
   "song.room.updateSettings": t.Object(

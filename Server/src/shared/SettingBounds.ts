@@ -12,3 +12,6 @@ export const CEE_SETTING_BOUNDS = {
 } as const;
 
 export const SONG_SUBJECT_LIMIT_BOUNDS = { min: 1, max: 1000 } as const;
+
+/** 队伍号取值段，与 CEE 一致；`null` 另表个人游玩，不在这段里。 */
+export const SONG_TEAM_BOUNDS = { min: 1, max: 8 } as const;

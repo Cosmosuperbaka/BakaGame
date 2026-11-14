@@ -38,6 +38,7 @@ export { SERVER_SHUTDOWN_MESSAGE } from "./Protocol";
 export {
   CEE_SETTING_BOUNDS,
   SONG_SUBJECT_LIMIT_BOUNDS,
+  SONG_TEAM_BOUNDS,
   SUBJECT_YEAR_BOUNDS,
 } from "./SettingBounds";
 export {

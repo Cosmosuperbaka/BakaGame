@@ -1,7 +1,7 @@
 import { AppError } from "../../domain/Errors";
 import { normalizeWord } from "../../domain/Rules";
 import { assertTextAllowed } from "../../infrastructure/SensitiveText";
-import { SONGUESSR_MAX_TEAM } from "../../shared/Index";
+import { SONG_TEAM_BOUNDS } from "../../shared/SettingBounds";
 import { normalizeAnimeAutoFilters, normalizeAutoFilters } from "./AutomaticRounds";
 import { normalizeRoomPassword, type SonGuessrContext } from "./Context";
 import { cloneSettings, type SonGuessrRoomRecord, type SongUpdateSettingsPayload } from "./Records";
@@ -63,8 +63,14 @@ export function setSpectator(ctx: SonGuessrContext, at: SongCommandAt, spectator
 /** 选队伍：只在等待阶段、只给参与玩家，与 CEE 的 `cee.player.team` 同口径。准备状态保留。 */
 export function setTeam(ctx: SonGuessrContext, at: SongCommandAt, team: number | null) {
   const { room, seat: player } = at;
-  if (team !== null && (!Number.isInteger(team) || team < 1 || team > SONGUESSR_MAX_TEAM)) {
-    throw new AppError("INVALID_TEAM", `队伍号只能是 1–${SONGUESSR_MAX_TEAM}`);
+  if (
+    team !== null &&
+    (!Number.isInteger(team) || team < SONG_TEAM_BOUNDS.min || team > SONG_TEAM_BOUNDS.max)
+  ) {
+    throw new AppError(
+      "INVALID_TEAM",
+      `队伍号只能是 ${SONG_TEAM_BOUNDS.min}–${SONG_TEAM_BOUNDS.max}`
+    );
   }
   player.team = team;
   ctx.touch(room);

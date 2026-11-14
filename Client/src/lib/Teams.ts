@@ -1,5 +1,13 @@
-/** 协议允许的队伍号 1–8（CEE 与猜歌一致）；null 是个人游玩，排在首格。 */
-export const TEAM_OPTIONS: Array<number | null> = [null, 1, 2, 3, 4, 5, 6, 7, 8];
+import { SONG_TEAM_BOUNDS } from "@bakagame/shared/values";
+
+/** 协议允许的队伍号（CEE 与猜歌一致）；null 是个人游玩，排在首格。 */
+export const TEAM_OPTIONS: Array<number | null> = [
+  null,
+  ...Array.from(
+    { length: SONG_TEAM_BOUNDS.max - SONG_TEAM_BOUNDS.min + 1 },
+    (_, index) => SONG_TEAM_BOUNDS.min + index
+  ),
+];
 
 export const teamKey = (team: number | null) => (team === null ? "solo" : String(team));
 export const teamLabel = (team: number | null) => (team === null ? "个人" : `${team} 队`);

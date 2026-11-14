@@ -5,6 +5,7 @@ import { createDefaultCEESettings } from "../src/shared/CEEDefaults";
 import {
   CEE_SETTING_BOUNDS,
   SONG_SUBJECT_LIMIT_BOUNDS,
+  SONG_TEAM_BOUNDS,
   SUBJECT_YEAR_BOUNDS,
 } from "../src/shared/SettingBounds";
 import { SonGuessrPayloadSchemas } from "../src/shared/SonGuessr";
@@ -14,6 +15,9 @@ const ceeAccepts = (patch: Record<string, unknown>): boolean =>
 
 const songFiltersAccept = (patch: Record<string, unknown>): boolean =>
   Value.Check(SonGuessrPayloadSchemas["song.room.updateSettings"], { animeAutoFilters: patch });
+
+const songTeamAccepts = (team: number): boolean =>
+  Value.Check(SonGuessrPayloadSchemas["song.player.setTeam"], { team });
 
 /** 每一项钉住最小值、最大值与两侧越界各一个：范围放宽或收紧都必须显式改这条用例。 */
 const CASES: Array<{
@@ -39,6 +43,7 @@ const CASES: Array<{
     accepts: (v) => songFiltersAccept({ startYear: v }),
   },
   { name: "猜歌结束年份", min: 1900, max: 2200, accepts: (v) => songFiltersAccept({ endYear: v }) },
+  { name: "猜歌队伍号", min: 1, max: 8, accepts: songTeamAccepts },
 ];
 
 for (const { name, min, max, accepts } of CASES) {
@@ -66,4 +71,7 @@ test("schema 声明的界限与客户端取的常量逐项一致", () => {
   expect(declared(anime.properties.subjectLimit)).toEqual(SONG_SUBJECT_LIMIT_BOUNDS);
   expect(declared(anime.properties.startYear)).toEqual(SUBJECT_YEAR_BOUNDS);
   expect(declared(anime.properties.endYear)).toEqual(SUBJECT_YEAR_BOUNDS);
+
+  const team = SonGuessrPayloadSchemas["song.player.setTeam"].properties.team;
+  expect(declared(team.anyOf[0])).toEqual(SONG_TEAM_BOUNDS);
 });
