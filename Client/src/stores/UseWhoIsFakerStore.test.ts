@@ -296,6 +296,27 @@ describe("game store integration", () => {
     expect(wsMock.getStatusHandlers()).toHaveLength(0);
   });
 
+  it("断线只收回大厅就绪标记，房间展示态与凭据留在原地", () => {
+    initGameSocket();
+    useWhoIsFakerStore.getState().joinRoomState("1234", "live-token");
+    useWhoIsFakerStore
+      .getState()
+      .setSnapshot({ ...gameOverSnapshot("round-live"), roomId: "1234" });
+    useWhoIsFakerStore.setState({ lobbyReady: true });
+
+    wsMock.emitStatus(false);
+
+    // 掉线不等于退房：房间页继续显示最后一屏等重连，大厅列表则要重新订阅后才算就绪。
+    expect(useWhoIsFakerStore.getState()).toMatchObject({
+      connected: false,
+      lobbyReady: false,
+      roomId: "1234",
+      sessionToken: "live-token",
+      roomClosedAt: null,
+    });
+    expect(useWhoIsFakerStore.getState().snapshot?.roomId).toBe("1234");
+  });
+
   it("drops local authority when another tab replaces the session", () => {
     saveSessionToken("4567", "replaced-token");
     useWhoIsFakerStore.getState().joinRoomState("4567", "replaced-token");
@@ -331,6 +352,10 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: null, snapshot: null });
     // 房间页据此退回大厅，而不是靠「没有快照」这种同时匹配初次挂载的推断。
     expect(useWhoIsFakerStore.getState().roomClosedAt).not.toBeNull();
+    expect(useWhoIsFakerStore.getState().toasts.at(-1)).toMatchObject({
+      text: "房间已关闭",
+      type: "error",
+    });
   });
 
   it("flags closure so a replaced session also leaves the room page", () => {
@@ -350,6 +375,9 @@ describe("game store integration", () => {
   it("停机时原地待命：保留票据与房间态，只提示等待重连", () => {
     saveSessionToken("7890", "shutdown-token");
     useWhoIsFakerStore.getState().joinRoomState("7890", "shutdown-token");
+    useWhoIsFakerStore
+      .getState()
+      .setSnapshot({ ...gameOverSnapshot("round-shutdown"), roomId: "7890" });
     initGameSocket();
 
     wsMock.emitMessage({
@@ -363,12 +391,51 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState().roomId).toBe("7890");
     expect(useWhoIsFakerStore.getState().sessionToken).toBe("shutdown-token");
     expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
+    expect(useWhoIsFakerStore.getState().snapshot?.roomId).toBe("7890");
     expect(useWhoIsFakerStore.getState().toasts).toContainEqual(
       expect.objectContaining({
         text: SERVER_SHUTDOWN_MESSAGE,
         type: "error",
       })
     );
+  });
+
+  it("停机提示停留十秒，不按默认时长提前消失", () => {
+    initGameSocket();
+    wsMock.emitMessage({ type: "event", event: "server.shutdown", payload: {} });
+
+    vi.advanceTimersByTime(9999);
+    expect(useWhoIsFakerStore.getState().toasts.map((toast) => toast.text)).toEqual([
+      SERVER_SHUTDOWN_MESSAGE,
+    ]);
+    vi.advanceTimersByTime(1);
+    expect(useWhoIsFakerStore.getState().toasts).toEqual([]);
+  });
+
+  it("停机作废在途入房，晚到 ACK 只释放席位不安装身份", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    initGameSocket();
+    const joined = useWhoIsFakerStore
+      .getState()
+      .joinRoom("1234", "玩家")
+      .catch((error) => error);
+
+    wsMock.emitMessage({ type: "event", event: "server.shutdown", payload: {} });
+    resolveAck({ roomId: "1234", sessionToken: "late-token" });
+
+    // 停机后这条连接上的入房已经作废：晚到的 ACK 只用来退掉服务端席位，不写本地身份与票据。
+    expect(await joined).toMatchObject({ name: "AbortError" });
+    expect(wsMock.send.mock.calls.map(([type]) => type)).toEqual(["room.join", "room.leave"]);
+    expect(wsMock.send.mock.calls[1][2]).toEqual({ roomId: "1234", sessionToken: "late-token" });
+    expect(getSessionToken("1234")).toBeNull();
+    expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
   });
 
   it("结算摘要只认服务端快照：快照不带摘要时不回填上一份", () => {
