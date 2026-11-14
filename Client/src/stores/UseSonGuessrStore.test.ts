@@ -344,6 +344,42 @@ describe("Songuessr store integration", () => {
     expect(wsMock.statusHandlers).toHaveLength(0);
   });
 
+  it("重复初始化不叠加第二路消息与状态订阅", () => {
+    const dispose = initSonGuessrWs();
+    const again = initSonGuessrWs();
+    expect(wsMock.messageHandlers).toHaveLength(1);
+    expect(wsMock.statusHandlers).toHaveLength(1);
+    expect(wsMock.connect).toHaveBeenCalledOnce();
+    again();
+    dispose();
+  });
+
+  it("断线只收回大厅就绪标记，房间展示态与凭据留在原地", () => {
+    saveSonGuessrSessionToken("1234", "live-token");
+    useSonGuessrStore.setState({
+      roomId: "1234",
+      sessionToken: "live-token",
+      snapshot,
+      privateState,
+      lobbyReady: true,
+    });
+    const dispose = initSonGuessrWs();
+
+    wsMock.statusHandlers[0](false);
+
+    // 掉线不等于退房：房间页继续显示最后一屏等重连，大厅列表则要重新订阅后才算就绪。
+    expect(useSonGuessrStore.getState()).toMatchObject({
+      connected: false,
+      lobbyReady: false,
+      roomId: "1234",
+      sessionToken: "live-token",
+      roomClosedAt: null,
+    });
+    expect(useSonGuessrStore.getState().snapshot).toMatchObject({ roomId: "1234" });
+    expect(getSonGuessrSessionToken("1234")).toBe("live-token");
+    dispose();
+  });
+
   it("stores versioned public snapshots and private state from server events", () => {
     const dispose = initSonGuessrWs();
 
@@ -422,6 +458,7 @@ describe("Songuessr store integration", () => {
     ["song.room.closed", "房间已关闭"],
     ["song.room.kicked", "你已被移出房间"],
     ["session.replaced", "当前席位已在另一个标签页接管"],
+    ["song.session.replaced", "当前席位已在另一个标签页接管"],
   ])("clears local authority when receiving %s", (event, toast) => {
     saveSonGuessrSessionToken("4567", "room-token");
     useSonGuessrStore.setState({
@@ -469,6 +506,65 @@ describe("Songuessr store integration", () => {
     } finally {
       dispose();
     }
+  });
+
+  it("停机提示停留十秒，不按默认时长提前消失", () => {
+    const dispose = initSonGuessrWs();
+    wsMock.messageHandlers[0]({ type: "event", event: "server.shutdown", payload: {} });
+
+    vi.advanceTimersByTime(9999);
+    expect(useSonGuessrStore.getState().toasts.map((toast) => toast.text)).toEqual([
+      SERVER_SHUTDOWN_MESSAGE,
+    ]);
+    vi.advanceTimersByTime(1);
+    expect(useSonGuessrStore.getState().toasts).toEqual([]);
+    dispose();
+  });
+
+  it("结束事件的提示按默认三秒消失", () => {
+    useSonGuessrStore.setState({ roomId: "4567", sessionToken: "room-token" });
+    const dispose = initSonGuessrWs();
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "song.room.closed",
+      payload: { roomId: "4567" },
+    });
+
+    vi.advanceTimersByTime(2999);
+    expect(useSonGuessrStore.getState().toasts.map((toast) => toast.text)).toEqual(["房间已关闭"]);
+    vi.advanceTimersByTime(1);
+    expect(useSonGuessrStore.getState().toasts).toEqual([]);
+    dispose();
+  });
+
+  it("停机作废在途入房，晚到 ACK 只释放席位不安装身份", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const dispose = initSonGuessrWs();
+    const joined = useSonGuessrStore
+      .getState()
+      .joinRoom("1234", "玩家")
+      .catch((error) => error);
+
+    wsMock.messageHandlers[0]({ type: "event", event: "server.shutdown", payload: {} });
+    resolveAck({ roomId: "1234", sessionToken: "late-token" });
+
+    // 停机后这条连接上的入房已经作废：晚到的 ACK 只用来退掉服务端席位，不写本地身份与票据。
+    expect(await joined).toMatchObject({ name: "AbortError" });
+    expect(wsMock.send.mock.calls.map(([type]) => type)).toEqual([
+      "song.room.join",
+      "song.room.leave",
+    ]);
+    expect(wsMock.send.mock.calls[1][2]).toEqual({ roomId: "1234", sessionToken: "late-token" });
+    expect(getSonGuessrSessionToken("1234")).toBeNull();
+    expect(useSonGuessrStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+    dispose();
   });
 
   it("returns music search results through the authenticated command wrapper", async () => {
