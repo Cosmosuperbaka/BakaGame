@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createElement } from "react";
 import { render, waitFor } from "@testing-library/react";
-import { HelmetProvider } from "react-helmet-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { staticShellPlugin } from "../../scripts/vite-plugins/StaticShell";
 import { Seo } from "@/components/common/Seo";
@@ -60,9 +59,7 @@ describe("登记页的静态外壳", () => {
       );
 
       document.head.innerHTML = "";
-      const view = render(
-        createElement(HelmetProvider, { context: {} }, createElement(Seo, { path: meta.path }))
-      );
+      const view = render(createElement(Seo, { path: meta.path }));
       await waitFor(() =>
         expect(document.head.querySelector('meta[name="robots"]')).not.toBeNull()
       );

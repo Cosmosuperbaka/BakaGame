@@ -1,6 +1,5 @@
 import type { Decorator, Preview } from "@storybook/react-vite";
 import { MotionConfig, MotionGlobalConfig } from "framer-motion";
-import { HelmetProvider } from "react-helmet-async";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { resetAllStores } from "@/stories/StorePresets";
@@ -44,13 +43,11 @@ const withEnvironment: Decorator = (Story, context) => (
 );
 
 const withProviders: Decorator = (Story) => (
-  <HelmetProvider>
-    <MotionConfig reducedMotion="user">
-      <TooltipProvider>
-        <Story />
-      </TooltipProvider>
-    </MotionConfig>
-  </HelmetProvider>
+  <MotionConfig reducedMotion="user">
+    <TooltipProvider>
+      <Story />
+    </TooltipProvider>
+  </MotionConfig>
 );
 
 const preview: Preview = {

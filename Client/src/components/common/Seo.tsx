@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { Helmet } from "react-helmet-async";
+import { useEffect, useLayoutEffect } from "react";
 import { SITE_NAME, SITE_ORIGIN } from "@/data/PageMeta";
 import { resolveSeo } from "@/lib/ResolveSeo";
 
@@ -13,10 +12,9 @@ const BREADCRUMB_STRUCTURED_DATA_ID = "bakagame-breadcrumb-structured-data";
 /**
  * 按固定 id 管理 <head> 里的一份 JSON-LD：已存在则原地覆盖内容，内容为空则移除。
  *
- * 为什么不让 Helmet 承载：Helmet 在 React 19 下把 <script> 渲染成 React 元素，
- * 交给 React 的 head 提升机制插入，该行为依赖运行时实现、在预渲染与测试环境下
- * 会落到 <body> 里，位置不可控。JSON-LD 必须稳定落在 <head>，因此手动管理。
- * 构建期静态外壳已写入同 id 的脚本，这里按 id 复用并覆盖内容，不会产生重复标签。
+ * 为什么手动管理而不是直接渲染 <script>：React 19 只提升带 src 的异步脚本，
+ * 内联的 JSON-LD 会留在组件所在位置（落进 <body>），位置不可控。JSON-LD 必须稳定落在 <head>，
+ * 因此手动管理。构建期静态外壳已写入同 id 的脚本，这里按 id 复用并覆盖内容，不会产生重复标签。
  */
 function useStructuredDataScript(id: string, json: string | null) {
   useEffect(() => {
@@ -59,10 +57,15 @@ interface SeoProps {
  * 注入器复用，因此页面与爬虫拿到的描述永远一致。未登记的路径（房间页、单人页）由调用方
  * 显式传 description——这些页面已标 noindex，不进静态外壳。
  *
- * 之所以引入 react-helmet-async 而不是把 meta 写死在 index.html：
- * 本站是 SPA，多个页面需要各自独立的 description 与 canonical，写死在入口 HTML 里
- * 只能覆盖首页一种情况，其余页面在搜索结果中会共用首页描述，造成描述缺失与 canonical 错指。
-
+ * 为什么不是把 meta 写死在 index.html：本站是 SPA，多个页面需要各自独立的 description
+ * 与 canonical，写死在入口 HTML 里只能覆盖首页一种情况，其余页面在搜索结果中会共用首页描述，
+ * 造成描述缺失与 canonical 错指。
+ *
+ * 渲染方式：description、canonical、robots 与分享字段直接渲染 <meta>/<link>，由 React 19
+ * 提升到 <head>，页面卸载时随之移除。标题不走元素提升，而是改写 <head> 里已有的那个
+ * <title>：静态外壳的标题不随启动清理摘掉（页面分块下载期间标签页标题必须仍是外壳写的那个），
+ * 若再让 React 另插一个 <title>，head 里会有两份，`document.title` 只认第一个。
+ * 结构化数据见上方 `useStructuredDataScript`。
  */
 export function Seo({
   path,
@@ -81,13 +84,17 @@ export function Seo({
     breadcrumbStructuredDataJson,
   } = resolveSeo({ path, title, description, image, keywords, indexable, structuredData });
 
+  // 布局副作用：与页面内容同一次提交里写完，不会出现新页面已显示、标签页标题还是上一页的帧。
+  useLayoutEffect(() => {
+    document.title = resolvedTitle;
+  }, [resolvedTitle]);
+
   useStructuredDataScript(STRUCTURED_DATA_ID, structuredDataJson);
   useStructuredDataScript(FAQ_STRUCTURED_DATA_ID, faqStructuredDataJson);
   useStructuredDataScript(BREADCRUMB_STRUCTURED_DATA_ID, breadcrumbStructuredDataJson);
 
   return (
-    <Helmet prioritizeSeoTags>
-      <title>{resolvedTitle}</title>
+    <>
       {headTags.map((tag) => {
         const key = Object.values(tag.attrs)[0];
         return tag.kind === "meta" ? (
@@ -96,7 +103,7 @@ export function Seo({
           <link key={key} {...tag.attrs} />
         );
       })}
-    </Helmet>
+    </>
   );
 }
 

@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { HelmetProvider } from "react-helmet-async";
 import { createMemoryRouter, MemoryRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,13 +26,11 @@ const installShell = () => {
 
 function renderPage() {
   return render(
-    <HelmetProvider context={{}}>
-      <MemoryRouter>
-        <TooltipProvider>
-          <CEERankedPage />
-        </TooltipProvider>
-      </MemoryRouter>
-    </HelmetProvider>
+    <MemoryRouter>
+      <TooltipProvider>
+        <CEERankedPage />
+      </TooltipProvider>
+    </MemoryRouter>
   );
 }
 
@@ -181,11 +178,7 @@ describe("CEERankedPage 的离页导航", () => {
       ],
       { initialEntries: ["/cee/ranked"] }
     );
-    render(
-      <HelmetProvider context={{}}>
-        <RouterProvider router={router} />
-      </HelmetProvider>
-    );
+    render(<RouterProvider router={router} />);
     return startViewTransition;
   }
 

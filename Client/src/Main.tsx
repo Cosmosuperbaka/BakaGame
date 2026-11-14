@@ -1,6 +1,5 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { HelmetProvider } from "react-helmet-async";
 import "./index.css";
 import App from "./App";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
@@ -28,7 +27,7 @@ initTheme();
 // 只挂首次交互的解锁监听，此时不创建 AudioContext。
 initSoundEffects();
 setupGlobalImageProtection();
-// 先摘掉构建期注入的静态 SEO 标签，避免与 Helmet 写入的标签重复（详见 StaticSeo.ts）。
+// 先摘掉构建期注入的静态 SEO 标签，避免与 Seo 渲染的标签重复（详见 StaticSeo.ts）。
 stripStaticSeo();
 
 // 模块级只建一次：放进组件里，StrictMode 的双重调用会多建一个监听 popstate 却无人使用的路由实例。
@@ -36,10 +35,8 @@ const router = createAppRouter();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <HelmetProvider>
-      <AppErrorBoundary onError={recoverFromDomInvariant} fallback={<AppErrorFallback />}>
-        <App router={router} />
-      </AppErrorBoundary>
-    </HelmetProvider>
+    <AppErrorBoundary onError={recoverFromDomInvariant} fallback={<AppErrorFallback />}>
+      <App router={router} />
+    </AppErrorBoundary>
   </StrictMode>
 );

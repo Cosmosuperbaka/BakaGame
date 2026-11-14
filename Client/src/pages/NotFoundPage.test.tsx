@@ -1,5 +1,4 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { HelmetProvider } from "react-helmet-async";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import NotFoundPage from "./NotFoundPage";
@@ -9,11 +8,9 @@ import NotFoundPage from "./NotFoundPage";
 describe("NotFoundPage", () => {
   const renderAt = (path: string) =>
     render(
-      <HelmetProvider context={{}}>
-        <MemoryRouter initialEntries={[path]}>
-          <NotFoundPage />
-        </MemoryRouter>
-      </HelmetProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <NotFoundPage />
+      </MemoryRouter>
     );
 
   it("说明页面不存在并给出回首页的真链接", () => {

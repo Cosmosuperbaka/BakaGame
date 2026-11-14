@@ -1,21 +1,11 @@
 import { render, waitFor } from "@testing-library/react";
-import { HelmetProvider } from "react-helmet-async";
 import { describe, expect, it } from "vitest";
+import { stripStaticSeo } from "@/lib/StaticSeo";
 import { Seo } from "./Seo";
 import { PAGE_META, SITE_ORIGIN, SITE_TAGLINE, findPageMeta } from "@/data/PageMeta";
 
-// react-helmet-async 需要一个独立的 context 实例，否则同一个 Provider 在
-// 多个用例之间会复用同一份状态，断言到上一个用例残留的标签。
 function renderSeo(props: React.ComponentProps<typeof Seo>) {
-  const context = {};
-  return {
-    context,
-    result: render(
-      <HelmetProvider context={context}>
-        <Seo {...props} />
-      </HelmetProvider>
-    ),
-  };
+  return { result: render(<Seo {...props} />) };
 }
 
 describe("Seo", () => {
@@ -129,8 +119,8 @@ describe("Seo", () => {
     });
 
     // 反向断言：JSON-LD 必须落在 head。
-    // 曾经用 Helmet 的 script prop 承载，React 19 会把它渲染进 body 再由
-    // head 提升机制搬运，该行为在预渲染与测试环境不可靠，搜索引擎可能读不到。
+    // 直接渲染 <script> 时 React 19 不会把内联脚本提升到 head，而是留在组件位置（body），
+    // 搜索引擎可能读不到；因此结构化数据由副作用按固定 id 写进 head。
     expect(document.body.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
@@ -229,5 +219,70 @@ describe("Seo", () => {
     await waitFor(() =>
       expect(document.getElementById("bakagame-breadcrumb-structured-data")).toBeNull()
     );
+  });
+
+  describe("页面标题", () => {
+    // 复刻真实启动顺序：静态外壳写好标题与元信息 -> 启动时摘掉带标记的标签 -> 页面分块到位后 Seo 才挂载。
+    function mountStaticShell() {
+      document.head.innerHTML = `<title>外壳标题</title>
+        <meta name="description" content="外壳描述" data-static-seo="1" />
+        <link rel="canonical" href="https://example.com/shell" data-static-seo="1" />`;
+    }
+    const titles = () => [...document.head.querySelectorAll("title")];
+
+    it("摘掉静态元信息之后、Seo 挂载之前，标题仍是外壳写的那个", () => {
+      mountStaticShell();
+      stripStaticSeo();
+
+      expect(document.head.querySelector('meta[name="description"]')).toBeNull();
+      expect(document.title).toBe("外壳标题");
+      expect(titles()).toHaveLength(1);
+    });
+
+    it("Seo 挂载后标题变成该页标题，head 里始终只有一个 title，且就是外壳那一个", async () => {
+      mountStaticShell();
+      const shellTitle = document.head.querySelector("title");
+      stripStaticSeo();
+
+      renderSeo({ path: "/whoisfaker" });
+
+      // 布局副作用在挂载提交内同步完成：不需要等待。
+      expect(document.title).toBe("谁是卧底 Who is Faker - BakaGame");
+      expect(titles()).toEqual([shellTitle]);
+      await waitFor(() =>
+        expect(document.head.querySelectorAll('meta[name="description"]')).toHaveLength(1)
+      );
+      expect(document.head.querySelectorAll('link[rel="canonical"]')).toHaveLength(1);
+    });
+
+    it("同一个 Seo 换页面时标题跟着变，不新增 title", () => {
+      mountStaticShell();
+      const view = render(<Seo path="/whoisfaker" />);
+      view.rerender(<Seo path="/songuessr" />);
+
+      expect(document.title).toBe("听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame");
+      expect(titles()).toHaveLength(1);
+    });
+
+    it("页面卸载后 meta 与 canonical 被移除，避免与下一页并存", async () => {
+      mountStaticShell();
+      stripStaticSeo();
+      const first = renderSeo({ path: "/whoisfaker" });
+      await waitFor(() =>
+        expect(document.head.querySelectorAll('link[rel="canonical"]')).toHaveLength(1)
+      );
+
+      first.result.unmount();
+      expect(document.head.querySelectorAll('link[rel="canonical"]')).toHaveLength(0);
+      expect(document.head.querySelectorAll('meta[name="description"]')).toHaveLength(0);
+
+      renderSeo({ path: "/songuessr" });
+      await waitFor(() =>
+        expect(
+          document.head.querySelector('link[rel="canonical"]')?.getAttribute("href")
+        ).toContain("/songuessr")
+      );
+      expect(document.head.querySelectorAll('meta[name="description"]')).toHaveLength(1);
+    });
   });
 });
