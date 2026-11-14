@@ -7,7 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { RoomPasswordField, type RoomPasswordError } from "@/components/common/room/RoomJoinGate";
+import {
+  RoomPasswordField,
+  type RoomPasswordError,
+} from "@/components/common/room/RoomPasswordField";
 import type { OriginPoint } from "@/lib/motion/Origin";
 
 export interface JoinPasswordDialogProps {
