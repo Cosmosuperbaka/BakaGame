@@ -4,7 +4,14 @@ import { GameLayout } from "@/layouts/GameLayout";
 
 function WhoIsFakerLayout() {
   const toasts = useWhoIsFakerStore((state) => state.toasts);
-  return <GameLayout init={initWhoIsFakerWs} soundBridge={<FakerSoundBridge />} toasts={toasts} />;
+  return (
+    <GameLayout
+      init={initWhoIsFakerWs}
+      soundBridge={<FakerSoundBridge />}
+      toasts={toasts}
+      toastActions={useWhoIsFakerStore.getState()}
+    />
+  );
 }
 
 export default WhoIsFakerLayout;

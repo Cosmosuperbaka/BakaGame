@@ -14,6 +14,10 @@ export interface ToastState {
   /** 默认是普通信息；报错的调用点必须显式传 `"error"`，不靠默认值。时长缺省按类型取。 */
   showToast: (text: string, type?: ToastItem["type"], durationMs?: number) => void;
   dismissToast: (id: ToastItem["id"]) => void;
+  /** 玩家正看着这条（指针悬停或焦点在上面）：停表，剩余时长留着。 */
+  pauseToast: (id: ToastItem["id"]) => void;
+  /** 玩家移开了：按停表时剩下的时长继续。 */
+  resumeToast: (id: ToastItem["id"]) => void;
   clearToasts: () => void;
 }
 
@@ -27,14 +31,18 @@ const defaultDuration = (type: ToastItem["type"]) => (type === "error" ? TOAST_E
  * 去重与让位都按当前列表判断，不按闭包里的记账：预置工具与测试会直接改写列表。
  */
 export function createToastSlice(set: ToastSet, get: ToastGet): ToastState {
-  const timers = new Map<ToastItem["id"], ReturnType<typeof setTimeout>>();
+  /** 每条提示的倒计时；`timer` 为空表示停着，`remaining` 是还剩多久。 */
+  const countdowns = new Map<
+    ToastItem["id"],
+    { timer: ReturnType<typeof setTimeout> | null; remaining: number; startedAt: number }
+  >();
   let counter = 0;
 
   const stop = (id: ToastItem["id"]) => {
-    const timer = timers.get(id);
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    timers.delete(id);
+    const countdown = countdowns.get(id);
+    if (!countdown) return;
+    if (countdown.timer !== null) clearTimeout(countdown.timer);
+    countdowns.delete(id);
   };
 
   const dismissToast = (id: ToastItem["id"]) => {
@@ -42,12 +50,27 @@ export function createToastSlice(set: ToastSet, get: ToastGet): ToastState {
     set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) }));
   };
 
+  const run = (id: ToastItem["id"]) => {
+    const countdown = countdowns.get(id);
+    if (!countdown || countdown.timer !== null) return;
+    countdown.startedAt = Date.now();
+    countdown.timer = setTimeout(() => dismissToast(id), countdown.remaining);
+  };
+
+  /** 从头计时；正停着的（玩家正看着）只换剩余时长，等玩家移开再走。 */
   const arm = (id: ToastItem["id"], durationMs: number) => {
+    const paused = countdowns.get(id)?.timer === null;
     stop(id);
-    timers.set(
-      id,
-      setTimeout(() => dismissToast(id), durationMs)
-    );
+    countdowns.set(id, { timer: null, remaining: durationMs, startedAt: 0 });
+    if (!paused) run(id);
+  };
+
+  const pauseToast = (id: ToastItem["id"]) => {
+    const countdown = countdowns.get(id);
+    if (!countdown || countdown.timer === null) return;
+    clearTimeout(countdown.timer);
+    countdown.timer = null;
+    countdown.remaining = Math.max(0, countdown.remaining - (Date.now() - countdown.startedAt));
   };
 
   const showToast = (text: string, type: ToastItem["type"] = "info", durationMs?: number) => {
@@ -75,9 +98,10 @@ export function createToastSlice(set: ToastSet, get: ToastGet): ToastState {
     toasts: [],
     showToast,
     dismissToast,
+    pauseToast,
+    resumeToast: run,
     clearToasts: () => {
-      timers.forEach((timer) => clearTimeout(timer));
-      timers.clear();
+      countdowns.forEach((_, id) => stop(id));
       set({ toasts: [] });
     },
   };

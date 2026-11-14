@@ -11,5 +11,12 @@ export default function CEELayout() {
   useEffect(() => {
     if (requestLoginAt) requestLogin();
   }, [requestLoginAt]);
-  return <GameLayout init={initCEEWs} soundBridge={<CEESoundBridge />} toasts={toasts} />;
+  return (
+    <GameLayout
+      init={initCEEWs}
+      soundBridge={<CEESoundBridge />}
+      toasts={toasts}
+      toastActions={useCEEStore.getState()}
+    />
+  );
 }

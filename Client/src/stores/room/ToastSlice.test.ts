@@ -169,3 +169,85 @@ describe("提示切片：同一句话连发", () => {
     expect(texts(host)).toEqual([]);
   });
 });
+
+describe("提示切片：暂停与继续", () => {
+  it("暂停后到点也不消失，继续后按剩下的时长消失", () => {
+    const host = createHost();
+    host.getState().showToast("读一读");
+    const { id } = host.getState().toasts[0];
+    vi.advanceTimersByTime(1000);
+    host.getState().pauseToast(id);
+    vi.advanceTimersByTime(60_000);
+    expect(texts(host)).toEqual(["读一读"]);
+    host.getState().resumeToast(id);
+    vi.advanceTimersByTime(1999);
+    expect(texts(host)).toEqual(["读一读"]);
+    vi.advanceTimersByTime(1);
+    expect(texts(host)).toEqual([]);
+  });
+
+  it("只暂停指定的一条，其余照常到点消失", () => {
+    const host = createHost();
+    host.getState().showToast("甲");
+    host.getState().showToast("乙");
+    host.getState().pauseToast(host.getState().toasts[0].id);
+    vi.advanceTimersByTime(3000);
+    expect(texts(host)).toEqual(["甲"]);
+  });
+
+  it("重复暂停不重复扣时，重复继续不叠出第二个计时", () => {
+    const host = createHost();
+    host.getState().showToast("读一读");
+    const { id } = host.getState().toasts[0];
+    vi.advanceTimersByTime(1000);
+    host.getState().pauseToast(id);
+    vi.advanceTimersByTime(1000);
+    host.getState().pauseToast(id);
+    host.getState().resumeToast(id);
+    host.getState().resumeToast(id);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(1999);
+    expect(texts(host)).toEqual(["读一读"]);
+    vi.advanceTimersByTime(1);
+    expect(texts(host)).toEqual([]);
+  });
+
+  it("暂停中同一句话重发：仍停着，继续后按新的完整时长计", () => {
+    const host = createHost();
+    host.getState().showToast("同一句", "error");
+    const { id } = host.getState().toasts[0];
+    vi.advanceTimersByTime(4000);
+    host.getState().pauseToast(id);
+    host.getState().showToast("同一句", "error");
+    vi.advanceTimersByTime(60_000);
+    expect(texts(host)).toEqual(["同一句"]);
+    host.getState().resumeToast(id);
+    vi.advanceTimersByTime(4999);
+    expect(texts(host)).toEqual(["同一句"]);
+    vi.advanceTimersByTime(1);
+    expect(texts(host)).toEqual([]);
+  });
+
+  it("暂停中的提示照样能关闭，也照样会被新提示挤走", () => {
+    const host = createHost();
+    host.getState().showToast("一");
+    host.getState().pauseToast(host.getState().toasts[0].id);
+    host.getState().dismissToast(host.getState().toasts[0].id);
+    expect(texts(host)).toEqual([]);
+
+    host.getState().showToast("二");
+    host.getState().pauseToast(host.getState().toasts[0].id);
+    host.getState().showToast("三");
+    host.getState().showToast("四");
+    host.getState().showToast("五");
+    expect(texts(host)).toEqual(["三", "四", "五"]);
+  });
+
+  it("对已经不在的提示暂停或继续，什么也不发生", () => {
+    const host = createHost();
+    host.getState().pauseToast(404);
+    host.getState().resumeToast(404);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(texts(host)).toEqual([]);
+  });
+});

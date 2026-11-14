@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import type { ToastItem } from "./Toast";
 import { SERVER_SHUTDOWN_MESSAGE } from "@bakagame/shared/values";
 import { ToastViewport } from "./Toast";
@@ -6,7 +7,7 @@ import { ToastViewport } from "./Toast";
 const meta = {
   title: "公共组件/Toast",
   component: ToastViewport,
-  args: { toasts: [] },
+  args: { toasts: [], onDismiss: fn(), onPause: fn(), onResume: fn() },
   tags: ["overlay"],
   parameters: { layout: "fullscreen" },
 } satisfies Meta<typeof ToastViewport>;
@@ -30,7 +31,7 @@ export const AllTypes: Story = {
 export const OverContent: Story = {
   name: "盖在内容上",
   args: { toasts: ALL_TYPES },
-  render: () => (
+  render: (args) => (
     <>
       <div
         aria-hidden="true"
@@ -40,7 +41,7 @@ export const OverContent: Story = {
             "repeating-linear-gradient(90deg, var(--primary) 0 48px, var(--foreground) 48px 96px, var(--background) 96px 144px)",
         }}
       />
-      <ToastViewport toasts={ALL_TYPES} />
+      <ToastViewport {...args} />
     </>
   ),
 };
@@ -62,17 +63,24 @@ export const CEE: Story = {
   args: { toasts: [{ id: "cee-notice", text: "设置已保存", type: "success" }] },
 };
 
-/** 短时间里连着来好几条：等宽右对齐堆叠，最长的一条决定整列宽度，长文与短句混排不参差。 */
+/** 队列满时的样子（同时最多三条）：等宽右对齐堆叠，最长的一条决定整列宽度，长文与短句混排不参差。 */
 export const ManyStacked: Story = {
   name: "多条堆叠",
   args: {
     toasts: [
       { id: 1, text: "小布丁加入了房间", type: "info" },
-      { id: 2, text: "房间链接已复制", type: "success" },
-      { id: 3, text: "海豹已准备", type: "info" },
-      { id: 4, text: "网易云登录状态已失效，请重新扫码登录", type: "error" },
-      { id: 5, text: "设置已保存", type: "success" },
-      { id: 6, text: "有玩家掉线，等待出题人处理", type: "info" },
+      { id: 2, text: "网易云登录状态已失效，请重新扫码登录", type: "error" },
+      { id: 3, text: "设置已保存", type: "success" },
     ],
+  },
+};
+
+/** 键盘用户 Tab 到关闭钮：焦点环落在提示条里，这条提示停表等人读完。 */
+export const CloseFocused: Story = {
+  name: "关闭钮键盘聚焦",
+  args: { toasts: ALL_TYPES },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.tab();
+    canvas.getAllByRole("button", { name: "关闭通知" })[0].focus();
   },
 };
