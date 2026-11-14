@@ -74,6 +74,7 @@ fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), S
         }
     }
 
+    let leftover = reader.buffer().to_vec();
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default();
     let target = parts.next().unwrap_or_default();
@@ -124,6 +125,12 @@ fn handle(mut stream: TcpStream, resolver: Arc<HttpDnsResolver>) -> Result<(), S
     let _ = stream.set_write_timeout(None);
     let _ = stream.set_nodelay(true);
     let _ = upstream.set_nodelay(true);
+    // 读头的缓冲读取器可能已把随头到达的字节（流水线化的 TLS ClientHello）预读走，
+    // 隧道从原始流读不到它们，这里先补发给上游
+    let mut upstream = upstream;
+    upstream
+        .write_all(&leftover)
+        .map_err(|err| format!("转发随头到达的数据失败：{err}"))?;
     tunnel(stream, upstream);
     Ok(())
 }
@@ -203,9 +210,8 @@ mod tests {
         assert!(split_target("example.com").is_err());
     }
 
-    /// 端到端：CONNECT 一个系统 DNS 解析不到的域名，HTTPDNS 指向本地回显服务。
-    #[test]
-    fn connect_uses_httpdns_for_managed_hosts() {
+    /// 回显服务 + 指向它的 HTTPDNS + 已启动的隧道，返回（隧道地址，回显端口）。
+    fn proxy_to_echo() -> (SocketAddr, u16) {
         let echo = TcpListener::bind("127.0.0.1:0").unwrap();
         let echo_port = echo.local_addr().unwrap().port();
         std::thread::spawn(move || {
@@ -227,14 +233,11 @@ mod tests {
             domains: vec![HOST.to_string()],
             timeout: Duration::from_secs(1),
         }));
-        let proxy = start(resolver).unwrap();
+        (start(resolver).unwrap(), echo_port)
+    }
 
-        let mut client = TcpStream::connect(proxy).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        client.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
-        client
-            .write_all(format!("CONNECT {HOST}:{echo_port} HTTP/1.1\r\nHost: {HOST}\r\n\r\n").as_bytes())
-            .unwrap();
+    /// 读到响应头结尾并断言是 200。
+    fn read_connect_head(client: &mut TcpStream) {
         let mut head = Vec::new();
         let mut byte = [0u8; 1];
         while !head.ends_with(b"\r\n\r\n") {
@@ -242,8 +245,37 @@ mod tests {
             head.push(byte[0]);
         }
         assert!(String::from_utf8_lossy(&head).starts_with("HTTP/1.1 200"));
+    }
+
+    /// 端到端：CONNECT 一个系统 DNS 解析不到的域名，HTTPDNS 指向本地回显服务。
+    #[test]
+    fn connect_uses_httpdns_for_managed_hosts() {
+        let (proxy, echo_port) = proxy_to_echo();
+        let mut client = TcpStream::connect(proxy).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .write_all(format!("CONNECT {HOST}:{echo_port} HTTP/1.1\r\nHost: {HOST}\r\n\r\n").as_bytes())
+            .unwrap();
+        read_connect_head(&mut client);
 
         client.write_all(b"PING").unwrap();
+        let mut reply = [0u8; 4];
+        client.read_exact(&mut reply).unwrap();
+        assert_eq!(&reply, b"PING");
+    }
+
+    /// 流水线化客户端：CONNECT 头与随后的字节同一批到达（不等 200）。
+    /// 读头用的缓冲读取器会把后面的字节一并读走，隧道必须把它们补发给上游。
+    #[test]
+    fn bytes_arriving_with_connect_head_reach_upstream() {
+        let (proxy, echo_port) = proxy_to_echo();
+        let mut client = TcpStream::connect(proxy).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .write_all(format!("CONNECT {HOST}:{echo_port} HTTP/1.1\r\nHost: {HOST}\r\n\r\nPING").as_bytes())
+            .unwrap();
+        read_connect_head(&mut client);
         let mut reply = [0u8; 4];
         client.read_exact(&mut reply).unwrap();
         assert_eq!(&reply, b"PING");
