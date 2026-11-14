@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { errorCode, errorText } from "@/lib/ErrorMessage";
 import { randomRoomId } from "@/lib/Random";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 
@@ -9,9 +10,6 @@ export interface JoinPasswordError {
   message: string;
   invalid: boolean;
 }
-
-const errorMessage = (error: unknown, fallback: string) =>
-  (error as { message?: string } | null)?.message ?? fallback;
 
 export interface LobbyRoomTarget {
   roomId: string;
@@ -120,7 +118,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
     async (
       operation: (current: () => boolean, signal: AbortSignal) => Promise<void>,
       onError: (error: unknown) => void = (error) =>
-        onEntryError ? onEntryError(error) : showError(errorMessage(error, "加入房间失败，请重试"))
+        onEntryError ? onEntryError(error) : showError(errorText(error, "加入房间失败，请重试"))
     ) => {
       if (transaction.current || !mounted.current) return;
       const entry = new AbortController();
@@ -186,9 +184,9 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
       },
       (error) =>
         setJoinError({
-          message: errorMessage(error, "加入房间失败，请重试"),
+          message: errorText(error, "加入房间失败，请重试"),
           // 只有密码本身不对才标红输入框；次数过多、房间已关闭等归不到这个字段，只给文案。
-          invalid: (error as { code?: string } | null)?.code === "PASSWORD_INCORRECT",
+          invalid: errorCode(error) === "PASSWORD_INCORRECT",
         })
     );
   }, [joinTarget, joinPassword, userName, joinRoom, navigate, gamePath, runEntry]);
@@ -213,7 +211,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
               );
               break;
             } catch (error) {
-              const code = (error as { code?: string } | null)?.code;
+              const code = errorCode(error);
               const taken = code !== undefined && ROOM_ID_TAKEN_CODES.has(code);
               if (!taken || retries >= MAX_ROOM_ID_RETRIES || signal.aborted || !current())
                 throw error;

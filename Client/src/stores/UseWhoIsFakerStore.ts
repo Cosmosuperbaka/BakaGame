@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { errorText } from "@/lib/ErrorMessage";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
@@ -460,8 +461,7 @@ export function initWhoIsFakerWs() {
       }
       case "server.shutdown": {
         roomEntry.cancel();
-        const payload = evt.payload as { message?: string } | undefined;
-        const message = payload?.message || SERVER_SHUTDOWN_MESSAGE;
+        const message = errorText(evt.payload, SERVER_SHUTDOWN_MESSAGE);
         // 原地待命：不清票据、不退房。服务端停机前会把房间落盘，连接恢复后
         // onStatus 会带原 sessionToken 自动 reconnectRoom 回到原位；
         // 若那局已被丢弃（旧版本服务或停机过久），那一步会收到 SESSION_NOT_FOUND

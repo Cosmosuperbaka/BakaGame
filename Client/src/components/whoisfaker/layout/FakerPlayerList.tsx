@@ -14,6 +14,7 @@ import {
   type PlayerRowProps,
 } from "./FakerPlayerRow";
 import { useScrollFade } from "@/hooks/UseScrollFade";
+import { errorText } from "@/lib/ErrorMessage";
 import { cn } from "@/lib/Utils";
 import {
   PLAYER_COLUMN_WIDTH,
@@ -117,7 +118,7 @@ export function FakerPlayerList(props: PlayerListProps) {
       try {
         await sendCommand(type, payload);
       } catch (error) {
-        addToast((error as { message: string }).message, "error");
+        addToast(errorText(error, "操作失败，请重试"), "error");
       }
     },
     [addToast, sendCommand]

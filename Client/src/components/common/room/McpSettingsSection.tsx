@@ -3,11 +3,8 @@ import { Bot } from "lucide-react";
 import { McpPairingPanel } from "@/components/common/McpPairingPanel";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { errorText } from "@/lib/ErrorMessage";
 import { usePageControl } from "@/stores/UsePageControl";
-
-// 房间命令的失败是协议错误体（普通对象），不是 ORPCError，文案直接取 message。
-const errorMessage = (failure: unknown, fallback: string): string =>
-  (failure as { message?: string } | null)?.message ?? fallback;
 
 function McpToggle({
   isHost,
@@ -56,7 +53,7 @@ function McpSettingsBody({
     try {
       await onChangeAllowAgents(value);
     } catch (failure) {
-      setError(errorMessage(failure, "保存 MCP 设置失败"));
+      setError(errorText(failure, "保存 MCP 设置失败"));
     } finally {
       setPending(false);
     }

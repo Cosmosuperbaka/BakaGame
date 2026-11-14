@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { errorText } from "@/lib/ErrorMessage";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerCommand, WhoIsFakerPayload } from "@bakagame/shared";
 
@@ -48,7 +49,7 @@ export function useFakerPhaseAction() {
           await (payload === undefined ? sendCommand(type) : sendCommand(type, payload));
           onSuccess?.();
         } catch (error) {
-          addToast((error as { message?: string }).message ?? fallback, "error");
+          addToast(errorText(error, fallback), "error");
         } finally {
           setPending(null);
         }

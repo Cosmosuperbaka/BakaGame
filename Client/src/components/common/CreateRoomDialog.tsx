@@ -12,6 +12,7 @@ import {
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import type { OriginPoint } from "@/lib/motion/Origin";
+import { errorText } from "@/lib/ErrorMessage";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 
 /**
@@ -181,7 +182,7 @@ function CreateRoomForm({
       });
     } catch (err: unknown) {
       // 只走这一种渠道：失败写在弹窗里，不再同时弹 Toast。
-      setServerError((err as { message?: string } | null)?.message || "创建房间失败，请重试");
+      setServerError(errorText(err, "创建房间失败，请重试"));
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import { TEST_ROOM_ID } from "@/config/Constants";
 import { getSavedUsername, guestName, saveUsername } from "@/lib/Storage";
 import { normalizeCEERoomId } from "@/lib/CEESession";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
+import { isAbortError } from "@/lib/ErrorMessage";
 import { isProtocolError } from "@/lib/WebsocketClient";
 
 /**
@@ -51,7 +52,7 @@ export function useCEERoomLifecycle() {
     void navigate("/cee", { replace: true });
   };
   const cancelled = (failure: unknown, controller: AbortController) =>
-    controller.signal.aborted || (failure as { name?: string } | null)?.name === "AbortError";
+    controller.signal.aborted || isAbortError(failure);
   const attempted = useRef("");
   const manualJoin = useRef<AbortController | null>(null);
   useEffect(

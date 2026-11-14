@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { errorText } from "@/lib/ErrorMessage";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/motion/Feedback";
 import { spring } from "@/lib/motion/Transitions";
@@ -60,7 +61,7 @@ export function FakerTestController() {
       try {
         await sendCommand(type, payload);
       } catch (error) {
-        addToast((error as { message?: string }).message ?? "操作失败", "error");
+        addToast(errorText(error, "操作失败"), "error");
       }
     },
     [addToast, sendCommand]

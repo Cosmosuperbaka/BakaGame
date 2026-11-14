@@ -1,5 +1,5 @@
 import { useSettingsReadOnly } from "@/components/common/room/settings/Layout";
-import { errorMessage } from "@/components/songuessr/SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
@@ -38,7 +38,7 @@ export function useSongWaitingSettingsSave<T extends Record<string, unknown>>(
     },
     {
       enabled: !readOnly && snapshot.phase === "waiting" && enabled,
-      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
+      onError: (error) => showToast(errorText(error, "保存设置失败"), "error"),
     }
   );
 }

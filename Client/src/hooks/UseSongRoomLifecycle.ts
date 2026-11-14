@@ -21,6 +21,7 @@ import {
 } from "@/lib/SonGuessrMusicSession";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
 import type { SonGuessrAck, SonGuessrCommand, SonGuessrPayload } from "@bakagame/shared";
+import { errorCode, errorText } from "@/lib/ErrorMessage";
 
 const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
 const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
@@ -176,14 +177,14 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           return;
         } catch (error) {
           if (task.cancelled) return;
-          const appError = error as { code?: string; message?: string };
-          if (appError.code === "MUSIC_SESSION_INVALID") {
+          const code = errorCode(error);
+          if (code === "MUSIC_SESSION_INVALID") {
             cancelMusicSessionUpload(platform);
             clearStoredSongMusicSession(platform);
             showToast(`${platformName}登录状态已失效，请重新扫码登录`, "error");
             return;
           }
-          const delay = musicSessionRetryDelay(attempt, appError);
+          const delay = musicSessionRetryDelay(attempt, { code });
           if (delay === undefined) {
             cancelMusicSessionUpload(platform);
             return;
@@ -201,13 +202,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   const { run: runLocked, pending: pendingCommands } = useCommandRunner<string>({
     onError: (error) => {
-      const appError = error as { code?: string; message?: string };
-      if (appError.code === "MUSIC_SESSION_INVALID") {
+      if (errorCode(error) === "MUSIC_SESSION_INVALID") {
         cancelMusicSessionUpload();
-        showToast(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
+        showToast(errorText(error, "音乐登录会话已失效，请重新确认登录状态"), "error");
         return;
       }
-      showToast(appError.message ?? "操作失败", "error");
+      showToast(errorText(error, "操作失败"), "error");
     },
   });
 
@@ -245,7 +245,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         return true;
       } catch (createError) {
         if (signal.aborted) return true;
-        showToast((createError as { message?: string }).message ?? "创建房间失败", "error");
+        showToast(errorText(createError, "创建房间失败"), "error");
         return false;
       }
     },
@@ -263,17 +263,17 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         setJoining(false);
       } catch (error) {
         if (signal.aborted) return;
-        const appError = error as { code?: string; message?: string };
-        if (appError.code === "ROOM_NOT_FOUND") {
+        const code = errorCode(error);
+        if (code === "ROOM_NOT_FOUND") {
           if (await createMissingRoom(name, signal)) return;
-        } else if (needsPasswordPrompt(appError.code)) {
+        } else if (needsPasswordPrompt(code)) {
           setPendingJoinName(name);
           setPasswordDraft("");
           setNeedsPassword(true);
           setJoining(false);
           return;
         } else {
-          showToast(appError.message ?? "加入房间失败", "error");
+          showToast(errorText(error, "加入房间失败"), "error");
         }
         void navigate(exitPath, { replace: true });
       }
@@ -313,8 +313,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         return;
       } catch (error) {
         if (signal.aborted) return;
-        if ((error as { code?: string }).code !== "ROOM_EXISTS") {
-          showToast((error as { message?: string }).message ?? "创建单人房间失败", "error");
+        if (errorCode(error) !== "ROOM_EXISTS") {
+          showToast(errorText(error, "创建单人房间失败"), "error");
           void navigate("/", { replace: true });
           return;
         }
@@ -328,7 +328,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         setJoining(false);
       } catch (error) {
         if (signal.aborted) return;
-        showToast((error as { message?: string }).message ?? "创建单人房间失败", "error");
+        showToast(errorText(error, "创建单人房间失败"), "error");
         void navigate("/", { replace: true });
       }
     },
@@ -377,7 +377,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       } catch (error) {
         if (signal.aborted) return;
         // 临时恢复失败不是“没有可恢复会话”，不能继续自动创建。
-        showToast((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
+        showToast(errorText(error, "恢复房间失败，请重试"), "error");
         void navigate(exitPath, { replace: true });
         return;
       }

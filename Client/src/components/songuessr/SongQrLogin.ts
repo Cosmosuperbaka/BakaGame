@@ -1,9 +1,9 @@
 import type { SonGuessrAck, SonGuessrMusicAccount } from "@bakagame/shared";
 import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
+import { errorCode, errorText } from "@/lib/ErrorMessage";
 import { createSignal } from "@/lib/Signal";
 import type { SongMusicPlatform } from "@/lib/SonGuessrMusicSession";
-import { errorMessage } from "./SongErrorMessage";
 
 export type QqScanMode = "qq" | "wx" | "mobile";
 
@@ -102,8 +102,8 @@ export class SongQrLogin {
       this.update({ qr, status: scanPrompt(platform, scanType) });
     } catch (error) {
       if (generation !== this.generation) return;
-      this.update({ status: errorMessage(error, "二维码生成失败，请稍后重试") });
-      this.deps.onCreateFailed(errorMessage(error, "二维码生成失败"));
+      this.update({ status: errorText(error, "二维码生成失败，请稍后重试") });
+      this.deps.onCreateFailed(errorText(error, "二维码生成失败"));
     } finally {
       if (generation === this.generation) this.update({ busy: false });
     }
@@ -136,16 +136,16 @@ export class SongQrLogin {
   }
 
   private failCheck(platform: SongMusicPlatform, error: unknown): void {
-    const { code } = error as { code?: string };
+    const code = errorCode(error);
     if (code === "MUSIC_LOGIN_RISK") {
       this.update({
         qr: null,
         status: `${SONG_PLATFORM_NAME[platform]}暂时拒绝了本次登录，请稍后重新扫码`,
       });
     } else if (code !== undefined && TERMINAL_CODES.has(code)) {
-      this.update({ qr: null, status: errorMessage(error, "登录失败，请点击刷新二维码") });
+      this.update({ qr: null, status: errorText(error, "登录失败，请点击刷新二维码") });
     } else {
-      this.update({ status: errorMessage(error, "二维码状态检查失败") });
+      this.update({ status: errorText(error, "二维码状态检查失败") });
     }
   }
 

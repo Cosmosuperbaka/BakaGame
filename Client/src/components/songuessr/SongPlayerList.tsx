@@ -12,7 +12,7 @@ import {
 } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
-import { errorMessage } from "@/components/songuessr/SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer } from "@/lib/motion/Choreography";
 import { teamGroups } from "@/lib/Teams";
@@ -53,7 +53,7 @@ function useHostCommands() {
     try {
       await action();
     } catch (error) {
-      showToast(errorMessage(error, "操作失败，请重试"), "error");
+      showToast(errorText(error, "操作失败，请重试"), "error");
     } finally {
       lockRef.current = false;
       setPending(false);

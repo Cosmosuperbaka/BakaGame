@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { errorText } from "@/lib/ErrorMessage";
 import {
   createQueryReuseCache,
   exactQueryKey,
@@ -556,8 +557,7 @@ export function initSonGuessrWs() {
       }
       case "server.shutdown": {
         roomEntry.cancel();
-        const message =
-          (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
+        const message = errorText(evt.payload, SERVER_SHUTDOWN_MESSAGE);
         // 原地待命：保留票据与快照。连接恢复后 onStatus 会带原 sessionToken 自动
         // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
         useSonGuessrStore.getState().showToast(message, "error", 10_000);

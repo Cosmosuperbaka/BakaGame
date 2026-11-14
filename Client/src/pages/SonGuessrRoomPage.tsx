@@ -6,7 +6,7 @@ import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/Ro
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
-import { errorMessage } from "@/components/songuessr/SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 import { SongPlayerList } from "@/components/songuessr/SongPlayerList";
 import { sendSongChoice } from "@/components/songuessr/SongSubmission";
 import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeControl";
@@ -95,7 +95,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       try {
         await sendCommand("song.chat.send", { text: chatText });
       } catch (error) {
-        showToast(errorMessage(error, "发送失败，请重试"), "error");
+        showToast(errorText(error, "发送失败，请重试"), "error");
         // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
         throw error;
       }

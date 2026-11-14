@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useParams } from "react-router";
 import { History, Menu, MessageSquare } from "lucide-react";
 import { normalizeRoomId } from "@/lib/Storage";
+import { errorText } from "@/lib/ErrorMessage";
 import { useMinWidth } from "@/hooks/UseMinWidth";
 import { Seo } from "@/components/common/Seo";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
@@ -43,7 +44,7 @@ export default function WhoIsFakerRoomPage() {
       try {
         await sendCommand("chat.send", { text });
       } catch (e) {
-        addToast((e as { message: string }).message, "error");
+        addToast(errorText(e, "操作失败，请重试"), "error");
         // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
         throw e;
       }

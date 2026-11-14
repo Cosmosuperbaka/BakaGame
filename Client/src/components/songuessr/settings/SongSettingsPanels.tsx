@@ -4,7 +4,7 @@ import { Disc3, Eye, EyeOff, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { errorMessage } from "@/components/songuessr/SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 import { useSongWaitingSettingsSave } from "./UseSongWaitingSettingsSave";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
@@ -239,7 +239,7 @@ function FilterChip({
   );
 }
 
-const describeArtistError = (error: unknown) => errorMessage(error, "搜索歌手失败");
+const describeArtistError = (error: unknown) => errorText(error, "搜索歌手失败");
 
 /** 歌手头像：圆形，与歌曲的方形封面区分；没有头像时用图标占位。 */
 function ArtistAvatar({ artist }: { artist: SongArtistSearchResult }) {
@@ -311,7 +311,7 @@ function SongAutoFilters({
       edit("playlist", result);
       showToast(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
     } catch (error) {
-      showToast(errorMessage(error, "读取歌单失败"), "error");
+      showToast(errorText(error, "读取歌单失败"), "error");
     } finally {
       setResolvingPlaylist(false);
     }

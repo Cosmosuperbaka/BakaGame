@@ -17,7 +17,7 @@ import {
 import { SongClipLyricSheet } from "./SongClipLyricSheet";
 import { SongClipFooter } from "./SongClipFooter";
 import { SongClipTransport } from "./SongClipTransport";
-import { errorMessage } from "./SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -171,7 +171,7 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
     try {
       await onConfirm({ startTime, endTime });
     } catch (submitError) {
-      setError(errorMessage(submitError, "提交出题失败，请重试"));
+      setError(errorText(submitError, "提交出题失败，请重试"));
     } finally {
       setSubmitting(false);
     }

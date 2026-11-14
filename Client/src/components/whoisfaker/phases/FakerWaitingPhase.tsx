@@ -25,6 +25,7 @@ import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallbac
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerCommandMap } from "@/lib/WhoIsFakerWs";
 import type { GameSendCommand } from "@/lib/GameWs";
+import { errorText } from "@/lib/ErrorMessage";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
@@ -254,7 +255,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
         !readOnly &&
         snapshot.status.phase === "waiting" &&
         (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
-      onError: (error) => addToast((error as { message: string }).message, "error"),
+      onError: (error) => addToast(errorText(error, "操作失败，请重试"), "error"),
     }
   );
 

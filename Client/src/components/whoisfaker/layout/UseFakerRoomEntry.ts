@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorCode, errorText } from "@/lib/ErrorMessage";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
@@ -68,14 +69,14 @@ export function useFakerRoomEntry(roomId: string) {
         setJoining(false);
       } catch (e) {
         if (signal.aborted) return;
-        const err = e as { code?: string; message?: string };
-        if (err.code === "PASSWORD_INCORRECT" || err.code === "PASSWORD_REQUIRED") {
+        const code = errorCode(e);
+        if (code === "PASSWORD_INCORRECT" || code === "PASSWORD_REQUIRED") {
           // 密码缺失与密码错误都回到密码框重输，而不是踢回大厅
           setPendingJoinName(name);
           setPasswordDraft("");
           setNeedsPassword(true);
           setJoining(false);
-        } else if (err.code === "ROOM_NOT_FOUND") {
+        } else if (code === "ROOM_NOT_FOUND") {
           try {
             await createRoom(
               {
@@ -91,11 +92,11 @@ export function useFakerRoomEntry(roomId: string) {
             setJoining(false);
           } catch (createErr) {
             if (signal.aborted) return;
-            addToast((createErr as { message: string }).message ?? "创建房间失败", "error");
+            addToast(errorText(createErr, "创建房间失败"), "error");
             void navigate("/whoisfaker");
           }
         } else {
-          addToast(err.message ?? "加入房间失败", "error");
+          addToast(errorText(e, "加入房间失败"), "error");
           void navigate("/whoisfaker");
         }
       }
@@ -138,7 +139,7 @@ export function useFakerRoomEntry(roomId: string) {
         restored = await reconnectRoom(roomId, signal);
       } catch (error) {
         if (signal.aborted) return;
-        addToast((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
+        addToast(errorText(error, "恢复房间失败，请重试"), "error");
         void navigate("/whoisfaker");
         return;
       }

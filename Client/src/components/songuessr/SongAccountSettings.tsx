@@ -18,7 +18,7 @@ import {
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { vipBadge, vipText } from "./SongAccountBadges";
-import { errorMessage } from "./SongErrorMessage";
+import { errorText } from "@/lib/ErrorMessage";
 import { SONG_PLATFORM_NAME, type QqScanMode, type QrCreateResponse } from "./SongQrLogin";
 import { useSongQrLogin } from "./UseSongQrLogin";
 import { useSongStoredMusicSession } from "./UseSongStoredMusicSession";
@@ -292,7 +292,7 @@ function usePoolSharing() {
     try {
       await sendCommand("song.auth.setPoolSharing", { platform, enabled });
     } catch (error) {
-      showToast(errorMessage(error, "切换账号共享失败，请重试"), "error");
+      showToast(errorText(error, "切换账号共享失败，请重试"), "error");
     } finally {
       setSharingBusy(false);
     }

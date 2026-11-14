@@ -3,6 +3,7 @@ import { Bot, Check, Copy, Lock } from "lucide-react";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { Button } from "@/components/ui/Button";
 import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
+import { errorText } from "@/lib/ErrorMessage";
 import { mcpEndpoint, mcpSiteOrigin } from "@/lib/McpConfig";
 import { closePageControl, openPageControl } from "@/lib/SiteWs";
 import { resetPageControl, usePageControl } from "@/stores/UsePageControl";
@@ -75,7 +76,7 @@ export function McpPairingPanel({ blockedReason }: { blockedReason?: string }) {
     const task = next ? openPageControl() : closePageControl();
     void task
       .catch((error: unknown) => {
-        setFailure((error as { message?: string } | null)?.message ?? "操作失败，请重试");
+        setFailure(errorText(error, "操作失败，请重试"));
       })
       .finally(() => setBusy(false));
   };
