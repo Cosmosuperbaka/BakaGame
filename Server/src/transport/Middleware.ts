@@ -116,6 +116,8 @@ export const globalMiddleware = ({
         createOpenapiPlugin({
           serverUrl: env.serverUrl,
           enabled: env.openapiEnabled,
+          onUnavailable: (error) =>
+            logger.warn("接口文档插件加载失败，文档页未挂载", describeError(error)),
         })
       )
       // ==================== 操作日志 ====================
