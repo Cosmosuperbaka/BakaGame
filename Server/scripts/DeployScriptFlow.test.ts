@@ -61,7 +61,7 @@ case "$1" in
   inspect) cat "$FLOW_STATE/running" ;;
   start) echo "docker start" >> "$FLOW_STATE/calls"; echo true > "$FLOW_STATE/running" ;;
   restart) echo "docker restart" >> "$FLOW_STATE/calls"; echo true > "$FLOW_STATE/running" ;;
-  logs) echo "假容器日志" ;;
+  logs) printf '%s\\n' '12:00:00 INFO 聊天 玩家小明说了一句话' '12:00:01 ERROR 启停 进程起不来了' ;;
   exec)
     kind=$(head -n 1)
     echo "docker exec $kind" >> "$FLOW_STATE/calls"
@@ -212,6 +212,9 @@ describe("部署脚本在沙箱里真正执行", () => {
     expect(run.code).toBe(1);
     expect(run.output).toContain("回到上一修订后仍未就绪");
     expect(count(run.calls, "docker restart")).toBe(2);
+    // 工作流日志是公开的：失败时只带出错误与启停行，对局内容不外带。
+    expect(run.output).toContain("进程起不来了");
+    expect(run.output).not.toContain("玩家小明");
     expect(run.head).toBe(OLD_REV);
   }, 120_000);
 

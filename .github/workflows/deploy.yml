@@ -587,6 +587,14 @@ jobs:
               fi
             done
 
+            # ---------- 验收失败时带出的容器日志 ----------
+            # 工作流日志对所有能看到仓库的人可见：只带出告警、错误与启停行，不整段照搬
+            # （整段里有对局内容与玩家昵称）。
+            container_failure_lines() {
+              sudo docker logs --tail 300 "$1" 2>&1 \
+                | grep -E 'ERROR|WARN|error:|Error:|启停|Cannot find|Bun v' | tail -n 30 || true
+            }
+
             # ---------- 放回上一修订 ----------
             # 本轮修订不满足重启条件、或重启后起不来时，把挂载树与 release 元数据放回上一修订：
             # 进程（或下一次拉起）跑的代码与磁盘上的一致，之后的发布与回退都从干净状态出发。
@@ -718,7 +726,7 @@ jobs:
               if ! sudo docker exec -i -e "DEPLOY_PROBE_BUDGET_MS=$PROBE_MS" "$SHARD" \
                 /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
                 echo "❌ $SHARD 重启后业务就绪失败"
-                sudo docker logs --tail 50 "$SHARD" || true
+                container_failure_lines "$SHARD"
                 # 本轮修订起不来：放回上一修订再拉起一次，把停机压到一次重启的时长。
                 # 只回这一次；回去之后仍不就绪就停手交运维，不做第二轮自动动作。
                 if restore_previous_revision; then
@@ -733,7 +741,7 @@ jobs:
                     echo "⚠️ $SHARD 已自动回到上一修订并恢复服务；本轮修订 $COMMIT 没有上线"
                   else
                     echo "❌ $SHARD 回到上一修订后仍未就绪，需运维处理"
-                    sudo docker logs --tail 50 "$SHARD" || true
+                    container_failure_lines "$SHARD"
                   fi
                 else
                   echo "   没有可回的上一修订（首次部署，或上一轮停在同一修订），需运维处理"
@@ -748,7 +756,7 @@ jobs:
                   /app/node_modules/.bin/bun --no-env-file - < Server/scripts/NpmPinVerify.ts; then
                   echo "❌ $SHARD 容器内实装的运行时依赖与本轮获验的 npm 锁不一致"
                   echo "   容器已重启且业务就绪，不自动回滚；请人工决定处置（详见 Server/scripts/StageNpmLock.mjs 的口径）"
-                  sudo docker logs --tail 30 "$SHARD" || true
+                  container_failure_lines "$SHARD"
                   exit 1
                 fi
               fi
