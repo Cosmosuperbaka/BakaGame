@@ -19,13 +19,20 @@ pub struct PrefixSources {
     pub extra_allowlist: Option<String>,
 }
 
-/// 模块路径是否落在白名单前缀之内（`prefixes` 须是 `build_prefixes` 的输出，已归一化）
+/// 模块路径是否落在白名单前缀之内（`prefixes` 须是 `build_prefixes` 的输出，已归一化）。
+///
+/// 按目录边界判，不是字符串前缀：路径要么就是前缀本身（追加项可以是单个文件），
+/// 要么在前缀之后紧跟反斜杠。否则 `...\System32evil\` 这类与白名单目录只是前缀相同的
+/// 兄弟目录也会被算进白名单。
 pub fn path_allowed(raw_path: &str, prefixes: &[String]) -> bool {
     let path = normalize(raw_path);
     if path.is_empty() {
         return false;
     }
-    prefixes.iter().any(|prefix| path.starts_with(prefix))
+    prefixes.iter().any(|prefix| {
+        path.strip_prefix(prefix.as_str())
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('\\'))
+    })
 }
 
 /// 白名单前缀：系统目录、自身安装目录、WebView2 运行时目录，外加追加项
@@ -157,6 +164,44 @@ mod tests {
             assert!(!path_allowed(path, &prefixes), "{path}");
         }
         assert!(!path_allowed("C:\\Windows\\System32\\x.dll", &[]));
+    }
+
+    /// 白名单按目录边界判：与白名单目录只是字符串前缀相同的兄弟目录不算在内
+    #[test]
+    fn sibling_directories_sharing_a_prefix_are_rejected() {
+        let mut with_extra = sources();
+        with_extra.extra_allowlist = Some(r"D:\Tools\Lib".to_string());
+        let prefixes = build_prefixes(&with_extra);
+        for path in [
+            r"C:\Windows\System32evil\x.dll",
+            r"C:\Windows\SysWOW64-x\x.dll",
+            r"C:\Windows\WinSxSx\x.dll",
+            r"C:\Users\me\AppData\Local\BakaGame-x\x.dll",
+            r"C:\Users\me\AppData\Local\BakaGameEvil.dll",
+            r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application2\x.dll",
+            r"D:\Tools\Library\x.dll",
+        ] {
+            assert!(!path_allowed(path, &prefixes), "{path}");
+        }
+    }
+
+    /// 边界判定不能把合法的嵌套路径、目录本身（追加项可以是单个文件路径）也挡掉
+    #[test]
+    fn directory_itself_and_nested_paths_stay_allowed() {
+        let mut with_extra = sources();
+        with_extra.extra_allowlist = Some(r"D:\Tools\one.dll;E:\".to_string());
+        let prefixes = build_prefixes(&with_extra);
+        assert!(path_allowed(r"C:\Windows\System32", &prefixes));
+        assert!(path_allowed(
+            r"c:\windows\system32\drivers\etc\x.dll",
+            &prefixes
+        ));
+        assert!(path_allowed(r"D:\Tools\ONE.dll", &prefixes));
+        assert!(
+            path_allowed(r"E:\any\x.dll", &prefixes),
+            "盘符根目录追加项应覆盖整盘"
+        );
+        assert!(!path_allowed(r"D:\Tools\one.dll.evil", &prefixes));
     }
 
     #[test]
