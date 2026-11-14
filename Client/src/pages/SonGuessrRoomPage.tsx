@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Eye, Headphones, Menu, MessageSquare } from "lucide-react";
+import { Eye, Headphones, MessageSquare, Users } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/RoomShell";
@@ -254,7 +254,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             : [
                 {
                   key: "players",
-                  icon: Menu,
+                  icon: Users,
                   label: "玩家列表",
                   side: "left",
                   title: "玩家",

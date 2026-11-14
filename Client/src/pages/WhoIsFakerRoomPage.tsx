@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useParams } from "react-router";
-import { History, Menu, MessageSquare } from "lucide-react";
+import { History, MessageSquare, Users } from "lucide-react";
 import { normalizeRoomId } from "@/lib/Storage";
 import { errorText } from "@/lib/ErrorMessage";
 import { useMinWidth } from "@/hooks/UseMinWidth";
@@ -244,7 +244,7 @@ export default function WhoIsFakerRoomPage() {
         drawers={[
           {
             key: "players",
-            icon: Menu,
+            icon: Users,
             label: "玩家列表",
             side: "left",
             title: "玩家",
