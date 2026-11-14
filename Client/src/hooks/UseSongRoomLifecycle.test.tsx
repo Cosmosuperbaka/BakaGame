@@ -41,10 +41,10 @@ const receipt = (roomId = "1234") => ({
   snapshot: songSnapshot({ roomId }),
   privateState: songPrivate({ sessionToken: "fixture-token" }),
 });
-function mount(solo = false, strict = false) {
+function mount(solo = false, strict = false, routeRoomId = "1234") {
   const wrapper = ({ children }: { children: ReactNode }) => {
     const router = (
-      <MemoryRouter initialEntries={["/songuessr/room/1234"]}>
+      <MemoryRouter initialEntries={[`/songuessr/room/${routeRoomId}`]}>
         <Routes>
           <Route path="/songuessr/room/:roomId" element={children} />
         </Routes>
@@ -406,6 +406,267 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
       join.mock.calls[0][3],
     ]);
     expect(h.result.current.joining).toBe(false);
+  });
+});
+
+describe("猜歌直链入房的分支与去向（补充）", () => {
+  const toast = () => useSonGuessrStore.getState().showToast;
+  const types = () => send.mock.calls.map(([type]) => type);
+
+  it("严格模式下直链加入只发一次入房", async () => {
+    const h = mount(false, true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(types()).toEqual(["song.room.join"]);
+    expect(useSonGuessrStore.getState().roomId).toBe("1234");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("恢复因座位失效被拒：改用名字加入", async () => {
+    saveSonGuessrSessionToken("1234", "saved-token");
+    send.mockImplementation(async (type: string) =>
+      type === "song.room.reconnect"
+        ? rejectedProtocol({ code: "SESSION_INVALID", message: "座位失效" })
+        : receipt()
+    );
+    const h = mount();
+    await waitFor(() => expect(useSonGuessrStore.getState().roomId).toBe("1234"));
+    expect(types()).toEqual(["song.room.reconnect", "song.room.join"]);
+    expect(h.result.current.joining).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it.each(["ROOM_NOT_FOUND", "PLAYER_KICKED"])(
+    "恢复被 %s 永久拒绝：替换回大厅，不加入也不建房",
+    async (code) => {
+      saveSonGuessrSessionToken("1234", "saved-token");
+      send.mockImplementation(async () => rejectedProtocol({ code, message: "回不去了" }));
+      mount();
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+      );
+      expect(types()).toEqual(["song.room.reconnect"]);
+      expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+    }
+  );
+  it("单人房恢复被永久拒绝：忘掉单人房号并回首页", async () => {
+    saveSongSoloRoomId("1234");
+    saveSonGuessrSessionToken("1234", "saved-token");
+    send.mockImplementation(async () =>
+      rejectedProtocol({ code: "ROOM_NOT_FOUND", message: "回不去了" })
+    );
+    mount(true);
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/", { replace: true }));
+    expect(types()).toEqual(["song.room.reconnect"]);
+    expect(getSongSoloRoomId()).toBeNull();
+  });
+  it.each(["PASSWORD_REQUIRED", "PASSWORD_INCORRECT"])(
+    "%s 进密码步，不提示也不退出",
+    async (code) => {
+      send.mockImplementation(async () => rejectedProtocol({ code, message: "要密码" }));
+      const h = mount();
+      await waitFor(() => expect(h.result.current.needsPassword).toBe(true));
+      expect(h.result.current.joining).toBe(false);
+      expect(toast()).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    }
+  );
+  it("尝试过多不进密码步，提示后替换回大厅", async () => {
+    send.mockImplementation(async () =>
+      rejectedProtocol({ code: "TOO_MANY_ATTEMPTS", message: "尝试次数过多" })
+    );
+    const h = mount();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+    );
+    expect(h.result.current.needsPassword).toBe(false);
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("尝试次数过多", "error");
+  });
+  it("房间不存在就以名字建房；测试房小写直链按规范房号建测试房", async () => {
+    send.mockImplementation(async (type: string, payload: Record<string, unknown> = {}) => {
+      if (type === "song.room.join")
+        return rejectedProtocol({ code: "ROOM_NOT_FOUND", message: "房间不存在" });
+      return receipt(payload.roomId as string);
+    });
+    const h = mount(false, false, "oblivionis");
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(h.result.current.roomId).toBe("Oblivionis");
+    expect(send.mock.calls[0]).toEqual([
+      "song.room.join",
+      { userName: "玩家", password: undefined },
+      { roomId: "Oblivionis" },
+    ]);
+    expect(send.mock.calls[1][1]).toEqual({
+      roomId: "Oblivionis",
+      name: "Songuessr 测试房",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "玩家",
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("房间不存在且建房失败：提示后替换回大厅", async () => {
+    send.mockImplementation(async (type: string) =>
+      rejectedProtocol(
+        type === "song.room.join"
+          ? { code: "ROOM_NOT_FOUND", message: "房间不存在" }
+          : { code: "INTERNAL", message: "" }
+      )
+    );
+    mount();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+    );
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("创建房间失败", "error");
+  });
+  it("加入被其它业务拒绝：提示服务端文案后替换回大厅", async () => {
+    send.mockImplementation(async () =>
+      rejectedProtocol({ code: "ROOM_FULL", message: "房间已满" })
+    );
+    mount();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+    );
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("房间已满", "error");
+  });
+  it("等连接超时：提示后替换回大厅，不发入房", async () => {
+    waitConnection.mockRejectedValue(new Error("timeout"));
+    mount();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+    );
+    expect(waitConnection).toHaveBeenCalledWith();
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("连接服务器超时，请刷新重试", "error");
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("房号无效：提示后替换回大厅，不等连接", async () => {
+    mount(false, false, "bad id!");
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+    );
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("房间号无效，请检查链接", "error");
+    expect(waitConnection).not.toHaveBeenCalled();
+  });
+  it("挂载前留下的关闭标记不挡住这次进房", async () => {
+    useSonGuessrStore.setState({ roomClosedAt: Date.now() - 5_000 });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(useSonGuessrStore.getState().roomId).toBe("1234");
+    expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("入房途中房间被关：作废入房并替换回大厅，晚到的 ACK 只释放席位", async () => {
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockImplementation((type: string) =>
+      type === "song.room.join" ? ack.promise : Promise.resolve()
+    );
+    mount();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    act(() => useSonGuessrStore.setState({ roomClosedAt: Date.now() }));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true });
+    expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+    await act(async () => ack.resolve(receipt()));
+    await waitFor(() => expect(types()).toEqual(["song.room.join", "song.room.leave"]));
+    expect(useSonGuessrStore.getState().roomId).toBeNull();
+  });
+  it("单人房在房里被关：忘掉单人房号并替换回首页", async () => {
+    const h = mount(true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(getSongSoloRoomId()).toBe("5678");
+    act(() => useSonGuessrStore.setState({ roomClosedAt: Date.now() }));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/", { replace: true });
+    expect(getSongSoloRoomId()).toBeNull();
+  });
+  it("页面被直接卸载（没点离开）不退房", async () => {
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    h.unmount();
+    expect(types()).toEqual(["song.room.join"]);
+    expect(useSonGuessrStore.getState().roomId).toBe("1234");
+  });
+  it("点离开先替换回大厅，卸载后才退房；离开后的关闭不再导航", async () => {
+    const h = mount();
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => h.result.current.leave());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true });
+    expect(types()).toEqual(["song.room.join"]);
+    act(() => useSonGuessrStore.setState({ roomClosedAt: Date.now() }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    h.unmount();
+    await waitFor(() => expect(types()).toEqual(["song.room.join", "song.room.leave"]));
+  });
+  it("严格模式下主动离开只退一次房", async () => {
+    const h = mount(false, true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => h.result.current.leave());
+    h.unmount();
+    await waitFor(() => expect(types()).toEqual(["song.room.join", "song.room.leave"]));
+  });
+  it("单人房点离开：忘掉单人房号并替换回首页", async () => {
+    const h = mount(true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    act(() => h.result.current.leave());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/", { replace: true });
+    expect(getSongSoloRoomId()).toBeNull();
+  });
+  it("单人房首次建房：没存名字用单人玩家，成功后记住房号", async () => {
+    window.localStorage.clear();
+    const h = mount(true);
+    await waitFor(() => expect(h.result.current.joining).toBe(false));
+    expect(h.result.current.roomId).toBe("5678");
+    expect(send.mock.calls[0]).toEqual([
+      "song.room.create",
+      {
+        roomId: "5678",
+        name: "单人模式",
+        visibility: "public",
+        allowSpectators: false,
+        userName: "单人玩家",
+        solo: true,
+        allowAgents: true,
+      },
+    ]);
+    expect(getSongSoloRoomId()).toBe("5678");
+    expect(h.result.current.needsName).toBe(false);
+  });
+  it("单人房建房被非撞号拒绝：提示后替换回首页，不换号重试", async () => {
+    send.mockImplementation(async () => rejectedProtocol({ code: "INTERNAL", message: "" }));
+    mount(true);
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/", { replace: true }));
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("创建单人房间失败", "error");
+    expect(types()).toEqual(["song.room.create"]);
+  });
+  it("挂载同一毫秒留下的关闭标记：入房先起步、随即被关闭作废，不发入房", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      useSonGuessrStore.setState({ roomClosedAt: now });
+      mount();
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true })
+      );
+      await act(async () => {});
+      expect(waitConnection).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("单人房撞号换号后再失败：提示后替换回首页", async () => {
+    saveSongSoloRoomId("1234");
+    send.mockImplementation(async (_type: string, payload: { roomId: string }) =>
+      rejectedProtocol(
+        payload.roomId === "1234"
+          ? { code: "ROOM_EXISTS", message: "房间号已被占用" }
+          : { code: "ROOM_EXISTS", message: "又撞了" }
+      )
+    );
+    const h = mount(true);
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith("/", { replace: true }));
+    expect(toast()).toHaveBeenCalledExactlyOnceWith("又撞了", "error");
+    expect(send.mock.calls.map(([, payload]) => (payload as { roomId: string }).roomId)).toEqual([
+      "1234",
+      "5678",
+    ]);
+    expect(h.result.current.roomId).toBe("1234");
+    expect(getSongSoloRoomId()).toBe("1234");
   });
 });
 
