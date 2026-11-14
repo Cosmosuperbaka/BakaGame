@@ -37,6 +37,9 @@ export function isolatedEnvironment(
     LOG_OPERATIONS: "all",
     LOG_CONSOLE_COLOR: "never",
     BANGUMI_API_URL: "http://127.0.0.1:9",
+    // 隔离实例与开发者共用本机的数据集文件：只读打开，不备份、不同步标签、不落新条目，
+    // 否则每跑一次测试就在真实数据集旁边写一份近三百兆的备份，被中途杀掉还会留下半截临时文件。
+    BANGUMI_DATASET_WRITER: "false",
     BANGUMI_IMAGE_SOURCE: "",
     CCB_ORIGINAL_SERVER_URL: "",
     CCB_ORIGINAL_AES_SECRET: "",
