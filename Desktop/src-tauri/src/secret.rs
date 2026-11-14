@@ -36,6 +36,27 @@ impl Deref for Secret {
 impl Drop for Secret {
     fn drop(&mut self) {
         wipe(&mut self.0);
+        // 释放后的堆内存不能再读，只能在 Drop 里、清零之后留一份副本供测试核对
+        #[cfg(test)]
+        observe::record(&self.0);
+    }
+}
+
+/// 仅测试可见的观察点：记录本线程最近一次 `Secret` 在 Drop 里清零之后的缓冲内容
+#[cfg(test)]
+mod observe {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LAST_DROPPED: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+    }
+
+    pub fn record(buf: &[u8]) {
+        LAST_DROPPED.with(|slot| *slot.borrow_mut() = Some(buf.to_vec()));
+    }
+
+    pub fn take() -> Option<Vec<u8>> {
+        LAST_DROPPED.with(|slot| slot.borrow_mut().take())
     }
 }
 
@@ -51,13 +72,21 @@ mod tests {
         wipe(&mut []);
     }
 
-    /// `Secret` 的 Drop 就是调用 `wipe`：这里确认它读出来是原值、且能被清零，
-    /// 释放后的堆内存不能再读，所以直接验证 `wipe` 作用在它内部缓冲上
     #[test]
-    fn secret_derefs_to_original_bytes_and_wipes_its_buffer() {
-        let mut secret = Secret::new(vec![1, 2, 3, 4]);
+    fn secret_derefs_to_original_bytes() {
+        let secret = Secret::new(vec![1, 2, 3, 4]);
         assert_eq!(&secret[..], &[1, 2, 3, 4]);
-        wipe(&mut secret.0);
-        assert_eq!(&secret[..], &[0, 0, 0, 0]);
+    }
+
+    /// 真正经由 `Drop` 清零：离开作用域时缓冲已被写零（长度不变），而不是只在测试里手动调用清零函数
+    #[test]
+    fn dropping_a_secret_wipes_its_buffer() {
+        let _ = observe::take();
+        {
+            let secret = Secret::new(vec![0xA5; 32]);
+            assert!(secret.iter().all(|b| *b == 0xA5));
+        }
+        let wiped = observe::take().expect("Drop 应当执行并留下观察记录");
+        assert_eq!(wiped, vec![0u8; 32]);
     }
 }
