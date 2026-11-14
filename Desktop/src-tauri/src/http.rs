@@ -76,8 +76,23 @@ const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
 /// 两个进程级共享的客户端：Client 是连接池与 TLS 配置的持有者，每次请求都新建一个，
 /// 等于每趟都重做 TLS 初始化与握手，延迟直接叠在建连关键路径上。
 /// 回环目标必须直连（见 `post_json` 的说明），所以按「是否直连」各留一个。
-static PROXIED_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
-static DIRECT_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+///
+/// 只缓存**成功**的结果：初始化偶发失败（系统证书库暂时读不出之类）不能被永久记住，
+/// 否则这次进程里之后所有请求都会失败；失败不占位，下次请求重新构造。
+static PROXIED_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+static DIRECT_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+
+/// 取缓存的值；没有就构造，成功才写入缓存。并发时两边都构造、先写入者胜，后者的实例丢弃。
+fn get_or_try_build<T>(
+    cell: &OnceLock<T>,
+    build: impl FnOnce() -> Result<T, String>,
+) -> Result<&T, String> {
+    if let Some(value) = cell.get() {
+        return Ok(value);
+    }
+    let built = build()?;
+    Ok(cell.get_or_init(|| built))
+}
 
 fn build_client(direct: bool) -> Result<reqwest::blocking::Client, String> {
     // 不跟随重定向：服务端从不重定向这些接口，出现 30x 只可能是异常网关或被劫持的出口；
@@ -106,9 +121,7 @@ fn client_for(url: &str) -> Result<&'static reqwest::blocking::Client, ApiError>
     } else {
         &PROXIED_CLIENT
     };
-    cell.get_or_init(|| build_client(direct))
-        .as_ref()
-        .map_err(|message| ApiError::local(message.clone()))
+    get_or_try_build(cell, || build_client(direct)).map_err(ApiError::local)
 }
 
 /// 读响应体，最多 `MAX_RESPONSE_BYTES`；超出返回 `None`（调用方按「响应体过大」处理）
@@ -211,6 +224,32 @@ fn is_loopback(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 初始化失败不缓存：一次瞬时失败之后，下次请求要重新构造；成功之后才缓存、不再构造
+    #[test]
+    fn failed_client_build_is_not_cached() {
+        let cell: OnceLock<u32> = OnceLock::new();
+        let calls = std::cell::Cell::new(0u32);
+        let build = |ok: bool| {
+            move || {
+                if ok {
+                    Ok(7)
+                } else {
+                    Err("瞬时失败".to_string())
+                }
+            }
+        };
+        let count = |f: &dyn Fn() -> Result<u32, String>| {
+            calls.set(calls.get() + 1);
+            f()
+        };
+        assert!(get_or_try_build(&cell, || count(&build(false))).is_err());
+        assert!(cell.get().is_none(), "失败不能占位");
+        assert_eq!(get_or_try_build(&cell, || count(&build(true))), Ok(&7));
+        // 已成功缓存：再取不会再构造，哪怕此时构造函数会失败
+        assert_eq!(get_or_try_build(&cell, || count(&build(false))), Ok(&7));
+        assert_eq!(calls.get(), 2, "第三次必须直接命中缓存");
+    }
 
     /// 回环目标必须直连：靠它把本地请求从代理手里抢回来（代理会给出空体 502）
     #[test]
