@@ -715,6 +715,21 @@ describe("Songuessr store integration", () => {
     expect(useSonGuessrStore.getState().snapshot).toBeNull();
     expect(useSonGuessrStore.getState().sessionToken).toBeNull();
   });
+
+  it("主动退房清掉还挂着的提示", async () => {
+    wsMock.send.mockResolvedValue({});
+    useSonGuessrStore.setState({
+      roomId: "1234",
+      sessionToken: "token-1",
+      snapshot,
+      privateState,
+    });
+    useSonGuessrStore.getState().showToast("还没消失的提示");
+
+    await useSonGuessrStore.getState().leaveRoom();
+
+    expect(useSonGuessrStore.getState().toasts).toEqual([]);
+  });
 });
 
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {

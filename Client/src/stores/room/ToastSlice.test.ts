@@ -128,6 +128,7 @@ describe("提示切片：单槽模式", () => {
     host.getState().showToast("同一句", "error", 1000);
     host.getState().clearToasts();
     expect(texts(host)).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
     host.getState().showToast("同一句", "error", 5000);
     vi.advanceTimersByTime(1000);
     expect(texts(host)).toEqual(["同一句"]);
@@ -138,6 +139,16 @@ describe("提示切片：单槽模式", () => {
     host.getState().showToast("甲");
     host.getState().dismissToast(host.getState().toasts[0].id);
     expect(texts(host)).toEqual([]);
+  });
+
+  it("手动摘掉后旧计时作废，同一句话重发按新时长停留", () => {
+    const host = slotHost();
+    host.getState().showToast("同一句", "error", 1000);
+    host.getState().dismissToast("error:同一句");
+    expect(vi.getTimerCount()).toBe(0);
+    host.getState().showToast("同一句", "error", 5000);
+    vi.advanceTimersByTime(1000);
+    expect(texts(host)).toEqual(["同一句"]);
   });
 
   it("默认类型与默认时长取 options", () => {
