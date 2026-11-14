@@ -150,6 +150,20 @@ describe("房间运行时骨架", () => {
     expect(calls.finish).toHaveBeenCalledOnce();
   });
 
+  it("断线加代次：在途入房作废，晚到 ACK 不安装也不发旧离房", async () => {
+    const { runtime, socket, calls } = setup({ generationOn: "disconnect" });
+    const dispose = runtime.init();
+    const ack = deferred<Receipt>();
+    const joined = runtime.enter(() => ack.promise).catch((error: unknown) => error);
+    socket.emitStatus(false);
+    ack.resolve({ roomId: "1234", sessionToken: "late-token" });
+    expect(await joined).toMatchObject({ name: "AbortError" });
+    expect(calls.apply).not.toHaveBeenCalled();
+    // 席位随旧连接消失，往新连接发旧凭据的退房只会换来一次拒绝。
+    expect(calls.discard).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it("只在断线时加代次：重连不作废在途入房", async () => {
     const { runtime, socket, calls } = setup({ generationOn: "disconnect" });
     const dispose = runtime.init();

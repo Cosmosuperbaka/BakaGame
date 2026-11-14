@@ -567,6 +567,35 @@ describe("Songuessr store integration", () => {
     dispose();
   });
 
+  it("断线作废在途入房：晚到 ACK 不安装身份，也不向新连接发旧离房", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "song.room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    const dispose = initSonGuessrWs();
+    try {
+      const joined = useSonGuessrStore
+        .getState()
+        .joinRoom("1234", "玩家")
+        .catch((error) => error);
+
+      wsMock.statusHandlers[0](false);
+      resolveAck({ roomId: "1234", sessionToken: "late-token" });
+
+      // 席位随旧连接消失：既不写本地身份，也不往新连接发旧凭据的退房。
+      expect(await joined).toMatchObject({ name: "AbortError" });
+      expect(wsMock.send.mock.calls.map(([type]) => type)).toEqual(["song.room.join"]);
+      expect(getSonGuessrSessionToken("1234")).toBeNull();
+      expect(useSonGuessrStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+    } finally {
+      dispose();
+    }
+  });
+
   it("returns music search results through the authenticated command wrapper", async () => {
     const results = [{ id: "song-1", title: "晴天", artist: "周杰伦" }];
     wsMock.send.mockResolvedValue({ results });

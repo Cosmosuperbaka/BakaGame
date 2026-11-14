@@ -438,6 +438,31 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
   });
 
+  it("断线作废在途入房：晚到 ACK 不安装身份，也不向新连接发旧离房", async () => {
+    let resolveAck!: (value: unknown) => void;
+    wsMock.send.mockImplementation((type: string) =>
+      type === "room.join"
+        ? new Promise((resolve) => {
+            resolveAck = resolve;
+          })
+        : Promise.resolve({})
+    );
+    initGameSocket();
+    const joined = useWhoIsFakerStore
+      .getState()
+      .joinRoom("1234", "玩家")
+      .catch((error) => error);
+
+    wsMock.emitStatus(false);
+    resolveAck({ roomId: "1234", sessionToken: "late-token" });
+
+    // 席位随旧连接消失：既不写本地身份，也不往新连接发旧凭据的退房。
+    expect(await joined).toMatchObject({ name: "AbortError" });
+    expect(wsMock.send.mock.calls.map(([type]) => type)).toEqual(["room.join"]);
+    expect(getSessionToken("1234")).toBeNull();
+    expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: null, sessionToken: null });
+  });
+
   it("结算摘要只认服务端快照：快照不带摘要时不回填上一份", () => {
     // 摘要与 gameOver 在服务端同一步写入并随快照下发；旧的独立摘要事件已删除，
     // 客户端再回填只会把服务端已经清掉的结算重新显示出来。
