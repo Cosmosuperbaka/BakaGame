@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import type { TimerSeam } from "../src/application/room/RoomTimers";
 import { restoreInterruptedTimer } from "../src/application/whoisfaker/PhaseTimers";
 import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
@@ -550,7 +551,18 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
  * 正常臂一直传的是调度时刻捕获值，只有恢复臂漏了，所以两条臂都要测。
  */
 const advanceAfterRestoredTimer = async (movePhaseAway: boolean): Promise<boolean> => {
-  const { service } = createTestContext();
+  // 手动驱动的接缝：恢复的倒计时由用例决定何时到点，不依赖墙钟等待。
+  const timers: Array<{ fire: () => void; delayMs: number; cancelled: boolean }> = [];
+  const setTimer: TimerSeam = (fire, delayMs) => {
+    const entry = { fire, delayMs, cancelled: false };
+    timers.push(entry);
+    return {
+      cancel: () => {
+        entry.cancelled = true;
+      },
+    };
+  };
+  const { service } = createTestContext({ setTimer });
   const connHost = createConnection(service, "conn_host");
   await execute(service, connHost, {
     id: "msg_create",
@@ -573,7 +585,10 @@ const advanceAfterRestoredTimer = async (movePhaseAway: boolean): Promise<boolea
   const room = service.ctx.rooms.get("Oblivionis")!;
   restoreInterruptedTimer(service.ctx, room, 5);
   if (movePhaseAway) room.round!.phase = "description";
-  await Bun.sleep(80);
+  const restored = timers.find((entry) => entry.delayMs === 5 && !entry.cancelled);
+  if (!restored) throw new Error("恢复的倒计时没有挂上");
+  restored.fire();
+  await Bun.sleep(0);
   return room.chat.some((message) => message.text.includes("系统已强制推进"));
 };
 

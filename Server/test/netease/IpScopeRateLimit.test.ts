@@ -287,7 +287,10 @@ describe("IP 作用域与限流", () => {
 
   test("一个作用域限流时，其它作用域已排队的请求重新入队并照常执行", async () => {
     const virtualTime = 1_000;
-    let firstStarted = false;
+    let notifyFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
     let releaseFirst!: () => void;
     const firstBlocker = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -305,7 +308,7 @@ describe("IP 作用域与限流", () => {
         cloudsearch: async ({ keywords }: { keywords: string }) => {
           calls.push(keywords);
           if (keywords === "甲") {
-            firstStarted = true;
+            notifyFirstStarted();
             await firstBlocker;
             return { body: { code: 405, message: "操作频繁，请稍候再试" } };
           }
@@ -315,7 +318,8 @@ describe("IP 作用域与限流", () => {
     });
 
     const limited = musicIpScope.run("player:conn-a", () => provider.search("甲"));
-    while (!firstStarted) await new Promise((resolve) => setTimeout(resolve, 1));
+    // 等第一条真正进入上游再排第二条：轮询间隔会把调度快慢写进用例的墙钟。
+    await firstStarted;
     const queued = musicIpScope.run("player:conn-b", () => provider.search("乙"));
     releaseFirst();
 
