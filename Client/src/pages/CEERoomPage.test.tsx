@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -141,5 +141,37 @@ describe("CEE 房间页的猜测回放数据", () => {
     settle();
     mount();
     expect(lastRounds()).toHaveLength(1);
+  });
+});
+
+describe("CEE 房间页顶栏的设置面板", () => {
+  const enterWithAgents = (allowAgents: boolean) => {
+    lifecycle.roomId = CEE_NATIVE_ROOM_ID;
+    const snapshot = ceeSnapshot({ roomId: CEE_NATIVE_ROOM_ID, bakaAntiCheat: false });
+    useCEEStore.setState({
+      connected: true,
+      roomId: CEE_NATIVE_ROOM_ID,
+      snapshot: { ...snapshot, settings: { ...snapshot.settings, allowAgents } },
+      privateState: ceePrivateState(),
+    });
+  };
+  const openSettings = async () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    return screen.findByRole("dialog");
+  };
+
+  it("房主没开 MCP 时，接管开关禁用并说明原因", async () => {
+    enterWithAgents(false);
+    const dialog = await openSettings();
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeDisabled();
+    expect(dialog).toHaveTextContent("本房间未开启 MCP");
+  });
+
+  it("房主开了 MCP 时，同一个开关可用", async () => {
+    enterWithAgents(true);
+    const dialog = await openSettings();
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeEnabled();
+    expect(dialog).not.toHaveTextContent("本房间未开启 MCP");
   });
 });
