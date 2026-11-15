@@ -1180,14 +1180,27 @@ it("房间结束事件带房号且与当前一致时，清该房会话并退房"
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
 it.each([
-  ["cee.room.closed", "房间已关闭"],
-  ["cee.player.kicked", "你已被移出房间"],
-  ["session.replaced", "当前席位已在另一个标签页接管"],
-])("增强房的 %s 与另两款同一句，不用服务端句子", (event, text) => {
+  ["cee.room.closed", "房间长时间无人活动，已关闭", "房间已关闭"],
+  ["cee.player.kicked", "你已被管理员移出房间", "你已被移出房间"],
+])("增强房的 %s 说明服务端给的原因，没给才用三款同一句", (event, reason, text) => {
+  const shown = () => useCEEStore.getState().toasts.at(-1);
+  const enter = () => useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot });
+  enter();
+  handleCEEMessage({ type: "event", event, payload: { reason } });
+  expect(shown()).toMatchObject({ text: reason, type: "error" });
+  enter();
+  handleCEEMessage({ type: "event", event, payload: {} });
+  expect(shown()).toMatchObject({ text, type: "error" });
+});
+it("增强房的席位被接管与另两款同一句，不把协议里的原因标记给玩家看", () => {
   const shown = () => useCEEStore.getState().toasts.at(-1);
   useCEEStore.setState({ roomId: "1234", sessionToken: "tok", snapshot });
-  handleCEEMessage({ type: "event", event, payload: { message: "服务端句子", reason: "原因" } });
-  expect(shown()).toMatchObject({ text, type: "error" });
+  handleCEEMessage({
+    type: "event",
+    event: "session.replaced",
+    payload: { reason: "session replaced" },
+  });
+  expect(shown()).toMatchObject({ text: "当前席位已在另一个标签页接管", type: "error" });
 });
 it.each([
   ["cee.room.closed", "房间已关闭"],

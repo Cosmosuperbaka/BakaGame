@@ -158,13 +158,19 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     if (deferred) sync.flushDeferred();
   };
   /**
-   * 结束提示与另两款同一句；原版房用上游给的句子，上游没给才回到同语义的那一句。
+   * 关房与被移出：服务端给了原因就用那一句——增强房会说明是谁、为什么（管理员关闭、房主移出、
+   * 长时间无人活动），原版房是上游的说法；没给才用三款同一句。
+   */
+  const reasonedText = (payload: EndedRoomPayload, text: string): string =>
+    payload.message ?? payload.reason ?? text;
+  /**
+   * 席位被接管：只有原版房取上游句子，增强房这类事件带的原因是协议标记，不是给玩家看的话。
    * 是否原版房先看事件自带的来源（入房在途时本地还没有快照），再看当前快照。
    */
-  const endedText = (payload: EndedRoomPayload, text: string): string =>
+  const replacedText = (payload: EndedRoomPayload): string =>
     payload.source === "original" || get().snapshot?.source === "original"
-      ? (payload.message ?? payload.reason ?? text)
-      : text;
+      ? reasonedText(payload, ROOM_ENDED_TEXT.replaced)
+      : ROOM_ENDED_TEXT.replaced;
   /**
    * 重连后的回座。回不去而房间还在时（座位失效、临时失败）让出房间并记下失座，
    * 由房间页按直链入房重来：座位失效就按名字重新加入，临时失败再恢复一次、仍失败才回大厅。
@@ -197,9 +203,9 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       snapshot: "cee.room.snapshot",
       privateState: "cee.game.privateState",
       ended: {
-        "cee.room.closed": (payload) => endedText(payload, ROOM_ENDED_TEXT.closed),
-        "cee.player.kicked": (payload) => endedText(payload, ROOM_ENDED_TEXT.kicked),
-        "session.replaced": (payload) => endedText(payload, ROOM_ENDED_TEXT.replaced),
+        "cee.room.closed": (payload) => reasonedText(payload, ROOM_ENDED_TEXT.closed),
+        "cee.player.kicked": (payload) => reasonedText(payload, ROOM_ENDED_TEXT.kicked),
+        "session.replaced": replacedText,
       },
       extra: {
         "cee.player.spectateResult": (payload) => {
