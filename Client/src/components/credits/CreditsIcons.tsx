@@ -311,6 +311,7 @@ const GENERIC_THANKS_ICONS = {
  * - `cee.jpg`：站内自有资产，与首页游戏入口同一份；
  * - `moegirl.jpg`：https://storage.moegirl.org.cn/moegirl/commons/d/df/Moegirl_is_watching_you.jpg
  *   ｜ CC BY-NC-SA 4.0（萌娘百科文件页声明）｜ 非商业、相同方式共享；缩到 64–96px 存放，不保留原尺寸。
+ *   本站不设广告、付费与捐赠，按非商业使用；接入其中任何一项之前，先把这张图换成通用图标。
  */
 const RASTER_THANKS_ICONS: Partial<Record<SpecialThanksIcon, string>> = {
   cee: "/assets/CEE.jpg",
