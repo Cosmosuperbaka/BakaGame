@@ -65,7 +65,8 @@ export const ENV_ENTRIES: EnvEntry[] = [
     documented: true,
     sample: "http://localhost:4850",
     note: [
-      "本服务对外基址；缺省取回环加 SERVER_PORT。猜歌播放地址据此拼成绝对地址下发，",
+      "本服务对外基址；缺省取回环加 SERVER_PORT，只有回环地址未写端口时才补 SERVER_PORT。",
+      "猜歌播放地址据此拼成绝对地址下发，",
       "必须是浏览器与客户端壳能直接访问的公开基址，见 Agents/Deployment.md §2。",
     ],
   },

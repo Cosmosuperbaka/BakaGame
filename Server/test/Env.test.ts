@@ -192,6 +192,33 @@ describe("readEnv 环境变量与启动断言", () => {
     }
   });
 
+  it("SERVER_URL 只给回环地址补监听端口，公网基址保持协议默认端口", () => {
+    const originalUrl = Bun.env.SERVER_URL;
+    const originalPort = Bun.env.SERVER_PORT;
+    try {
+      Bun.env.SERVER_PORT = "4850";
+      Bun.env.SERVER_URL = "https://game.example.com";
+      expect(readEnv().serverUrl).toBe("https://game.example.com");
+
+      Bun.env.SERVER_URL = "https://game.example.com:8443/some/path";
+      expect(readEnv().serverUrl).toBe("https://game.example.com:8443");
+
+      Bun.env.SERVER_URL = "http://localhost";
+      expect(readEnv().serverUrl).toBe("http://localhost:4850");
+
+      Bun.env.SERVER_URL = "http://[::1]";
+      expect(readEnv().serverUrl).toBe("http://[::1]:4850");
+
+      delete Bun.env.SERVER_URL;
+      expect(readEnv().serverUrl).toBe("http://127.0.0.1:4850");
+    } finally {
+      if (originalUrl !== undefined) Bun.env.SERVER_URL = originalUrl;
+      else delete Bun.env.SERVER_URL;
+      if (originalPort !== undefined) Bun.env.SERVER_PORT = originalPort;
+      else delete Bun.env.SERVER_PORT;
+    }
+  });
+
   it("默认监听地址为 0.0.0.0，且支持 SERVER_LISTEN_HOST 覆盖", () => {
     const originalHost = Bun.env.SERVER_LISTEN_HOST;
     const originalUrl = Bun.env.SERVER_URL;

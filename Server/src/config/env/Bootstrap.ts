@@ -36,10 +36,18 @@ export interface EnvBootstrap {
   mcpEnabled?: boolean;
 }
 
+/**
+ * 只有回环地址才补监听端口：本地直连时 `http://localhost` 指的就是本进程。
+ * 公网主机名是经反代或边缘对外的公开基址，没写端口就是协议默认端口，
+ * 补上监听端口会把猜歌播放地址等绝对地址指向外网不通的端口。
+ */
+const isLoopbackHostname = (hostname: string): boolean =>
+  LOCAL_LISTEN_HOSTS.has(hostname.replace(/^\[(.*)\]$/, "$1"));
+
 const normalizeServerUrl = (value: string, port: number): URL => {
   const normalized = new URL(value);
 
-  if (!normalized.port) {
+  if (!normalized.port && isLoopbackHostname(normalized.hostname)) {
     normalized.port = String(port);
   }
 
