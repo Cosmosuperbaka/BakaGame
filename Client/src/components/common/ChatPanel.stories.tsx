@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { fireEvent, fn, screen } from "storybook/test";
+import { expect, fireEvent, fn, screen, waitFor } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS, storyChat } from "@/stories/fixtures/Common";
 import type { ChatMessage } from "@bakagame/shared";
@@ -241,6 +241,9 @@ function ArrivalChat(props: React.ComponentProps<typeof ChatPanel>) {
   );
 }
 
+/** 等浏览器过完一帧。 */
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 export const UnseenArrival: Story = {
   name: "上翻时来新消息",
   args: { messages: HISTORY },
@@ -248,10 +251,18 @@ export const UnseenArrival: Story = {
   play: async ({ canvasElement, canvas }) => {
     const region = canvasElement.querySelector<HTMLElement>("[data-scroll-region]");
     if (!region) throw new Error("找不到消息滚动区");
-    // 先贴底再往上翻一屏，随后来一条别人的消息
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    region.scrollTop = 0;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // 先等挂载时的贴底落定，再往上翻到顶，随后来一条别人的消息。
+    // 挂载与内容撑高都会排一次下一帧的贴底：它不看玩家有没有已经上翻，晚到的那一帧会把刚翻上去的区域拽回底部，
+    // 此时再来消息就是「在底部」，不会出提示。机器忙时这一帧可能晚到，所以不按固定时长等，
+    // 而是每翻一次就让几帧过完，确认真的停在顶部才往下走，被拽回就再翻。
+    await waitFor(() =>
+      expect(region.scrollHeight - region.scrollTop - region.clientHeight).toBeLessThanOrEqual(1)
+    );
+    await waitFor(async () => {
+      region.scrollTop = 0;
+      for (let frame = 0; frame < 3; frame += 1) await nextFrame();
+      await expect(region.scrollTop).toBe(0);
+    });
     await fireEvent.click(canvas.getByTestId("story-arrive"));
     await canvas.findByRole("button", { name: "有新消息" });
   },
