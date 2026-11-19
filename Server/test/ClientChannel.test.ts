@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createPublicKey, generateKeyPairSync, sign as nodeSign } from "node:crypto";
 import {
   ClientChannel,
+  ipFamilyOf,
   InMemoryClientChannelStore,
   CLIENT_CHALLENGE_TTL_MS,
   CLIENT_TICKET_TTL_MS,
@@ -337,6 +338,66 @@ describe("客户端通道换票", () => {
     clock.value += CLIENT_TICKET_TTL_MS + 1;
     expect(channel.consume(expired, "203.0.113.7")).toBeUndefined();
     expect(warnings).toContain("客户端通道票据已过期");
+  });
+  test("换票被拒与地址不符都记下原因与地址族，便于分清手机卡在哪一步", async () => {
+    const logged: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const channel = new ClientChannel({
+      store: new InMemoryClientChannelStore(),
+      now: () => 1_000_000,
+      minimumVersion: () => "",
+      onWarn: (message, context) => logged.push({ message, context }),
+    });
+    const { device, sign } = desktopDevice();
+    const { clientId } = await channel.register({
+      clientType: "desktop",
+      platform: "windows",
+      clientVersion: "1.0.0",
+      keyAlgorithm: "ed25519",
+      publicKey: device.publicKey,
+      selfCheck: clean,
+    });
+    const attest = (challenge: string, signature: string) =>
+      channel.attest(
+        {
+          clientId,
+          challenge,
+          signature,
+          clientType: "desktop",
+          clientVersion: "1.0.0",
+          selfCheck: clean,
+        },
+        "203.0.113.7"
+      );
+    const first = channel.issue(clientId).challenge;
+    await expect(attest(first, sign("别的内容"))).rejects.toMatchObject({
+      code: "CLIENT_UNTRUSTED",
+    });
+    await expect(attest(first, sign(first))).rejects.toMatchObject({ code: "CHALLENGE_EXPIRED" });
+    expect(logged.map((entry) => entry.context?.reason)).toEqual([
+      "bad_signature",
+      "unknown_challenge",
+    ]);
+    expect(logged[0]).toMatchObject({
+      message: "客户端换票被拒",
+      context: { clientType: "desktop" },
+    });
+
+    const second = channel.issue(clientId).challenge;
+    const { ticket } = await attest(second, sign(second));
+    expect(channel.consume(ticket, "2001:db8::1")).toBeUndefined();
+    expect(logged.at(-1)).toMatchObject({
+      message: "客户端通道票据来源地址不符",
+      context: { clientType: "desktop", ticketIpFamily: "ipv4", handshakeIpFamily: "ipv6" },
+    });
+    // 日志里只有地址族，没有地址本身
+    expect(JSON.stringify(logged)).not.toContain("203.0.113.7");
+    expect(JSON.stringify(logged)).not.toContain("2001:db8");
+  });
+  test("地址族判定：IPv4 映射的 IPv6 按 IPv4 计", () => {
+    expect(ipFamilyOf("203.0.113.7")).toBe("ipv4");
+    expect(ipFamilyOf("::ffff:203.0.113.7")).toBe("ipv4");
+    expect(ipFamilyOf("2001:db8::1")).toBe("ipv6");
+    expect(ipFamilyOf("")).toBe("unknown");
   });
   test("挑战只能用一次且有过期：重放与超窗都拒", async () => {
     const clock = { value: 1_000_000 };

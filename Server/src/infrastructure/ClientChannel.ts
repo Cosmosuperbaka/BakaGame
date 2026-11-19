@@ -223,6 +223,13 @@ export function clientIdOfPublicKey(publicKey: string): string {
   return `ccd_${createHash("sha256").update(publicKey).digest("hex").slice(0, 24)}`;
 }
 
+/** 来源地址的地址族，供日志区分 IPv4/IPv6 各走一路；IPv4 映射的 IPv6 地址按 IPv4 计。 */
+export function ipFamilyOf(address: string): "ipv4" | "ipv6" | "unknown" {
+  const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(plain)) return "ipv4";
+  return plain.includes(":") ? "ipv6" : "unknown";
+}
+
 function bounded<T>(map: Map<string, T>, cap: number): void {
   while (map.size >= cap) {
     const oldest = map.keys().next().value;
@@ -408,12 +415,21 @@ export class ClientChannel {
     // 单次消费：验完即焚，否则一个被抓到的挑战可以在窗口内被反复换成票。
     this.challenges.delete(input.challenge);
     const at = this.now();
-    if (!pending || pending.expiresAt < at || pending.clientId !== input.clientId)
-      throw new AppError("CHALLENGE_EXPIRED", "校验挑战已过期，请重试");
+    // 换票被拒的每条原因都要落日志：壳拿不到票时页面只会报「通道校验未通过」，
+    // 不记原因就分不清挑战过期、设备未登记、验签失败还是类型不符。不记挑战、签名与地址本身。
+    const refuse = (reason: string, code: string, message: string): never => {
+      this.onWarn("客户端换票被拒", { reason, clientType: input.clientType });
+      throw new AppError(code, message);
+    };
+    if (!pending) return refuse("unknown_challenge", "CHALLENGE_EXPIRED", "校验挑战已过期，请重试");
+    if (pending.expiresAt < at)
+      return refuse("expired_challenge", "CHALLENGE_EXPIRED", "校验挑战已过期，请重试");
+    if (pending.clientId !== input.clientId)
+      return refuse("challenge_client_mismatch", "CHALLENGE_EXPIRED", "校验挑战已过期，请重试");
     const device = await this.store.find(input.clientId);
-    if (!device) throw new AppError("CLIENT_UNKNOWN", "该客户端尚未注册");
+    if (!device) return refuse("unknown_client", "CLIENT_UNKNOWN", "该客户端尚未注册");
     if (!verifyClientSignature(device, input.challenge, input.signature))
-      throw new AppError("CLIENT_UNTRUSTED", "客户端签名校验失败");
+      return refuse("bad_signature", "CLIENT_UNTRUSTED", "客户端签名校验失败");
     const integrity = this.requireTrusted(
       input.selfCheck,
       "attest",
@@ -421,7 +437,7 @@ export class ClientChannel {
       device.attestationLevel
     );
     if (device.clientType !== input.clientType)
-      throw new AppError("CLIENT_UNTRUSTED", "客户端类型与注册记录不符");
+      return refuse("client_type_mismatch", "CLIENT_UNTRUSTED", "客户端类型与注册记录不符");
     const ticket = randomBytes(24).toString("base64url");
     bounded(this.tickets, CLIENT_CHANNEL_PENDING_MAX);
     this.tickets.set(ticket, {
@@ -465,7 +481,13 @@ export class ClientChannel {
     }
     // 销毁会让合法客户端永远换不到票：代理链与 requestIP 口径不一致时，第一次握手失败是常态而非攻击。
     if (held.clientIp !== clientIp) {
-      this.onWarn("客户端通道票据来源地址不符", { reason: "client_ip_mismatch" });
+      // 只记地址族与客户端类型：区分「IPv4/IPv6 各走一路」与「两个网络出口」，不落地址本身。
+      this.onWarn("客户端通道票据来源地址不符", {
+        reason: "client_ip_mismatch",
+        clientType: held.proof.clientType,
+        ticketIpFamily: ipFamilyOf(held.clientIp),
+        handshakeIpFamily: ipFamilyOf(clientIp),
+      });
       return undefined;
     }
     this.tickets.delete(ticket);
