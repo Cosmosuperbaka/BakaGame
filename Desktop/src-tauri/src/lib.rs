@@ -355,7 +355,42 @@ fn spawn_device_bootstrap(app: tauri::AppHandle) {
     });
 }
 
-/// 只允许留在壳自己的站点与空白页上，其余导航一律拒绝（外链应由页面用系统浏览器打开）
+/// 新窗口请求（`target="_blank"` 链接、`window.open`）是否交给系统浏览器：只认带主机的 http(s)。
+///
+/// 壳不开第二个 WebView 窗口，也没有标签页；不挂处理器时 WebView2 会把这类请求直接吞掉，
+/// 页面上的下载安装包、外部文档等链接点了毫无反应。`file:`、`javascript:` 等一律不交出去。
+fn opens_externally(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https") && url.host_str().is_some_and(|host| !host.is_empty())
+}
+
+/// 用系统默认浏览器打开地址；失败只记日志，不影响壳本身
+fn open_in_system_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let (Some(operation), Some(target)) = (winapi::wide("open"), winapi::wide(url)) else {
+            eprintln!("外链地址含非法字符，未打开");
+            return;
+        };
+        // SAFETY：两个缓冲区都以 0 结尾且在调用期间存活，其余指针参数按文档可为空
+        let result = unsafe {
+            winapi::ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                winapi::SW_SHOWNORMAL,
+            )
+        };
+        if (result as isize) <= 32 {
+            eprintln!("系统浏览器打开外链失败：code={}", result as isize);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    eprintln!("当前平台不支持打开外链：{url}");
+}
+
+/// 只允许留在壳自己的站点与空白页上，其余导航一律拒绝（外链经新窗口请求交给系统浏览器）
 fn navigation_allowed(url: &str, site: &str) -> bool {
     url == "about:blank" || within_site(url, site) || within_site(url, "https://bg.baka.website")
 }
@@ -449,6 +484,15 @@ fn create_main_window(
                 spawn_ticket_pump(pump_handle.clone());
             }
             allowed
+        })
+        // 页面里 `target="_blank"` 的链接（如下载新版安装包）交给系统浏览器，壳内一律不开新窗口
+        .on_new_window(|url, _features| {
+            if opens_externally(&url) {
+                open_in_system_browser(url.as_str());
+            } else {
+                eprintln!("拒绝新窗口请求：scheme={}", url.scheme());
+            }
+            tauri::webview::NewWindowResponse::Deny
         });
 
     if let Some(url) = tunnel {
@@ -605,5 +649,18 @@ mod tests {
         assert!(!navigation_allowed("https://evil.example/?next=https://game.baka.website", site));
         assert!(!navigation_allowed("https://game.baka.website:8443/", site));
         assert!(!navigation_allowed("http://localhost:5173/", site));
+    }
+
+    /// 新窗口请求只把 http(s) 外链交给系统浏览器，其余协议不交出去
+    #[test]
+    fn new_window_opens_only_web_links() {
+        let parse = |raw: &str| raw.parse::<tauri::Url>().unwrap();
+        assert!(opens_externally(&parse("https://cdn.example.com/files/BakaGame-latest-x64.exe")));
+        assert!(opens_externally(&parse("http://example.com/")));
+
+        assert!(!opens_externally(&parse("file:///C:/Windows/System32/cmd.exe")));
+        assert!(!opens_externally(&parse("javascript:alert(1)")));
+        assert!(!opens_externally(&parse("ms-settings:privacy")));
+        assert!(!opens_externally(&parse("about:blank")));
     }
 }

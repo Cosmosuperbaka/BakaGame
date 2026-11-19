@@ -9,6 +9,9 @@ CEE 反作弊计划的桌面端实现。**形态**：Tauri v2 壳 + 远程站点
 `tauri.conf.json` 与 `capabilities/*.json` 为准，改站点域名必须同时改 `capabilities` 的远程来源白名单，
 否则桥接能注入但 `selfCheck` / `baka_ticket` 会被权限层拒掉。
 
+窗口导航只留在本站；页面里新开窗口的链接（`target="_blank"`、`window.open`）必须由壳接住并交给系统浏览器，
+只放行 http(s)。WebView2 在壳没挂新窗口处理器时会静默吞掉这类请求，下载新版安装包等外链会点了毫无反应。
+
 ---
 
 ## 1. 构建

@@ -150,6 +150,22 @@ extern "system" {
     pub fn SetForegroundWindow(window: HANDLE) -> BOOL;
 }
 
+/// `ShowWindow` / `ShellExecuteW` 的常规显示方式
+pub const SW_SHOWNORMAL: c_int = 1;
+
+#[link(name = "shell32")]
+extern "system" {
+    /// 以 `open` 动词把 http(s) 地址交给系统默认浏览器；返回值大于 32 表示成功
+    pub fn ShellExecuteW(
+        window: HANDLE,
+        operation: LPCWSTR,
+        file: LPCWSTR,
+        parameters: LPCWSTR,
+        directory: LPCWSTR,
+        show_command: c_int,
+    ) -> HANDLE;
+}
+
 #[link(name = "crypt32")]
 extern "system" {
     pub fn CryptProtectData(
