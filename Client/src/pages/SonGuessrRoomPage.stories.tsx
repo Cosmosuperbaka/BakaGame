@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { sonGuessrWsClient } from "@/lib/SonGuessrWs";
 import { fromNow } from "@/stories/fixtures/Common";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, untilPointerReady } from "@/stories/PlayHelpers";
 import {
   animeRoundSummary,
   choosingSnapshot,
@@ -123,8 +123,9 @@ async function submitPassword(
   settled: (dialog: ReturnType<typeof within>) => Promise<unknown>
 ) {
   const dialog = within(await screen.findByRole("dialog", { name: "输入房间密码" }));
-  await userEvent.type(dialog.getByLabelText("房间密码"), value);
-  await userEvent.click(dialog.getByRole("button", { name: "加入房间" }));
+  // 密码框常在页面过渡收尾时弹出，那几帧整页不可点：等输入框与按钮真的可点再操作。
+  await userEvent.type(await untilPointerReady(dialog.getByLabelText("房间密码")), value);
+  await userEvent.click(await untilPointerReady(dialog.getByRole("button", { name: "加入房间" })));
   await settled(dialog);
   dropFocus();
 }
