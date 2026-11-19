@@ -400,8 +400,13 @@ Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真�
   大版本签名一致，如 CLI 更新模板可 `cap add android` 重新生成后把 `channel/` 源码平移过去）。
 - 密钥算法选了 **EC P-256 + SHA256withECDSA**（AndroidKeyStore 的 Ed25519 需要更高的系统 API，
   且 attestation 机型覆盖不齐）；协议 `keyAlgorithm` 字段为将来分叉留了位。
-- 原生插件直接内嵌 app 模块并由 `MainActivity` 注册，不做独立 npm 插件包：桥接 JS 通过
-  `window.Capacitor.registerPlugin('BakaChannel')` 取运行时代理。
+- 原生插件直接内嵌 app 模块并由 `MainActivity` 注册，不做独立 npm 插件包。桥接 JS 必须先取原生桥自带的
+  `window.Capacitor.Plugins.<插件名>` 代理，`registerPlugin` 只作兜底：页面是纯网页、不引入 `@capacitor/core`，
+  而 `registerPlugin` 是 core 包补到 `window.Capacitor` 上的，壳注入的原生桥里没有它。只认它时桥接在调原生前就抛错，
+  换票与热更新的请求一条都发不出去，服务端也不会留下任何记录。
+- 生成设备密钥时，带平台证明的两档（StrongBox、普通 Keystore）都失败就退到不带证明的密钥：采用远程密钥配发（RKP）
+  的设备要先向 Google 领证明密钥，国内网络下会报 `OUT_OF_KEYS_PENDING_INTERNET_CONNECTIVITY`。不带证明的设备按
+  「没有平台证明」注册，与给不出链的老 APK 同一条路。
 - SDK 与 `buildToolsVersion` 钉在构建清单里：改版本前先确认构建机离线拿得到对应组件，
   别让 AGP 在发布流程里触发联网下载。
 - `Mobile/` 不在 `pnpm-workspace.yaml` 成员内且本期不得改动根配置，故用 npm 独立安装；

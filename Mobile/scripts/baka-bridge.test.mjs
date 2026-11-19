@@ -16,7 +16,7 @@ const source = fs
   .readFileSync(path.resolve(here, "../bridge/baka-bridge.js"), "utf8")
   .replaceAll("__BAKA_CLIENT_VERSION__", "0.1.2");
 
-const harness = ({ manifest, pathname = "/" } = {}) => {
+const harness = ({ manifest, pathname = "/", nativeBridgeOnly = false } = {}) => {
   const listeners = new Map();
   const timers = [];
   const confirms = [];
@@ -74,7 +74,15 @@ const harness = ({ manifest, pathname = "/" } = {}) => {
     window: {
       addEventListener: on,
       localStorage: { getItem: () => null, setItem: () => {} },
-      Capacitor: { registerPlugin: pluginStub },
+      // 线上壳的页面不引入 @capacitor/core：原生桥只有 Plugins 代理，没有 registerPlugin。
+      Capacitor: nativeBridgeOnly
+        ? {
+            Plugins: {
+              BakaChannel: pluginStub("BakaChannel"),
+              BakaHotUpdate: pluginStub("BakaHotUpdate"),
+            },
+          }
+        : { registerPlugin: pluginStub },
     },
   };
   sandbox.window.document = sandbox.document;
@@ -195,4 +203,15 @@ test("同一个插件在页面生命周期内只向 Capacitor 注册一次", asy
   }
   assert.ok(h.registrations.includes("BakaChannel"), "setSecureScreen 应当用到 BakaChannel");
   assert.ok(h.registrations.includes("BakaHotUpdate"), "热更新应当用到 BakaHotUpdate");
+});
+
+test("只有原生桥的 Plugins 代理、没有 registerPlugin 时，热更新照样交给原生插件", async () => {
+  // 线上 APK 的页面是纯网页：没有 core 包补上的 registerPlugin。
+  // 只认 registerPlugin 时桥接在调原生前就放弃，热更新与换票的请求一条都发不出去。
+  const h = harness({ manifest, nativeBridgeOnly: true });
+  h.fire("DOMContentLoaded");
+  h.runTimer(8000);
+  await settle();
+  assert.equal(h.installs.length, 1);
+  h.sandbox.window.__BAKA_CHANNEL__.setSecureScreen(true);
 });

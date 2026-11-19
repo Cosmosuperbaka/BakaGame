@@ -50,18 +50,26 @@ object KeystoreChannel {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(PREF_STRONGB0X, false)
 
-    private fun specBuilder(nonce: ByteArray) = KeyGenParameterSpec.Builder(
+    private fun specBuilder(nonce: ByteArray?) = KeyGenParameterSpec.Builder(
         ALIAS,
         KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
     )
         .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
         .setDigests(KeyProperties.DIGEST_SHA256)
         .setUserAuthenticationRequired(false)
-        .setAttestationChallenge(nonce)
+        .apply { if (nonce != null) setAttestationChallenge(nonce) }
 
-    /** StrongBox 优先；机型不支持时回退普通 Keystore（两次各自独立的 builder） */
+    /**
+     * StrongBox 优先；机型不支持时回退普通 Keystore；带平台证明的生成都失败时，最后生成不带证明的密钥。
+     *
+     * 最后一档不能省：采用远程密钥配发（RKP）的设备，带 attestation challenge 生成密钥时要先向
+     * Google 的 RKP 服务领证明密钥，国内网络连不上就报 `OUT_OF_KEYS_PENDING_INTERNET_CONNECTIVITY`，
+     * 整个 getKeyInfo 随之失败、永远注册不了。不带证明的密钥照常能签挑战，服务端按
+     * 「没有平台证明」登记（与给不出链的老 APK 同一条路），不影响准入。
+     */
     private fun generateKey(context: Context, nonce: ByteArray): Boolean {
         var strongBox = false
+        var attested = true
         try {
             // setIsStrongBoxBacked 自 API 28 起才有；老系统上调用是 NoSuchMethodError（Error 不是
             // Exception，下面的 catch 接不住），所以先按版本直接走普通 Keystore 分支。
@@ -75,11 +83,22 @@ object KeystoreChannel {
             try {
                 keyPairGenerator().apply { initialize(specBuilder(nonce).build()) }.generateKeyPair()
             } catch (e2: Exception) {
-                throw ChannelKeyException("keystore key generation failed", e2)
+                runCatching { keyStore().deleteEntry(ALIAS) }
+                try {
+                    keyPairGenerator().apply { initialize(specBuilder(null).build()) }.generateKeyPair()
+                    attested = false
+                } catch (e3: Exception) {
+                    e3.addSuppressed(e2)
+                    throw ChannelKeyException("keystore key generation failed", e3)
+                }
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(PREF_NONCE, Base64.encodeToString(nonce, Base64.NO_WRAP))
+            .apply {
+                // 没有平台证明时不留 nonce：注册时上报空挑战，桥接层据此不带 attestation 字段。
+                if (attested) putString(PREF_NONCE, Base64.encodeToString(nonce, Base64.NO_WRAP))
+                else remove(PREF_NONCE)
+            }
             .putBoolean(PREF_STRONGB0X, strongBox)
             .apply()
         return strongBox

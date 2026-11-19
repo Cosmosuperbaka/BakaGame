@@ -60,16 +60,25 @@
     return override.indexOf("https://") === 0 ? override : DEFAULT_API_ORIGIN;
   }
 
-  // Capacitor 对已注册的插件再次 registerPlugin 会打印警告再返回同一个代理，
-  // 所以每个插件只注册一次，之后复用。
+  // 取原生插件代理。页面是纯网页、不引入 @capacitor/core，壳注入的原生桥上**没有**
+  // `registerPlugin`（那是 core 包补上去的），只有按插件头生成的 `Capacitor.Plugins.<名>`。
+  // 只认 registerPlugin 时桥接在调原生前就抛错，换票与热更新的请求一条都发不出去。
+  // 所以先用原生桥自带的代理；registerPlugin 只作兜底（页面将来若引入 core 也能用），
+  // 且每个插件只注册一次——重复注册会每次打印警告。
+  function nativePlugin(name) {
+    var C = window.Capacitor;
+    if (!C) return null;
+    if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+    if (typeof C.registerPlugin === "function") return C.registerPlugin(name);
+    return null;
+  }
+
   var channelPlugin = null;
   function plugin() {
     if (channelPlugin) return channelPlugin;
-    var C = window.Capacitor;
-    if (!C || typeof C.registerPlugin !== "function") {
-      throw new Error("BAKA_CHANNEL_NATIVE_UNAVAILABLE");
-    }
-    channelPlugin = C.registerPlugin("BakaChannel");
+    var resolved = nativePlugin("BakaChannel");
+    if (!resolved) throw new Error("BAKA_CHANNEL_NATIVE_UNAVAILABLE");
+    channelPlugin = resolved;
     return channelPlugin;
   }
 
@@ -398,10 +407,8 @@
   var hotUpdateProxy = null;
   function hotUpdatePlugin() {
     if (hotUpdateProxy) return hotUpdateProxy;
-    var C = window.Capacitor;
-    if (!C || typeof C.registerPlugin !== "function") return null;
     try {
-      hotUpdateProxy = C.registerPlugin("BakaHotUpdate");
+      hotUpdateProxy = nativePlugin("BakaHotUpdate");
       return hotUpdateProxy;
     } catch (e) {
       return null;
