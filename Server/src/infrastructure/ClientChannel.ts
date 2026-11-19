@@ -230,6 +230,36 @@ export function ipFamilyOf(address: string): "ipv4" | "ipv6" | "unknown" {
   return plain.includes(":") ? "ipv6" : "unknown";
 }
 
+/** 展开 IPv6 字面量为 8 组十六进制；格式不认识返回 `undefined`。 */
+function ipv6Groups(address: string): string[] | undefined {
+  const bare = address.split("%")[0]!.toLowerCase();
+  const halves = bare.split("::");
+  if (halves.length > 2) return undefined;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0) return undefined;
+  const groups = [...head, ...Array<string>(fill).fill("0"), ...tail];
+  if (groups.length !== 8 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group)))
+    return undefined;
+  return groups.map((group) => group.padStart(4, "0"));
+}
+
+/**
+ * 票据绑定的「来源网络」：IPv4 取 /24，IPv6 取 /64，其余（含无法解析的值）按原样整串比较。
+ *
+ * 不能按精确地址绑：运营商大 NAT 地址池与多拨/多线路由会让同一台设备的每条 TCP 连接
+ * 换一个出口地址（线上实测同一客户端在一个 /24 内轮换多达十余个地址），换票的 HTTP 请求
+ * 与之后的 WebSocket 握手几乎必然落在不同出口上，合法客户端会被一直拒。
+ * 网段绑定仍挡得住「票据被转到另一张网络上使用」这条中继路径。
+ */
+export function clientNetworkOf(address: string): string {
+  const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
+  if (ipFamilyOf(plain) === "ipv4") return `v4:${plain.split(".").slice(0, 3).join(".")}`;
+  const groups = ipv6Groups(plain);
+  return groups ? `v6:${groups.slice(0, 4).join(":")}` : `raw:${address}`;
+}
+
 function bounded<T>(map: Map<string, T>, cap: number): void {
   while (map.size >= cap) {
     const oldest = map.keys().next().value;
@@ -461,7 +491,7 @@ export class ClientChannel {
     };
   }
   /**
-   * 握手换票：一次性、绑定来源地址。地址不符只是不认，不把票销毁。
+   * 握手换票：一次性、绑定来源网段（见 `clientNetworkOf`）。网段不符只是不认，不把票销毁。
    *
    * 拒绝原因必须落日志：握手层拿到 `undefined` 后只会把连接记成「无通道」，反作弊房
    * 报的又是同一个 CLIENT_REQUIRED，没有这一层就分不清「网页本来没票」「票过期」与
@@ -480,7 +510,7 @@ export class ClientChannel {
       return undefined;
     }
     // 销毁会让合法客户端永远换不到票：代理链与 requestIP 口径不一致时，第一次握手失败是常态而非攻击。
-    if (held.clientIp !== clientIp) {
+    if (clientNetworkOf(held.clientIp) !== clientNetworkOf(clientIp)) {
       // 只记地址族与客户端类型：区分「IPv4/IPv6 各走一路」与「两个网络出口」，不落地址本身。
       this.onWarn("客户端通道票据来源地址不符", {
         reason: "client_ip_mismatch",

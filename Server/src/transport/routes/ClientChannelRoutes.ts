@@ -143,7 +143,7 @@ export const clientChannelRoutes = (
     .post(
       CLIENT_CHANNEL_PATHS.attest,
       async ({ body, clientIp }) => {
-        // 票绑定签发时的来源地址：抓到的票在另一台机器上用不掉。
+        // 票绑定签发时的来源网段：抓到的票转到另一张网络上用不掉。
         return require().attest(body, clientIp);
       },
       {

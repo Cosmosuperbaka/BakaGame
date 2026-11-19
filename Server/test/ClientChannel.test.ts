@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createPublicKey, generateKeyPairSync, sign as nodeSign } from "node:crypto";
 import {
   ClientChannel,
+  clientNetworkOf,
   ipFamilyOf,
   InMemoryClientChannelStore,
   CLIENT_CHALLENGE_TTL_MS,
@@ -392,6 +393,54 @@ describe("客户端通道换票", () => {
     // 日志里只有地址族，没有地址本身
     expect(JSON.stringify(logged)).not.toContain("203.0.113.7");
     expect(JSON.stringify(logged)).not.toContain("2001:db8");
+  });
+  test("票按来源网段绑定：出口在同一 /24（IPv6 同 /64）内轮换照常换到证明，换网就拒", async () => {
+    const { channel } = harness();
+    const { device, sign } = desktopDevice();
+    const { clientId } = await channel.register({
+      clientType: "desktop",
+      platform: "windows",
+      clientVersion: "1.0.0",
+      keyAlgorithm: "ed25519",
+      publicKey: device.publicKey,
+      selfCheck: clean,
+    });
+    const ticketFrom = async (ip: string) => {
+      const { challenge } = channel.issue(clientId);
+      return (
+        await channel.attest(
+          {
+            clientId,
+            challenge,
+            signature: sign(challenge),
+            clientType: "desktop",
+            clientVersion: "1.0.0",
+            selfCheck: clean,
+          },
+          ip
+        )
+      ).ticket;
+    };
+    // 运营商地址池：换票与握手各走一个出口，但同在一个 /24
+    expect(channel.consume(await ticketFrom("203.0.113.25"), "203.0.113.30")?.clientId).toBe(
+      clientId
+    );
+    expect(
+      channel.consume(await ticketFrom("::ffff:203.0.113.25"), "203.0.113.200")?.clientId
+    ).toBe(clientId);
+    expect(
+      channel.consume(await ticketFrom("2001:db8:1:2::1"), "2001:db8:1:2:aaaa::9")?.clientId
+    ).toBe(clientId);
+    // 不同网段一律拒：票被转到另一张网络上用不掉
+    expect(channel.consume(await ticketFrom("203.0.113.25"), "203.0.114.25")).toBeUndefined();
+    expect(channel.consume(await ticketFrom("2001:db8:1:2::1"), "2001:db8:1:3::1")).toBeUndefined();
+  });
+  test("来源网段：IPv4 取 /24、IPv6 展开后取 /64，无法解析的按原样比较", () => {
+    expect(clientNetworkOf("203.0.113.7")).toBe("v4:203.0.113");
+    expect(clientNetworkOf("::ffff:203.0.113.7")).toBe("v4:203.0.113");
+    expect(clientNetworkOf("2001:db8::1")).toBe("v6:2001:0db8:0000:0000");
+    expect(clientNetworkOf("2001:DB8:0:0:ffff::1")).toBe("v6:2001:0db8:0000:0000");
+    expect(clientNetworkOf("unknown")).toBe("raw:unknown");
   });
   test("地址族判定：IPv4 映射的 IPv6 按 IPv4 计", () => {
     expect(ipFamilyOf("203.0.113.7")).toBe("ipv4");
