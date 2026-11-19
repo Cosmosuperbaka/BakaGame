@@ -1,0 +1,421 @@
+import type { Database } from "bun:sqlite";
+import { openDataset } from "./OpenDataset";
+import { EnrichmentStore, type BangumiEnrichment, type EnrichmentEntity } from "./EnrichmentStore";
+import { bangumiImageUrl } from "./BangumiImagePaths";
+import { AppError, isAppError } from "../domain/Errors";
+import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index";
+import type {
+  AnimeAutoFilters,
+  BangumiMusicTrack,
+  BangumiSubjectDetails,
+  BangumiSubjectSearchResult,
+} from "../shared/Index";
+import { BangumiSearchIndex, parseJsonStrings } from "./BangumiSearchIndex";
+import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
+import { escapeLike, ftsPhrase } from "./db/FtsQuery";
+import type { BangumiSearchOptions } from "./BangumiSearchIndex";
+import { BangumiUpstream } from "./BangumiUpstream";
+
+/**
+ * Bangumi 关联类型码到曲目类型的映射。
+ *
+ * 码值语义用真实数据集全量核对过：3003=opening / 3004=ending / 3005=insert /
+ * 3002=character。旧映射与真实码值错位一格，会把**片头曲标成 ED、角色歌标成 OP**，
+ * 并按曲目类型筛选出完全错误的曲目。3001 是主题歌 / 原声带（OST 专辑），
+ * 3006 是印象曲，3007 / 3099 是其他。
+ */
+const RELATION_KINDS: Record<number, BangumiMusicTrack["kind"]> = {
+  3001: "theme",
+  3002: "character",
+  3003: "opening",
+  3004: "ending",
+  3005: "insert",
+  3006: "image",
+};
+const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack["kind"] => {
+  const mapped = relationType ? RELATION_KINDS[relationType] : undefined;
+  // 3002~3006 是**具体类型**（角色歌 / 片头 / 片尾 / 插入歌 / 印象曲），直接采信。
+  if (mapped && mapped !== "theme") return mapped;
+  // 3001 是「主题歌」桶：Bangumi 把原声带、特典 CD、广播剧 CD 一并挂在它下面。
+  // 直接采信会让「主题曲」变成大杂烩 —— 必须再用**条目名**细化；只有推不出形态时
+  // 才保留 theme。未映射的关系码（0 / 3007 / 3099）同样走这条文本兜底。
+  return detectTrackKindFromText(value) ?? "theme";
+};
+/** 上游原始 URL → 对外 URL：镜像前缀 + 图床缓存路径（档位选定见 BangumiImagePaths）。 */
+const rewriteImage = (value: unknown, imageBase: string) => bangumiImageUrl(value, imageBase);
+/** `subjects` 表的行形状：SQLite 返回的是裸对象，这里显式钉住字段，避免 `any` 一路扩散。 */
+export interface SubjectRow {
+  id: number | string;
+  name: string;
+  name_cn?: string | null;
+  image?: string | null;
+  date?: string | null;
+  score?: number | null;
+  rating_count?: number | null;
+  tags?: string | null;
+  meta_tags?: string | null;
+  summary?: string | null;
+  type?: number;
+  heat?: number | null;
+  rank?: number | null;
+}
+
+/**
+ * `subject_music_relations` 表的行形状。
+ *
+ * 刻意不读库里的 `kind` 列：它是构建期按关系码写死的粗分类（3001 一律写成
+ * `theme`），真相比它更细 —— 类型由 `normalizeKind` 在读取时按**关系码 + 条目名**
+ * 现算，避免「库里是主题曲、接口说原声带」这种双真相源。
+ */
+export interface MusicRelationRow {
+  title: string;
+  artist?: string | null;
+  relation_type?: number | null;
+  relation_order?: number | null;
+}
+
+const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult => ({
+  id: String(row.id),
+  name: row.name,
+  nameCn: row.name_cn || row.name,
+  imageUrl: rewriteImage(row.image, imageBase) ?? undefined,
+  year: row.date ? Number(String(row.date).slice(0, 4)) : undefined,
+  rating: row.score || undefined,
+  ratingCount: row.rating_count || undefined,
+  tags: parseJsonStrings(row.tags),
+  metaTags: parseJsonStrings(row.meta_tags),
+});
+
+export interface LocalBangumiProviderOptions {
+  /** 唯一的数据集路径：猜歌与 CEE 共用同一个库（见 tools/build_bangumi_db.py）。 */
+  dbPath: string;
+  /**
+   * 以**只读**打开 `dbPath`。多进程分片时只有主片可写，其余片必须传 true，
+   * 否则跨进程写同一个库文件会互相等锁（见 `OpenDataset` 注释）。
+   */
+  readonly?: boolean;
+  /**
+   * Bangumi API 回填缓存（可写 SQLite）。缺省时不落盘，只走内存缓存。
+   * 只读数据集是 LFS 产物、每周被 CI 重建，不能被运行时写入，所以补充数据单独存这里。
+   * 分片部署时每片应指向各自的文件（`BANGUMI_ENRICHMENT_PATH`），别再共用一份。
+   */
+  enrichmentPath?: string;
+  /** 已构造好的回填缓存；注入后不再按 `enrichmentPath` 另开，由注入方负责关闭。 */
+  enrichment?: EnrichmentStore;
+  imageBase?: string;
+  apiBase?: string;
+  meilisearch?: BangumiSearchOptions;
+  /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
+  search?: BangumiSearchIndex;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
+  /**
+   * 玩家请求条目时的回调：交给更新器异步回源刷新（阶段 6）。
+   *
+   * 只在 Worker 内部注入 —— 函数是没法跨线程结构化克隆的，所以它不属于
+   * 可序列化的 `BangumiProviderInit`。
+   */
+  onSubjectView?: (subjectId: number) => void;
+  /** Worker 内的日志桥：不注入时退回单行纯文本 stderr，不再写结构化 JSON。 */
+  logger?: { warn(message: string, context?: Record<string, unknown>): void };
+}
+
+/** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
+const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
+
+export class LocalBangumiProvider implements BangumiDataProvider {
+  private readonly db: Database;
+  private readonly enrichment?: EnrichmentStore;
+  /** 回填缓存是自己打开的才由自己关闭。 */
+  private readonly ownsEnrichment: boolean;
+  private readonly imageBase: string;
+  private readonly apiBase: string;
+  private readonly upstream: BangumiUpstream;
+  private readonly imageCache = new Map<string, string>();
+  private readonly imageMissUntil = new Map<string, number>();
+  /** 进行中的回源：同一实体并发取图（含后台补取）共用一次上游往返。 */
+  private readonly imageInflight = new Map<string, Promise<string | undefined>>();
+  private readonly search?: BangumiSearchIndex;
+  private readonly searchReady: Promise<void>;
+  private readonly onSubjectView?: (subjectId: number) => void;
+  private readonly logger?: LocalBangumiProviderOptions["logger"];
+
+  constructor(options: LocalBangumiProviderOptions) {
+    this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
+    this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
+    this.upstream = options.upstream ?? new BangumiUpstream({ fetcher: options.fetcher });
+    this.logger = options.logger;
+    this.db = openDataset(options.dbPath, options.readonly);
+    // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
+    // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。
+    this.enrichment =
+      options.enrichment ??
+      (options.enrichmentPath ? new EnrichmentStore(options.enrichmentPath) : undefined);
+    this.ownsEnrichment = !options.enrichment;
+    this.search =
+      options.search ??
+      (options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined);
+    this.searchReady = this.search ? this.search.initialize(this.db) : Promise.resolve();
+    this.onSubjectView = options.onSubjectView;
+  }
+
+  /** Worker 线程经日志桥回主线程；没有桥时只写一条人类可读的单行文本。 */
+  private warn(message: string, error: unknown): void {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    if (this.logger) {
+      this.logger.warn(message, { error: detail });
+      return;
+    }
+    process.stderr.write(`[Bangumi] ${message}（${detail}）\n`);
+  }
+
+  /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
+  private readEnrichment(entity: EnrichmentEntity, id: number): BangumiEnrichment | undefined {
+    try {
+      return this.enrichment?.read(entity, id);
+    } catch (error) {
+      this.warn("Bangumi 回填缓存读取失败，本次跳过", error);
+      return undefined;
+    }
+  }
+
+  private writeEnrichment(entity: EnrichmentEntity, id: number, payload: BangumiEnrichment): void {
+    try {
+      this.enrichment?.merge(entity, id, payload, Date.now());
+    } catch (error) {
+      this.warn("Bangumi 回填缓存写入失败，本次跳过", error);
+    }
+  }
+
+  /**
+   * 取实体图片（番剧或角色）。顺序：内存正缓存 → 回填缓存 → 上游 API。
+   *
+   * **失败绝不固化**：上游超时/报错既不写回填缓存，也不留内存正缓存，只记 5 分钟负缓存
+   * 以免重复打爆上游。历史实现把失败也塞进内存正缓存，一次瞬时超时就会让该条目
+   * 在进程剩余生命周期里再也没有图片。
+   */
+  private resolveEntityImage(entity: EnrichmentEntity, id: number): Promise<string | undefined> {
+    const key = `${entity}:${id}`;
+    const running = this.imageInflight.get(key);
+    if (running) return running;
+    // 内部从不抛出（失败都在里面吞掉并记负缓存），finally 只负责清占位。
+    const task = this.fetchEntityImage(entity, id, key).finally(() =>
+      this.imageInflight.delete(key)
+    );
+    this.imageInflight.set(key, task);
+    return task;
+  }
+
+  private async fetchEntityImage(
+    entity: EnrichmentEntity,
+    id: number,
+    key: string
+  ): Promise<string | undefined> {
+    if (this.imageCache.has(key)) return this.imageCache.get(key);
+    const missUntil = this.imageMissUntil.get(key);
+    if (missUntil !== undefined && missUntil > Date.now()) return undefined;
+
+    const persisted = this.readEnrichment(entity, id);
+    if (persisted?.image) {
+      const image = rewriteImage(persisted.image, this.imageBase);
+      if (image) {
+        this.imageCache.set(key, image);
+        return image;
+      }
+    }
+
+    if (!this.apiBase) return undefined;
+    try {
+      const path = entity === "subject" ? "subjects" : "characters";
+      const response = await this.upstream.fetch(`${this.apiBase}/v0/${path}/${id}`, {
+        headers: { Accept: "application/json" },
+        timeoutMs: 5000,
+        priority: "interactive",
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as { images?: Record<string, unknown> };
+      const images = body.images ?? {};
+      const candidate = images.large;
+      const image = rewriteImage(candidate, this.imageBase);
+      // 拿不到合法图片地址（上游确实没图，或返回的不是 URL）：只做短期负缓存，
+      // **不写回填缓存**，避免把「暂时没有」当成永久结论。
+      if (typeof candidate !== "string" || !image) {
+        this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
+        return undefined;
+      }
+      // 存上游原始 URL：镜像地址在读取时重写，所以换镜像源既不用清缓存也不用重新回源。
+      this.writeEnrichment(entity, id, { image: candidate });
+      this.imageCache.set(key, image);
+      return image;
+    } catch (error) {
+      // 被共享冷却挡回的请求与「这张图有问题」无关，冷却一过就该能再试，不进负缓存。
+      if (!(isAppError(error) && error.code === "BANGUMI_RATE_LIMITED"))
+        this.imageMissUntil.set(key, Date.now() + NEGATIVE_CACHE_TTL_MS);
+      return undefined;
+    }
+  }
+
+  async resolveCharacterImage(characterId: number): Promise<string | undefined> {
+    if (!Number.isInteger(characterId) || characterId <= 0) return undefined;
+    return this.resolveEntityImage("character", characterId);
+  }
+
+  async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
+    const id = Number(subjectId);
+    if (!Number.isInteger(id) || id <= 0) return undefined;
+    return this.resolveEntityImage("subject", id);
+  }
+
+  /**
+   * 列表结果补上已回填的封面。
+   *
+   * 构建脚本不写封面地址，更新器也只给刷新到的条目补，所以搜索结果里大量条目
+   * 默认没有封面。这里只**读**回填缓存、绝不回源 —— 一次搜索二十条，逐条回源
+   * 会把上游打爆并撞上限流。缺的那部分留给客户端按需补。
+   */
+  private fillPersistedImage(row: SubjectRow): SubjectRow {
+    if (row.image) return row;
+    const persisted = this.readEnrichment("subject", Number(row.id))?.image;
+    return persisted ? { ...row, image: persisted } : row;
+  }
+
+  async initialize(): Promise<void> {
+    await this.searchReady;
+  }
+
+  async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}) {
+    const q = keyword.trim();
+    const clauses = ["type = 2"];
+    const args: Array<string | number> = [];
+    if (filters.startYear) {
+      clauses.push("date >= ?");
+      args.push(`${filters.startYear}-01-01`);
+    }
+    if (filters.endYear) {
+      clauses.push("date < ?");
+      args.push(`${filters.endYear + 1}-01-01`);
+    }
+    let rows: SubjectRow[];
+    if (this.search) {
+      await this.searchReady;
+      // 猜歌只关心动画（type=2）；无关键词时按热度排序，供随机出题取候选。
+      const { ids } = await this.search.searchSubjects({
+        keyword: q,
+        limit: Math.min(50, Math.max(1, limit)),
+        types: [2],
+        startYear: filters.startYear,
+        endYear: filters.endYear,
+        sortByHeat: !q.trim(),
+      });
+      if (!ids.length) return [];
+      const placeholders = ids.map(() => "?").join(",");
+      const found = this.db
+        .query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`)
+        .all(...ids) as SubjectRow[];
+      const byId = new Map(found.map((row) => [Number(row.id), row]));
+      return ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row ? [toResult(this.fillPersistedImage(row), this.imageBase)] : [];
+      });
+    }
+    if (q) {
+      // 三元分词索引检索不了不足三个字符的词：退回字面前缀匹配，否则「K-」「轻音」这类输入永远搜不到。
+      const short = [...q].length < 3;
+      const match = short
+        ? "(s.name LIKE ? ESCAPE '\\' OR s.name_cn LIKE ? ESCAPE '\\')"
+        : "subject_search MATCH ?";
+      const source = short ? "subjects s" : "subject_search f JOIN subjects s ON s.id=f.rowid";
+      const matchArgs = short ? [`${escapeLike(q)}%`, `${escapeLike(q)}%`] : [`${ftsPhrase(q)}*`];
+      rows = this.db
+        .query(
+          `SELECT s.* FROM ${source} WHERE ${match} AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`
+        )
+        .all(
+          ...matchArgs,
+          ...args,
+          q,
+          q,
+          `${q}%`,
+          `${q}%`,
+          Math.min(50, Math.max(1, limit))
+        ) as SubjectRow[];
+    } else {
+      rows = this.db
+        .query(
+          `SELECT * FROM subjects WHERE ${clauses.join(" AND ")} ORDER BY heat DESC, rank ASC, score DESC, id ASC LIMIT ?`
+        )
+        .all(...args, Math.min(50, Math.max(1, limit))) as SubjectRow[];
+    }
+    return rows.map((row) => toResult(this.fillPersistedImage(row), this.imageBase));
+  }
+  async getSubject(
+    subjectId: string,
+    options: { waitForImage?: boolean } = {}
+  ): Promise<BangumiSubjectDetails> {
+    const id = Number(subjectId);
+    if (!Number.isInteger(id) || id <= 0)
+      throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    const row = this.db.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id) as
+      SubjectRow | undefined;
+    if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    // 有人在看这条 = 它值得尽快变新鲜。只登记、不等结果：出题路径上绝不加网络等待。
+    this.onSubjectView?.(id);
+    // 只取真实音乐实体（music_id > 0）。负数 music_id 是 Bangumi 关联条目里的
+    // 合成占位行——版权署名、制作委员会、动画师/作家署名等，会被标成 opening
+    // 并排在真实曲目之前，不剔除会拿与番剧无关的歌当 OP。文本规则
+    // isBangumiCreditsEntry 作为第二道防线，同时覆盖联网 API 路径。
+    const relations = this.db
+      .query(
+        "SELECT r.title, r.artist, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id"
+      )
+      .all(id) as MusicRelationRow[];
+    const seen = new Set<string>();
+    const musicTracks: BangumiMusicTrack[] = relations
+      .filter(
+        (m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)
+      )
+      .map((m) => ({
+        title: m.title.trim(),
+        artist: m.artist || undefined,
+        kind: normalizeKind(m.title.trim(), Number(m.relation_type)),
+      }))
+      .filter((m) => {
+        const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const imageUrl = await this.subjectImageFor(row, id, options.waitForImage === true);
+    return {
+      ...toResult({ ...row, image: imageUrl }, ""),
+      summary: row.summary || undefined,
+      locked: false,
+      musicTracks,
+    };
+  }
+  /**
+   * 取条目时的封面：数据集有就用，其次只读回填缓存；都没有时，需要等的调用方（出题）等一次回源，
+   * 其余（猜测判定）立即返回并在后台补取落库，下一次读取就有。后台补取内部不抛出。
+   */
+  private async subjectImageFor(
+    row: SubjectRow,
+    id: number,
+    waitForImage: boolean
+  ): Promise<string | undefined> {
+    const known =
+      rewriteImage(this.fillPersistedImage(row).image, this.imageBase) ??
+      this.imageCache.get(`subject:${id}`);
+    if (known) return known;
+    if (waitForImage) return this.resolveEntityImage("subject", id);
+    void this.resolveEntityImage("subject", id);
+    return undefined;
+  }
+  chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
+    return pickRandomSubject(this, filters, random);
+  }
+  close() {
+    this.db.close();
+    if (this.ownsEnrichment) this.enrichment?.close();
+  }
+}

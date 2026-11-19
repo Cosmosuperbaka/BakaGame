@@ -1,0 +1,770 @@
+name: Deploy Backend
+
+# 部署不再自带全量测试：服务端类型检查 + 全量测试只在 CI 跑一次，这里消费 CI 的结论。
+# 触发条件：CI 全绿，且其中「Server CI」确实执行过（而非被路径过滤跳过）。
+# 手动 dispatch 显式选择 CI run，仍消费同一获验 SHA，不绕过门禁。
+# 部署脚本自身变更也要生效：ci.yml 的 server 过滤包含本文件，改动后会走一次
+# CI → workflow_run → 部署 的链路自动落地。
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "已成功完成的 main push CI run ID（必须包含成功 Server CI）"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+# 第三方 Action 一律按 commit SHA 固定，注释标出该 SHA 对应的版本（与 ci.yml 同一口径）。
+# SHA 用 `git ls-remote <仓库> refs/tags/<版本>` 实查（带注释标签取 ^{} 解引用后的提交），不凭记忆写；
+# 升级时同批改 SHA 与注释。
+
+jobs:
+  # 部署门禁：CI 失败（含 E2E 失败）不部署；本次推送未改服务端（Server CI 被跳过）不部署。
+  # 超时也要写：这一步在等第三方 Action 与 GitHub API，卡住不等于失败，不写就会一直占 runner。
+  gate:
+    name: Deployment Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+      revision: ${{ steps.decide.outputs.revision }}
+      run_id: ${{ steps.decide.outputs.run_id }}
+    steps:
+      # 使用当前工作流修订的门禁实现，绝不执行候选 CI 提交里的脚本。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Decide whether to deploy
+        id: decide
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          SELECTED_RUN_ID: ${{ github.event.workflow_run.id || inputs.ci_run_id }}
+        with:
+          script: |
+            const { deploymentRevision } = await import(`${process.env.GITHUB_WORKSPACE}/Server/scripts/DeploymentGate.mjs`);
+            const raw = process.env.SELECTED_RUN_ID;
+            if (!/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('Invalid CI run ID');
+            const run_id = Number(raw);
+            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id });
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, { ...context.repo, run_id, filter: 'latest', per_page: 100 });
+            const revision = deploymentRevision(run, jobs, `${context.repo.owner}/${context.repo.repo}`);
+            core.setOutput('deploy', revision ? 'true' : 'false');
+            if (!revision) {
+              if (context.eventName === 'workflow_dispatch') throw new Error('Selected CI run is not deployable');
+              core.info('CI run is not deployable');
+              return;
+            }
+            core.setOutput('revision', revision);
+            core.setOutput('run_id', raw);
+            core.info(`Deploy verified CI run ${raw}, SHA ${revision}`);
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: [gate]
+    # 生产部署硬超时：与远端脚本「时间预算」块（script 内 BUDGET_* 常量）自洽。
+    # 远端最坏路径：单片（当前形态）= 同步 25 + 下载 115 + 落盘校验 20 + release 3
+    # + 单片 53 + 收尾 10 = 226s；重新拆片（两片）= 279s。
+    # 远端自限到 BUDGET_JOB_S=285s（按两片留，单片时余量更大）；外层 6 分钟 = 285s 远端
+    # + ≈45s runner 侧（检出、取制品、暂存、SSH 建连与退出回传）+ ≈30s 余量。
+    # 改预算任一项都要回来核对这里与 command_timeout。
+    timeout-minutes: 6
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true' }}
+    steps:
+      # 数据分发为**可选**步骤：manifest 提供 dataset 条目时才下发数据 URL，
+      # 缺失即跳过（生产机沿用现有数据库），不阻断代码部署。
+      - name: Resolve bangumi data manifest
+        run: |
+          set -euo pipefail
+          # 数据集与图床已改由运维一次性上传、之后由后端自行更新，CI 不再生产
+          # 清单；只有显式提供 dataset 条目时才解析版本化 URL / sha256 / size
+          # 并经 SSH envs 下发——生产机全程不接触任何对象存储凭证。
+          if ! curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            -o /tmp/bangumi-manifest.json \
+            "$BANGUMI_DATA_CDN_BASE/files/bangumi/manifest.json"; then
+            echo "⏭ 未取到数据清单，跳过数据分发"
+            echo "BG_DATA_URL=" >> "$GITHUB_ENV"
+            echo "BG_DATA_SHA=" >> "$GITHUB_ENV"
+            echo "BG_DATA_SIZE=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          resolve_one() {
+            id=$1 var=$2
+            key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' /tmp/bangumi-manifest.json)
+            sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' /tmp/bangumi-manifest.json)
+            size=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .size' /tmp/bangumi-manifest.json)
+            if [ -z "$key" ]; then
+              echo "⏭ 清单没有 $id 条目，跳过数据分发"
+              echo "BG_DATA_URL=" >> "$GITHUB_ENV"
+              echo "BG_DATA_SHA=" >> "$GITHUB_ENV"
+              echo "BG_DATA_SIZE=" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            [[ "$key" == bangumi/* && "$sha" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[1-9][0-9]*$ ]] \
+              || { echo "❌ manifest 条目异常：$id"; exit 1; }
+            echo "${var}_URL=$BANGUMI_DATA_CDN_BASE/files/$key" >> "$GITHUB_ENV"
+            echo "${var}_SHA=$sha" >> "$GITHUB_ENV"
+            echo "${var}_SIZE=$size" >> "$GITHUB_ENV"
+          }
+          resolve_one dataset BG_DATA
+        env:
+          BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
+
+      # ---------- 运行时依赖锁（审查 F51）----------
+      # 生产容器入口用 npm 安装运行时依赖，而 CI 的解析权威是根 pnpm-lock.yaml：两条解析路径
+      # 并存时，「获验的依赖树」与「线上装的依赖树」可以不是同一棵。CI 已用
+      # Server/scripts/ExportNpmLock.mjs 产出唯一一枚 npm 口径锁（server-npm-lock 制品），
+      # 下面三步只**消费**它：取制品 → 校验口径并压成可经环境变量搬运的形态 → 落到挂载树，
+      # 让入口的 npm 安装（以及任何后续 npm ci）只认这一份锁。部署侧不重新解析任何东西，
+      # 因此不存在第二套真相。取不到制品时明确回退并留警告，不静默假装已锁定。
+      - name: Check out the workflow revision (for the staging script)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Fetch the verified npm runtime lock
+        id: npmlock
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server-npm-lock
+          path: npm-lock
+          run-id: ${{ needs.gate.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage the npm runtime lock for the container
+        id: stage
+        run: |
+          set -euo pipefail
+          LOCK=npm-lock/server-npm-lock.json
+          if [ ! -s "$LOCK" ]; then
+            echo "⚠️ 未取到本轮 CI 的 server-npm-lock 制品（缺失、过期或该 CI run 未产出）。"
+            echo "⚠️ 回退：容器将沿用挂载树里已有的 package-lock.json；没有则按 package.json 区间浮动解析。"
+            exit 0
+          fi
+          SUMMARY=$(node Server/scripts/StageNpmLock.mjs "$LOCK" npm-lock-stage)
+          echo "$SUMMARY"
+          NPM_LOCK_SHA=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).lockSha256)' "$SUMMARY")
+          NPM_PINS=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).pins)' "$SUMMARY")
+          NPM_LOCK_B64=""
+          if [ -s npm-lock-stage/npm-lock.b64 ]; then NPM_LOCK_B64=$(cat npm-lock-stage/npm-lock.b64); fi
+          {
+            echo "NPM_LOCK_SHA=$NPM_LOCK_SHA"
+            echo "NPM_PINS=$NPM_PINS"
+            echo "NPM_LOCK_B64=$NPM_LOCK_B64"
+          } >> "$GITHUB_ENV"
+
+      - name: Confirm the staged lock survived the environment handoff
+        if: ${{ env.NPM_LOCK_B64 != '' }}
+        run: |
+          set -euo pipefail
+          WANT=$(wc -c < npm-lock-stage/npm-lock.b64 | tr -d '[:space:]')
+          GOT=${#NPM_LOCK_B64}
+          if [ "$GOT" != "$WANT" ]; then
+            echo "⚠️ 锁本体经环境变量传递后长度不符（期望 $WANT，实际 $GOT），本轮不下发锁本体；"
+            echo "⚠️ 仍保留版本核对（pins）与挂载树里的既有锁。"
+            echo "NPM_LOCK_B64=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          DEPLOY_REV: ${{ needs.gate.outputs.revision }}
+          VERIFIED_RUN_ID: ${{ needs.gate.outputs.run_id }}
+        with:
+          envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_DATA_URL,BG_DATA_SHA,BG_DATA_SIZE,NPM_LOCK_B64,NPM_LOCK_SHA,NPM_PINS
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER || 'ubuntu' }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          passphrase: ${{ secrets.DEPLOY_PASSPHRASE || secrets.DEPLOY_KEY_PASSPHRASE || '' }}
+          # 与作业 timeout-minutes 同一外层信封（测试断言两者分钟数一致）；
+          # 远端脚本自己的预算见 script 内 BUDGET_JOB_S。
+          command_timeout: 6m
+          # 绝不能开 script_stop：drone-ssh 会对脚本逐行改写、在每条命令后注入
+          # DRONE_SSH_PREV_COMMAND_EXIT_CODE 检查，任何合法为假的 if/&&（状态码 1）
+          # 都会被当成失败直接 exit 1，多行命令也会被截断。
+          # 失败即停由脚本自己的 `set -euo pipefail` 负责。
+          script_stop: false
+          script: |
+            set -euo pipefail
+            # drone-ssh 把整段脚本经 stdin 喂给远端 shell。为彻底排除
+            # "脚本内命令读走/吃掉剩余脚本"这一类问题，把真正的部署逻辑
+            # 落成服务器上的临时文件再用 bash 执行 —— 内层脚本从文件读，
+            # 与 stdin 完全无关，trap / set -e / read 的行为都可控。
+            DEPLOY_SH=$(mktemp /tmp/bakagame-deploy.XXXXXX.sh)
+            trap 'rm -f "$DEPLOY_SH"' EXIT
+            cat > "$DEPLOY_SH" <<'BAKA_DEPLOY_EOF'
+            set -euo pipefail
+
+            REPO="Cosmosuperbaka/BakaGame"
+            : "${DEPLOY_REV:?Missing verified SHA}"
+            [[ "$DEPLOY_REV" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            [[ "$VERIFIED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+            REF="$DEPLOY_REV"
+            echo "发布获验 CI run=$VERIFIED_RUN_ID SHA=$DEPLOY_REV"
+            DB_FILES="Server/data/bangumi.sqlite"
+            # 数据库实体文件中转目录：与仓库同盘，mv 为原子改名，不产生拷贝开销。
+            STASH="/BakaGame/.deploy-stash"
+            # 单文件并行分片数。
+            SPLIT=8
+            # ---------- 时间预算（单位秒；本块是部署时长的唯一来源）----------
+            # 推导链（最坏路径求和）：
+            #   总用量 = 代码同步 + 数据下载 + 落盘校验 + release 元数据 + 每片滚动 × 实际片数 + 收尾
+            #   每片滚动 = 预通知 + 排空 + 容器重启 + 探针（探针取「该时刻剩余预算」，见滚动循环）
+            #   下载预算 = 总预算 − 其余各项，再按观察上限 BUDGET_DL_MAX_S 收口（不是拍的常数）
+            # 因此片数增加时下载预算自动收缩；合不拢时脚本在下载之前就报错退出，
+            # 而不是跑到一半被 Actions 取消、把远端停在「已重启未验收」的中间态（审查 F59）。
+            # 外层信封：作业 timeout-minutes: 6 = 360s = SSH command_timeout: 6m；
+            # 其中 runner 侧（检出、取制品、暂存、SSH 建连与退出回传）预留 ≈45s，
+            # 本块的 BUDGET_JOB_S 只占 285s，另留 ≈30s 余量。改这里任何数字都要回来核对那两处。
+            BUDGET_JOB_S=285
+            BUDGET_RESERVE_S=10        # trap 收尾：清理暂存、回传退出码
+            BUDGET_SYNC_S=25           # 步骤 1：git fetch + reset（增量常态远小于此，余量给灾备首拉）
+            BUDGET_CHECK_S=20          # 步骤 3：逐库 sha256sum（估算，say 的行首秒数即校准来源）
+            BUDGET_RELEASE_S=3         # release 元数据：下方 `timeout 3s` 就是它
+            BUDGET_NOTIFY_S=2          # 每片：维护预通知
+            BUDGET_DRAIN_S=3           # 每片：下方 sleep 3（客户端排空）
+            # 每片：`docker restart` 返回 = 进程自行退出（早于宽限）或宽限到点强杀，再加容器启动回显。
+            # 上限由 SHUTDOWN_STOP_GRACE_S 决定，不再是被默认 10s 宽限截断的估算值。
+            BUDGET_RESTART_S=18
+            BUDGET_PROBE_MAX_MS=30000  # 每片：探针预算上限，实际值经 -e DEPLOY_PROBE_BUDGET_MS 注入
+            BUDGET_PROBE_MIN_MS=5000   # 每片：剩余预算低于此值就不再等，早失败好于被取消
+            BUDGET_DL_MAX_S=115        # 数据下载预算上限（观察值：SPLIT 路并行分片在此之内可完成）
+            # ---------- 停机宽限（容器侧）----------
+            # 进程自己的停机总预算在 `Server/src/Index.ts`（SHUTDOWN_BUDGET_MS，当前 12s）：
+            # 到点会打一条「优雅停机超时」并以非 0 退出。停止宽限必须**严格大于**那个预算，
+            # 否则容器先 SIGKILL，日志里只剩一个没有原因的 137，运维看不到是哪一步挂住。
+            # 默认宽限（10s）小于预算，所以重启必须显式带 -t；改进程预算时同步改这里，
+            # IndexShutdown.test.ts 会对「预算 < 宽限」与下面的 -t 用法做断言。
+            SHUTDOWN_STOP_GRACE_S=15
+            SHARD_S=$(( BUDGET_NOTIFY_S + BUDGET_DRAIN_S + BUDGET_RESTART_S + BUDGET_PROBE_MAX_MS / 1000 ))
+            # 数据分发源（可选）：公开分发地址，现在只承担「基线补发」——服务器上没有
+            # 可用数据库（首启/灾备）时按清单下载一份；已有的库由后端自行更新，
+            # **绝不替换**。提供时，版本化 URL / sha256 / size 由 runner 从 manifest
+            # （公开、禁缓存）解析后经 SSH envs 传入（BG_*），生产机不持有任何对象存储
+            # 凭证；未提供则完全跳过网络。这里只做格式校验，防环境变量注入。
+            DATA_SYNC=false
+            if [ -n "${BG_DATA_URL:-}" ] || [ -n "${BG_DATA_SHA:-}" ] || [ -n "${BG_DATA_SIZE:-}" ]; then
+              for v in BG_DATA_URL BG_DATA_SHA BG_DATA_SIZE; do
+                if [ -z "${!v:-}" ]; then
+                  echo "❌ 数据分发变量不完整：$v"
+                  exit 1
+                fi
+              done
+              DATA_SYNC=true
+            fi
+            check_url()  { [[ "$1" =~ ^https://[A-Za-z0-9.:/_-]+$ ]] || { echo "❌ 非法数据 URL：$1"; exit 1; }; }
+            check_sha()  { [[ "$1" =~ ^[0-9a-f]{64}$ ]] || { echo "❌ 非法 sha256：$1"; exit 1; }; }
+            check_size() { [[ "$1" =~ ^[1-9][0-9]*$ ]] || { echo "❌ 非法数据大小：$1"; exit 1; }; }
+            if [ "$DATA_SYNC" = true ]; then
+              check_url "$BG_DATA_URL"; check_sha "$BG_DATA_SHA"; check_size "$BG_DATA_SIZE"
+            else
+              echo "⏭ 未提供数据分发变量，跳过数据分发（沿用服务器现有数据库）"
+            fi
+
+            T0=$(date +%s)
+            say() { echo "[$(( $(date +%s) - T0 ))s] $*"; }
+            elapsed() { echo $(( $(date +%s) - T0 )); }
+
+            # 按 basename 映射到 runner 传入的 BG_* 变量。
+            # $1 = 文件名（不带路径）
+            data_var() {
+              case "$1" in
+                bangumi.sqlite) echo DATA ;;
+                *) echo "" ;;
+              esac
+            }
+            want_url()  { eval "echo \"\${BG_$(data_var "$1")_URL:-}\""; }
+            want_sha()  { eval "echo \"\${BG_$(data_var "$1")_SHA:-}\""; }
+            want_size() { eval "echo \"\${BG_$(data_var "$1")_SIZE:-}\""; }
+
+            restore_cache() {
+              for f in $DB_FILES; do
+                c="$STASH/$(basename "$f")"
+                if [ -f "$c" ]; then
+                  if [ ! -s "$f" ] || [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
+                    mv -f "$c" "$f" 2>/dev/null || true
+                  fi
+                fi
+              done
+            }
+
+            RESTART_STARTED=false
+            on_exit() {
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                if [ "$RESTART_STARTED" = false ]; then
+                  echo "==> 重启前部署失败（退出码 $rc），恢复本地数据库文件，线上进程未重启"
+                  restore_cache
+                else
+                  echo "==> 重启后验收失败（退出码 $rc），保留现场与暂存数据，需运维恢复"
+                fi
+              fi
+              if [ -n "${RELEASE_TMP:-}" ]; then rm -f "$RELEASE_TMP"; fi
+              # 注意：.parts.* 必须保留 —— 被强杀/超时的运行要靠它断点续传。
+              rm -rf "$STASH"/.probe "$STASH"/.merged.* 2>/dev/null || true
+            }
+            trap on_exit EXIT
+
+            # 任何非预期失败都带行号报出来：整个部署窗口只有几分钟（见脚本开头的预算块），没有第二次机会慢慢猜。
+            if [ -n "${BASH_VERSION:-}" ]; then
+              set -E
+              trap 'echo "❌ 脚本第 ${LINENO} 行执行失败：$BASH_COMMAND"' ERR
+            fi
+
+            cd /BakaGame
+            say "开始部署 BakaGame 后端"
+
+            # ---------- 0. 环境自检 ----------
+            for t in git curl awk sort tr wc head basename sha256sum date grep cp mv rm mktemp cat chmod timeout; do
+              if ! command -v "$t" >/dev/null 2>&1; then
+                echo "❌ 生产机缺少必需命令：$t"
+                exit 1
+              fi
+            done
+
+            # ---------- 0.5 容器清点与预算闭合 ----------
+            # 片数决定滚动开销，所以必须在下载之前先数清楚容器。
+            # 已收敛为单片：统一入口 `/api/ws` 一条连接装三款游戏，边缘不再按 ws 路径分片
+            # （CEE 片 BakaGame-cee 与 nginx 的 `/api/cee/ws → 4852` 分流一并下线）。
+            # 仍只处理实际存在的容器，所以重新拆片时脚本不用改 —— 把容器名加回列表即可。
+            CONTAINERS=""
+            for c in BakaGame; do
+              if sudo docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
+                CONTAINERS="$CONTAINERS $c"
+              fi
+            done
+            [ -n "$CONTAINERS" ] || { echo "❌ 生产机上没有找到任何后端容器"; exit 1; }
+            SHARDS=0
+            for c in $CONTAINERS; do SHARDS=$(( SHARDS + 1 )); done
+            # 下载预算 = 总预算 − 其余各项（按片数推导）；再由观察上限收口，
+            # 单片时也不会让下载独吞整个窗口。
+            DL_DEADLINE=$(( BUDGET_JOB_S - BUDGET_RESERVE_S - BUDGET_SYNC_S - BUDGET_CHECK_S - BUDGET_RELEASE_S - SHARD_S * SHARDS ))
+            if [ "$DL_DEADLINE" -gt "$BUDGET_DL_MAX_S" ]; then DL_DEADLINE=$BUDGET_DL_MAX_S; fi
+            if [ "$DL_DEADLINE" -lt 8 ]; then
+              echo "❌ 时间预算不闭合：$SHARDS 片 × ${SHARD_S}s 已吃满 ${BUDGET_JOB_S}s（下载余量只剩 ${DL_DEADLINE}s）"
+              echo "   需要减少片数、让片间并行，或同时上调 timeout-minutes / command_timeout 后回来改本块"
+              exit 1
+            fi
+            say "待滚动的容器：$CONTAINERS（$SHARDS 片）；下载预算 ${DL_DEADLINE}s，总预算 ${BUDGET_JOB_S}s"
+
+            # ---------- 1. 代码同步（数据库实体不进 Git；分发为可选，见第 2 步） ----------
+            # 工作流已串行化（concurrency），上一次中断遗留的锁文件必然是陈旧的。
+            if [ -f .git/index.lock ]; then
+              say "清理上一次中断遗留的 .git/index.lock"
+              rm -f .git/index.lock
+            fi
+
+            # 数据库已退出 Git/LFS；这里保留 SKIP_SMUDGE 作为过渡期双保险，
+            # 防止服务器上旧克隆的残留 LFS 配置在 reset 时去拉实体。
+            export GIT_LFS_SKIP_SMUDGE=1
+            git config --local filter.lfs.required false
+
+            # 服务器的数据库由后端自行更新：部署**绝不搬走、绝不覆盖**它——旧双库
+            # 时代会先把实体挪进暂存区以便下载替换，自更新语义下那一步只剩风险窗口。
+            # 只清理可能残留的 LFS 指针文本（历史失败运行遗留，绝不能被当作库使用），
+            # 有效性由第 3 步统一验证。
+            mkdir -p "$STASH"
+            for f in $DB_FILES; do
+              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
+                say "工作区是 LFS 指针文本，丢弃：$f"
+                rm -f "$f"
+              fi
+            done
+
+            say "拉取远端代码"
+            # 本轮修订起不来或不满足重启条件时要放回去的修订；仓库还没有提交时为空。
+            PREV_REV=$(git rev-parse HEAD 2>/dev/null || true)
+            git fetch --no-tags origin "$REF"
+            git reset --hard "$DEPLOY_REV" >/dev/null
+            COMMIT=$(git rev-parse HEAD)
+            [ "$COMMIT" = "$DEPLOY_REV" ] || exit 1
+            say "已对齐至 $COMMIT"
+
+            # ---------- 1b. 运行时依赖锁（审查 F51）----------
+            # 把 CI 获验的那一枚 npm 口径锁落到挂载树（容器里的 /app/package-lock.json），
+            # 入口的 npm 安装据此只装获验过的版本；后续改 npm ci 也消费同一份。
+            # 校验和不过、或本轮没有制品时**绝不**写入半成品，只报警告并保留既有锁。
+            if [ -n "${NPM_LOCK_B64:-}" ] && command -v base64 >/dev/null 2>&1 \
+               && command -v gunzip >/dev/null 2>&1; then
+              LOCK_B64_FILE="$STASH/.npm-lock.b64"
+              LOCK_NEW="$STASH/.npm-lock.json"
+              printf '%s' "$NPM_LOCK_B64" > "$LOCK_B64_FILE"
+              base64 -d "$LOCK_B64_FILE" 2>/dev/null | gunzip > "$LOCK_NEW" 2>/dev/null || true
+              LOCK_GOT=$(sha256sum "$LOCK_NEW" 2>/dev/null | awk '{print $1}')
+              if [ -n "${NPM_LOCK_SHA:-}" ] && [ "$LOCK_GOT" = "$NPM_LOCK_SHA" ] \
+                 && grep -Eq '"lockfileVersion":[[:space:]]*3' "$LOCK_NEW"; then
+                mv -f "$LOCK_NEW" Server/package-lock.json
+                say "容器运行时依赖锁已就位（CI 制品，sha256 ${LOCK_GOT:0:12}…）"
+              else
+                echo "⚠️ 下发的依赖锁校验不过（期望 ${NPM_LOCK_SHA:-无}，实得 ${LOCK_GOT:-无}），保留挂载树里已有的锁"
+              fi
+              rm -f "$LOCK_B64_FILE" "$LOCK_NEW"
+            elif [ -n "${NPM_LOCK_B64:-}" ]; then
+              echo "⚠️ 生产机缺少 base64/gunzip，本轮不下发依赖锁"
+            elif [ -n "${NPM_PINS:-}" ]; then
+              say "⚠️ 本轮制品的锁本体未下发（过大或传递失败），只做容器内版本核对"
+            else
+              if [ -s Server/package-lock.json ]; then
+                STALE_LOCK_SHA=$(sha256sum Server/package-lock.json | awk '{print $1}')
+                say "⚠️ 无 CI 依赖锁制品，沿用挂载树里的既有锁（sha256 ${STALE_LOCK_SHA:0:12}…，mtime $(date -r Server/package-lock.json +%FT%T)）——可能来自更早一轮"
+              else
+                say "⚠️ 无 CI 依赖锁制品且没有既有锁：容器将按 package.json 区间浮动解析运行时依赖"
+              fi
+            fi
+
+            # reset 后工作区里不应再有数据库文件（数据已不进 Git）。
+            # 一致性锚点（版本化 URL / sha256 / size）由 runner 从 manifest 解析，
+            # 已随 SSH envs 传入并在脚本开头做过格式校验，这里直接可用。
+
+            # ---------- 2. 数据库：已有的库绝不替换；缺失时才按清单补发（可选） ----------
+            PENDING=""
+            for f in $DB_FILES; do
+              b=$(basename "$f")
+              cached="$STASH/$b"
+              if [ -f "$f" ] && [ "$(head -c 15 "$f" 2>/dev/null)" = "SQLite format 3" ]; then
+                # 服务器上的库由后端持续更新，与清单的 sha256 几乎必然不同 —— 按设计
+                # **保留**，部署绝不覆盖。（如需强制换代：先移走服务器上的库再部署。）
+                say "保留服务器现有数据库：$f"
+                continue
+              fi
+              if [ "$DATA_SYNC" = false ]; then
+                # 没有清单、工作区也没有可用库：尝试从旧暂存区恢复，否则要求先上传。
+                if [ -f "$cached" ] && [ "$(head -c 15 "$cached" 2>/dev/null)" = "SQLite format 3" ]; then
+                  mv -f "$cached" "$f"
+                  say "从暂存恢复数据库：$f"
+                else
+                  echo "❌ 服务器上没有可用的数据库：$f（需先上传数据集或提供清单）"
+                  exit 1
+                fi
+                continue
+              fi
+              want=$(want_sha "$b")
+              if [ -z "$want" ]; then
+                echo "❌ 数据分发变量缺少条目：$b"
+                exit 1
+              fi
+              if [ -f "$cached" ] && [ "$(head -c 15 "$cached")" = "SQLite format 3" ]; then
+                hash=$(sha256sum "$cached"); hash=${hash%% *}
+                if [ "$hash" = "$want" ]; then
+                  mv -f "$cached" "$f"
+                  say "复用本地数据库（校验和未变化）：$f"
+                  continue
+                fi
+                say "本地数据库已过期：$f（本地 $(printf '%.12s' "$hash") → 目标 $(printf '%.12s' "$want")）"
+              else
+                say "本地没有可复用的数据库：$f"
+              fi
+              PENDING="$PENDING $f"
+            done
+
+            if [ -n "$PENDING" ]; then
+              say "需下载数据：$PENDING"
+
+              # 多分片并行下载：单一 R2 源（CF anycast），重试内建；
+              # 每个分片严格受 DL_DEADLINE 约束，而它由脚本开头的预算块按片数推导得出。
+              DL_END=$(( T0 + DL_DEADLINE ))
+
+              fetch_file() {
+                f="$1"
+                b=$(basename "$f")
+                want=$(want_sha "$b")
+                if [ -z "$want" ]; then
+                  echo "❌ 无法读取数据校验和：$f"
+                  return 1
+                fi
+                size=$(want_size "$b")
+                case "$size" in
+                  ''|*[!0-9]*) echo "❌ 无法获取远端大小：$f"; return 1 ;;
+                esac
+                say "  $b：$size 字节，目标 sha256 $(printf '%.12s' "$want")…"
+                # 注意：两个文件是并行下载的，临时路径必须按文件名取唯一值。
+                # bash 的 $$ 在子 shell 中仍是父进程 PID，不能用来做区分。
+                # 分片目录额外带上目标校验和前缀：断点续传只对同一个对象有意义。
+                parts="$STASH/.parts.$b.${want:0:12}"
+                merged="$STASH/.merged.$b"
+                rm -f "$merged"; mkdir -p "$parts"
+                chunk=$(( (size + SPLIT - 1) / SPLIT ))
+                i=0
+                while [ "$i" -lt "$SPLIT" ]; do
+                  start=$(( i * chunk )); end=$(( start + chunk - 1 ))
+                  if [ "$end" -ge "$size" ]; then end=$(( size - 1 )); fi
+                  want_len=$(( end - start + 1 ))
+                  (
+                    # 断点续传：上次运行已拿满长度的分片直接复用（整体 sha256 会兜底校验）
+                    if [ -f "$parts/$i" ] && [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
+                      exit 0
+                    fi
+                    cap=$(( DL_END - $(date +%s) ))
+                    if [ "$cap" -lt 8 ]; then exit 1; fi
+                    if [ "$cap" -gt 60 ]; then cap=60; fi
+                    # --speed-limit/--speed-time：连接空转不出流量时快速放弃；
+                    # --retry 应对偶发 5xx/429/超时。
+                    if curl -sS -L --fail --connect-timeout 6 --max-time "$cap" \
+                         --retry 2 --retry-delay 1 \
+                         --speed-limit 32768 --speed-time 20 \
+                         -r "$start-$end" -o "$parts/$i" "$(want_url "$b")"; then
+                      # 逐分片长度自校验：防住忽略 Range 直接回整文件的中间层。
+                      if [ "$(wc -c < "$parts/$i" | tr -d ' ')" = "$want_len" ]; then
+                        exit 0
+                      fi
+                    fi
+                    exit 1
+                  ) &
+                  i=$(( i + 1 ))
+                done
+                wait || true
+
+                : > "$merged"
+                i=0
+                complete=true
+                while [ "$i" -lt "$SPLIT" ]; do
+                  if [ ! -s "$parts/$i" ]; then complete=false; fi
+                  cat "$parts/$i" >> "$merged" 2>/dev/null || complete=false
+                  i=$(( i + 1 ))
+                done
+                got=$(wc -c < "$merged" | tr -d ' ')
+                if [ "$complete" = true ] && [ "$got" = "$size" ] \
+                   && [ "$(sha256sum "$merged" | awk '{print $1}')" = "$want" ]; then
+                  mv -f "$merged" "$f"
+                  rm -rf "$parts"
+                  return 0
+                fi
+                echo "    ✗ 下载校验失败：$f（期望 $size 字节，实际 $got 字节）"
+                rm -rf "$parts" "$merged"
+                return 1
+              }
+
+              pids=""
+              for f in $PENDING; do
+                fetch_file "$f" &
+                pids="$pids $!"
+              done
+              dl_ok=true
+              for p in $pids; do
+                wait "$p" || dl_ok=false
+              done
+              if [ "$dl_ok" != true ]; then
+                echo "❌ 数据库下载失败，本次部署中止"
+                exit 1
+              fi
+              say "数据库下载完成"
+            fi
+
+            # ---------- 3. 落盘校验 ----------
+            for f in $DB_FILES; do
+              b=$(basename "$f")
+              # 保留的服务器数据库与清单位点几乎必然不同（后端持续更新），因此校验
+              # 只要求它是一份真实的 SQLite；与清单一致时额外报告一致（刚补发的场景）。
+              if [ ! -s "$f" ] || [ "$(head -c 15 "$f" 2>/dev/null)" != "SQLite format 3" ]; then
+                echo "❌ 数据库文件不可用：$f"
+                exit 1
+              fi
+              want=$(want_sha "$b")
+              if [ -n "$want" ]; then
+                hash=$(sha256sum "$f"); hash=${hash%% *}
+                if [ "$hash" = "$want" ]; then
+                  say "校验通过（与清单一致）：$f"
+                else
+                  say "校验通过（保留的服务器数据库，与清单位点不同）：$f"
+                fi
+              else
+                say "校验通过（存在且为 SQLite）：$f"
+              fi
+            done
+
+            # ---------- 验收失败时带出的容器日志 ----------
+            # 工作流日志对所有能看到仓库的人可见：只带出告警、错误与启停行，不整段照搬
+            # （整段里有对局内容与玩家昵称）。
+            container_failure_lines() {
+              sudo docker logs --tail 300 "$1" 2>&1 \
+                | grep -E 'ERROR|WARN|error:|Error:|启停|Cannot find|Bun v' | tail -n 30 || true
+            }
+
+            # ---------- 放回上一修订 ----------
+            # 本轮修订不满足重启条件、或重启后起不来时，把挂载树与 release 元数据放回上一修订：
+            # 进程（或下一次拉起）跑的代码与磁盘上的一致，之后的发布与回退都从干净状态出发。
+            # 没有可回的修订（首次部署，或本轮与上一轮是同一修订）时返回非 0，由调用方说明。
+            restore_previous_revision() {
+              if [ -z "${PREV_REV:-}" ] || [ "$PREV_REV" = "$COMMIT" ]; then return 1; fi
+              git reset --hard "$PREV_REV" >/dev/null
+              if [ -n "${PREV_RELEASE_JSON:-}" ]; then
+                PREV_RELEASE_TMP=$(mktemp Server/build/.release.XXXXXX)
+                printf '%s\n' "$PREV_RELEASE_JSON" > "$PREV_RELEASE_TMP"
+                chmod 644 "$PREV_RELEASE_TMP"
+                mv -f "$PREV_RELEASE_TMP" Server/build/release.json
+              fi
+              return 0
+            }
+
+            # ---------- 停机容器恢复 ----------
+            # 上一次发布若在重启后验收失败，容器会停在已退出状态；而 release 元数据、停机预告与探针
+            # 都要在容器里执行。不先拉起来，之后的每一次发布（含回到旧修订）都会卡在下一步，只能人工上机。
+            # 此刻挂载树已对齐到本轮获验修订，拉起的就是本轮代码；没有在线玩家，不做停机预告。
+            # 拉起用掉的是该片的重启预算：这一片在滚动循环里不再预告、排空与重启，只做探针验收。
+            # 进程读到的是上一轮写下的 release 元数据，遥测里的发布标记到下一次重启才归位。
+            REVIVED=""
+            for c in $CONTAINERS; do
+              if [ "$(sudo docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" != "true" ]; then
+                say "[$c] 容器未在运行（上一次发布验收失败留下的），按本轮修订直接拉起"
+                RESTART_STARTED=true
+                sudo docker start "$c" >/dev/null
+                REVIVED="$REVIVED $c"
+              fi
+            done
+
+            # ---------- Release 元数据准备（预算 3 秒；bun 取自容器 node_modules，镜像内无 PATH bun） ----------
+            say "生成获验修订的无秘密 release 元数据"
+            mkdir -p Server/build
+            RELEASE_TMP=$(mktemp Server/build/.release.XXXXXX)
+            if ! sudo timeout 3s docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - "$COMMIT" "$(cat Client/src/data/changelog.json)" \
+              < Server/src/infrastructure/Release.ts > "$RELEASE_TMP"; then
+              echo "❌ Release 元数据生成失败，本次发布中止且不重启容器"
+              head -c 400 "$RELEASE_TMP" 2>/dev/null || true
+              rm -f "$RELEASE_TMP"
+              exit 1
+            fi
+            if [ ! -s "$RELEASE_TMP" ] || ! grep -qF "\"revision\":\"$COMMIT\"" "$RELEASE_TMP"; then
+              echo "❌ Release 元数据内容校验失败（空输出或修订不符），本次发布中止且不重启容器"
+              head -c 400 "$RELEASE_TMP" 2>/dev/null || true
+              rm -f "$RELEASE_TMP"
+              exit 1
+            fi
+            chmod 644 "$RELEASE_TMP"
+            # 记下上一轮的元数据：本轮修订要放回去时一并放回，免得进程读到对不上修订的发布标记。
+            # 记在变量里而不是另存文件：构建目录里只应有当前这一份。
+            PREV_RELEASE_JSON=$(cat Server/build/release.json 2>/dev/null || true)
+            mv -f "$RELEASE_TMP" Server/build/release.json
+            RELEASE_TMP=""
+            say "Release 元数据已原子写入"
+            # ---------- Release 元数据准备结束 ----------
+
+            # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
+            # 单片部署（当前形态）：统一入口 `/api/ws` 一条连接装三款游戏 + 站点通道，
+            # 边缘不再把 `/api/cee/ws` 切到第二个进程（该路径只剩主进程上的兼容别名）。
+            # 因此这里只滚动一个容器；`SHARD_GAMES` 必须留空 —— 一旦仍写着旧的主片清单，
+            # 被排除的那款游戏的房间停机时不会被快照，重启即丢（且没有任何报错）。
+            # 停机广播与 /readyz 摘流都是**进程内**的：每个容器都要各自走一遍完整流程，
+            # 漏跑任何一片，那一片的玩家收不到广播、也不会被摘流。
+            # 顺序必须是「该片通知 → 该片排空 → 该片重启」——先把所有片通知完再逐个重启，
+            # 会让先被通知的那片在整个窗口里保持 readiness 503。
+            # 只处理实际存在的容器：清点已在第 0.5 步完成（下载预算要按片数推导）。
+            # 时间预算：每片 = 预通知 ${BUDGET_NOTIFY_S}s + 排空 ${BUDGET_DRAIN_S}s +
+            # 重启 ${BUDGET_RESTART_S}s + 探针（≤$(( BUDGET_PROBE_MAX_MS / 1000 ))s，实际取剩余预算）
+            # = SHARD_S=${SHARD_S}s；$SHARDS 片合计 $(( SHARD_S * SHARDS ))s，
+            # 与前面的同步、下载、校验、release 相加就是脚本开头那条推导链，不再靠注释估。
+            say "滚动 ${SHARDS} 片，每片预算 ≤${SHARD_S}s（已用 $(elapsed)s / ${BUDGET_JOB_S}s）"
+            for SHARD in $CONTAINERS; do
+              # 本片探针预算取「总预算 − 已用 − 本片固定开销 − 收尾」，并夹在上下限之间：
+              # 宁可在这里干净失败，也不要让整段脚本被 Actions 的硬超时取消。
+              PROBE_REMAIN_S=$(( BUDGET_JOB_S - BUDGET_RESERVE_S - $(elapsed) - BUDGET_NOTIFY_S - BUDGET_DRAIN_S - BUDGET_RESTART_S ))
+              if [ "$PROBE_REMAIN_S" -lt 0 ]; then PROBE_REMAIN_S=0; fi
+              PROBE_MS=$(( PROBE_REMAIN_S * 1000 ))
+              if [ "$PROBE_MS" -gt "$BUDGET_PROBE_MAX_MS" ]; then PROBE_MS=$BUDGET_PROBE_MAX_MS; fi
+              if [ "$PROBE_MS" -lt "$BUDGET_PROBE_MIN_MS" ]; then
+                echo "❌ $SHARD 剩余预算不足 $(( BUDGET_PROBE_MIN_MS / 1000 ))s（已用 $(elapsed)s / ${BUDGET_JOB_S}s），不再发起就绪探针"
+                echo "   容器状态未知，请人工验收；本次部署不自动二次重启或回滚"
+                exit 1
+              fi
+              SHARD_REVIVED=false
+              for r in $REVIVED; do
+                if [ "$r" = "$SHARD" ]; then SHARD_REVIVED=true; fi
+              done
+              if [ "$SHARD_REVIVED" = true ]; then
+                say "[$SHARD] 本轮已从停机状态拉起，跳过停机预告、排空与重启"
+              else
+                # 先核对、后重启：容器内装的依赖与获验锁不一致时，新代码按这套依赖可能起不来。
+                # 在这里中止，线上进程原样继续跑；重启之后才发现，就只剩停机一条路。
+                if [ -n "${NPM_PINS:-}" ]; then
+                  say "[$SHARD] 重启之前核对容器内运行时依赖版本与 CI 获验锁一致"
+                  if ! sudo docker exec -i -e "NPM_PINS=$NPM_PINS" "$SHARD" \
+                    /app/node_modules/.bin/bun --no-env-file - < Server/scripts/NpmPinVerify.ts; then
+                    echo "❌ $SHARD 容器内实装的运行时依赖与本轮获验的 npm 锁不一致，本次发布中止，线上进程未重启"
+                    echo "   先在容器里装齐上面列出的版本，再重跑本次部署"
+                    if restore_previous_revision; then say "挂载树已放回上一修订 $PREV_REV"; fi
+                    exit 1
+                  fi
+                fi
+                say "[$SHARD] 向在线玩家广播停机维护通知并摘除就绪流量"
+                # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
+                # 脚本默认打本机回环上的后端端口，而 docker exec 打的是该容器自己命名空间的
+                # 回环 —— 每片容器内监听同一端口，只在宿主发布口区分，因此脚本无需改动。
+                if ! sudo docker exec -i "$SHARD" /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
+                  echo "❌ $SHARD 维护预通知未成功，本次发布中止且不重启容器"
+                  exit 1
+                fi
+                say "[$SHARD] 等待客户端接收通知与平滑退回大厅 (3s)"
+                sleep 3
+
+                say "[$SHARD] 重启容器（入口自带依赖同步与环境初始化）"
+                RESTART_STARTED=true
+                # 必须显式带 -t：默认宽限（10s）小于进程停机预算，容器会在「优雅停机超时」日志写出之前
+                # 被 SIGKILL，退出原因彻底消失。宽限取自预算块，与 Index.ts 的常量保持严格大于关系。
+                sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
+              fi
+
+              say "[$SHARD] 验证存储就绪及三个协议订阅 ACK（探针预算 ${PROBE_MS}ms）"
+              # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。
+              # 探针按额度自我限速轮询 /health（见 Server/scripts/DeploymentProbe.ts 头注释），
+              # 429/503/超时一律视为「还在启动」，只有预算耗尽才失败（审查 F82）。
+              # 注意：探针全绿不代表边缘分流正确 —— 每个容器都注册全部三条 WS 路由，
+              # 分流只能靠真实链路验证。
+              if ! sudo docker exec -i -e "DEPLOY_PROBE_BUDGET_MS=$PROBE_MS" "$SHARD" \
+                /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
+                echo "❌ $SHARD 重启后业务就绪失败"
+                container_failure_lines "$SHARD"
+                # 本轮修订起不来：放回上一修订再拉起一次，把停机压到一次重启的时长。
+                # 只回这一次；回去之后仍不就绪就停手交运维，不做第二轮自动动作。
+                if restore_previous_revision; then
+                  say "[$SHARD] 自动回到上一修订 $PREV_REV 并重新拉起"
+                  sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
+                  ROLLBACK_MS=$(( (BUDGET_JOB_S - BUDGET_RESERVE_S - $(elapsed)) * 1000 ))
+                  if [ "$ROLLBACK_MS" -gt "$BUDGET_PROBE_MAX_MS" ]; then ROLLBACK_MS=$BUDGET_PROBE_MAX_MS; fi
+                  if [ "$ROLLBACK_MS" -lt "$BUDGET_PROBE_MIN_MS" ]; then
+                    echo "⚠️ $SHARD 已按上一修订重新拉起，剩余预算不够验收，请人工确认业务就绪"
+                  elif sudo docker exec -i -e "DEPLOY_PROBE_BUDGET_MS=$ROLLBACK_MS" "$SHARD" \
+                    /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
+                    echo "⚠️ $SHARD 已自动回到上一修订并恢复服务；本轮修订 $COMMIT 没有上线"
+                  else
+                    echo "❌ $SHARD 回到上一修订后仍未就绪，需运维处理"
+                    container_failure_lines "$SHARD"
+                  fi
+                else
+                  echo "   没有可回的上一修订（首次部署，或上一轮停在同一修订），需运维处理"
+                fi
+                exit 1
+              fi
+              say "[$SHARD] 业务就绪检查通过"
+              # 依赖版本核对必须在探针之后：入口的安装是异步的，探针全绿才说明进程真正起过一轮。
+              if [ -n "${NPM_PINS:-}" ]; then
+                say "[$SHARD] 核对容器内运行时依赖版本与 CI 获验锁一致"
+                if ! sudo docker exec -i -e "NPM_PINS=$NPM_PINS" "$SHARD" \
+                  /app/node_modules/.bin/bun --no-env-file - < Server/scripts/NpmPinVerify.ts; then
+                  echo "❌ $SHARD 容器内实装的运行时依赖与本轮获验的 npm 锁不一致"
+                  echo "   容器已重启且业务就绪，不自动回滚；请人工决定处置（详见 Server/scripts/StageNpmLock.mjs 的口径）"
+                  container_failure_lines "$SHARD"
+                  exit 1
+                fi
+              fi
+            done
+
+            rm -rf "$STASH"
+            echo "========================================="
+            echo "🎉 BakaGame 后端部署成功：$COMMIT（总耗时 $(elapsed)s）"
+            echo "========================================="
+            BAKA_DEPLOY_EOF
+            bash "$DEPLOY_SH"

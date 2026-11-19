@@ -1,0 +1,166 @@
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { AnimatePresence, motion } from "framer-motion";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
+import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
+import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
+import { tabPushSwap } from "@/lib/motion/Throw";
+import { tappable } from "@/lib/motion/Feedback";
+import { cn } from "@/lib/Utils";
+
+/** 当前选中值与本次切换的方向（1 往后、-1 往前、0 未知），供底块与内容同向移动。 */
+interface TabsMotion {
+  value: string | undefined;
+  direction: number;
+}
+
+const TabsMotionContext = React.createContext<TabsMotion>({ value: undefined, direction: 0 });
+
+/**
+ * 标签页根节点。受控与非受控都支持；切换由标签触发时按标签的先后算出方向，
+ * 内容据此从目标一侧推入。外部直接改 `value` 时方向未知，内容直接换掉。
+ * 根节点是定位元素并横向裁切：切换时旧内容被抽出文档流、叠在原位被推出去，推出根节点的部分不露在外面；
+ * 裁切边比内容宽出的那一截只够容下落位过冲；所在容器两侧要留有不少于它的内边距，否则会撑出横向溢出。
+ */
+const Tabs = React.forwardRef<
+  React.ComponentRef<typeof TabsPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
+>(({ value, defaultValue, onValueChange, className, children, ...props }, ref) => {
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => rootRef.current as HTMLDivElement);
+  const [uncontrolled, setUncontrolled] = React.useState(defaultValue);
+  const current = value ?? uncontrolled;
+  const [swap, setSwap] = React.useState<TabsMotion>({ value: current, direction: 0 });
+  if (swap.value !== current) setSwap({ value: current, direction: 0 });
+
+  const change = (next: string) => {
+    const order = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('[role="tab"][data-value]') ?? []
+    ).map((tab) => tab.dataset.value);
+    const from = current === undefined ? -1 : order.indexOf(current);
+    const to = order.indexOf(next);
+    setSwap({ value: next, direction: from < 0 || to < 0 ? 0 : Math.sign(to - from) });
+    if (value === undefined) setUncontrolled(next);
+    onValueChange?.(next);
+  };
+
+  return (
+    <TabsPrimitive.Root
+      ref={rootRef}
+      value={current}
+      onValueChange={change}
+      // 裁切边外推一截（负外边距配等量内边距，内容盒尺寸计量，调用处写的宽度仍是内容宽度、位置不变）：
+      // 新内容带着动量冲过落点的那几像素要看得见，否则过冲读作首字被剪掉。
+      // overflow-clip-margin 在只裁一个方向时浏览器不生效，所以不用它。
+      className={cn("relative -mx-3 box-content overflow-x-clip px-3", className)}
+      {...props}
+    >
+      <TabsMotionContext.Provider value={swap}>{children}</TabsMotionContext.Provider>
+    </TabsPrimitive.Root>
+  );
+});
+Tabs.displayName = TabsPrimitive.Root.displayName;
+
+/**
+ * 标签栏：一排文字标签压在一条细分隔线上，选中项底部是一道主色细线（`SlidingIndicator shape="underline"`）。
+ * 细线是栏里唯一的一个元素，按量到的选中标签位置滑动（`useIndicatorRect`），
+ * 不靠 layoutId 交接：弹窗缩放开合、重新打开时都停在原位，不会从别处飞进来。
+ * 与下方内容的间距由调用处给标签栏加下外边距（`mb-4` 等），`TabsContent` 不写外边距（见 `TabsContent`）。
+ */
+const TabsList = React.forwardRef<
+  React.ComponentRef<typeof TabsPrimitive.List>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
+>(({ className, children, ...props }, ref) => {
+  const { value } = React.useContext(TabsMotionContext);
+  const listRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => listRef.current as HTMLDivElement);
+  const rect = useIndicatorRect(listRef, '[data-state="active"]', value);
+  return (
+    <TabsPrimitive.List
+      ref={listRef}
+      className={cn(
+        "relative inline-flex h-10 items-stretch justify-start gap-1 border-b border-border text-muted-foreground",
+        className
+      )}
+      {...props}
+    >
+      <SlidingIndicator rect={rect} shape="underline" />
+      {children}
+    </TabsPrimitive.List>
+  );
+});
+TabsList.displayName = TabsPrimitive.List.displayName;
+
+/**
+ * 标签外观的唯一来源。与标签同排、同尺寸但不是标签的入口（如站内说明链接）
+ * 直接复用这份类名，避免在调用处再抄一遍后两处各自漂移。
+ */
+export const TABS_TRIGGER_CLASS =
+  // 标签贴在分隔线上（-mb-px 盖住那 1px），聚焦环向内收，不被弹窗边缘或分隔线切掉。
+  "relative -mb-px inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-t-md px-3 text-sm font-ui font-medium transition-colors hover:text-foreground focus-visible:-outline-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground";
+
+/** 标签。按压走 tappable：CSS 的 active:scale 没有过渡、按下松开都是硬切，也不受减弱动效约束。 */
+const TabsTrigger = React.forwardRef<
+  React.ComponentRef<typeof TabsPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
+>(({ className, children, ...props }, ref) => (
+  <TabsPrimitive.Trigger ref={ref} asChild data-value={props.value} {...props}>
+    <motion.button type="button" {...tappable} className={cn(TABS_TRIGGER_CLASS, className)}>
+      {children}
+    </motion.button>
+  </TabsPrimitive.Trigger>
+));
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
+
+/**
+ * 标签内容。切换时新旧两幅内容像一条胶片被整幅推过去（`tabPushSwap`）：旧的推出、新的推入，与底块同向，
+ * 带着点击的动量冲过落点一点再拉回，途中纵向被压扁、落位弹回；不做淡化。
+ * 旧内容经 popLayout 抽出文档流叠在原位退场，两幅内容同时在动，而不是先清空再出现。
+ * 首次挂载不播放：所在弹窗或面板自己有入场，内容不再叠一层。
+ * 抽出文档流按边框盒定位，外边距会让退场内容错开一截，所以内容不写外边距，间距交给 `TabsList`。
+ * 动画结束清除残留 transform，避免文本停在子像素位移上（DesignGuide §8）。
+ */
+const TabsContent = React.forwardRef<
+  React.ComponentRef<typeof TabsPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
+>(({ className, children, value, ...props }, ref) => {
+  const { value: active, direction } = React.useContext(TabsMotionContext);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => contentRef.current as HTMLDivElement);
+  const selected = active === value;
+
+  return (
+    <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+      {selected ? (
+        <TabsPrimitive.Content
+          key={value}
+          ref={contentRef}
+          value={value}
+          {...props}
+          forceMount
+          asChild
+        >
+          <motion.div
+            custom={direction}
+            variants={tabPushSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            onAnimationComplete={(definition) => {
+              if (definition !== "animate") return;
+              const node = contentRef.current;
+              if (node) node.style.transform = "";
+            }}
+            className={className}
+          >
+            {/* 首屏那一页里之后才挂载的内容照常入场，不随整页一起被跳过 */}
+            <PresenceBoundary>{children}</PresenceBoundary>
+          </motion.div>
+        </TabsPrimitive.Content>
+      ) : null}
+    </AnimatePresence>
+  );
+});
+TabsContent.displayName = TabsPrimitive.Content.displayName;
+
+export { Tabs, TabsList, TabsTrigger, TabsContent };

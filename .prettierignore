@@ -1,0 +1,45 @@
+# 文档与任务笔记：手写版式与表格，Prettier 会重排，且 tasks/ 已被 .gitignore 忽略
+*.md
+Agents/
+tasks/
+
+# 构建产物与缓存
+.qoder-credits/
+Client/dist/
+Client/coverage/
+Client/storybook-static/
+Client/storybook-shots/
+Client/playwright-report/
+Client/test-results/
+Client/.generated-public/
+# 字体子集与生成的 @font-face 由 scripts/build-fonts.mjs 维护，不参与格式化
+Client/src/assets/fonts/
+Client/assets/fonts/
+Client/public/
+Server/coverage/
+Server/data/
+Server/storage/
+Server/tasks/
+# 壳的构建产物：CI 是干净检出所以看不见它们，本地会因此报几百个无意义的格式问题，
+# 把 `pnpm format:check` 变成不可用。
+Desktop/src-tauri/target/
+Desktop/src-tauri/gen/
+Mobile/android/build/
+Mobile/android/app/build/
+Mobile/android/app/src/main/assets/public/
+Mobile/dist-web/
+
+# 锁文件与生成物
+pnpm-lock.yaml
+Server/docs/http-openapi.json
+# 敏感词表由 Server/scripts/BuildSensitiveLexicon.ts 生成，保持紧凑输出
+Server/src/infrastructure/SensitiveLexicon.json
+Server/src/infrastructure/SensitiveWhitelist.json
+
+# 环境文件
+.env
+*.env
+Server/.env*
+
+# E2E 夹具：由测试按原样读取，不走格式化
+Client/e2e/fixtures/*.html

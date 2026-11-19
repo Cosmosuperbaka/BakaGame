@@ -1,0 +1,87 @@
+import * as React from "react";
+import * as SliderPrimitive from "@radix-ui/react-slider";
+import { cn } from "@/lib/Utils";
+
+/**
+ * 轨道粗细与滑块外观默认取设置面板的口径；顶栏音量这类紧凑场景经 `trackClassName` / `thumbClassName`
+ * 换成细轨道、悬停变粗，调用处只改尺寸与显隐，不改颜色。
+ *
+ * 多值传入（`value={[start, end]}`）时按值的个数渲染拇指，供区间选择使用；`thumbLabels` 与
+ * `thumbValueTexts` 逐个给手柄命名与读数，单值调用保持原样。
+ */
+const Slider = React.forwardRef<
+  React.ComponentRef<typeof SliderPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & {
+    trackClassName?: string;
+    thumbClassName?: string;
+    rangeClassName?: string;
+    thumbLabels?: string[];
+    thumbValueTexts?: string[];
+  }
+>(
+  (
+    {
+      className,
+      trackClassName,
+      thumbClassName,
+      rangeClassName,
+      thumbLabels,
+      thumbValueTexts,
+      value,
+      defaultValue,
+      "aria-label": ariaLabel,
+      "aria-labelledby": ariaLabelledBy,
+      "aria-describedby": ariaDescribedBy,
+      "aria-valuetext": ariaValueText,
+      ...props
+    },
+    ref
+  ) => {
+    const thumbCount = Math.max(value?.length ?? defaultValue?.length ?? 1, 1);
+    return (
+      <SliderPrimitive.Root
+        ref={ref}
+        value={value}
+        defaultValue={defaultValue}
+        className={cn(
+          // Radix 用 data-disabled 标记禁用（不触发 :disabled），并自行拦截指针与键盘；这里只让整条轨道一起变淡。
+          "relative flex w-full touch-none select-none items-center data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
+          className
+        )}
+        {...props}
+      >
+        {/* 轨道取前景色淡档，与准备进度条同一口径：bg-muted 在暗色下比面板、卡片都暗，轨道几乎消失，读不出总长。 */}
+        <SliderPrimitive.Track
+          className={cn(
+            "relative h-1.5 w-full grow overflow-hidden rounded-full bg-foreground/10",
+            trackClassName
+          )}
+        >
+          <SliderPrimitive.Range className={cn("absolute h-full bg-primary", rangeClassName)} />
+        </SliderPrimitive.Track>
+        {Array.from({ length: thumbCount }, (_, index) => (
+          // 读屏与按名查找落在拇指（role="slider"）上：命名、说明与取值文字都转交给它，根节点只是布局容器。
+          <SliderPrimitive.Thumb
+            key={index}
+            aria-label={thumbLabels?.[index] ?? ariaLabel}
+            aria-labelledby={thumbLabels?.[index] ? undefined : ariaLabelledBy}
+            aria-describedby={ariaDescribedBy}
+            aria-valuetext={
+              thumbValueTexts?.[index] ?? (thumbCount === 1 ? ariaValueText : undefined)
+            }
+            className={cn(
+              "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
+              "transition-[color,background-color,box-shadow] focus-visible:outline-offset-2",
+              // 拇指可拖：抓手光标，悬停与按住时外晕一圈淡主色（只动阴影，不缩放）；禁用时 Radix 已拦截指针，这里不再响应。
+              "cursor-grab active:cursor-grabbing not-data-[disabled]:hover:ring-4 not-data-[disabled]:hover:ring-primary/15 not-data-[disabled]:active:ring-primary/25 data-[disabled]:cursor-not-allowed",
+              thumbClassName
+            )}
+          />
+        ))}
+      </SliderPrimitive.Root>
+    );
+  }
+);
+Slider.displayName = SliderPrimitive.Root.displayName;
+
+export { Slider };

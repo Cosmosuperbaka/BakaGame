@@ -1,0 +1,314 @@
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
+import { useLobbySession } from "./UseLobbySession";
+const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
+const randomRoomId = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/Random", () => ({ randomRoomId }));
+const room: { roomId: string; name: string; hasPassword?: boolean } = {
+  roomId: "1234",
+  name: "测试房",
+};
+const event = {
+  currentTarget: document.createElement("button"),
+} as unknown as React.MouseEvent<HTMLElement>;
+function setup(overrides = {}) {
+  const options = {
+    gamePath: "/cee",
+    rooms: [room],
+    ready: true,
+    createRoom: vi.fn().mockResolvedValue(undefined),
+    joinRoom: vi.fn().mockResolvedValue(undefined),
+    reconnectRoom: vi.fn().mockResolvedValue(false),
+    showError: vi.fn(),
+    ...overrides,
+  };
+  const hook = renderHook((props) => useLobbySession(props), { initialProps: options });
+  return { ...hook, options };
+}
+beforeEach(() => {
+  navigate.mockClear();
+  let seq = 1000;
+  randomRoomId.mockReset().mockImplementation(() => String(seq++));
+  localStorage.setItem("bakagame:username", "玩家");
+});
+describe("大厅入房事务", () => {
+  it("恢复拒绝被统一接住，不继续加入或导航", async () => {
+    const h = setup({
+      reconnectRoom: vi.fn().mockRejectedValue({ code: "DISCONNECTED", message: "连接已断开" }),
+    });
+    await act(async () => {
+      await h.result.current.handleJoinRoom(room, event);
+    });
+    expect(h.options.showError).toHaveBeenCalledExactlyOnceWith("连接已断开");
+    expect(h.options.joinRoom).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("同房与跨房重入都不发送第二个请求", async () => {
+    const ack = deferred<boolean>();
+    const h = setup({ reconnectRoom: vi.fn(() => ack.promise) });
+    let first!: Promise<void>;
+    act(() => {
+      first = h.result.current.handleJoinRoom(room, event);
+    });
+    expect(h.result.current.pending).toBe(true);
+    await act(async () => {
+      await h.result.current.handleJoinRoom({ ...room, roomId: "5678" }, event);
+    });
+    expect(h.options.reconnectRoom).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      ack.resolve(false);
+      await first;
+    });
+    expect(h.options.joinRoom).toHaveBeenCalledExactlyOnceWith(
+      "1234",
+      "玩家",
+      undefined,
+      expect.any(AbortSignal)
+    );
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee/room/1234");
+    expect(h.result.current.pending).toBe(false);
+  });
+  it("卸载后恢复响应不再发加入、显示错误或导航", async () => {
+    const ack = deferred<boolean>();
+    const h = setup({ reconnectRoom: vi.fn(() => ack.promise) });
+    let task!: Promise<void>;
+    act(() => {
+      task = h.result.current.handleJoinRoom(room, event);
+    });
+    h.unmount();
+    ack.resolve(false);
+    await task;
+    expect(h.options.joinRoom).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(h.options.showError).not.toHaveBeenCalled();
+  });
+  it("取消密码对话框使在途加入响应失效", async () => {
+    const ack = deferred<void>();
+    const h = setup({ joinRoom: vi.fn(() => ack.promise) });
+    await act(async () => {
+      await h.result.current.handleJoinRoom({ ...room, hasPassword: true }, event);
+    });
+    act(() => h.result.current.setJoinPassword("secret"));
+    let task!: Promise<void>;
+    act(() => {
+      task = h.result.current.handlePasswordJoin();
+    });
+    act(() => h.result.current.setJoinTarget(null));
+    await act(async () => {
+      ack.resolve();
+      await task;
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(h.result.current.joinTarget).toBeNull();
+  });
+  it("创建 ACK 在卸载后不导航、也不登记恢复", async () => {
+    const ack = deferred<void>();
+    const onRoomCreated = vi.fn();
+    const h = setup({ createRoom: vi.fn(() => ack.promise), onRoomCreated });
+    let task!: Promise<void>;
+    act(() => {
+      task = h.result.current.handleCreateRoom({
+        name: "新房",
+        visibility: "public",
+        allowSpectators: true,
+      });
+    });
+    h.unmount();
+    ack.resolve();
+    await task;
+    expect(navigate).not.toHaveBeenCalled();
+    expect(onRoomCreated).not.toHaveBeenCalled();
+  });
+  it("恢复成功直接导航而不再加入", async () => {
+    const h = setup({ reconnectRoom: vi.fn().mockResolvedValue(true) });
+    await act(async () => {
+      await h.result.current.handleJoinRoom(room, event);
+    });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/cee/room/1234");
+    expect(h.options.joinRoom).not.toHaveBeenCalled();
+  });
+});
+it("换游戏后旧恢复响应不导航，新页面不接受过期意图", async () => {
+  const ack = deferred<boolean>();
+  const h = setup({ reconnectRoom: vi.fn(() => ack.promise) });
+  let task!: Promise<void>;
+  act(() => {
+    task = h.result.current.handleJoinRoom(room, event);
+  });
+  h.rerender({ ...h.options, gamePath: "/songuessr" });
+  await act(async () => {
+    ack.resolve(true);
+    await task;
+  });
+  expect(navigate).not.toHaveBeenCalled();
+});
+it("关闭创建对话框的晚 ACK 不导航", async () => {
+  const ack = deferred<void>();
+  const h = setup({ createRoom: vi.fn(() => ack.promise) });
+  let task!: Promise<void>;
+  act(() => {
+    h.result.current.setCreateOpen(true);
+    task = h.result.current.handleCreateRoom({
+      name: "新房",
+      visibility: "public",
+      allowSpectators: true,
+    });
+  });
+  act(() => h.result.current.setCreateOpen(false));
+  await act(async () => {
+    ack.resolve();
+    await task;
+  });
+  expect(navigate).not.toHaveBeenCalled();
+});
+it("密码加入失败写在密码弹窗里：密码错误标红，其余失败只给文案，都不弹 Toast", async () => {
+  const joinRoom = vi
+    .fn()
+    .mockRejectedValueOnce({ code: "PASSWORD_INCORRECT", message: "房间密码错误" })
+    .mockRejectedValueOnce({ code: "TOO_MANY_ATTEMPTS", message: "密码错误次数过多，请稍后再试" });
+  const h = setup({ joinRoom });
+  await act(async () => {
+    await h.result.current.handleJoinRoom({ ...room, hasPassword: true }, event);
+  });
+  act(() => h.result.current.setJoinPassword("wrong"));
+  await act(async () => {
+    await h.result.current.handlePasswordJoin();
+  });
+  expect(h.result.current.joinError).toEqual({ message: "房间密码错误", invalid: true });
+  // 改密码即撤下上一次的错误。
+  act(() => h.result.current.setJoinPassword("again"));
+  expect(h.result.current.joinError).toBeNull();
+  await act(async () => {
+    await h.result.current.handlePasswordJoin();
+  });
+  expect(h.result.current.joinError).toEqual({
+    message: "密码错误次数过多，请稍后再试",
+    invalid: false,
+  });
+  expect(h.options.showError).not.toHaveBeenCalled();
+});
+it("进房在途时记下是哪间房，结束后清空", async () => {
+  const ack = deferred<boolean>();
+  const h = setup({ reconnectRoom: vi.fn(() => ack.promise) });
+  let task!: Promise<void>;
+  act(() => {
+    task = h.result.current.handleJoinRoom(room, event);
+  });
+  expect(h.result.current.pendingRoomId).toBe("1234");
+  await act(async () => {
+    ack.resolve(true);
+    await task;
+  });
+  expect(h.result.current.pendingRoomId).toBeNull();
+});
+it("建房失败抛回给弹窗、不另弹 Toast", async () => {
+  const h = setup({ createRoom: vi.fn().mockRejectedValue(new Error("房间已满")) });
+  await act(async () => {
+    await expect(
+      h.result.current.handleCreateRoom({
+        name: "新房",
+        visibility: "public",
+        allowSpectators: true,
+      })
+    ).rejects.toThrow("房间已满");
+  });
+  expect(h.options.showError).not.toHaveBeenCalled();
+});
+const createParams = { name: "新房", visibility: "public" as const, allowSpectators: true };
+describe("建房撞号重试", () => {
+  it.each(["ROOM_EXISTS", "ROOM_ALREADY_EXISTS"])(
+    "%s 时自动换号重试，成功后按最终房号导航",
+    async (code) => {
+      const createRoom = vi
+        .fn()
+        .mockRejectedValueOnce({ code, message: "房间号已被占用" })
+        .mockRejectedValueOnce({ code, message: "房间号已被占用" })
+        .mockResolvedValue(undefined);
+      const onRoomCreated = vi.fn();
+      const h = setup({ createRoom, onRoomCreated });
+      await act(async () => {
+        await h.result.current.handleCreateRoom(createParams);
+      });
+      expect(createRoom.mock.calls.map(([params]) => params.roomId)).toEqual([
+        "1000",
+        "1001",
+        "1002",
+      ]);
+      expect(onRoomCreated).toHaveBeenCalledWith("1002", createParams);
+      expect(navigate).toHaveBeenCalledWith("/cee/room/1002");
+    }
+  );
+  it("连续撞号超过上限后把错误抛给弹窗，不无限重试", async () => {
+    const taken = { code: "ROOM_EXISTS", message: "房间号已被占用" };
+    const createRoom = vi.fn().mockRejectedValue(taken);
+    const h = setup({ createRoom });
+    await act(async () => {
+      await expect(h.result.current.handleCreateRoom(createParams)).rejects.toMatchObject(taken);
+    });
+    expect(createRoom).toHaveBeenCalledTimes(4);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("其它建房错误不重试", async () => {
+    const createRoom = vi.fn().mockRejectedValue({ code: "ROOM_LIMIT", message: "房间已满" });
+    const h = setup({ createRoom });
+    await act(async () => {
+      await expect(h.result.current.handleCreateRoom(createParams)).rejects.toMatchObject({
+        code: "ROOM_LIMIT",
+      });
+    });
+    expect(createRoom).toHaveBeenCalledTimes(1);
+  });
+  it("重试期间页面已卸载则不再换号重发", async () => {
+    const first = deferred<void>();
+    const createRoom = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const h = setup({ createRoom });
+    let task!: Promise<void>;
+    act(() => {
+      task = h.result.current.handleCreateRoom(createParams).catch(() => {});
+    });
+    h.unmount();
+    first.reject({ code: "ROOM_EXISTS", message: "房间号已被占用" });
+    await act(async () => {
+      await task;
+    });
+    expect(createRoom).toHaveBeenCalledTimes(1);
+  });
+});
+it("创建成功后把房号与本次选项交给回调，供记录与登记恢复", async () => {
+  const onRoomCreated = vi.fn();
+  const h = setup({ onRoomCreated });
+  await act(async () => {
+    await h.result.current.handleCreateRoom({
+      name: "新房",
+      visibility: "private",
+      allowSpectators: false,
+      password: "1234",
+    });
+  });
+  const roomId = String(navigate.mock.calls[0]?.[0]).split("/").pop();
+  expect(onRoomCreated).toHaveBeenCalledExactlyOnceWith(
+    roomId,
+    expect.objectContaining({
+      name: "新房",
+      visibility: "private",
+      allowSpectators: false,
+      password: "1234",
+    })
+  );
+});
+
+it("建房不预置 MCP 接入，房间可用性由房主在房间内决定", async () => {
+  const h = setup();
+  await act(async () => {
+    await h.result.current.handleCreateRoom({
+      name: "新房",
+      visibility: "public",
+      allowSpectators: true,
+    });
+  });
+  const [params] = h.options.createRoom.mock.calls[0] ?? [];
+  // 服务端缺省就是关闭；前端不再替玩家预置「新房间默认允许 Agent」。
+  expect(params).not.toHaveProperty("allowAgents");
+});

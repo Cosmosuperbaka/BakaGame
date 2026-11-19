@@ -1,0 +1,77 @@
+import type {
+  CEECharacterSummary,
+  CEECharacterView,
+  CEEDirectoryResult,
+  CEEExtraTagSection,
+  CEEImageSize,
+  CEESettings,
+  CEESubjectSummary,
+} from "../shared/CEE";
+import type { BangumiSearchIndex, BangumiSearchOptions } from "./BangumiSearchIndex";
+import type { BangumiUpstream } from "./BangumiUpstream";
+import type { EnrichmentStore } from "./EnrichmentStore";
+
+/** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
+export interface CEERawAppearance {
+  id: number;
+  type: number;
+  name: string;
+  nameCn: string;
+  date: string;
+  relationType: number;
+  rating: number;
+  ratingCount: number;
+  heat: number;
+  rawTags: Record<string, number>;
+  metaTags: string[];
+}
+
+export interface CEERawCharacter extends CEECharacterSummary {
+  aliases: string[];
+  gender: "male" | "female" | "?";
+  popularity: number;
+  summary: string;
+  appearances: CEERawAppearance[];
+  characterTags: string[];
+  voiceActors: string[];
+  extraTagsBySubject: Record<number, CEEExtraTagSection[]>;
+}
+
+export interface CEEDataProvider {
+  searchCharacters(keyword: string, limit?: number): Promise<CEECharacterSummary[]>;
+  searchSubjects(keyword: string, limit?: number, types?: number[]): Promise<CEESubjectSummary[]>;
+  getSubjectCharacters(subjectId: number, limit?: number): Promise<CEECharacterSummary[]>;
+  /** 按编号取作品摘要，顺序随输入、本地没有的编号跳过；不含 NSFW 过滤以外的筛选。 */
+  getSubjects(subjectIds: number[]): Promise<CEESubjectSummary[]>;
+  getRawCharacter(id: number): Promise<CEERawCharacter>;
+  getCharacter(id: number, settings: CEESettings): Promise<CEECharacterView>;
+  chooseRandomCharacter(settings: CEESettings, random?: () => number): Promise<CEECharacterView>;
+  importDirectory(indexId: number): Promise<CEEDirectoryResult>;
+  /** 角色图；`size` 缺省为大图，搜索列表这类方形缩略图传 `grid`。 */
+  resolveCharacterImage(id: number, size?: CEEImageSize): Promise<string | undefined>;
+  /** 作品封面；本地没有、NSFW 或上游无图时为 `undefined` */
+  resolveSubjectImage(id: number, size?: CEEImageSize): Promise<string | undefined>;
+  close(): void | Promise<void>;
+}
+
+export interface CEEDataOptions {
+  /** 唯一的数据集路径：与猜歌共用同一个库（见 tools/build_bangumi_db.py）。 */
+  dbPath: string;
+  /**
+   * 以**只读**打开 `dbPath`。多进程分片时只有主片可写，其余片必须传 true，
+   * 否则跨进程写同一个库文件会互相等锁（见 `OpenDataset` 注释）。
+   */
+  readonly?: boolean;
+  enrichmentPath?: string;
+  /** 已构造好的回填缓存；注入后不再按 `enrichmentPath` 另开，由注入方负责关闭。 */
+  enrichment?: EnrichmentStore;
+  apiBase?: string;
+  imageBase?: string;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** 已构造好的上游出站部件；注入后不再按 `fetcher` 另建，让各处出站共用冷却与限速时隙。 */
+  upstream?: BangumiUpstream;
+  now?: () => number;
+  meilisearch?: BangumiSearchOptions;
+  /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
+  search?: BangumiSearchIndex;
+}

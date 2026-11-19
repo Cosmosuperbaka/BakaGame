@@ -1,0 +1,44 @@
+name: Bug 报告
+description: 游戏卡住、报错、显示不对，都可以在这里说
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 不用懂技术，写清楚发生了什么就够了。看不懂的项可以跳过。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 在哪里遇到的
+      options:
+        - Who is Faker（谁是卧底）
+        - Songuessr（猜歌）
+        - CEE（猜动漫角色）
+        - 首页、账号或其他页面
+        - 桌面或手机客户端
+        - 自己部署时遇到的问题
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 发生了什么
+      description: 你看到了什么，本来以为会怎样。
+      placeholder: 例如：投票结束后页面一直转圈，没有进入夜晚。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎么能再次遇到
+      description: 按顺序写你做过的操作。只出现过一次也没关系。
+      placeholder: 1. 建房  2. 开局  3. 投票后卡住
+  - type: textarea
+    id: logs
+    attributes:
+      label: 截图或报错
+      description: 可以直接把截图粘贴到这里。请先遮住账号、Cookie 等私人信息。
+  - type: input
+    id: environment
+    attributes:
+      label: 用的什么设备
+      placeholder: 例如：安卓手机 Chrome、Windows 客户端、iPhone Safari

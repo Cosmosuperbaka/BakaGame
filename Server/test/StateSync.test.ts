@@ -1,0 +1,313 @@
+import { expect, spyOn, test } from "bun:test";
+import { applyPatch } from "fast-json-patch";
+
+import { createEvent } from "../src/transport/Packets";
+import {
+  buildStatePatch,
+  createStateSyncSender,
+  STATE_BACKLOG_RESUME_BYTES,
+  STATE_BACKLOG_SHED_BYTES,
+  StateSyncEncoder,
+} from "../src/transport/StateSync";
+import { DecodingStateSyncEncoder, decodeFrame } from "./StateSyncFixtures";
+
+test("状态补丁只编码变化路径与数组追加项", () => {
+  expect(
+    buildStatePatch(
+      { players: [{ id: "p1", ready: false }], chat: [] },
+      { players: [{ id: "p1", ready: true }], chat: [{ id: "c1", text: "你好" }] }
+    )
+  ).toEqual([
+    { op: "add", path: "/chat/0", value: { id: "c1", text: "你好" } },
+    { op: "replace", path: "/players/0/ready", value: true },
+  ]);
+});
+
+test("数组缩短时精准生成 remove 逆向删除操作", () => {
+  expect(
+    buildStatePatch(
+      { players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }] },
+      { players: [{ id: "p1" }] }
+    )
+  ).toEqual([
+    { op: "remove", path: "/players/2" },
+    { op: "remove", path: "/players/1" },
+  ]);
+});
+
+test("聊天窗口挤掉最旧一条时只发两条操作", () => {
+  const message = (index: number) => ({
+    id: `c${index}`,
+    text: `第${index}条`,
+    at: 1_700_000_000_000 + index,
+  });
+  const window = (end: number) =>
+    Array.from({ length: 20 }, (_, index) => message(end - 19 + index));
+  const previous = { chat: window(20), status: { phase: "description" } };
+  const next = { chat: window(21), status: { phase: "description" } };
+  const operations = buildStatePatch(previous, next);
+
+  expect(operations).toEqual([
+    { op: "remove", path: "/chat/0" },
+    { op: "add", path: "/chat/19", value: message(21) },
+  ]);
+  // 与客户端同一套用补丁方式（validate=true）：套完必须正好等于新状态。
+  const applied = applyPatch(
+    JSON.parse(JSON.stringify(previous)) as object,
+    operations as never,
+    true
+  ).newDocument;
+  expect(applied).toEqual(next);
+});
+
+test("窗口挤动不再退化成整份重发", () => {
+  const encoder = new DecodingStateSyncEncoder();
+  const message = (index: number) => ({ id: `c${index}`, text: "x".repeat(60), at: index });
+  const window = (end: number) => ({
+    chat: Array.from({ length: 20 }, (_, index) => message(end - 19 + index)),
+  });
+  encoder.encode(createEvent("room.snapshot", window(20)));
+  const shifted = encoder.encode(createEvent("room.snapshot", window(21)));
+
+  // 通用差分在这里会产出比整份快照还大的补丁（20 条消息逐个改写下标），于是退回全量；
+  // 走窗口快路径后只剩两条操作，仍然发补丁。
+  expect(shifted[0]).toMatchObject({ payload: { mode: "patch", operations: { length: 2 } } });
+});
+
+test("编码器发送首个全量、连续补丁并省略无变化私有状态", () => {
+  const encoder = new DecodingStateSyncEncoder();
+  const filler = "x".repeat(1_000);
+  const first = encoder.encode(createEvent("room.snapshot", { value: 1, filler }));
+  const unchanged = encoder.encode(createEvent("room.snapshot", { value: 1, filler }));
+  const changed = encoder.encode(createEvent("room.snapshot", { value: 2, filler }));
+
+  expect(first[0]).toMatchObject({ payload: { mode: "full", revision: 1 } });
+  expect(unchanged).toEqual([]);
+  expect(changed[0]).toMatchObject({
+    payload: {
+      mode: "patch",
+      baseRevision: 1,
+      revision: 2,
+      operations: [{ op: "replace", path: "/value", value: 2 }],
+    },
+  });
+});
+
+test("编码器每分钟用全量状态校准补丁链", () => {
+  let now = 0;
+  const encoder = new DecodingStateSyncEncoder({ now: () => now });
+  encoder.encode(createEvent("room.snapshot", { value: 1, filler: "x".repeat(1_000) }));
+  now = 60_000;
+
+  expect(
+    encoder.encode(
+      createEvent("room.snapshot", {
+        value: 2,
+        filler: "x".repeat(1_000),
+      })
+    )[0]
+  ).toMatchObject({ payload: { mode: "full", revision: 2 } });
+});
+
+test("校准调用会在无业务变化时按周期重发全量状态", () => {
+  let now = 0;
+  const encoder = new DecodingStateSyncEncoder({ now: () => now });
+  const state = createEvent("room.snapshot", { value: 1 });
+  encoder.encode(state);
+
+  now = 59_999;
+  expect(encoder.encode(state, { calibration: true })).toEqual([]);
+  now = 60_000;
+  expect(encoder.encode(state, { calibration: true })[0]).toMatchObject({
+    payload: { mode: "full", revision: 1, state: { value: 1 } },
+  });
+  expect(encoder.encode(state, { calibration: true })).toEqual([]);
+});
+
+test("快照内嵌活动领域对象时，补丁基线仍是准备时刻的值", () => {
+  const encoder = new DecodingStateSyncEncoder();
+  // 视图构建器可能把领域对象直接挂进快照；准备时必须留下当时值的副本，
+  // 否则下一次发布拿到的基线已经被原地改写，客户端永远收不到这处变化。
+  const settings = { rounds: 5, anonymous: true };
+  const bulk = { chat: Array.from({ length: 40 }, (_, index) => ({ id: `c${index}` })) };
+
+  encoder.encode(createEvent("room.snapshot", { ...bulk, phase: "describing", settings }));
+  settings.rounds = 9;
+
+  const encoded = encoder.encode(
+    createEvent("room.snapshot", { ...bulk, phase: "voting", settings })
+  )[0];
+  expect(encoded).toMatchObject({ payload: { mode: "patch", baseRevision: 1, revision: 2 } });
+  const operations = (encoded as { payload: { operations: unknown[] } }).payload.operations;
+  expect(operations).toHaveLength(2);
+  expect(operations).toEqual(
+    expect.arrayContaining([
+      { op: "replace", path: "/phase", value: "voting" },
+      { op: "replace", path: "/settings/rounds", value: 9 },
+    ])
+  );
+});
+
+test("补丁规模接近全量时改发全量，小改动仍走补丁", () => {
+  const encoder = new DecodingStateSyncEncoder();
+  const fields = (suffix: string) =>
+    Object.fromEntries(
+      Array.from({ length: 60 }, (_, index) => [`field${index}`, `value-${index}${suffix}`])
+    );
+
+  expect(encoder.encode(createEvent("room.snapshot", fields("")))[0]).toMatchObject({
+    payload: { mode: "full", revision: 1 },
+  });
+  // 60 个字段全被改写：补丁已经不比全量小，直接发全量。
+  expect(encoder.encode(createEvent("room.snapshot", fields("-rewritten")))[0]).toMatchObject({
+    payload: { mode: "full", revision: 2 },
+  });
+  expect(
+    encoder.encode(createEvent("room.snapshot", { ...fields("-rewritten"), extra: 1 }))[0]
+  ).toMatchObject({
+    payload: { mode: "patch", revision: 3, baseRevision: 2 },
+  });
+});
+
+test("出站积压越过水位时只丢状态帧，回落后以全量恢复", () => {
+  let backlog = 0;
+  const sent: unknown[] = [];
+  const sender = createStateSyncSender(
+    (payload) => sent.push(decodeFrame(payload)),
+    () => backlog
+  );
+
+  sender.send(createEvent("room.snapshot", { value: 1 }));
+  expect(sent).toHaveLength(1);
+
+  backlog = STATE_BACKLOG_SHED_BYTES + 1;
+  sender.send(createEvent("room.snapshot", { value: 2 }));
+  expect(sent).toHaveLength(1);
+  // ACK 与聊天是有去无回的业务消息，积压再高也不能丢。
+  sender.send(createEvent("room.chat", { text: "照常发送" }));
+  expect(sent[1]).toMatchObject({ event: "room.chat" });
+
+  backlog = STATE_BACKLOG_RESUME_BYTES - 1;
+  sender.send(createEvent("room.snapshot", { value: 3 }));
+  expect(sent.at(-1)).toMatchObject({
+    payload: { mode: "full", revision: 1, state: { value: 3 } },
+  });
+});
+
+test("积压时大厅列表帧与状态帧各走一条闸门：丢列表不把快照差量链打回全量", () => {
+  let backlog = 0;
+  const sent: unknown[] = [];
+  const sender = createStateSyncSender(
+    (payload) => sent.push(decodeFrame(payload)),
+    () => backlog
+  );
+  const filler = "x".repeat(1_000);
+  const snapshot = (value: number) => createEvent("room.snapshot", { value, filler });
+
+  sender.send(snapshot(1));
+  sender.send(snapshot(2));
+  expect(sent.at(-1)).toMatchObject({ payload: { mode: "patch", revision: 2 } });
+
+  // 列表帧自带完整视图，越过水位时和状态帧一样先丢。
+  // 这里写线上名字而不是 shared 常量：常量被改动时本用例要响，因为客户端按这个名字订阅。
+  backlog = STATE_BACKLOG_SHED_BYTES + 1;
+  sender.send(createEvent("lobby.rooms", []));
+  sender.send(createEvent("song.lobby.rooms", []));
+  sender.send(createEvent("cee.lobby.rooms", []));
+  expect(sent).toHaveLength(2);
+
+  backlog = 0;
+  sender.send(createEvent("lobby.rooms", [{ roomId: "6150" }]));
+  expect(sent.at(-1)).toMatchObject({ event: "lobby.rooms" });
+
+  // 断的是列表不是快照：恢复后的第一份仍是补丁，不必重发整张房间视图。
+  sender.send(snapshot(3));
+  expect(sent.at(-1)).toMatchObject({ payload: { mode: "patch", revision: 3 } });
+});
+
+test("同一帧发给多条连接时字节相同：全量帧与补丁帧各自逐字节一致，且与对象序列化等价", () => {
+  const filler = "x".repeat(1_000);
+  const first = createEvent("room.snapshot", { value: 1, players: ["a", "b"], filler });
+  const second = createEvent("room.snapshot", { value: 2, players: ["a", "b", "c"], filler });
+  const encoders = Array.from({ length: 20 }, () => new StateSyncEncoder());
+  const fulls = encoders.map((encoder) => encoder.encode(first));
+  const patches = encoders.map((encoder) => encoder.encode(second));
+  for (const group of [fulls, patches]) {
+    expect(new Set(group.map((frames) => frames[0])).size).toBe(1);
+    const frame = group[0][0] as string;
+    expect(typeof frame).toBe("string");
+    // 与逐连接 JSON.stringify(对象) 的产物逐字节一致：键序与格式没有被拼接改变。
+    expect(frame).toBe(JSON.stringify(JSON.parse(frame)));
+  }
+  expect(JSON.parse(fulls[0][0] as string)).toEqual({
+    type: "event",
+    event: "room.snapshot",
+    payload: { mode: "full", revision: 1, state: { value: 1, players: ["a", "b"], filler } },
+  });
+  expect(JSON.parse(patches[0][0] as string)).toMatchObject({
+    payload: { mode: "patch", baseRevision: 1, revision: 2 },
+  });
+});
+
+test("不同状态事件各用各的信封：事件名不会串到别的事件的帧上", () => {
+  const encoder = new StateSyncEncoder();
+  const packets = [
+    createEvent("room.snapshot", { value: 1 }),
+    createEvent("game.privateState", { role: "x" }),
+    createEvent("song.room.snapshot", { value: 2 }),
+  ];
+  const frames = packets.map(
+    (packet) =>
+      JSON.parse(encoder.encode(packet)[0] as string) as {
+        event: string;
+        payload: { state: unknown };
+      }
+  );
+  expect(frames.map((frame) => frame.event)).toEqual([
+    "room.snapshot",
+    "game.privateState",
+    "song.room.snapshot",
+  ]);
+  expect(frames.map((frame) => frame.payload.state)).toEqual([
+    { value: 1 },
+    { role: "x" },
+    { value: 2 },
+  ]);
+});
+
+test("每条连接的版本号独立计数，共享的只有状态子树与补丁文本", () => {
+  const late = new StateSyncEncoder();
+  const early = new StateSyncEncoder();
+  const filler = "x".repeat(1_000);
+  const one = createEvent("room.snapshot", { value: 1, filler });
+  const two = createEvent("room.snapshot", { value: 2, filler });
+  early.encode(one);
+  early.encode(two);
+  const next = createEvent("room.snapshot", { value: 3, filler });
+  const [lateFrame] = late.encode(next);
+  const [earlyFrame] = early.encode(next);
+  expect(JSON.parse(lateFrame as string).payload).toMatchObject({ mode: "full", revision: 1 });
+  expect(JSON.parse(earlyFrame as string).payload).toMatchObject({
+    mode: "patch",
+    baseRevision: 2,
+    revision: 3,
+  });
+});
+
+test("状态子树与补丁对整个房间只序列化一次，不随连接数线性增长", () => {
+  const stringify = spyOn(JSON, "stringify");
+  try {
+    const first = createEvent("room.snapshot", { value: 1, filler: "x".repeat(2_000) });
+    const second = createEvent("room.snapshot", { value: 2, filler: "x".repeat(2_000) });
+    const encoders = Array.from({ length: 150 }, () => new StateSyncEncoder());
+    for (const encoder of encoders) encoder.encode(first);
+    const afterFull = stringify.mock.calls.length;
+    for (const encoder of encoders) encoder.encode(second);
+    const afterPatch = stringify.mock.calls.length - afterFull;
+    // 全量帧：信封与状态各一次；补丁帧：信封与操作各一次（常数，与 150 条连接无关）。
+    expect(afterFull).toBeLessThanOrEqual(6);
+    expect(afterPatch).toBeLessThanOrEqual(6);
+  } finally {
+    stringify.mockRestore();
+  }
+});

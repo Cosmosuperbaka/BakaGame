@@ -1,0 +1,276 @@
+import { useState } from "react";
+import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import {
+  AdminDetailDialog,
+  AdminFilterSelect,
+  AdminTable,
+  AdminToolbar,
+  ListState,
+  Pager,
+  RowButton,
+  UserCell,
+} from "@/components/admin/AdminParts";
+import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
+import { api } from "@/lib/Api";
+import { formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
+import {
+  ANTI_CHEAT_HISTORY_EMPTY,
+  ANTI_CHEAT_HISTORY_FAILED,
+  ANTI_CHEAT_HISTORY_NO_CV,
+  ANTI_CHEAT_HISTORY_NOTE,
+  ANTI_CHEAT_REVIEW_ACTION_LABELS,
+  ANTI_CHEAT_REVIEW_BADGE,
+  ANTI_CHEAT_REVIEW_LABELS,
+  CEE_CLIENT_TYPE_LABELS,
+  antiCheatHistoryTitle,
+} from "@/lib/AntiCheatCopy";
+
+const LIMIT = 20;
+const STATUS_VALUES = Object.keys(ANTI_CHEAT_REVIEW_LABELS) as AntiCheatReviewStatus[];
+const STATUS_OPTIONS = STATUS_VALUES.map((status) => ({
+  value: status,
+  label: ANTI_CHEAT_REVIEW_LABELS[status],
+}));
+const STATUS_FILTER = [{ value: "", label: "全部状态" }, ...STATUS_OPTIONS];
+
+/** 间隔序列只展示前 8 个：一回合的猜测次数本就有限，超长时以计数收尾。 */
+const intervalText = (intervals: number[]) => {
+  const shown = intervals.slice(0, 8).map((ms) => `${Math.round(ms / 100) / 10}s`);
+  return intervals.length > 8
+    ? `${shown.join(" · ")} 等 ${intervals.length} 段`
+    : shown.join(" · ");
+};
+
+/**
+ * 同身份近窗均值：读一次挂在条目 id 上，失败也只影响这一小块，处置按钮照常可用。
+ * 数字来自服务端已有的队列条目，这里不额外拉人。
+ */
+function ReviewHistory({ itemId }: { itemId: string }) {
+  const history = useAdminQuery(
+    `anticheat-history:${itemId}`,
+    () => api.admin.antiCheat.history({ id: itemId }),
+    ANTI_CHEAT_HISTORY_FAILED
+  );
+  const data = history.data;
+  return (
+    <section aria-label="同身份近窗记录" className="grid gap-1.5">
+      <h3 className="text-sm font-medium">
+        {data ? antiCheatHistoryTitle(data.windowDays) : "同身份近窗记录"}
+      </h3>
+      {history.error ? (
+        // 读失败要与「窗口内没有其它可比条目」这类正常灰字区分开，用与其它失败说明同一个带图标的写法。
+        <FormAlert>{history.error}</FormAlert>
+      ) : !data ? (
+        <p className="text-xs text-muted-foreground">加载中…</p>
+      ) : data.rounds === 0 ? (
+        <p className="text-xs text-muted-foreground">{ANTI_CHEAT_HISTORY_EMPTY}</p>
+      ) : (
+        <dl className="grid gap-1 text-xs text-muted-foreground">
+          <div>
+            <dt className="inline">被记录回合：</dt>
+            <dd className="inline font-mono">{data.rounds} 个（含本条）</dd>
+          </div>
+          <div>
+            <dt className="inline">平均猜测次数：</dt>
+            <dd className="inline font-mono">{data.avgGuesses.toFixed(1)}</dd>
+          </div>
+          <div>
+            <dt className="inline">首猜即中：</dt>
+            <dd className="inline font-mono">
+              {data.firstGuessHits} / {data.rounds} 回合
+            </dd>
+          </div>
+          <div>
+            <dt className="inline">平均间隔变异系数：</dt>
+            <dd className="inline font-mono">
+              {data.avgCv === null ? ANTI_CHEAT_HISTORY_NO_CV : data.avgCv.toFixed(3)}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline">窗口内最高分：</dt>
+            <dd className="inline font-mono">{data.maxScore}</dd>
+          </div>
+        </dl>
+      )}
+      <p className="text-xs text-muted-foreground">{ANTI_CHEAT_HISTORY_NOTE}</p>
+    </section>
+  );
+}
+
+function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChanged: () => void }) {
+  const action = useAdminAction();
+  const change = (next: AntiCheatReviewStatus) => {
+    void action.run(
+      next,
+      async () => {
+        await api.admin.antiCheat.setStatus({ id: item.id, status: next });
+        onChanged();
+      },
+      "处置失败，请稍后重试"
+    );
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant={ANTI_CHEAT_REVIEW_BADGE[item.status]} size="xs">
+          {ANTI_CHEAT_REVIEW_LABELS[item.status]}
+        </Badge>
+        <UserCell user={item.player} />
+        <span className="font-mono text-xs text-muted-foreground">房间 {item.roomId}</span>
+        <span className="text-muted-foreground">第 {item.roundNumber} 回合</span>
+        <span className="text-muted-foreground">{CEE_CLIENT_TYPE_LABELS[item.clientType]}</span>
+        <span className="text-muted-foreground">记录于 {formatDateTime(item.createdAt)}</span>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        条目是「值得看一眼」的候选，不是结论；分值只决定它进不进队列，处置完全由这里决定。
+      </p>
+      <section aria-label="命中依据" className="grid gap-1.5">
+        <h3 className="text-sm font-medium">命中依据（分值 {item.score}）</h3>
+        <ul className="grid gap-1 text-sm">
+          {item.reasons.map((reason) => (
+            <li key={reason} className="rounded-md border bg-card px-3 py-2">
+              {reason}
+            </li>
+          ))}
+        </ul>
+      </section>
+      <dl className="grid gap-1 text-xs text-muted-foreground">
+        <div>
+          <dt className="inline">猜测次数：</dt>
+          <dd className="inline font-mono">
+            {item.features.guesses}（其中未检索直接猜 {item.features.noSearchGuesses} 次）
+          </dd>
+        </div>
+        <div>
+          <dt className="inline">检索落空：</dt>
+          <dd className="inline font-mono">{item.features.unmatchedSearches} 次</dd>
+        </div>
+        <div>
+          <dt className="inline">间隔变异系数：</dt>
+          <dd className="inline font-mono">
+            {item.features.cv === null ? "样本不足" : item.features.cv.toFixed(3)}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline">相邻间隔：</dt>
+          {/* 按「 · 」间隔处换行：break-all 会把 1.2s 拆成「1.」与「2s」两行。 */}
+          <dd className="inline break-words font-mono">{intervalText(item.features.intervals)}</dd>
+        </div>
+        <div>
+          <dt className="inline">首猜即中：</dt>
+          <dd className="inline font-mono">{item.features.firstGuessCorrect ? "是" : "否"}</dd>
+        </div>
+      </dl>
+      <ReviewHistory itemId={item.id} />
+      {/* 失败说明放在处置按钮之前：放在最后会落到长弹窗的下沿以外，点了没反应似的。 */}
+      {action.error ? <FormAlert>{action.error}</FormAlert> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {(["cleared", "actioned", "open"] as const)
+          .filter((next) => next !== item.status)
+          .map((next) => (
+            <Button
+              key={next}
+              type="button"
+              variant={next === "open" ? "ghost" : "outline"}
+              size="sm"
+              disabled={action.busy !== null}
+              loading={action.busy === next}
+              onClick={() => change(next)}
+            >
+              {ANTI_CHEAT_REVIEW_ACTION_LABELS[next]}
+            </Button>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+export function AntiCheatPanel() {
+  const [status, setStatus] = useState("open");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const list = useAdminList({
+    name: "anticheat",
+    filters: status ? { status: status as AntiCheatReviewStatus } : {},
+    limit: LIMIT,
+    fallback: "复核队列加载失败",
+    fetch: (input) => api.admin.antiCheat.list(input),
+  });
+  const { items } = list;
+  const detail = items.find((item) => item.id === openId) ?? null;
+
+  return (
+    <div>
+      <AdminToolbar title="反作弊复核" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-32"
+          label="状态"
+          value={status}
+          options={STATUS_FILTER}
+          onChange={setStatus}
+        />
+      </AdminToolbar>
+      <ListState list={list} emptyText="没有待复核的条目" />
+      {items.length ? (
+        <AdminTable label="复核队列">
+          <thead>
+            <tr>
+              <th scope="col">玩家</th>
+              <th scope="col">房间 · 回合</th>
+              <th scope="col">客户端</th>
+              <th scope="col" className="text-right">
+                分值
+              </th>
+              <th scope="col">依据</th>
+              <th scope="col">状态</th>
+              <th scope="col">记录时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  <RowButton onClick={() => setOpenId(item.id)}>
+                    <span className="block truncate">{item.playerName}</span>
+                  </RowButton>
+                </td>
+                <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                  {item.roomId} · {item.roundNumber}
+                </td>
+                <td>{CEE_CLIENT_TYPE_LABELS[item.clientType]}</td>
+                <td className="text-right tabular-nums">{item.score}</td>
+                <td className="max-w-72">
+                  <span className="block truncate text-muted-foreground">
+                    {item.reasons.join("；")}
+                  </span>
+                </td>
+                <td>
+                  <Badge variant={ANTI_CHEAT_REVIEW_BADGE[item.status]} size="xs">
+                    {ANTI_CHEAT_REVIEW_LABELS[item.status]}
+                  </Badge>
+                </td>
+                <td className="whitespace-nowrap tabular-nums text-muted-foreground">
+                  {formatShortDateTime(item.createdAt)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </AdminTable>
+      ) : null}
+      <Pager {...list.pager} />
+      <AdminDetailDialog
+        open={detail !== null}
+        onClose={() => setOpenId(null)}
+        title={detail ? `${detail.playerName} · 第 ${detail.roundNumber} 回合` : ""}
+        titleClassName="break-words leading-snug"
+        description="放行表示确认无误，已处置表示已经人工处理过；两者都只是给队列记账，不会改动对局。"
+      >
+        {detail ? <ReviewDetail item={detail} onChanged={list.query.reload} /> : null}
+      </AdminDetailDialog>
+    </div>
+  );
+}

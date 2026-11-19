@@ -1,0 +1,7 @@
+/* 应用的 index.css 把 html/body 锁在视口内、由页面内容区承接滚动。
+   组件故事没有页面外壳，这里仅对非全屏故事解除锁定：画布可以滚动，截图取到完整高度。 */
+html:has(> body:not(.sb-main-fullscreen)),
+body:not(.sb-main-fullscreen) {
+  height: auto;
+  overflow: auto !important;
+}

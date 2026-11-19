@@ -1,0 +1,73 @@
+import { motion } from "framer-motion";
+import { Eye, UserCheck } from "lucide-react";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
+import { selectable } from "@/lib/motion/Feedback";
+import { cn } from "@/lib/Utils";
+
+/**
+ * 候选玩家网格。`nameWrap` 必填且无默认值：`break-words` 不参与最小内容宽度计算，
+ * 长名字会把网格轨道撑宽，与 `truncate` 的呈现不同，因此由调用方显式声明。
+ */
+export function CandidateGrid({
+  candidates,
+  tone,
+  nameWrap,
+  onPick,
+  disabled,
+  agentControlPrefix,
+}: {
+  candidates: Array<{ id: string; name: string }>;
+  tone: "recommended" | "default";
+  nameWrap: "truncate" | "wrap";
+  onPick: (playerId: string) => void;
+  disabled?: boolean;
+  /** Agent 操作追踪：按钮控件 id 前缀，实际 id 为 `${prefix}.${candidate.id}`。 */
+  agentControlPrefix?: string;
+}) {
+  if (candidates.length === 0) {
+    return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
+  }
+
+  return (
+    <motion.div
+      className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+      variants={listContainer(candidates.length)}
+      initial="initial"
+      animate="animate"
+    >
+      {candidates.map((candidate) => (
+        <motion.button
+          key={candidate.id}
+          type="button"
+          variants={listItem}
+          // 禁用时不挂手势：不可点的卡片不该随指针缩放。
+          {...(disabled ? undefined : selectable)}
+          disabled={disabled}
+          onClick={() => onPick(candidate.id)}
+          data-agent-control={
+            agentControlPrefix ? `${agentControlPrefix}.${candidate.id}` : undefined
+          }
+          className={cn(
+            "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] disabled:pointer-events-none disabled:opacity-50",
+            tone === "recommended"
+              ? "border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
+              : "hover:border-primary/40 hover:bg-primary/5"
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            {tone === "recommended" ? (
+              <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
+            ) : (
+              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <span
+              className={cn("font-medium", nameWrap === "truncate" ? "truncate" : "break-words")}
+            >
+              {candidate.name}
+            </span>
+          </div>
+        </motion.button>
+      ))}
+    </motion.div>
+  );
+}

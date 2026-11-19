@@ -1,0 +1,134 @@
+import { desc, gte, lt, sql } from "drizzle-orm";
+
+import type { Database } from "./Database";
+import { beijingDayOf, inBatches } from "./SqlHelpers";
+import { sitePageDaily, siteVisitDaily, user } from "./Schema";
+
+/** 一次刷写里某访客当天的增量。 */
+export interface VisitorDelta {
+  day: string;
+  visitorHash: string;
+  userId: string | null;
+  views: number;
+}
+
+export interface PageDelta {
+  day: string;
+  path: string;
+  views: number;
+}
+
+export interface SiteDailyCount {
+  day: string;
+  visitors: number;
+  signedInVisitors: number;
+  views: number;
+}
+
+export interface SitePageCount {
+  path: string;
+  views: number;
+}
+
+export interface SiteStatsRepository {
+  /** 按主键累加：同一访客同一天多次刷写只增加浏览数，账号以最近一次非空为准。 */
+  addVisits(visitors: VisitorDelta[], pages: PageDelta[]): Promise<void>;
+  /** 删除早于 `beforeDay`（北京时间自然日）的访客行，返回删除条数；页面汇总不含个人数据，长期保留。 */
+  purgeVisitors(beforeDay: string, batch: number): Promise<number>;
+  daily(sinceDay: string): Promise<SiteDailyCount[]>;
+  pages(sinceDay: string, limit: number): Promise<SitePageCount[]>;
+  /** 按北京时间自然日统计新注册账号。 */
+  newUsers(since: Date): Promise<Array<{ day: string; count: number }>>;
+}
+
+const INSERT_CHUNK = 500;
+
+/**
+ * 单表查询时 Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，开启严格
+ * `only_full_group_by` 的库会把两者视为不同表达式而报错；因此按别名分组。
+ */
+const userBeijingDay = beijingDayOf(user.createdAt).as("day");
+
+export class DatabaseSiteStatsRepository implements SiteStatsRepository {
+  constructor(private readonly database: Database) {}
+
+  async addVisits(visitors: VisitorDelta[], pages: PageDelta[]): Promise<void> {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
+      for (const rows of inBatches(visitors, INSERT_CHUNK)) {
+        await tx
+          .insert(siteVisitDaily)
+          .values(rows)
+          .onDuplicateKeyUpdate({
+            set: {
+              views: sql`${siteVisitDaily.views} + values(${sql.raw("`views`")})`,
+              userId: sql`coalesce(values(${sql.raw("`user_id`")}), ${siteVisitDaily.userId})`,
+            },
+          });
+      }
+      for (const rows of inBatches(pages, INSERT_CHUNK)) {
+        await tx
+          .insert(sitePageDaily)
+          .values(rows)
+          .onDuplicateKeyUpdate({
+            set: { views: sql`${sitePageDaily.views} + values(${sql.raw("`views`")})` },
+          });
+      }
+    });
+  }
+
+  async purgeVisitors(beforeDay: string, batch: number): Promise<number> {
+    const db = await this.database.client();
+    // MySQL 与 TiDB 都支持带 LIMIT 的 DELETE，一条语句完成「限量删除」，不必先查主键再分天删。
+    const [result] = await db
+      .delete(siteVisitDaily)
+      .where(lt(siteVisitDaily.day, beforeDay))
+      .limit(batch);
+    return result.affectedRows;
+  }
+
+  async daily(sinceDay: string): Promise<SiteDailyCount[]> {
+    const db = await this.database.client();
+    const rows = await db
+      .select({
+        day: siteVisitDaily.day,
+        visitors: sql<number>`count(*)`,
+        signedInVisitors: sql<number>`count(${siteVisitDaily.userId})`,
+        views: sql<number>`sum(${siteVisitDaily.views})`,
+      })
+      .from(siteVisitDaily)
+      .where(gte(siteVisitDaily.day, sinceDay))
+      .groupBy(siteVisitDaily.day)
+      .orderBy(siteVisitDaily.day);
+    return rows.map((row) => ({
+      day: row.day,
+      visitors: Number(row.visitors),
+      signedInVisitors: Number(row.signedInVisitors),
+      views: Number(row.views),
+    }));
+  }
+
+  async pages(sinceDay: string, limit: number): Promise<SitePageCount[]> {
+    const db = await this.database.client();
+    const views = sql<number>`sum(${sitePageDaily.views})`;
+    const rows = await db
+      .select({ path: sitePageDaily.path, views })
+      .from(sitePageDaily)
+      .where(gte(sitePageDaily.day, sinceDay))
+      .groupBy(sitePageDaily.path)
+      .orderBy(desc(views))
+      .limit(limit);
+    return rows.map((row) => ({ path: row.path, views: Number(row.views) }));
+  }
+
+  async newUsers(since: Date): Promise<Array<{ day: string; count: number }>> {
+    const db = await this.database.client();
+    const rows = await db
+      .select({ day: userBeijingDay, count: sql<number>`count(*)` })
+      .from(user)
+      .where(gte(user.createdAt, since))
+      .groupBy(sql`day`)
+      .orderBy(sql`day`);
+    return rows.map((row) => ({ day: row.day, count: Number(row.count) }));
+  }
+}

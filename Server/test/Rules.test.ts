@@ -1,0 +1,325 @@
+import { expect, test } from "bun:test";
+
+import {
+  assignRoles,
+  computeVoteOutcome,
+  createDefaultRoleConfig,
+  ensureRoomId,
+  evaluateBlankGuess,
+  evaluateBlankGuessDraft,
+  getRoomRoleLimits,
+  isRoleConfigSatisfied,
+  normalizeRoomId,
+  normalizeWordPair,
+  shouldEnterFinalBlankGuess,
+  validateRoleConfig,
+} from "../src/domain/Rules";
+import { TEST_ROOMS_DISABLED, createTestRoomPolicy } from "../src/domain/TestRooms";
+import { isValidRoomId, type GameRound } from "../src/shared/Index";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
+
+test("房间号校验：四位数字与（策略打开时的）测试房间号合法，其余一律拒绝", () => {
+  for (const valid of ["0000", "1234", "9999", "Oblivionis", "oblivionis", " 1234 "]) {
+    expect(isValidRoomId(valid)).toBe(true);
+    expect(() => ensureRoomId(valid, TEST_ROOMS_ON)).not.toThrow();
+  }
+
+  for (const invalid of ["", "12", "12345", "abcd", "12a4", "room", "１２３４"]) {
+    expect(isValidRoomId(invalid)).toBe(false);
+    expect(() => ensureRoomId(invalid, TEST_ROOMS_ON)).toThrow(
+      expect.objectContaining({ code: "INVALID_ROOM_ID" })
+    );
+  }
+
+  // 测试房间号统一归一成标准大小写，避免同房间分裂成两间。
+  expect(ensureRoomId("oblivionis", TEST_ROOMS_ON)).toBe("Oblivionis");
+});
+
+test("策略关闭时测试房号是非法房号：同码同文案，普通房号不受影响", () => {
+  const rejectionOf = (value: string) => {
+    try {
+      ensureRoomId(value, TEST_ROOMS_DISABLED);
+    } catch (error) {
+      return error as { code: string; message: string };
+    }
+    return undefined;
+  };
+  const ordinary = rejectionOf("abcd");
+  expect(ordinary?.code).toBe("INVALID_ROOM_ID");
+  for (const value of ["Oblivionis", "oblivionis", "  OBLIVIONIS "]) {
+    const rejected = rejectionOf(value);
+    expect(rejected?.code).toBe("INVALID_ROOM_ID");
+    // 文案与其它非法房号逐字一致：不泄漏「这是测试房号」。
+    expect(rejected?.message).toBe(ordinary?.message);
+  }
+  expect(ensureRoomId("1234", TEST_ROOMS_DISABLED)).toBe("1234");
+});
+
+test("测试房策略现读开关：开关翻转后房号校验立即跟随", () => {
+  let enabled = false;
+  const policy = createTestRoomPolicy(() => enabled);
+  expect(() => ensureRoomId("Oblivionis", policy)).toThrow();
+  enabled = true;
+  expect(ensureRoomId("Oblivionis", policy)).toBe("Oblivionis");
+});
+
+test("房号归一只归一不校验：去空白、测试房号大小写归一，非法房号原样返回", () => {
+  expect(normalizeRoomId(" 1234 ")).toBe("1234");
+  expect(normalizeRoomId("OBLIVIONIS")).toBe("Oblivionis");
+  expect(normalizeRoomId(" abc ")).toBe("abc");
+});
+
+// ==================== 纯规则测试 ====================
+
+test("弃权票会单独统计且不会成为最高票玩家", () => {
+  const outcome = computeVoteOutcome([
+    { voterId: "voter-1", targetId: "abstain" },
+    { voterId: "voter-2", targetId: "player-1" },
+  ]);
+
+  expect(outcome.maxVotes).toBe(1);
+  expect(outcome.abstainCount).toBe(1);
+  expect(outcome.leaders).toEqual(["player-1"]);
+  expect(outcome.counts).toEqual({ abstain: 1, "player-1": 1 });
+});
+
+test("词对会修剪空白并按无序去重规则归一化", () => {
+  expect(normalizeWordPair([" 狗 ", "猫"])).toHaveLength(2);
+  expect(() => normalizeWordPair(["猫", "猫"])).toThrow(
+    expect.objectContaining({ code: "INVALID_WORD_PAIR" })
+  );
+});
+
+test("阵营配置会校验人数上限", () => {
+  expect(() =>
+    validateRoleConfig(
+      {
+        undercoverCount: 3,
+        hasAngel: false,
+        hasBlank: false,
+      },
+      4
+    )
+  ).toThrow(expect.objectContaining({ code: "INVALID_ROLE_CONFIG" }));
+});
+
+test("天使与白板在任意房间人数下都只会各分配一人", () => {
+  const playerIds = Array.from({ length: 20 }, (_, index) => `p${index + 1}`);
+  const limits = getRoomRoleLimits(playerIds.length);
+  const result = assignRoles(
+    playerIds,
+    {
+      undercoverCount: 5,
+      hasAngel: true,
+      hasBlank: true,
+    },
+    ["苹果", "香蕉"],
+    "水果",
+    {
+      nextInt: (maxExclusive: number) => maxExclusive - 1,
+    }
+  );
+  const roles = Object.values(result.assignments).map((assignment) => assignment.role);
+
+  expect(limits).toEqual({
+    maxUndercoverCount: 5,
+    canEnableAngel: true,
+    canEnableBlank: true,
+  });
+  expect(roles.filter((role) => role === "angel")).toHaveLength(1);
+  expect(roles.filter((role) => role === "blank")).toHaveLength(1);
+});
+
+test("手动身份不能绕过单天使单白板约束", () => {
+  const playerIds = Array.from({ length: 12 }, (_, index) => `p${index + 1}`);
+  const manualRoles = Object.fromEntries(
+    playerIds.map((playerId) => [playerId, "civilian"])
+  ) as Record<string, "civilian" | "undercover" | "angel" | "blank">;
+  manualRoles.p1 = "undercover";
+  manualRoles.p2 = "undercover";
+  manualRoles.p3 = "undercover";
+  manualRoles.p4 = "angel";
+  manualRoles.p5 = "angel";
+  manualRoles.p6 = "blank";
+
+  expect(() =>
+    assignRoles(
+      playerIds,
+      {
+        undercoverCount: 3,
+        hasAngel: true,
+        hasBlank: true,
+      },
+      ["苹果", "香蕉"],
+      "水果",
+      { nextInt: (maxExclusive: number) => maxExclusive - 1 },
+      manualRoles
+    )
+  ).toThrow(expect.objectContaining({ code: "INVALID_MANUAL_ROLES" }));
+});
+
+test("天使从 8 人开启且卧底上限按四分之一向上取整", () => {
+  expect(getRoomRoleLimits(7)).toEqual({
+    maxUndercoverCount: 2,
+    canEnableAngel: false,
+    canEnableBlank: false,
+  });
+  expect(getRoomRoleLimits(8)).toEqual({
+    maxUndercoverCount: 2,
+    canEnableAngel: true,
+    canEnableBlank: true,
+  });
+  expect(getRoomRoleLimits(9).maxUndercoverCount).toBe(3);
+});
+
+test("角色分配在固定随机源下具有稳定顺序", () => {
+  const result = assignRoles(
+    ["p1", "p2", "p3", "p4"],
+    createDefaultRoleConfig(),
+    ["苹果", "香蕉"],
+    undefined,
+    {
+      nextInt: (maxExclusive: number) => maxExclusive - 1,
+    }
+  );
+
+  expect(result.assignments.p1.role).toBe("undercover");
+  expect(result.assignments.p2.role).toBe("civilian");
+});
+
+test("残局条件满足时白板会进入猜词阶段", () => {
+  const round: GameRound = {
+    id: "round",
+    phase: "night",
+    day: 1,
+    words: {
+      pair: ["苹果", "香蕉"],
+      civilianWord: "苹果",
+      undercoverWord: "香蕉",
+      blankHint: "水果",
+    },
+    assignments: {
+      blank: { role: "blank", side: "blank", alive: true },
+      under: { role: "undercover", side: "undercover", alive: true, word: "香蕉" },
+      good: { role: "civilian", side: "good", alive: true, word: "苹果" },
+    },
+    descriptionCycle: 1,
+    descriptionOrder: [],
+    descriptions: [],
+    descriptionSubmittedBy: [],
+    votes: [],
+    voteHistory: [],
+    nightActions: [],
+    blankGuessUsed: false,
+    blankGuessRecords: [],
+    tieBreakCount: 0,
+    pendingDisconnectPlayerIds: [],
+    history: [],
+  };
+
+  const result = shouldEnterFinalBlankGuess(round);
+  expect(result.shouldGuess).toBe(true);
+  expect(result.blankPlayerId).toBe("blank");
+});
+
+// 白板终局猜词用的对局：既是用例输入，也是「两条词对归一路径」对照的唯一夹具。
+const blankGuessRound: GameRound = {
+  id: "round",
+  phase: "blankGuess",
+  day: 1,
+  words: {
+    pair: ["苹果", "香蕉"],
+    civilianWord: "苹果",
+    undercoverWord: "香蕉",
+    blankHint: "水果",
+  },
+  assignments: {
+    blank: { role: "blank", side: "blank", alive: false },
+  },
+  descriptionCycle: 1,
+  descriptionOrder: [],
+  descriptions: [],
+  descriptionSubmittedBy: [],
+  votes: [],
+  voteHistory: [],
+  nightActions: [],
+  blankGuessUsed: false,
+  blankGuessRecords: [],
+  tieBreakCount: 0,
+  blankGuessContext: {
+    playerId: "blank",
+    reason: "eliminated",
+    resumePhase: "night",
+  },
+  pendingDisconnectPlayerIds: [],
+  history: [],
+};
+
+test("白板猜词会按词对本身判断是否正确", () => {
+  expect(
+    evaluateBlankGuess(blankGuessRound, ["香蕉", "苹果"], Date.now(), "eliminated").success
+  ).toBe(true);
+  for (const words of [
+    ["", ""],
+    ["苹果", ""],
+    ["苹果", "苹果"],
+    ["苹果", " 苹果\u200b"],
+    ["\u0000", "\u200b"],
+  ] as [string, string][]) {
+    expect(evaluateBlankGuessDraft(blankGuessRound, words, 123, "eliminated")).toMatchObject({
+      playerId: "blank",
+      success: false,
+      createdAt: 123,
+    });
+    expect(() => evaluateBlankGuess(blankGuessRound, words, 123, "eliminated")).toThrow(
+      expect.objectContaining({ code: "INVALID_WORD_PAIR" })
+    );
+  }
+  expect(
+    evaluateBlankGuessDraft(blankGuessRound, [" 香蕉 ", "苹果"], 123, "eliminated").success
+  ).toBe(true);
+});
+
+// 两条路径各写一份「规范化 + 排序」时，只有对着同一输入比输出来得住：
+// 任一侧的比较器或归一规则单独改动，这里立刻红。
+test("白板草稿与正式提交对同一词对给出同一个归一结果", () => {
+  for (const pair of [
+    ["苹果", " 香蕉 "],
+    [" 香蕉 ", "苹果"],
+    ["Zebra", "apple"],
+    ["apple", "Zebra"],
+    ["  狗 ", "猫"],
+    ["猫", "狗 "],
+  ] as [string, string][]) {
+    expect(evaluateBlankGuessDraft(blankGuessRound, pair, 123, "eliminated").guessedWords).toEqual(
+      normalizeWordPair(pair)
+    );
+  }
+});
+
+// 席位判定与开局校验共用同一份人数推导，因此两者对任意组合都不能给出相反答复；
+// 「判定放行、校验拒绝」会让玩家看到可选席位却开不了局。
+test("阵营配置判定与校验对同一约束给出一致答复", () => {
+  for (let playerCount = 1; playerCount <= 16; playerCount += 1) {
+    for (const undercoverCount of [0, 1, 2, 3, 4, 5]) {
+      for (const hasAngel of [false, true]) {
+        for (const hasBlank of [false, true]) {
+          const config = { undercoverCount, hasAngel, hasBlank };
+          if (isRoleConfigSatisfied(config, playerCount)) {
+            expect(() => validateRoleConfig(config, playerCount)).not.toThrow();
+          } else {
+            expect(() => validateRoleConfig(config, playerCount)).toThrow(
+              expect.objectContaining({ code: "INVALID_ROLE_CONFIG" })
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
+test("词对按码点排序，不随本地化排序规则变化", () => {
+  // localeCompare 会把 a 排在 B 前面；码点序下大写在前，结果与运行环境无关。
+  expect(normalizeWordPair(["a", "B"])).toEqual(["B", "a"]);
+  expect(normalizeWordPair(["B", "a"])).toEqual(["B", "a"]);
+});

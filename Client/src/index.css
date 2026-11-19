@@ -1,0 +1,1066 @@
+@import "@fontsource/libre-baskerville/400.css";
+@import "@fontsource/libre-baskerville/700.css";
+@import "@fontsource-variable/lora";
+@import "@fontsource-variable/jetbrains-mono";
+@import "tailwindcss";
+@import "@applemusic-like-lyrics/core/style.css";
+
+/* 中文字体（霞鹜文楷、Noto Serif SC、Noto Sans SC）的 @font-face 在 fonts.css，由 index.html 非阻塞加载。 */
+
+/* 暗色主题变量只挂在 .dark 上，dark: 工具类必须跟随同一个开关；
+   否则系统暗色偏好会单独触发 dark: 颜色，与亮色主题变量混在一起。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-panel: var(--panel);
+  --color-bubble-self: var(--bubble-self);
+  --color-bubble-self-foreground: var(--bubble-self-foreground);
+
+  /* 状态语义色。裁剪变体（`bg-success/10` 等）由 Tailwind 的透明度修饰符派生，
+     不再逐个手写底色与边框，避免同一含义出现两套深浅。 */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-questioner: var(--questioner);
+  --color-questioner-foreground: var(--questioner-foreground);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  /* 微型标记字号（徽章、分组标题、单位）。根字号为 120%，必须写 px：0.6875rem 会渲染成 13.2px。
+     不配 --text-2xs--line-height：只给字号，行高沿用所在元素。 */
+  --text-2xs: 11px;
+  /* 行高倍率：正文到小标题几档字号自带的行高，以及具名行高档，都乘以主题的 --leading-scale
+     （字面大的字体要放开行距）。底数照抄 Tailwind 默认值，倍率为 1 时与默认完全一致。
+     不乘的：2xl 以上的展示字号、`leading-none`（图标与徽章靠它对齐）和按间距档写死的 `leading-6` 一类。 */
+  --text-xs--line-height: calc(1 / 0.75 * var(--leading-scale));
+  --text-sm--line-height: calc(1.25 / 0.875 * var(--leading-scale));
+  --text-base--line-height: calc(1.5 * var(--leading-scale));
+  --text-lg--line-height: calc(1.75 / 1.125 * var(--leading-scale));
+  --text-xl--line-height: calc(1.75 / 1.25 * var(--leading-scale));
+  --leading-tight: calc(1.25 * var(--leading-scale));
+  --leading-snug: calc(1.375 * var(--leading-scale));
+  --leading-normal: calc(1.5 * var(--leading-scale));
+  --leading-relaxed: calc(1.625 * var(--leading-scale));
+  --leading-loose: calc(2 * var(--leading-scale));
+
+  /* `transition-colors` 等过渡类不写 duration-* / ease-* 时取这里，指向 lib/motion/ 生成的变量，
+     业务组件不再写 `duration-150` 之类的裸数字（DesignGuide §8）。 */
+  --default-transition-duration: var(--motion-duration-quick);
+  --default-transition-timing-function: var(--motion-ease-out);
+
+  /* 圆角档：以主题的 --radius 为中档，上下按主题的档距 --radius-step 推开。档距归零的主题所有档同为
+     --radius，直角主题不会在大档上冒出圆角。 */
+  --radius-sm: calc(var(--radius) - 2 * var(--radius-step));
+  --radius-md: calc(var(--radius) - var(--radius-step));
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2 * var(--radius-step));
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+
+  --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
+  --tracking-tight: calc(var(--tracking-normal) - 0.025em);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: calc(var(--tracking-normal) + 0.025em);
+  --tracking-wider: calc(var(--tracking-normal) + 0.05em);
+  --tracking-widest: calc(var(--tracking-normal) + 0.1em);
+  /* 验证码、配对码这类逐位核对的短码：拉开字距方便逐位读与抄，是业务组件唯一可用的加宽字距。 */
+  --tracking-code: calc(var(--tracking-normal) + 0.3em);
+
+  /* 持续状态的呼吸（断线提示、骨架屏、在线点）：只动不透明度，时长与曲线取 lib/motion/ 生成的变量。
+     CSS 关键帧不受 MotionConfig 约束，调用处一律写 `motion-safe:animate-breathe`。 */
+  --animate-breathe: breathe var(--motion-duration-breath) var(--motion-ease-in-out) infinite;
+
+  /* 层级令牌。必须用 Tailwind 的 `--z-index-*` 命名空间：
+     写成 `--z-*` 不会生成任何工具类，`z-overlay` 一类的类名会静默失效。 */
+  --z-index-base: 0;
+  --z-index-panel: 10;
+  --z-index-sticky: 20;
+  --z-index-drawer: 30;
+  --z-index-dropdown: 40;
+  --z-index-overlay: 50;
+  --z-index-modal: 60;
+  --z-index-popover: 70;
+  /* Agent 焦点框与状态条：要框住弹窗与浮层里的控件，压在它们之上，低于全局提示。 */
+  --z-index-agent: 80;
+  --z-index-toast: 100;
+}
+
+/* 主题令牌（颜色、表面、字体栈、圆角、阴影、纸纹理）不写在这里：每款主题一份样式表，
+   放在 src/themes/<id>.css，清单见 src/themes/Registry.ts，由 src/themes/ThemeStyles.ts 随入口载入。
+   本文件只把语义令牌映射成 Tailwind 工具类、定义公共工具类与基础层，与具体主题无关。 */
+
+/**
+ * 面板之上的就近浮层表面：表情选择、提及候选、玩家操作、Select、Tooltip、测试控制器等。
+ * 见 DesignGuide §3：靠模糊与阴影从面板里立起来，不靠加深底色。本类不带阴影，调用处按 DesignGuide §5 的三档给出。
+ * 自定义工具类不参与 tailwind-merge 的冲突合并，调用处不要再叠加同类圆角、描边或底色。
+ */
+@utility floating-surface {
+  @apply rounded-md border bg-background/95 backdrop-blur-md;
+}
+
+/**
+ * 滚动区的边缘淡出（纵向：战绩、排行榜、弹窗正文；横向：标签栏、宽表格）。全站不画滚动条，
+ * 边缘淡出一小段读得出「还有内容可滚」，所有滚动区只用这一种提示。
+ * 单用时两头常驻淡出，调用处给出不小于淡出段的内边距，首末项停稳后不会被切掉；
+ * 贴边排版的滚动区配 `useScrollFade`，只在那一头还有内容时淡出（它把对应变量收成 0）。
+ * 遮罩连同边框、底色与投影一起裁切，带边框的容器把工具类挂在内层。
+ * 淡出段长度可由 `--scroll-fade-size` 调大（如弹窗正文），只在配了钩子的滚动区上这样做。
+ */
+@utility scroll-fade-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--scroll-fade-start, var(--scroll-fade-size, 0.75rem)),
+    black calc(100% - var(--scroll-fade-end, var(--scroll-fade-size, 0.75rem))),
+    transparent 100%
+  );
+}
+
+/** 横向版本：标签栏与宽表格。淡出段比纵向宽，窄屏上一眼看得出右侧还有一截。 */
+@utility scroll-fade-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--scroll-fade-start, var(--scroll-fade-size, 1.5rem)),
+    black calc(100% - var(--scroll-fade-end, var(--scroll-fade-size, 1.5rem))),
+    transparent 100%
+  );
+}
+
+/**
+ * 模态遮罩：弹窗、侧边抽屉与房间覆盖面板共用一档，见 DesignGuide §3。
+ * 前景色压暗加一点模糊；暗色下前景是浅色，改用黑色压暗。
+ */
+@utility scrim {
+  @apply bg-foreground/25 backdrop-blur-[2px] dark:bg-black/50;
+}
+
+/**
+ * 可输入区域的外框：输入框、下拉触发器、步进器与搜索框共用，见 DesignGuide §6。
+ * 悬停只加深描边；聚焦或展开时描边换成主色，并向外晕开一圈浅光，两层都随令牌缓动，不硬切。
+ * 外框可以是输入框本身，也可以是包着输入框与按钮的容器（`:has` 命中内部聚焦）；容器内的输入框不再画自己的聚焦环。
+ * 透明 outline 只在强制色彩模式下显形，替代全局聚焦环，高对比度下仍能看到焦点。
+ */
+@utility field-frame {
+  --field-glow: 0 0 0 0 transparent;
+  border-width: 1px;
+  border-color: var(--color-input);
+  box-shadow: var(--shadow-2xs), var(--field-glow);
+  transition-property: border-color, box-shadow, background-color, color;
+  transition-duration: var(--motion-duration-base);
+  transition-timing-function: var(--motion-ease-out);
+  &:hover:not(:disabled, [data-disabled]) {
+    border-color: color-mix(in oklab, var(--color-foreground) 22%, var(--color-input));
+  }
+  &:is(:focus-visible, [data-state="open"], :has(:is(input, textarea):focus-visible)) {
+    --field-glow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 20%, transparent);
+    border-color: color-mix(in oklab, var(--color-primary) 75%, var(--color-input));
+    outline: 2px solid transparent;
+  }
+  & :is(input, textarea):focus-visible {
+    outline: 2px solid transparent;
+  }
+  &:is([aria-invalid="true"], :has([aria-invalid="true"])) {
+    border-color: var(--color-destructive);
+  }
+  &:is([aria-invalid="true"], :has([aria-invalid="true"])):is(
+      :focus-visible,
+      :has(:focus-visible)
+    ) {
+    /* 聚焦规则的 :has(...:focus-visible) 特异性更高，会把红描边换回主色：校验失败的框聚焦时也保持红描边 */
+    border-color: var(--color-destructive);
+    --field-glow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 18%, transparent);
+  }
+}
+
+html {
+  font-size: 120%;
+}
+
+/* 纯 CSS 动效的 `--motion-*` 变量（曲线、时长、弹性 linear()、浮层尺度）不在这里手写：
+   由 lib/motion/CssTokens.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 DesignGuide §8。 */
+
+/* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
+   在此提供与 popover 变体同尺度、同曲线的开合动画，保持全站节奏一致。 */
+@keyframes breathe {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes overlay-emerge {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-popover-enter-scale));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes overlay-retract {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(var(--motion-popover-exit-scale));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-radix-popper-content-wrapper] > [data-state="delayed-open"],
+  [data-radix-popper-content-wrapper] > [data-state="instant-open"],
+  [data-radix-popper-content-wrapper] > [data-state="open"] {
+    /* 与 popover 变体同取 spring.swift；缩放原点由 Select / Tooltip 内容元素按 Radix 落位给出。 */
+    animation: overlay-emerge var(--motion-spring-swift-duration) var(--motion-spring-swift);
+  }
+  [data-radix-popper-content-wrapper] > [data-state="closed"] {
+    animation: overlay-retract var(--motion-duration-instant) var(--motion-ease-in-out);
+  }
+}
+
+/* 跨页过渡（View Transitions，经 usePageNavigate 发起）：与 phaseSwap 同一套前后层次。
+   前进时旧页定格成快照向前退出、新页自后方推入；返回时两层对调（data-page-direction 由 RootLayout 写入）。
+   尺度取 --motion-page-*-scale，进入走 spring.swift、退出走 quick + inOut，与 phaseSwap 的分工一致。 */
+@keyframes page-leave {
+  to {
+    opacity: 0;
+    transform: scale(var(--page-leave-scale));
+  }
+}
+
+@keyframes page-arrive {
+  from {
+    opacity: 0;
+    transform: scale(var(--page-arrive-scale));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 方向写在伪元素树的根上，整页与只在一页出现的元素都从这里继承。 */
+  ::view-transition {
+    --page-leave-scale: var(--motion-page-ahead-scale);
+    --page-arrive-scale: var(--motion-page-behind-scale);
+  }
+  :root[data-page-direction="back"]::view-transition {
+    --page-leave-scale: var(--motion-page-behind-scale);
+    --page-arrive-scale: var(--motion-page-ahead-scale);
+  }
+  /* 默认的 plus-lighter 在两层不透明度之和超过 1 时会提亮纸面，整页交叉淡化改回普通叠加。
+     前进时旧页向前退出，叠在新页之上；返回时旧页退向后方，压回新页之下（恢复默认的新页在上）。 */
+  ::view-transition-old(root) {
+    mix-blend-mode: normal;
+    z-index: 1;
+    animation: page-leave var(--motion-duration-quick) var(--motion-ease-in-out) both;
+  }
+  ::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation: page-arrive var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+  }
+  :root[data-page-direction="back"]::view-transition-old(root) {
+    z-index: auto;
+  }
+  /* 只在一页出现的具名元素（手机上隐藏了顶栏房名、大厅仍在骨架屏）没有对象可移动，
+     随整页一起退出或进入，不按共享元素的时长单独拖尾。 */
+  ::view-transition-old(*):only-child {
+    animation: page-leave var(--motion-duration-quick) var(--motion-ease-in-out) both;
+  }
+  ::view-transition-new(*):only-child {
+    animation: page-arrive var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+  }
+  /* 共享元素（游戏名、房名）在两页之间连续移动：位移与缩放走 spring.settle，交叉淡化跟随同一时长。
+     具名参数的优先级高于 `*`，整页这一组随即改回 swift，过渡不因共享元素之外的部分拖长。 */
+  ::view-transition-group(*) {
+    animation-duration: var(--motion-spring-settle-duration);
+    animation-timing-function: var(--motion-spring-settle);
+  }
+  ::view-transition-group(root) {
+    animation-duration: var(--motion-spring-swift-duration);
+  }
+}
+
+/* 版本信息页（/credits）的专属过渡：整页自视口底缘升起，关闭时沿原路落回页脚。
+   它读作「从页脚的版本号拉出一整页」，不是页面被前后推入：旧页保持静止当底衬，新页盖上来；
+   关闭时版本信息页向下落回、落地页从底下被重新揭示。形态由 hooks/UsePageTransition 写到
+   <html data-page-transition="credits">，方向仍沿用 data-page-direction（前进升起、返回落回）。 */
+@keyframes credits-page-rise {
+  from {
+    transform: translateY(var(--motion-page-credits-travel));
+  }
+}
+
+@keyframes credits-page-sink {
+  to {
+    transform: translateY(var(--motion-page-credits-travel));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-page-transition="credits"]::view-transition-old(root) {
+    mix-blend-mode: normal;
+    z-index: 1;
+    animation: none;
+  }
+  :root[data-page-transition="credits"]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    z-index: 2;
+    animation: credits-page-rise var(--motion-spring-settle-duration) var(--motion-spring-settle)
+      both;
+  }
+  /* 关闭：版本信息页落回页脚，落地页在底下保持静止。 */
+  :root[data-page-transition="credits"][data-page-direction="back"]::view-transition-old(root) {
+    z-index: 2;
+    animation: credits-page-sink var(--motion-spring-recall-duration) var(--motion-spring-recall)
+      both;
+  }
+  :root[data-page-transition="credits"][data-page-direction="back"]::view-transition-new(root) {
+    z-index: 1;
+    animation: none;
+  }
+  /* 整段过渡的时长取两层里较长的一档，位移走完前不收尾。 */
+  :root[data-page-transition="credits"]::view-transition-group(root) {
+    animation-duration: var(--motion-spring-settle-duration);
+  }
+}
+
+/* 进房编排（RoomShell 挂载后的 roomEntranceMs 内带 data-room-entering）：
+   顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 lib/motion/ 生成。
+   玩家栏、聊天栏自外侧边缘等比展开；顶栏与游戏区只显影，游戏区内容另由 phaseSwap 自后推入，两层不叠缩放。
+   fill-mode 只取 backwards：延迟期间停在起点，结束后不留任何 transform。 */
+@keyframes room-part-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes room-part-unfold {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-room-entrance-scale));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-room-entering] [data-room-part] {
+    animation: room-part-fade var(--motion-duration-base) var(--motion-ease-out) backwards;
+  }
+  [data-room-entering] [data-room-part="player"],
+  [data-room-entering] [data-room-part="chat"] {
+    animation-name: room-part-unfold;
+    animation-duration: var(--motion-spring-swift-duration);
+    animation-timing-function: var(--motion-spring-swift);
+  }
+  [data-room-entering] [data-room-part="header"] {
+    animation-delay: var(--motion-room-entrance-delay-header);
+  }
+  [data-room-entering] [data-room-part="player"] {
+    animation-delay: var(--motion-room-entrance-delay-player);
+    transform-origin: left center;
+  }
+  [data-room-entering] [data-room-part="game"] {
+    animation-delay: var(--motion-room-entrance-delay-game);
+  }
+  [data-room-entering] [data-room-part="chat"] {
+    animation-delay: var(--motion-room-entrance-delay-chat);
+    transform-origin: right center;
+  }
+}
+
+/* 答案卡抬起的投影（revealCard）：伪元素只带投影、不带底色，透明度按 revealCard 的 times 起落，
+   卡片抬到最高时投影最远，放回原位后消失，落定的卡片不留重阴影。
+   关键帧 reveal-lift-shadow 的百分比必须与 times 一致，由 lib/motion/CssTokens.ts 的 motionTokenCss 生成，不在这里手写。 */
+.reveal-lift {
+  position: relative;
+}
+
+.reveal-lift::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--shadow-xl);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-lift::after {
+    animation: reveal-lift-shadow var(--motion-reveal-lift-duration) var(--motion-ease-in-out);
+  }
+}
+
+/* 减弱动效：不播放任何页面过渡，直接换页。 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-kai);
+    letter-spacing: var(--tracking-normal);
+    /* 不写字号档的文字继承这里：底数与 Tailwind 预设的根行高相同，随主题的行高倍率放开。 */
+    line-height: calc(1.5 * var(--leading-scale));
+    margin: 0;
+  }
+  /* 标题与行内强调回到衬线，正文与说明保持楷体。字重本身就是层级信号：写了 semibold 以上的
+     都是标题、标签或强调，不靠标签名也落到衬线层，业务组件不用再逐处声明字体族。
+     :where() 不增加特异性，业务类（font-mono、font-sans 等）仍可覆盖。 */
+  :where(h1, h2, h3, h4, h5, h6),
+  :where(th),
+  :where(strong, b),
+  :where(.font-semibold, .font-bold) {
+    font-family: var(--font-serif);
+  }
+  /* 纸纹理仅应用于整页底层画布（body），见 DesignGuide §3。
+     所有业务表面（卡片 .bg-card、面板 .bg-panel、按钮 .bg-secondary、弹窗 .bg-popover 等）
+     均保持纯净实底，不铺纹理，确保按钮文字与组件层级清晰锐利、零杂质。 */
+  body {
+    background-image: var(--paper-grain);
+    background-size: 160px 160px;
+  }
+  /* 选中文字铺主色淡底、保留原文字色。选中是瞬时状态，档位比常驻浅底的 /10 高：/10 叠在表面上几乎看不出。
+     主色实底上的文字（本人气泡）由调用处反转成 primary-foreground 底，见 DesignGuide §3。 */
+  ::selection {
+    @apply bg-primary/30;
+  }
+  /* 中文断行：标题平衡各行长度，段落避免末行只剩一两个字，见 DesignGuide §4。
+     只写 text-wrap-style：简写 text-wrap 会把 text-wrap-mode 重置为 wrap，打断继承来的 nowrap 与 truncate。 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap-style: balance;
+  }
+  p,
+  li {
+    text-wrap-style: pretty;
+  }
+  /* 全站唯一的键盘聚焦指示：2px 实线、`--ring` 色、贴边绘制。
+     用 outline 而非 box-shadow 画环，高对比度模式下仍然可见。
+     组件只按需声明偏移（圆形控件外移、贴边行内收），不再各写一套 ring。 */
+  :where(
+    a[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [role="slider"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="option"],
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 0;
+  }
+  /* 视觉隐藏的原生单选（分段控件）由外层 label 承担聚焦指示。 */
+  label:has(> input.sr-only:focus-visible) {
+    outline: 2px solid var(--ring);
+  }
+}
+
+/* 根文档固定在动态视口内，页面需要滚动时由自己的内容区承接。
+   这样移动端地址栏伸缩和弹窗锁页都不会生成额外的页面级滚动条。 */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100dvh;
+}
+
+/* 保持滚轮、触控和键盘滚动能力，但不绘制滚动条或预留其宽度。
+   规则故意不放进 cascade layer，确保覆盖组件库和浏览器注入的样式。 */
+*,
+.scrollbar-hidden,
+[data-radix-scroll-area-viewport],
+[data-radix-select-viewport] {
+  scrollbar-color: transparent transparent !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-width: none !important;
+}
+
+[data-radix-scroll-area-scrollbar] {
+  display: none !important;
+}
+
+/* 全站图片禁止原生拖拽与幽灵悬浮虚影，保障纯净手势与点击体验。
+   规则故意不置于 cascade layer，确保无条件覆盖组件库或外部引入的图片。 */
+img {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+}
+
+/* 歌词的测量与演出共用同一套盒模型。 */
+.baka-lyric-host {
+  position: relative;
+  width: 100%;
+}
+
+.baka-lyric-host:not([data-ready]) {
+  visibility: hidden;
+}
+
+/* 歌词片段的可见窗口：高度跟内容走，但不超过视口的一半多一点，超长片段不把猜测栏顶出屏。 */
+.baka-lyric-viewport {
+  max-height: clamp(13rem, 52dvh, 32rem);
+  overflow: hidden;
+}
+
+.baka-lyric-viewport[data-scrollable="true"] {
+  overflow-y: auto;
+}
+
+.baka-lyric-viewport[data-scrollable="true"]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+/* 窗口上下的淡出边：提示还有歌词，也不把滚动中的行切成一刀。 */
+.baka-lyric-edge {
+  position: absolute;
+  inset-inline: 0;
+  height: 1.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-duration-quick) var(--motion-ease-out);
+}
+
+.baka-lyric-edge-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-background), transparent);
+}
+
+.baka-lyric-edge-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-background), transparent);
+}
+
+.baka-lyric-viewport[data-overflowing="true"]:not([data-at-start="true"]) ~ .baka-lyric-edge-top,
+.baka-lyric-viewport[data-overflowing="true"]:not([data-at-end="true"]) ~ .baka-lyric-edge-bottom {
+  opacity: 1;
+}
+
+.baka-lyric-player.amll-lyric-player {
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: center top;
+  mix-blend-mode: normal;
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  --amll-lp-color: var(--color-foreground);
+  --amll-lp-font-size: 1.125rem;
+  --amll-lp-font-weight: 500;
+}
+
+.baka-lyric-player * {
+  pointer-events: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow: none !important;
+}
+
+.baka-lyric-player [class*="lyricLineWrapper"] {
+  align-items: center !important;
+  text-align: center;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  gap: 0.2em;
+}
+
+.baka-lyric-player [class*="lyricLine"] {
+  text-align: center !important;
+  transform-origin: center center !important;
+  /* 视口外也必须排版，不能拿内核 40px 占位高度当真实歌词高度。 */
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+
+.baka-lyric-player [class*="lyricMainLine"] {
+  justify-content: center;
+  text-align: center;
+}
+
+.baka-lyric-player [class*="lyricSubLine"] {
+  color: var(--color-foreground);
+  font-family: var(--font-serif);
+  font-weight: 400;
+  opacity: 0.65;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+  margin-top: 0.2rem;
+}
+
+.baka-lyric-player [class*="lyricSubLine"]:empty,
+.baka-lyric-player [class*="romanWord"]:empty {
+  display: none;
+}
+
+/* 和声始终占据其真实高度；仅改变明暗，避免活动行切换改变整个片段的高度。 */
+.baka-lyric-player [class*="bgWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  margin-top: 0 !important;
+  transform: none !important;
+  visibility: visible !important;
+}
+
+.baka-lyric-player [class*="interludeDots"] {
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+.baka-lyric-player [class*="interludeDots"] > * {
+  background-color: var(--color-foreground);
+}
+
+/* 截取歌词页：AMLL 仍负责逐字遮罩与测量，行盒固定在文档流里；
+   播放只推进当前行的遮罩，不滚动、不位移、不缩放。
+   版式是一张带时间栏的台账：左侧常显时间，选段是一整块连续的底色与竖线。 */
+.baka-clip-lyric-scroller {
+  height: clamp(15rem, 46dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 不画滚动条：全站规则（上方对 `*` 的 !important）一律隐藏，可滚由上下淡出提示。 */
+  /* 上下轻淡出，提示还有歌词可滚，同时不把选点后的首行切成一刀。 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 0.625rem,
+    black calc(100% - 0.75rem),
+    transparent 100%
+  );
+}
+
+.baka-clip-lyric-host {
+  padding-block: 0.375rem;
+}
+
+.baka-clip-lyric-sheet.amll-lyric-player {
+  position: relative;
+  min-height: 0;
+  overflow: visible;
+  contain: layout style;
+  --amll-lp-font-size: 1rem;
+  --amll-lp-line-width-aspect: 1;
+  --lyric-line-padding-x: 0px;
+  color: var(--color-muted-foreground);
+}
+
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  align-items: stretch !important;
+  gap: 0;
+  padding: 0;
+  transform: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  will-change: auto;
+  text-align: left;
+}
+
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"]:hover,
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"]:active {
+  background-color: transparent;
+}
+
+.baka-clip-lyric-sheet [class*="lyricLine"],
+.baka-clip-lyric-sheet [class*="lyricMainLine"],
+.baka-clip-lyric-sheet [class*="lyricMainLine"] span,
+.baka-clip-lyric-sheet [class*="bgWrapper"] {
+  transform: none !important;
+  filter: none !important;
+  will-change: auto;
+}
+
+.baka-clip-lyric-sheet [class*="lyricMainLine"] {
+  justify-content: flex-start;
+  text-align: left;
+  color: inherit;
+}
+
+.baka-clip-lyric-sheet [class*="lyricSubLine"] {
+  margin-top: 0.125rem;
+  color: inherit;
+  font-family: var(--font-kai);
+  text-align: left;
+}
+
+.baka-clip-lyric-sheet [class*="lyricSubLine"]:empty,
+.baka-clip-lyric-sheet [class*="romanWord"]:empty {
+  display: none;
+}
+
+.baka-clip-lyric-sheet [class*="bgWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  margin-top: 0 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.baka-clip-lyric-sheet [class*="bottomLine"],
+.baka-clip-lyric-sheet [class*="interludeDots"] {
+  display: none !important;
+}
+
+.baka-lyric-player .baka-clip-lyric-line {
+  position: relative;
+  margin: 0;
+  padding: 0.4375rem 3rem 0.4375rem 4.25rem;
+  border-radius: var(--radius-sm);
+  pointer-events: auto !important;
+  cursor: pointer;
+  /* 竖向拖动交给列表滚动，横向不留给浏览器手势。 */
+  touch-action: pan-y;
+  color: var(--color-muted-foreground);
+  line-height: 1.55;
+  text-align: left !important;
+  transition:
+    background-color var(--motion-duration-quick) var(--motion-ease-out),
+    color var(--motion-duration-quick) var(--motion-ease-out);
+}
+
+.baka-lyric-player .baka-clip-lyric-line:hover {
+  background-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
+  color: var(--color-foreground);
+}
+
+.baka-lyric-player .baka-clip-lyric-line:active {
+  background-color: var(--color-accent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+/* 选段读作一整块：相邻行之间不留缝，竖线贯通，只有首尾两端收圆角。 */
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"] {
+  border-radius: 0;
+  background-color: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-primary);
+  color: var(--color-foreground);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:hover {
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:active {
+  background-color: color-mix(in oklab, var(--color-primary) 16%, transparent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-first="true"] {
+  border-top-right-radius: var(--radius-sm);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-last="true"] {
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-active="true"] {
+  color: var(--color-primary);
+}
+
+/* 时间栏：常显，精确选行时不用先悬停。 */
+.baka-clip-lyric-line::before {
+  content: attr(data-time);
+  position: absolute;
+  top: 0.6875rem;
+  left: 0.75rem;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.baka-clip-lyric-line[data-active="true"]::before,
+.baka-clip-lyric-line[data-anchor="true"]::before {
+  color: var(--color-primary);
+}
+
+/* 起止与已点的标记：颜色之外再给一个字。 */
+.baka-clip-lyric-line[data-mark]::after {
+  content: attr(data-mark);
+  position: absolute;
+  top: 0.5625rem;
+  right: 0.5rem;
+  padding: 0 0.25rem;
+  border: 1px solid color-mix(in oklab, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-family: var(--font-serif);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.baka-clip-lyric-line[data-anchor="true"]::after {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+.baka-clip-lyric-line[class*="lyricBgLine"] {
+  opacity: 0.62 !important;
+}
+
+.baka-clip-lyric-line[class*="lyricBgLine"][data-selected="true"] {
+  opacity: 0.82 !important;
+}
+
+.baka-clip-lyric-line[data-word-timed="true"]:not([data-active="true"]) {
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: 1 !important;
+}
+
+.baka-clip-lyric-line[data-word-timed="false"],
+.baka-clip-lyric-line[data-word-timed="false"] * {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+@media (width <= 640px) {
+  .baka-lyric-player .baka-clip-lyric-line {
+    padding-inline: 3.25rem 2rem;
+  }
+
+  .baka-clip-lyric-line::before {
+    left: 0.5rem;
+  }
+
+  .baka-clip-lyric-line[data-mark]::after {
+    right: 0.25rem;
+  }
+}
+
+/*
+ * 逐字遮罩的两档透明度由内核逐帧写在行上；注册为数值后才能补间，总览把它们推到 1（遮罩等于不存在），
+ * 不把 mask-image 换成 none：遮罩的有无不能插值，未唱到的字会在切换那一帧直接全亮，读作一次闪烁。
+ */
+@property --bright-mask-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@property --dark-mask-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+.baka-lyric-player.baka-overview-mode [class*="lyricLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricMainLine"],
+.baka-lyric-player.baka-overview-mode [class*="lyricSubLine"],
+.baka-lyric-player.baka-overview-mode [class*="bgWrapper"] {
+  opacity: 1 !important;
+  filter: blur(0) !important;
+}
+
+.baka-lyric-player.baka-overview-mode span {
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: 1 !important;
+}
+
+/*
+ * 只在进出总览的那一段（`baka-overview-switching`，时长与缩放同为 lyricOverview.timing）补间明暗、模糊与遮罩，
+ * 与整体缩放一起走完；播放中内核逐帧改这些值，常驻过渡会让逐字高亮拖在声音后面。
+ */
+.baka-lyric-player.baka-overview-switching [class*="lyricLine"],
+.baka-lyric-player.baka-overview-switching [class*="lyricMainLine"],
+.baka-lyric-player.baka-overview-switching [class*="lyricSubLine"],
+.baka-lyric-player.baka-overview-switching [class*="bgWrapper"],
+.baka-lyric-player.baka-overview-switching span {
+  transition-property: opacity, filter, --bright-mask-alpha, --dark-mask-alpha !important;
+  transition-duration: var(--motion-duration-slow) !important;
+  transition-timing-function: var(--motion-ease-emphasized) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .baka-lyric-player * {
+    transition: none !important;
+  }
+}
+
+/* Agent 控件焦点框：首次出现淡入，之后在控件之间按 spring.settle 变形移动。
+   框是 2px 描边：换成缩放会把描边一起拉粗拉细，所以这里例外地补间位置与宽高。 */
+.agent-focus-box {
+  transition:
+    opacity var(--motion-duration-quick) var(--motion-ease-out),
+    transform var(--motion-duration-quick) var(--motion-ease-out);
+}
+
+.agent-focus-box[data-animate="true"] {
+  transition:
+    top var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    left var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    width var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    height var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    opacity var(--motion-duration-quick) var(--motion-ease-out),
+    transform var(--motion-duration-quick) var(--motion-ease-out);
+  will-change: top, left, width, height;
+}
+
+/* 状态条跟着操作区走，不固定在整页顶部；与焦点框同一档弹簧。 */
+.agent-focus-hud {
+  transition:
+    left var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    top var(--motion-spring-settle-duration) var(--motion-spring-settle);
+}
+
+/* 点击回声：框上叠一圈主色描边向外扩开后消散，读作「这里被按了一下」。 */
+.agent-click-echo {
+  animation: agent-click-echo var(--motion-duration-quick) var(--motion-ease-out) forwards;
+}
+
+@keyframes agent-click-echo {
+  from {
+    opacity: var(--motion-agent-echo-opacity);
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(var(--motion-agent-echo-scale));
+  }
+}
+
+/* 接管条从底边浮入；人类试图操作时轻顶一下，告诉他入口在这里。 */
+.agent-takeover-bar {
+  animation: agent-bar-enter var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+}
+
+.agent-takeover-bar[data-nudge="true"] {
+  animation: agent-bar-nudge var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+}
+
+@keyframes agent-bar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-agent-bar-rise)) scale(var(--motion-agent-bar-scale));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes agent-bar-nudge {
+  from {
+    transform: scale(var(--motion-agent-nudge-scale));
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* 接管期间页面不可选中，光标也不再暗示可以操作。 */
+html[data-agent-locked] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-focus-box,
+  .agent-focus-hud {
+    transition-duration: 1ms;
+  }
+
+  .agent-click-echo,
+  .agent-takeover-bar,
+  .agent-takeover-bar[data-nudge="true"] {
+    animation: none;
+  }
+}

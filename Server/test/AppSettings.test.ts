@@ -1,0 +1,208 @@
+import { describe, expect, it } from "bun:test";
+
+import { AppSettings } from "../src/application/AppSettings";
+import { AppError } from "../src/domain/Errors";
+import { RUNTIME_SETTING_KEYS, type RuntimeSettingDefaults } from "../src/shared/RuntimeSettings";
+import type {
+  AppSettingRepository,
+  StoredAppSetting,
+} from "../src/infrastructure/db/AppSettingRepository";
+
+/** 只替数据库这一层：其余逻辑（校验、回落、缓存收敛）走的都是生产同一条路径。 */
+class FakeRepository implements AppSettingRepository {
+  rows = new Map<string, StoredAppSetting>();
+  failing = false;
+
+  async loadAll(): Promise<Record<string, StoredAppSetting>> {
+    if (this.failing) throw new Error("数据库连不上");
+    return Object.fromEntries(this.rows);
+  }
+
+  async set(key: string, value: string, updatedBy: string | null): Promise<void> {
+    this.rows.set(key, { value, updatedBy, updatedAt: new Date("2026-10-20T00:00:00.000Z") });
+  }
+}
+
+const warnings: string[] = [];
+
+const make = (
+  repository: AppSettingRepository | undefined,
+  defaults: RuntimeSettingDefaults = {
+    clientMinDesktopVersion: "0.1.1",
+    enableGeneralUnblock: true,
+  },
+  now?: () => number
+) =>
+  new AppSettings({
+    repository,
+    defaults,
+    logger: { warn: (message) => warnings.push(message) },
+    refreshIntervalMs: 600_000,
+    now,
+  });
+
+describe("AppSettings 运行期旋钮", () => {
+  it("没有数据库时全部按环境变量缺省，写入被明确拒绝", async () => {
+    const settings = make(undefined);
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.1.1");
+    expect(settings.boolean("enableGeneralUnblock")).toBe(true);
+    // 没库不等于没配：报错要说清是缺 DATABASE_URL，而不是含糊的「不支持」。
+    const error = await settings
+      .update("clientMinDesktopVersion", "0.2.0", "actor")
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).code).toBe("CONFIG_ERROR");
+  });
+
+  it("库里的值覆盖缺省，读取始终同步走内存快照", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    await settings.refresh();
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.1.1");
+    await settings.update("clientMinDesktopVersion", "0.3.0", "actor-1");
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.3.0");
+    expect(repository.rows.get("clientMinDesktopVersion")?.value).toBe("0.3.0");
+    // 写的人记在 updatedBy 上，后台据此显示是谁抬的门槛。
+    expect(
+      settings.snapshot().find((item) => item.key === "clientMinDesktopVersion")?.updatedBy
+    ).toBe("actor-1");
+  });
+
+  it("解灰开关关掉后只认 false，缺省才是 true", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    expect(settings.boolean("enableGeneralUnblock")).toBe(true);
+    await settings.update("enableGeneralUnblock", "false", "actor-1");
+    expect(settings.boolean("enableGeneralUnblock")).toBe(false);
+  });
+
+  it("取值不合法时拒绝写入并原样保留旧值", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    // 拒绝必须是取值校验，而不是别的什么错误碰巧让写入没发生。
+    await expect(
+      settings.update("clientMinDesktopVersion", "0.3", "actor-1")
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(repository.rows.has("clientMinDesktopVersion")).toBe(false);
+    await expect(settings.update("enableGeneralUnblock", "yes", "actor-1")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    expect(repository.rows.has("enableGeneralUnblock")).toBe(false);
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.1.1");
+  });
+
+  it("空串是合法门槛值，表示不设版本门槛", async () => {
+    const settings = make(new FakeRepository());
+    await settings.update("clientMinMobileVersion", "", "actor-1");
+    expect(settings.version("clientMinMobileVersion")).toBe("");
+  });
+
+  it("读取失败保留上一次的值，并且只告警一次", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    await settings.update("clientMinDesktopVersion", "0.4.0", "actor-1");
+    repository.failing = true;
+    await settings.refresh();
+    await settings.refresh();
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.4.0");
+    expect(warnings.filter((message) => message.includes("读取失败"))).toHaveLength(1);
+  });
+
+  it("库里存着当前校验不认的值时按缺省执行，不把玩法打挂", async () => {
+    const repository = new FakeRepository();
+    repository.rows.set("clientMinDesktopVersion", {
+      value: "not-a-version",
+      updatedBy: null,
+      updatedAt: new Date(),
+    });
+    const settings = make(repository);
+    await settings.refresh();
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.1.1");
+    expect(warnings.some((message) => message.includes("按缺省执行"))).toBe(true);
+  });
+
+  it("不合校验的值多次回读只告警一次，读取成功不会让告警复位", async () => {
+    warnings.length = 0;
+    const repository = new FakeRepository();
+    repository.rows.set("clientMinDesktopVersion", {
+      value: "not-a-version",
+      updatedBy: null,
+      updatedAt: new Date(),
+    });
+    const settings = make(repository);
+    for (let round = 0; round < 4; round += 1) {
+      await settings.refresh();
+      settings.version("clientMinDesktopVersion");
+    }
+    expect(warnings.filter((message) => message.includes("按缺省执行"))).toHaveLength(1);
+  });
+
+  it("snapshot 同时给出缺省、覆盖值与生效值，管理员不用猜现在是多少", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    await settings.update("clientMinDesktopVersion", "0.5.0", "actor-1");
+    const desktop = settings.snapshot().find((item) => item.key === "clientMinDesktopVersion");
+    expect(desktop).toMatchObject({
+      defaultValue: "0.1.1",
+      storedValue: "0.5.0",
+      effectiveValue: "0.5.0",
+      envVar: "CLIENT_MIN_DESKTOP_VERSION",
+      kind: "version",
+    });
+    const mobile = settings.snapshot().find((item) => item.key === "clientMinMobileVersion");
+    expect(mobile).toMatchObject({ storedValue: null, effectiveValue: "" });
+    // 一项不漏：后台列表就是这份快照，新增旋钮忘了进列表等于线上没法改。
+    expect(settings.snapshot()).toHaveLength(RUNTIME_SETTING_KEYS.length);
+  });
+
+  it("QQ 匿名补充检索默认开启，关闭后只认 false", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    expect(settings.boolean("enableAnonymousQqSearch")).toBe(true);
+    await settings.update("enableAnonymousQqSearch", "false", "actor-1");
+    expect(settings.boolean("enableAnonymousQqSearch")).toBe(false);
+  });
+
+  it("排位入口默认开放，后台关掉后只认 false", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    // 缺省必须是开放：这一项是运维止血用的，不能默认把入口藏起来。
+    expect(settings.boolean("enableCeeRankedEntry")).toBe(true);
+    await settings.update("enableCeeRankedEntry", "false", "actor-1");
+    expect(settings.boolean("enableCeeRankedEntry")).toBe(false);
+  });
+
+  it("排位入口生效值合并赛季窗口：旋钮开着但赛季之外仍是关", async () => {
+    const repository = new FakeRepository();
+    const inSeason = Date.parse("2026-12-01T12:00:00+08:00");
+    const beforeSeason = Date.parse("2026-11-18T00:00:00+08:00");
+    const afterSeason = Date.parse("2027-01-01T00:00:00+08:00");
+    const during = make(repository, undefined, () => inSeason);
+    expect(during.siteFeatures().ceeRankedEntry).toBe(true);
+    const before = make(repository, undefined, () => beforeSeason);
+    expect(before.siteFeatures().ceeRankedEntry).toBe(false);
+    expect(make(repository, undefined, () => afterSeason).siteFeatures().ceeRankedEntry).toBe(
+      false
+    );
+    // 赛季只影响排位入口，其余入口照旧按旋钮读。
+    expect(before.siteFeatures().fakerEntry).toBe(true);
+    expect(before.siteFeatures().ceeMultiplayerEntry).toBe(true);
+    // 旋钮关掉时，赛季内也是关：两个条件缺一不可。
+    await during.update("enableCeeRankedEntry", "false", "actor-1");
+    expect(during.siteFeatures().ceeRankedEntry).toBe(false);
+  });
+
+  it("测试房开关缺省关闭，只有环境变量缺省显式为真或后台打开才生效", async () => {
+    // 缺省是安全侧：没有任何配置（包括没有部署标记）时测试房号就是非法房号。
+    expect(make(undefined).boolean("enableTestRooms")).toBe(false);
+    expect(make(new FakeRepository()).boolean("enableTestRooms")).toBe(false);
+    expect(make(undefined, { enableTestRooms: true }).boolean("enableTestRooms")).toBe(true);
+
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    await settings.update("enableTestRooms", "true", "actor-1");
+    expect(settings.boolean("enableTestRooms")).toBe(true);
+    await settings.update("enableTestRooms", "false", "actor-1");
+    expect(settings.boolean("enableTestRooms")).toBe(false);
+  });
+});

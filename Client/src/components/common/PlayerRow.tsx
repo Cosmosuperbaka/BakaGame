@@ -1,0 +1,399 @@
+/* eslint-disable react-refresh/only-export-components -- 房主动作需要随 PlayerRow 一起被三个游戏消费，拆文件只会让调用点各写一遍。 */
+import { useContext, useEffect, useId, useState, type ReactNode, type Ref } from "react";
+import { AnimatePresence, LayoutGroupContext, motion } from "framer-motion";
+import * as Popover from "@radix-ui/react-popover";
+import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { PlayerAvatar } from "@/components/common/PlayerAvatar";
+import { PlayerBadges } from "@/components/common/BadgeList";
+import { ProfileCard } from "@/components/common/ProfileCard";
+import {
+  PLAYER_ME_MARK,
+  PLAYER_ROW_BASE,
+  PLAYER_ROW_HEIGHT,
+} from "@/components/common/PlayerListLayout";
+import { PlayerStatusIcon } from "@/components/common/PlayerStatusPill";
+import { Hint } from "@/components/ui/Tooltip";
+import { headerTappable, tappable } from "@/lib/motion/Feedback";
+import { listItem, playerRelayout, popover } from "@/lib/motion/Choreography";
+import { cn } from "@/lib/Utils";
+import type { PlayerAccount } from "@bakagame/shared";
+
+/** 玩家行操作浮层里的一个动作。 */
+export interface PlayerRowAction {
+  icon: ReactNode;
+  label: string;
+  destructive?: boolean;
+  /** 不可执行时禁用：命令执行中，或目标玩家已掉线等 */
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+export interface PlayerRowProps {
+  name: string;
+  score: number;
+  /** 本人：底色与左端竖条同时区分，不只靠颜色 */
+  me?: boolean;
+  host?: boolean;
+  online?: boolean;
+  bot?: boolean;
+  /** 登录玩家的账号身份：显示账号头像，点击整行在浮层顶部展示资料卡；游客为空 */
+  account?: PlayerAccount;
+  /** 已出局：名字加删除线，次行补一个图标 */
+  eliminated?: boolean;
+  /** 次行的状态徽章（身份、准备、猜测中等），由各游戏传入 */
+  badges?: ReactNode;
+  /** 次行徽章之后的补充文字，如「2 队 · 3/10 次」 */
+  meta?: ReactNode;
+  /** 第三行整行内容，如 CEE 的猜测进度 */
+  detail?: ReactNode;
+  /** 操作浮层顶部内容（谁是卧底的身份猜测行） */
+  actionsHeader?: ReactNode;
+  /** 操作浮层的动作；与 actionsHeader、account 同为空时整行不可操作 */
+  actions?: PlayerRowAction[];
+  /** 嵌入发言历史首列时去掉行自身的进出场动画，交由表格统一处理 */
+  embedded?: boolean;
+  /**
+   * 跨分组的同一行身份（传玩家编号）：玩家与旁观之间切换时，行从原位置滑到新分组，而不是一处消失、一处出现。
+   * 调用方的玩家栏须包在 `PlayerListLayout` 里，编号才不会与同屏另一份玩家栏（抽屉）串台。
+   */
+  layoutId?: string;
+  /** 外层动画容器的引用：`AnimatePresence mode="popLayout"` 靠它把退场行抽出文档流，三个游戏的行组件逐层转交 */
+  ref?: Ref<HTMLDivElement>;
+}
+
+/** 当前挂着的共享布局行（按布局分组与编号计数）：新行挂载时同号旧行还在退场，说明这是换组而不是新玩家进来。 */
+const mountedLayoutRows = new Map<string, number>();
+
+/**
+ * 换组的行：新行从旧行的位置飞过去，全程必须是不透明的同一个对象。
+ * 共享布局关掉交叉淡化后，新行在飞行期间的不透明度停在挂载时的取值，所以换组的新行不能从 `listItem` 的透明起点出发，
+ * 直接以终态挂载、由布局动画把它从旧位置带过来；飞行期间抬高一层并垫底，压在沿途各行之上，落位后放回。
+ */
+function useRowMove(layoutId: string | undefined) {
+  const group = useContext(LayoutGroupContext).id;
+  const key = layoutId === undefined ? undefined : `${group ?? ""}:${layoutId}`;
+  const [moving, setMoving] = useState(
+    () => key !== undefined && (mountedLayoutRows.get(key) ?? 0) > 0
+  );
+  useEffect(() => {
+    if (key === undefined) return;
+    mountedLayoutRows.set(key, (mountedLayoutRows.get(key) ?? 0) + 1);
+    return () => {
+      const left = (mountedLayoutRows.get(key) ?? 1) - 1;
+      if (left) mountedLayoutRows.set(key, left);
+      else mountedLayoutRows.delete(key);
+    };
+  }, [key]);
+  return { moving, landed: () => setMoving(false) };
+}
+
+/**
+ * 三游戏共用的玩家行：左端头像（登录玩家为账号头像，游客为首字），中间信息列首行是名字、房主徽章与分数，
+ * 其下是状态徽章、补充文字与可选详情；登录玩家或有操作权限时整行是可聚焦的原生按钮，点击打开浮层：资料卡在上，操作在下。
+ *
+ * 行高由 `PLAYER_ROW_HEIGHT` 统一，供玩家列与发言历史逐行对齐；嵌入发言历史时不再套动画容器。
+ */
+export function PlayerRow({
+  name,
+  score,
+  me = false,
+  host = false,
+  online = true,
+  bot = false,
+  account,
+  eliminated = false,
+  badges,
+  meta,
+  detail,
+  actionsHeader,
+  actions,
+  embedded = false,
+  layoutId,
+  ref,
+}: PlayerRowProps) {
+  const hasActions = Boolean(actionsHeader || actions?.length);
+  const interactive = Boolean(account) || hasActions;
+  // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
+  const [open, setOpen] = useState(false);
+  const rowClass = playerRowClass({ me, interactive });
+  const move = useRowMove(embedded ? undefined : layoutId);
+  // 按钮的名字只有「名字 操作」，房主、离线、出局、分数与徽章写在信息列里；
+  // 经描述关联给读屏，可操作的行与不可点的行读到的信息一致。
+  const infoId = useId();
+
+  const info = (
+    <PlayerRowInfo
+      id={interactive ? infoId : undefined}
+      name={name}
+      score={score}
+      me={me}
+      host={host}
+      online={online}
+      bot={bot}
+      account={account}
+      eliminated={eliminated}
+      badges={badges}
+      meta={meta}
+      detail={detail}
+    />
+  );
+
+  const content = interactive ? (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
+        <motion.button
+          type="button"
+          aria-label={hasActions ? `${name} 操作` : `${name} 资料`}
+          aria-describedby={infoId}
+          {...headerTappable}
+          className={rowClass}
+        >
+          {info}
+        </motion.button>
+      </Popover.Trigger>
+      <AnimatePresence>
+        {open ? (
+          <Popover.Portal forceMount>
+            {/* 统一落在行下方、右缘对齐：玩家栏贴着视口左缘，窄屏抽屉里朝右展开会被截掉。 */}
+            <Popover.Content
+              forceMount
+              side="bottom"
+              align="end"
+              sideOffset={4}
+              collisionPadding={12}
+              asChild
+            >
+              <motion.div
+                variants={popover}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
+              >
+                <PlayerRowPopoverContent
+                  name={name}
+                  account={account}
+                  actionsHeader={actionsHeader}
+                  actions={actions}
+                />
+              </motion.div>
+            </Popover.Content>
+          </Popover.Portal>
+        ) : null}
+      </AnimatePresence>
+    </Popover.Root>
+  ) : (
+    <div className={rowClass}>{info}</div>
+  );
+
+  return embedded ? (
+    content
+  ) : (
+    <motion.div
+      ref={ref}
+      variants={listItem}
+      initial={move.moving ? false : "initial"}
+      animate="animate"
+      exit="exit"
+      layout="position"
+      layoutId={layoutId}
+      layoutCrossfade={false}
+      transition={playerRelayout}
+      onLayoutAnimationComplete={move.landed}
+      className={cn(
+        "min-w-0",
+        // 飞行期间垫一层与玩家栏同色的底：行自身的底色是半透明的（本人行）或没有，压过别的行时会透出它们的字。
+        move.moving &&
+          "relative z-panel before:absolute before:inset-0 before:-z-10 before:rounded-md before:bg-panel"
+      )}
+    >
+      {content}
+    </motion.div>
+  );
+}
+
+/** 行的底色与可点样式：本人用底色加左竖条；离线不压整行透明度，改由名字与红色徽章表达，保持可读。 */
+const playerRowClass = ({ me, interactive }: { me: boolean; interactive: boolean }) =>
+  cn(
+    PLAYER_ROW_BASE,
+    PLAYER_ROW_HEIGHT,
+    "gap-2.5",
+    me && "bg-primary/10",
+    // 悬停底只给能点开的行：不可操作的行悬停也铺底，读作「可以点」，点了却什么都不发生。
+    // 浮层打开期间保持同一档底色（触发器带 data-state=open）：指针移进浮层后仍读得出菜单属于哪一行。
+    !me && interactive && "transition-colors hover:bg-accent/40 data-[state=open]:bg-accent/40",
+    // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
+    interactive && "cursor-pointer focus-visible:-outline-offset-2"
+  );
+
+/** 行内信息：头像、名字与房主标识、状态徽章与补充文字、可选第三行、右侧分数。 */
+function PlayerRowInfo({
+  id,
+  name,
+  score,
+  me,
+  host,
+  online,
+  bot,
+  account,
+  eliminated,
+  badges,
+  meta,
+  detail,
+}: { id?: string } & Pick<
+  PlayerRowProps,
+  | "name"
+  | "score"
+  | "me"
+  | "host"
+  | "online"
+  | "bot"
+  | "account"
+  | "eliminated"
+  | "badges"
+  | "meta"
+  | "detail"
+>) {
+  const offline = !online && !bot;
+  return (
+    <>
+      {me ? <span className={PLAYER_ME_MARK} /> : null}
+      <PlayerAvatar name={name} me={me} image={account?.image} />
+      <span id={id} className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {/* 首行是身份：名字、房主、账号徽章与当前状态。状态图标挨着名字读，
+            不必把视线甩到下一行去找「他到底准备好了没有」。 */}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Hint label={name}>
+            <span
+              className={cn(
+                "min-w-0 truncate font-medium",
+                (eliminated || offline) && "text-muted-foreground",
+                eliminated && "line-through decoration-muted-foreground/60"
+              )}
+            >
+              {name}
+            </span>
+          </Hint>
+          {host ? (
+            <PlayerStatusIcon label="房主" tone="warning" icon={<Crown aria-hidden="true" />} />
+          ) : null}
+          {account ? <PlayerBadges account={account} /> : null}
+          {badges}
+        </span>
+        {/* 次行放补充信息与分数。分数挪到这里：首行已经排满身份，
+            再挤一枚状态图标就会把分数顶得忽左忽右；固定落在次行右缘反而更好扫。 */}
+        <span className="flex min-w-0 items-center gap-1.5">
+          {meta}
+          {eliminated ? (
+            <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
+          ) : null}
+          {bot ? (
+            <PlayerStatusIcon
+              label="测试人机"
+              tone="questioner"
+              icon={<Bot aria-hidden="true" />}
+            />
+          ) : offline ? (
+            <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
+          ) : null}
+          <span
+            aria-label={`${score} 分`}
+            className="ml-auto flex shrink-0 items-baseline gap-0.5 pl-2 tabular-nums"
+          >
+            <AnimatedNumber value={score} gain="above" className="text-base leading-none" />
+            <span className="font-sans text-2xs text-muted-foreground">分</span>
+          </span>
+        </span>
+        {detail}
+      </span>
+    </>
+  );
+}
+
+/** 浮层内容按「资料卡 → 头部行 → 动作列表」拼接，空段不留分隔边框。 */
+function PlayerRowPopoverContent({
+  name,
+  account,
+  actionsHeader,
+  actions,
+}: Pick<PlayerRowProps, "name" | "account" | "actionsHeader" | "actions">) {
+  return (
+    <>
+      {account ? <ProfileCard account={account} playerName={name} /> : null}
+      {actionsHeader ? (
+        <div className={cn("flex", account && "border-t")}>{actionsHeader}</div>
+      ) : null}
+      {actions?.length ? (
+        <div className={cn("flex flex-col", (account || actionsHeader) && "border-t")}>
+          {actions.map((action) => (
+            <PlayerActionButton key={action.label} {...action} />
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** 操作浮层里的动作按钮，与身份猜测行等宽、无缝拼接。 */
+export function PlayerActionButton({
+  icon,
+  label,
+  destructive = false,
+  disabled = false,
+  onClick,
+}: PlayerRowAction) {
+  return (
+    <Popover.Close asChild>
+      <motion.button
+        type="button"
+        disabled={disabled}
+        {...tappable}
+        onClick={onClick}
+        className={cn(
+          "flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors focus-visible:-outline-offset-2",
+          "border-t first:border-t-0",
+          "disabled:pointer-events-none disabled:opacity-50",
+          destructive
+            ? "text-destructive hover:bg-destructive-solid hover:text-destructive-foreground"
+            : "text-foreground hover:bg-accent hover:text-accent-foreground"
+        )}
+      >
+        {icon}
+        {label}
+      </motion.button>
+    </Popover.Close>
+  );
+}
+
+/** 转移房主与踢出玩家是三个游戏共有的房主动作。 */
+export const hostActions = (handlers: {
+  onTransferHost?: () => void;
+  /** 目标已掉线等情况下给出禁用原因，动作保留在浮层里但不可点 */
+  onKick?: () => void;
+  transferDisabled?: boolean;
+  kickDisabled?: boolean;
+}): PlayerRowAction[] => [
+  ...(handlers.onTransferHost
+    ? [
+        {
+          icon: <ArrowUpRightFromCircle className="h-3.5 w-3.5" />,
+          label: "转移房主",
+          disabled: handlers.transferDisabled,
+          onClick: handlers.onTransferHost,
+        },
+      ]
+    : []),
+  ...(handlers.onKick
+    ? [
+        {
+          icon: <UserX className="h-3.5 w-3.5" />,
+          label: "踢出玩家",
+          destructive: true,
+          disabled: handlers.kickDisabled,
+          onClick: handlers.onKick,
+        },
+      ]
+    : []),
+];

@@ -1,0 +1,592 @@
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../config/env/Observability";
+import { AppError } from "../domain/Errors";
+import {
+  formatOtlpSpanId,
+  formatOtlpTraceId,
+  toAttributes,
+  toUnixNanoString,
+} from "./logging/OtelEncoding";
+import { toOtlpLogRecord, type OtelLogRecord } from "./logging/OtelLog";
+import { countServerMetric } from "./Sentry";
+
+export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface OtlpExporterConfig {
+  endpoint?: string;
+  headers?: Record<string, string>;
+  serviceName?: string;
+  serviceNamespace?: string;
+  deploymentEnvironment?: string;
+  fetcher?: typeof fetch | OtlpFetcher;
+  now?: () => number;
+  /** 丢弃数的汇报出口；缺省记成指标，保证「丢了多少」从外部看得见。 */
+  onDrop?: (drop: OtlpDrop) => void;
+}
+
+/**
+ * 一次汇总的丢弃：`overflow` 是缓冲满了淘汰最旧，`rejected` 是对端明确拒收（永久失败，重试无益）。
+ * 按信号与原因（及拒收状态码）汇总后在导出周期里汇报，不在热路径上逐条回调。
+ */
+export interface OtlpDrop {
+  signal: OtlpSignal;
+  reason: "overflow" | "rejected";
+  count: number;
+  /** 仅 `rejected`：对端返回的状态码。 */
+  status?: number;
+}
+
+export interface OtlpSpanRecord {
+  name: string;
+  /** 入站请求（HTTP）用 `server`，其余为进程内操作，缺省 `internal`。 */
+  kind?: "server" | "internal";
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  startTime: number;
+  endTime: number;
+  attributes?: Record<string, unknown>;
+  status?: "OK" | "ERROR";
+  statusMessage?: string;
+}
+
+export interface OtlpExporterStats {
+  totalAttempts: number;
+  successCount: number;
+  failureCount: number;
+  droppedCount: number;
+  /**
+   * 兼容口径：两条信号里更差的那一路。看单路健康度请用下面的分信号字段
+   * （F72：logs 与 spans 共享退避时，traces 端点故障会把日志导出一起压住）。
+   */
+  consecutiveFailures: number;
+  logsConsecutiveFailures: number;
+  spansConsecutiveFailures: number;
+  /** 各自信号的下次可重试时刻（`now()` 时基）；0 表示无退避。 */
+  logsNextRetryAt: number;
+  spansNextRetryAt: number;
+}
+
+export interface OtlpFlushResult {
+  success: boolean;
+  attempted: number;
+  sent: number;
+  remaining: number;
+  dropped: number;
+}
+
+/** 导出器承载的两条信号：各有端点、缓冲与退避状态，互不压制。 */
+export type OtlpSignal = "logs" | "spans";
+
+interface SignalBackoff {
+  consecutiveFailures: number;
+  nextRetryTime: number;
+}
+
+export class OtlpShutdownError extends Error {
+  constructor(
+    readonly result: OtlpFlushResult,
+    readonly stats: OtlpExporterStats
+  ) {
+    super(`OTLP shutdown did not drain: ${result.remaining} remaining, ${result.dropped} dropped`);
+    this.name = "OtlpShutdownError";
+  }
+}
+
+/**
+ * 只有「对端暂时处理不了」的状态才值得重发：超时、限流与 5xx。
+ * 其余 4xx（坏载荷、过大、认证失败）原样重发只会得到同样的结果，还会堵住后面的日志。
+ */
+const isRetryableStatus = (status: number): boolean =>
+  status === 408 || status === 429 || status >= 500;
+
+export class OtlpExporter {
+  private static readonly MAX_BUFFER_SIZE = 500;
+  readonly logsEndpoint?: string;
+  readonly tracesEndpoint?: string;
+  private readonly headers: Record<string, string>;
+  readonly serviceName: string;
+  readonly serviceNamespace?: string;
+  readonly deploymentEnvironment?: string;
+  private readonly fetcher: typeof fetch | OtlpFetcher;
+  private readonly now: () => number;
+  private readonly onDrop: (drop: OtlpDrop) => void;
+  /** 自上次汇报以来的丢弃：键为 `信号|原因|状态码`，值为条数。 */
+  private readonly pendingDrops = new Map<string, number>();
+
+  private logBuffer: OtelLogRecord[] = [];
+  private spanBuffer: OtlpSpanRecord[] = [];
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private isShuttingDown = false;
+  private flushingLogsPromise: Promise<boolean> | null = null;
+  private flushingSpansPromise: Promise<boolean> | null = null;
+
+  private shutdownPromise: Promise<void> | null = null;
+  private readonly requests = new Set<AbortController>();
+  private inFlightRecords = 0;
+  private sentRecords = 0;
+  private shutdownDeadline = Infinity;
+  /**
+   * 退避状态按信号各自独立：logs 与 spans 打的是不同端点，一条坏掉不该让另一条排队。
+   * 共享退避时表现为「日志无声缺失」而病因在 traces 上，排障必然归错因（F72）。
+   */
+  private readonly backoff: Record<OtlpSignal, SignalBackoff> = {
+    logs: { consecutiveFailures: 0, nextRetryTime: 0 },
+    spans: { consecutiveFailures: 0, nextRetryTime: 0 },
+  };
+  private readonly stats: OtlpExporterStats = {
+    totalAttempts: 0,
+    successCount: 0,
+    failureCount: 0,
+    droppedCount: 0,
+    consecutiveFailures: 0,
+    logsConsecutiveFailures: 0,
+    spansConsecutiveFailures: 0,
+    logsNextRetryAt: 0,
+    spansNextRetryAt: 0,
+  };
+
+  constructor(config: OtlpExporterConfig = {}) {
+    if (config.endpoint) {
+      const base = config.endpoint.replace(/\/$/, "");
+      const root = base.replace(/\/v1\/(logs|traces|metrics)$/, "");
+      this.logsEndpoint = `${root}/v1/logs`;
+      this.tracesEndpoint = `${root}/v1/traces`;
+    }
+    this.headers = {
+      "Content-Type": "application/json",
+      ...(config.headers ?? {}),
+    };
+    this.serviceName = config.serviceName ?? "Bakagame-Server";
+    this.serviceNamespace = config.serviceNamespace ?? "Bakagame";
+    this.deploymentEnvironment = config.deploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
+    this.fetcher = config.fetcher ?? fetch;
+    this.now = config.now ?? (() => Date.now());
+    this.onDrop =
+      config.onDrop ??
+      ((drop) =>
+        countServerMetric("bakagame.otlp.dropped", drop.count, {
+          signal: drop.signal,
+          reason: drop.reason,
+          ...(drop.status === undefined ? {} : { status: drop.status }),
+        }));
+
+    if (this.logsEndpoint || this.tracesEndpoint) {
+      this.flushTimer = setInterval(() => {
+        void this.flush().catch(() => {});
+      }, 3000);
+      if (typeof this.flushTimer?.unref === "function") {
+        this.flushTimer.unref();
+      }
+    }
+  }
+
+  get isEnabled(): boolean {
+    return Boolean(this.logsEndpoint || this.tracesEndpoint);
+  }
+
+  get buffer(): OtelLogRecord[] {
+    return this.logBuffer;
+  }
+
+  getStats(): OtlpExporterStats {
+    return {
+      ...this.stats,
+      logsConsecutiveFailures: this.backoff.logs.consecutiveFailures,
+      spansConsecutiveFailures: this.backoff.spans.consecutiveFailures,
+      logsNextRetryAt: this.backoff.logs.nextRetryTime,
+      spansNextRetryAt: this.backoff.spans.nextRetryTime,
+      consecutiveFailures: Math.max(
+        this.backoff.logs.consecutiveFailures,
+        this.backoff.spans.consecutiveFailures
+      ),
+    };
+  }
+
+  getResourceAttributes(): Array<{ key: string; value: { stringValue: string } }> {
+    const attrs: Array<{ key: string; value: { stringValue: string } }> = [
+      {
+        key: "service.name",
+        value: { stringValue: this.serviceName },
+      },
+    ];
+    if (this.serviceNamespace) {
+      attrs.push({
+        key: "service.namespace",
+        value: { stringValue: this.serviceNamespace },
+      });
+    }
+    if (this.deploymentEnvironment) {
+      attrs.push({
+        key: "deployment.environment",
+        value: { stringValue: this.deploymentEnvironment },
+      });
+    }
+    return attrs;
+  }
+
+  enqueue(record: OtelLogRecord): void {
+    if (!this.logsEndpoint || this.isShuttingDown) return;
+    if (this.logBuffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
+      this.logBuffer.shift(); // 缓冲区达上限时淘汰最旧条目
+      this.noteDrop("logs", "overflow", 1);
+    }
+    this.logBuffer.push(record);
+    if (this.logBuffer.length >= 50) {
+      void this.flushLogs();
+    }
+  }
+
+  enqueueSpan(record: OtlpSpanRecord): void {
+    if (!this.tracesEndpoint || this.isShuttingDown) return;
+    if (this.spanBuffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
+      this.spanBuffer.shift();
+      this.noteDrop("spans", "overflow", 1);
+    }
+    this.spanBuffer.push(record);
+    if (this.spanBuffer.length >= 50) {
+      void this.flushSpans();
+    }
+  }
+
+  private noteDrop(
+    signal: OtlpSignal,
+    reason: OtlpDrop["reason"],
+    count: number,
+    status?: number
+  ): void {
+    if (count <= 0) return;
+    this.stats.droppedCount += count;
+    const key = `${signal}|${reason}|${status ?? ""}`;
+    this.pendingDrops.set(key, (this.pendingDrops.get(key) ?? 0) + count);
+  }
+
+  /** 把累计的丢弃汇报出去；汇报自身的故障不能影响导出。 */
+  private reportDrops(): void {
+    if (this.pendingDrops.size === 0) return;
+    const drops = [...this.pendingDrops];
+    this.pendingDrops.clear();
+    for (const [key, count] of drops) {
+      const [signal, reason, status] = key.split("|") as [OtlpSignal, OtlpDrop["reason"], string];
+      try {
+        this.onDrop({
+          signal,
+          reason,
+          count,
+          ...(status ? { status: Number(status) } : {}),
+        });
+      } catch {
+        // 汇报出口故障只丢汇报本身。
+      }
+    }
+  }
+
+  private bumpBackoff(signal: OtlpSignal): void {
+    this.stats.failureCount++;
+    const backoff = this.backoff[signal];
+    backoff.consecutiveFailures++;
+    backoff.nextRetryTime =
+      this.now() + Math.min(30000, 1000 * Math.pow(2, backoff.consecutiveFailures - 1));
+  }
+
+  /** 可重试的失败：批次放回队首，缓冲超限时淘汰最旧。 */
+  private handleFailure(batch: OtelLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
+    this.bumpBackoff(type);
+    if (type === "logs") {
+      this.logBuffer.unshift(...(batch as OtelLogRecord[]));
+      if (this.logBuffer.length > OtlpExporter.MAX_BUFFER_SIZE) {
+        const excess = this.logBuffer.length - OtlpExporter.MAX_BUFFER_SIZE;
+        this.logBuffer.splice(0, excess);
+        this.noteDrop("logs", "overflow", excess);
+      }
+    } else {
+      this.spanBuffer.unshift(...(batch as OtlpSpanRecord[]));
+      if (this.spanBuffer.length > OtlpExporter.MAX_BUFFER_SIZE) {
+        const excess = this.spanBuffer.length - OtlpExporter.MAX_BUFFER_SIZE;
+        this.spanBuffer.splice(0, excess);
+        this.noteDrop("spans", "overflow", excess);
+      }
+    }
+  }
+
+  /**
+   * 永久失败：对端明确拒收，批次直接丢弃并计数，不回队。
+   * 仍然进退避：认证失败这类问题持续存在时，不能每个批次都去撞一次对端。
+   */
+  private handleRejected(batchSize: number, signal: OtlpSignal, status: number): void {
+    this.bumpBackoff(signal);
+    this.noteDrop(signal, "rejected", batchSize, status);
+  }
+
+  /** 按响应结算一个批次：成功清退避，可重试回队，永久失败丢弃。 */
+  private settle(
+    batch: OtelLogRecord[] | OtlpSpanRecord[],
+    signal: OtlpSignal,
+    response: Response
+  ): boolean {
+    if (response.ok) {
+      this.sentRecords += batch.length;
+      this.stats.successCount++;
+      this.backoff[signal].consecutiveFailures = 0;
+      this.backoff[signal].nextRetryTime = 0;
+      return true;
+    }
+    if (isRetryableStatus(response.status)) this.handleFailure(batch, signal);
+    else this.handleRejected(batch.length, signal, response.status);
+    return false;
+  }
+
+  async sendHeartbeatTrace(): Promise<boolean> {
+    if (!this.tracesEndpoint) return false;
+    const now = this.now();
+    this.enqueueSpan({
+      name: "server.startup",
+      startTime: now - 50,
+      endTime: now,
+      status: "OK",
+      attributes: {
+        "server.status": "ready",
+        "service.type": "bakagame",
+      },
+    });
+    return await this.flushSpans();
+  }
+
+  // 注入 fetcher 也必须遵守期限；race 确保不响应 signal 的 mock 不会挂住停机。
+  private async post(endpoint: string, body: unknown): Promise<Response> {
+    const controller = new AbortController();
+    this.requests.add(controller);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    try {
+      const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(new Error("OTLP request aborted"));
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+      });
+      const timeoutMs = Math.max(0, Math.min(5000, this.shutdownDeadline - performance.now()));
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("OTLP request timed out"));
+        }, timeoutMs);
+      });
+      return await Promise.race([
+        this.fetcher(endpoint, {
+          method: "POST",
+          headers: this.headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        }),
+        timeout,
+        aborted,
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) controller.signal.removeEventListener("abort", onAbort);
+      this.requests.delete(controller);
+    }
+  }
+
+  async flushLogs(force = false): Promise<boolean> {
+    if (!this.logsEndpoint) return false;
+    if (this.flushingLogsPromise) {
+      await this.flushingLogsPromise;
+    }
+    if (this.logBuffer.length === 0) return true;
+    if (!force && this.now() < this.backoff.logs.nextRetryTime) return false;
+
+    const batch = this.logBuffer;
+    this.logBuffer = [];
+    this.inFlightRecords += batch.length;
+
+    this.flushingLogsPromise = (async (): Promise<boolean> => {
+      this.stats.totalAttempts++;
+      try {
+        const resourceLogs = [
+          {
+            resource: {
+              attributes: this.getResourceAttributes(),
+            },
+            scopeLogs: [
+              {
+                scope: { name: "bakagame-logger" },
+                logRecords: batch.map(toOtlpLogRecord),
+              },
+            ],
+          },
+        ];
+
+        const response = await this.post(this.logsEndpoint!, { resourceLogs });
+        return this.settle(batch, "logs", response);
+      } catch {
+        this.handleFailure(batch, "logs");
+        return false;
+      } finally {
+        this.inFlightRecords -= batch.length;
+        this.reportDrops();
+      }
+    })();
+
+    try {
+      return await this.flushingLogsPromise;
+    } finally {
+      this.flushingLogsPromise = null;
+    }
+  }
+
+  async flushSpans(force = false): Promise<boolean> {
+    if (!this.tracesEndpoint) return false;
+    if (this.flushingSpansPromise) {
+      await this.flushingSpansPromise;
+    }
+    if (this.spanBuffer.length === 0) return true;
+    if (!force && this.now() < this.backoff.spans.nextRetryTime) return false;
+
+    const batch = this.spanBuffer;
+    this.spanBuffer = [];
+    this.inFlightRecords += batch.length;
+
+    this.flushingSpansPromise = (async (): Promise<boolean> => {
+      this.stats.totalAttempts++;
+      try {
+        const resourceSpans = [
+          {
+            resource: {
+              attributes: this.getResourceAttributes(),
+            },
+            scopeSpans: [
+              {
+                scope: { name: "bakagame-tracer", version: "1.0.0" },
+                spans: batch.map((item) => ({
+                  traceId: formatOtlpTraceId(item.traceId),
+                  spanId: formatOtlpSpanId(item.spanId),
+                  ...(item.parentSpanId
+                    ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) }
+                    : {}),
+                  name: item.name,
+                  // SPAN_KIND_SERVER = 2（入站请求），SPAN_KIND_INTERNAL = 1。
+                  kind: item.kind === "server" ? 2 : 1,
+                  startTimeUnixNano: toUnixNanoString(item.startTime),
+                  endTimeUnixNano: toUnixNanoString(item.endTime),
+                  attributes: toAttributes(item.attributes ?? {}),
+                  status: {
+                    code: item.status === "ERROR" ? 2 : 1,
+                    ...(item.statusMessage ? { message: item.statusMessage } : {}),
+                  },
+                })),
+              },
+            ],
+          },
+        ];
+
+        const response = await this.post(this.tracesEndpoint!, { resourceSpans });
+        return this.settle(batch, "spans", response);
+      } catch {
+        this.handleFailure(batch, "spans");
+        return false;
+      } finally {
+        this.inFlightRecords -= batch.length;
+        this.reportDrops();
+      }
+    })();
+
+    try {
+      return await this.flushingSpansPromise;
+    } finally {
+      this.flushingSpansPromise = null;
+    }
+  }
+
+  private result(attemptsBefore: number, sentBefore: number): OtlpFlushResult {
+    const remaining = this.logBuffer.length + this.spanBuffer.length + this.inFlightRecords;
+    return {
+      success: remaining === 0,
+      attempted: this.stats.totalAttempts - attemptsBefore,
+      sent: this.sentRecords - sentBefore,
+      remaining,
+      dropped: this.stats.droppedCount,
+    };
+  }
+
+  async flush(): Promise<OtlpFlushResult> {
+    const attemptsBefore = this.stats.totalAttempts;
+    const sentBefore = this.sentRecords;
+    await Promise.all([this.flushLogs(), this.flushSpans()]);
+    this.reportDrops();
+    return this.result(attemptsBefore, sentBefore);
+  }
+
+  shutdown(timeoutMs = 10_000): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.isShuttingDown = true;
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    const attemptsBefore = this.stats.totalAttempts;
+    const sentBefore = this.sentRecords;
+    const budget = Number.isFinite(timeoutMs) ? Math.max(0, timeoutMs) : 10_000;
+    this.shutdownDeadline = performance.now() + budget;
+    this.shutdownPromise = (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const drain = async () => {
+          // 先等运行期请求归还 batch，再有界绕过退避做一次最终尝试。
+          await Promise.all([this.flushingLogsPromise, this.flushingSpansPromise]);
+          if (performance.now() < this.shutdownDeadline) {
+            await Promise.all([this.flushLogs(true), this.flushSpans(true)]);
+          }
+        };
+        await Promise.race([
+          drain(),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(() => {
+              for (const request of this.requests) request.abort();
+              resolve();
+            }, budget);
+          }),
+        ]);
+        this.reportDrops();
+        const result = this.result(attemptsBefore, sentBefore);
+        if (!result.success) throw new OtlpShutdownError(result, this.getStats());
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    })();
+    return this.shutdownPromise;
+  }
+}
+
+/** 由环境装配导出器所需的那几项；与 `AppEnv` 结构兼容，单测不必造整份环境。 */
+export interface OtlpExporterEnv {
+  otelEndpoint?: string;
+  otelHeaders?: Record<string, string>;
+  otelServiceName?: string;
+  otelServiceNamespace?: string;
+  otelDeploymentEnvironment?: string;
+  deploymentMarkerExplicit?: boolean;
+}
+
+/**
+ * 按环境创建 OTLP 导出器；没配端点时返回 undefined。
+ *
+ * 与 Sentry 同一道安全失败：配了外发端点却没有显式环境标记，说明这台实例的环境是推测出来的，
+ * 带着推测的 `deployment.environment` 外发会让生产与本地流量在后端同池、事后无法区分，
+ * 因此拒绝启动。字段缺席（测试或嵌入用法传的精简环境）时不拦截。
+ */
+export const createOtlpExporter = (env: OtlpExporterEnv): OtlpExporter | undefined => {
+  if (!env.otelEndpoint) return undefined;
+  if (env.deploymentMarkerExplicit === false) {
+    throw new AppError(
+      "CONFIG_ERROR",
+      "已配置 OTEL_EXPORTER_OTLP_ENDPOINT 但部署环境标记缺失：请显式注入 DEPLOYMENT_ENVIRONMENT" +
+        "（production / development），拒绝以推测环境外发遥测"
+    );
+  }
+  return new OtlpExporter({
+    endpoint: env.otelEndpoint,
+    headers: env.otelHeaders,
+    serviceName: env.otelServiceName,
+    serviceNamespace: env.otelServiceNamespace,
+    deploymentEnvironment: env.otelDeploymentEnvironment,
+  });
+};

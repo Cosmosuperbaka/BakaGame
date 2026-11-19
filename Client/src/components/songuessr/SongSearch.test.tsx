@@ -1,0 +1,285 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "@/test/Deferred";
+import type {
+  BangumiSongCandidate,
+  BangumiSubjectSearchResult,
+  SongSearchResult,
+} from "@bakagame/shared";
+import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { AnimeSearch, SongSearch } from "./SongSearch";
+
+const initial = useSonGuessrStore.getState();
+afterEach(() => {
+  vi.useRealTimers();
+  // setState 的普通 action 替换不属于 vi.restoreAllMocks 的还原范围。
+  useSonGuessrStore.setState(initial, true);
+});
+
+const STAR: SongSearchResult = {
+  id: "song-1",
+  title: "夜空中最亮的星",
+  artist: "逃跑计划",
+  album: "世界",
+};
+const RAIN: SongSearchResult = {
+  id: "song-2",
+  title: "雨夜",
+  artist: "测试歌手",
+  requiresVip: true,
+};
+const SUMMER: BangumiSubjectSearchResult = {
+  id: "sub-1",
+  name: "夏空メロディー",
+  nameCn: "夏空旋律",
+  year: 2021,
+  rating: 7.8,
+  tags: [],
+  metaTags: [],
+};
+const OP: BangumiSongCandidate = {
+  song: { id: "song-op", title: "夏空メロディー", artist: "コトノハ", album: "OP 单曲" },
+  track: { title: "夏空メロディー", artist: "コトノハ", kind: "opening" },
+};
+
+const setup = () => userEvent.setup();
+/**
+ * 派发输入并推进防抖窗口。只在这一次变更与推进期间冻住 setTimeout：
+ * userEvent 与 framer-motion 都依赖真实时钟，交互与进退场仍照常推进。
+ */
+const typeAndFlush = async (input: HTMLElement, value: string) => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  fireEvent.change(input, { target: { value } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(IDLE_SEARCH_MS + 50);
+  });
+  vi.useRealTimers();
+};
+
+describe("SongSearch", () => {
+  it("输入即查，结果浮层里点整行提交，成功后清空收起", async () => {
+    const user = setup();
+    const searchMusic = vi.fn().mockResolvedValue([STAR, RAIN]);
+    useSonGuessrStore.setState({ searchMusic });
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    render(<SongSearch mode="guess" onSelect={onSelect} />);
+
+    const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+    expect(input).toHaveAttribute("data-agent-control", "song.guess.search.input");
+    await typeAndFlush(input, "夜");
+    expect(searchMusic).toHaveBeenCalledExactlyOnceWith("夜");
+    // 行内副标题是歌手与专辑；已移除会员专享图标；没有单独的「猜这首」按钮。
+    expect(screen.getByRole("option", { name: /夜空中最亮的星.*逃跑计划 · 世界/ })).toHaveAttribute(
+      "data-agent-control",
+      "song.guess.search.result.0"
+    );
+    expect(screen.getByRole("option", { name: /雨夜.*测试歌手/ })).toHaveAttribute(
+      "data-agent-control",
+      "song.guess.search.result.1"
+    );
+    expect(screen.queryByText("会员专享")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /猜这首|设为答案/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("option", { name: /夜空中最亮的星/ }));
+    expect(onSelect).toHaveBeenCalledWith(STAR);
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    expect(input).toHaveValue("");
+  });
+
+  it("提交失败时保留结果并在面板顶部报错", async () => {
+    const user = setup();
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([STAR]) });
+    const onSelect = vi.fn().mockRejectedValue(new Error("本回合已结束"));
+    render(<SongSearch mode="guess" onSelect={onSelect} />);
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "星");
+    await user.click(screen.getByRole("option", { name: /夜空中最亮的星/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("本回合已结束");
+    expect(screen.getByRole("option", { name: /夜空中最亮的星/ })).toBeInTheDocument();
+  });
+
+  it("本回合猜过的歌保留在结果里但不可再选", async () => {
+    const user = setup();
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([STAR, RAIN]) });
+    const onSelect = vi.fn();
+    render(<SongSearch mode="guess" guessedIds={[STAR.id]} onSelect={onSelect} />);
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "夜");
+    const guessed = screen.getByRole("option", { name: /夜空中最亮的星.*已猜过/ });
+    expect(guessed).toHaveAttribute("aria-disabled", "true");
+    await user.click(guessed);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("清空输入后在途请求晚到也不复活结果；新查询先回来时旧查询的失败被丢弃", async () => {
+    const first = deferred<SongSearchResult[]>();
+    const second = deferred<SongSearchResult[]>();
+    const searchMusic = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    useSonGuessrStore.setState({ searchMusic });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+
+    await typeAndFlush(input, "A");
+    expect(screen.getByRole("status")).toHaveTextContent("正在搜索歌曲");
+    await typeAndFlush(input, "");
+    // 面板收起有退场动画，等它退完。
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    await typeAndFlush(input, "B");
+    await act(async () => {
+      second.resolve([RAIN]);
+      await second.promise;
+    });
+    expect(screen.getByRole("option", { name: /雨夜/ })).toBeInTheDocument();
+    await act(async () => {
+      first.reject(new Error("旧请求失败"));
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /雨夜/ })).toBeInTheDocument();
+  });
+
+  it("查询无结果与失败都显示在面板里", async () => {
+    const searchMusic = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("网易云暂时不可用"));
+    useSonGuessrStore.setState({ searchMusic });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+    await typeAndFlush(input, "无");
+    expect(screen.getByRole("status")).toHaveTextContent("没有找到匹配歌曲");
+    await typeAndFlush(input, "效");
+    expect(screen.getByRole("alert")).toHaveTextContent("网易云暂时不可用");
+  });
+
+  it("检索候选展示对应音源平台标识徽章（QQ音乐与网易云）", async () => {
+    const qqSong: SongSearchResult = { id: "qq:001", title: "晴天", artist: "周杰伦" };
+    const neteaseSong: SongSearchResult = { id: "netease:002", title: "七里香", artist: "周杰伦" };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([qqSong, neteaseSong]) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+    await typeAndFlush(input, "周杰伦");
+
+    expect(screen.getByRole("option", { name: /晴天.*QQ音乐/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /七里香.*网易云/ })).toBeInTheDocument();
+  });
+
+  it("同一首有两个音源时并排展示两家平台标识", async () => {
+    const dual: SongSearchResult = {
+      id: "netease:004",
+      title: "双源曲",
+      artist: "某歌手",
+      sources: ["netease:004", "qq:005"],
+    };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([dual]) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "双源");
+
+    expect(
+      screen.getByRole("option", { name: /双源曲.*网易云 \+ QQ 音乐双源/ })
+    ).toBeInTheDocument();
+  });
+
+  it("平台标识是带名称的图像角色，读屏读得出每个音源", async () => {
+    const songs: SongSearchResult[] = [
+      { id: "qq:001", title: "晴天", artist: "周杰伦" },
+      { id: "netease:002", title: "七里香", artist: "周杰伦" },
+      { id: "netease:004", title: "双源曲", artist: "某歌手", sources: ["netease:004", "qq:005"] },
+    ];
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue(songs) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "周");
+
+    const logoOf = (title: RegExp) =>
+      within(screen.getByRole("option", { name: title })).getAllByRole("img");
+    expect(logoOf(/晴天/).map((img) => img.getAttribute("aria-label"))).toEqual(["QQ音乐"]);
+    expect(logoOf(/七里香/).map((img) => img.getAttribute("aria-label"))).toEqual(["网易云"]);
+    expect(logoOf(/双源曲/).map((img) => img.getAttribute("aria-label"))).toEqual([
+      "网易云 + QQ 音乐双源",
+    ]);
+  });
+
+  it("当下播不了的候选标出平台与原因，但不可选", async () => {
+    const user = setup();
+    // 服务端在 QQ 会员专享曲目遇到非会员账号池时会带上这两个字段。
+    const blocked: SongSearchResult = {
+      id: "qq:003",
+      title: "会员限定曲",
+      artist: "某歌手",
+      requiresVip: true,
+      playable: false,
+      unplayableReason: "需要 QQ 音乐会员账号",
+    };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([blocked]) });
+    const onSelect = vi.fn();
+    render(<SongSearch mode="guess" onSelect={onSelect} />);
+
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索歌曲" }), "会员");
+
+    const option = screen.getByRole("option", { name: /会员限定曲.*不可播放/ });
+    expect(option).toHaveAttribute("aria-disabled", "true");
+    await user.click(option);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("AnimeSearch", () => {
+  it("猜测时点番剧即提交", async () => {
+    const user = setup();
+    useSonGuessrStore.setState({ searchBangumi: vi.fn().mockResolvedValue([SUMMER]) });
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    render(<AnimeSearch mode="guess" onSelect={onSelect} />);
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
+    await user.click(
+      screen.getByRole("option", { name: /夏空旋律.*夏空メロディー · 2021 · 7\.8 分/ })
+    );
+    expect(onSelect).toHaveBeenCalledWith(SUMMER, undefined);
+  });
+
+  it("出题时点番剧进入关联曲，选一首提交；更换番剧回到番剧结果", async () => {
+    const user = setup();
+    const resolveAnimeSongs = vi.fn().mockResolvedValue([OP]);
+    useSonGuessrStore.setState({
+      searchBangumi: vi.fn().mockResolvedValue([SUMMER]),
+      resolveAnimeSongs,
+    });
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    render(<AnimeSearch mode="submit" onSelect={onSelect} />);
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
+
+    await user.click(screen.getByRole("option", { name: /夏空旋律/ }));
+    expect(resolveAnimeSongs).toHaveBeenCalledWith(SUMMER.id);
+    expect(await screen.findByRole("option", { name: /更换番剧.*夏空旋律/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /更换番剧/ }));
+    // 返回行的说明里也有番剧名；等它与关联曲列表退场后，只剩番剧结果这一行。
+    await waitFor(() =>
+      expect(screen.queryByRole("option", { name: /更换番剧/ })).not.toBeInTheDocument()
+    );
+    const subject = await screen.findByRole("option", { name: /夏空旋律/ });
+
+    // 列表切换时退场项会保留 `pointer-events: none`，直接派发点击，不依赖像素命中。
+    fireEvent.click(subject);
+    await user.click(
+      await screen.findByRole("option", { name: /OP.*コトノハ · OP 单曲|コトノハ · OP 单曲.*OP/ })
+    );
+    expect(onSelect).toHaveBeenCalledWith(SUMMER, OP.song.id);
+  });
+
+  it("番剧没有可播放的关联曲时给出说明，顶上仍可更换", async () => {
+    const user = setup();
+    useSonGuessrStore.setState({
+      searchBangumi: vi.fn().mockResolvedValue([SUMMER]),
+      resolveAnimeSongs: vi.fn().mockResolvedValue([]),
+    });
+    render(<AnimeSearch mode="submit" onSelect={vi.fn()} />);
+    await typeAndFlush(screen.getByRole("combobox", { name: "搜索番剧" }), "夏空");
+    await user.click(screen.getByRole("option", { name: /夏空旋律/ }));
+    expect(await screen.findByRole("status")).toHaveTextContent("该番剧未匹配到可播放的关联歌曲");
+    expect(screen.getByRole("option", { name: /更换番剧/ })).toBeInTheDocument();
+  });
+});

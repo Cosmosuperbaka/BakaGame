@@ -1,0 +1,817 @@
+import { describe, expect, it, beforeEach, afterEach, spyOn } from "bun:test";
+import * as Sentry from "@sentry/bun";
+import type { AppEnv } from "../src/config/Env";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../src/config/env/Observability";
+import { readEnv } from "../src/config/Env";
+import { resolve } from "node:path";
+import * as Release from "../src/infrastructure/Release";
+import {
+  _resetServerSentryForTest,
+  captureServerException,
+  captureServerCheckIn,
+  captureServerMessage,
+  closeServerSentry,
+  flushServerSentry,
+  initServerSentry,
+  isServerSentryEnabled,
+  captureServerLog,
+  redactData,
+  redactLogText,
+  redactUrlQuery,
+  stripUrlQuery,
+  describeError,
+  SERVER_HEARTBEAT_INTERVAL_MS,
+  SERVER_HEARTBEAT_MONITOR_SLUG,
+} from "../src/infrastructure/Sentry";
+import { fakeSentryScope, fakeWithScope } from "./support/Sentry";
+
+// release 解析不依赖本机 Git/子进程权限；所有 SDK init 已由各例 mock。
+let gitSpy: ReturnType<typeof spyOn>;
+beforeEach(() => {
+  gitSpy = spyOn(Bun, "spawnSync").mockImplementation(((command: string[]) => ({
+    exitCode: 0,
+    stdout: Buffer.from(
+      command.includes("--show-toplevel")
+        ? resolve(import.meta.dir, "../..")
+        : "abcdef1".padEnd(40, "0")
+    ),
+    stderr: Buffer.alloc(0),
+    success: true,
+  })) as any);
+});
+afterEach(() => {
+  gitSpy.mockRestore();
+});
+
+const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
+  clientUrl: "http://localhost:5173",
+  serverUrl: "http://localhost:3000",
+  serverListenHost: "0.0.0.0",
+  serverPort: 3000,
+  bangumiApiUrl: "https://api.bgm.tv",
+  bangumiImageUrl: "",
+  sentryDsn: "https://mockkey@o000000.ingest.sentry.io/100001",
+  sentryAllowedProjectIds: ["100001"],
+  ...overrides,
+});
+
+/** 拿到传给 SDK 的真实 options，从而直接驱动 beforeSend / beforeSendSpan / beforeSendMetric 三条出口。 */
+const captureInitOptions = () => {
+  let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
+  const init = spyOn(Sentry, "init").mockImplementation((input) => {
+    options = input;
+    return undefined;
+  });
+  initServerSentry(createMockEnv());
+  init.mockRestore();
+  return options!;
+};
+
+describe("Sentry (服务端异常监控托管与优雅排空)", () => {
+  beforeEach(() => {
+    _resetServerSentryForTest();
+  });
+
+  afterEach(() => {
+    _resetServerSentryForTest();
+  });
+
+  describe("initServerSentry & isServerSentryEnabled", () => {
+    it("未配置 sentryDsn 时保持未启用状态", () => {
+      const env = createMockEnv({ sentryDsn: undefined });
+      initServerSentry(env);
+      expect(isServerSentryEnabled()).toBe(false);
+    });
+
+    it("配置 sentryDsn 时成功调用 Sentry.init 并标记为已启用", () => {
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+      const env = createMockEnv({
+        sentryDsn: "https://mock@o0.ingest.sentry.io/1",
+        otelDeploymentEnvironment: "staging",
+      });
+
+      initServerSentry(env);
+      expect(isServerSentryEnabled()).toBe(true);
+      expect(initSpy).toHaveBeenCalled();
+      const lastCall = initSpy.mock.calls[0]?.[0];
+      expect(lastCall?.dsn).toBe("https://mock@o0.ingest.sentry.io/1");
+      expect(lastCall?.environment).toBe("staging");
+      expect(lastCall?.release).toBeDefined();
+
+      initSpy.mockRestore();
+    });
+  });
+
+  it("省略部署环境时回落到统一的缺省环境，而不是各处自写一个", () => {
+    const options = captureInitOptions();
+    expect(options.environment).toBe(DEFAULT_DEPLOYMENT_ENVIRONMENT);
+  });
+
+  describe("未初始化状态的空操作防护", () => {
+    it("未初始化时 captureServerException 静默跳过", () => {
+      const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
+      captureServerException(new Error("Test error"));
+      expect(captureSpy).not.toHaveBeenCalled();
+      captureSpy.mockRestore();
+    });
+
+    it("未初始化时 captureServerMessage 静默跳过", () => {
+      const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+      captureServerMessage("Test message");
+      expect(captureSpy).not.toHaveBeenCalled();
+      captureSpy.mockRestore();
+    });
+
+    it("未初始化时 flushServerSentry 与 closeServerSentry 快速返回 true", async () => {
+      expect(await flushServerSentry()).toBe(true);
+      expect(await closeServerSentry()).toBe(true);
+    });
+  });
+
+  it("生产环境已初始化时发送服务心跳检查", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "production" }));
+    initSpy.mockRestore();
+    const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
+
+    captureServerCheckIn();
+
+    expect(checkInSpy).toHaveBeenCalledWith(
+      {
+        monitorSlug: "bakagame-server-heartbeat",
+        status: "ok",
+      },
+      expect.objectContaining({
+        schedule: { type: "crontab", value: "*/5 * * * *" },
+        checkinMargin: 2,
+        maxRuntime: 1,
+        timezone: "UTC",
+      })
+    );
+    checkInSpy.mockRestore();
+  });
+
+  it("非生产环境不上报心跳：本地实例既不能顶替生产，也不该凭空制造误报", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "development" }));
+    initSpy.mockRestore();
+    const checkInSpy = spyOn(Sentry, "captureCheckIn").mockImplementation(() => "check-in");
+
+    captureServerCheckIn();
+
+    expect(checkInSpy).not.toHaveBeenCalled();
+    checkInSpy.mockRestore();
+  });
+
+  it("心跳上报间隔必须落在 Cron Monitor 的 2 分钟判定裕度内，杜绝窗口间隙误报", () => {
+    // 排程为 */5 分钟、checkin_margin 为 2 分钟：间隔一旦大于裕度，
+    // 必然跨过 [T, T+2min] 之外的间隙被判定为 missed check-in。
+    const CHECKIN_MARGIN_MS = 2 * 60_000;
+    expect(SERVER_HEARTBEAT_MONITOR_SLUG).toBe("bakagame-server-heartbeat");
+    expect(SERVER_HEARTBEAT_INTERVAL_MS).toBeGreaterThan(0);
+    expect(SERVER_HEARTBEAT_INTERVAL_MS).toBeLessThanOrEqual(CHECKIN_MARGIN_MS);
+  });
+
+  describe("已初始化状态的上下文注入与异常上报", () => {
+    beforeEach(() => {
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+      initServerSentry(createMockEnv());
+      initSpy.mockRestore();
+    });
+
+    it("captureServerException 正确注入 traceId / connectionId / roomId tags 与 extras", () => {
+      const tags: Record<string, unknown> = {};
+      let extras: Record<string, unknown> | undefined;
+
+      const mockScope = fakeSentryScope({
+        setTag(key, value) {
+          tags[key] = value;
+          return mockScope;
+        },
+        setExtras(input) {
+          extras = input;
+          return mockScope;
+        },
+      });
+
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(mockScope));
+      const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
+
+      const testError = new Error("Database connection timeout");
+      const context = {
+        traceId: "trace-abc-123",
+        connectionId: "conn-xyz-456",
+        roomId: "room-789",
+        query: "SELECT 1",
+      };
+
+      captureServerException(testError, context);
+
+      expect(withScopeSpy).toHaveBeenCalled();
+      expect(captureSpy).toHaveBeenCalledWith(testError);
+      expect(tags.traceId).toBe("trace-abc-123");
+      expect(tags.connectionId).toBe("conn-xyz-456");
+      expect(tags.roomId).toBe("room-789");
+      expect(extras).toEqual(context);
+
+      withScopeSpy.mockRestore();
+      captureSpy.mockRestore();
+    });
+
+    it("captureServerException 在无 context 时安全上报", () => {
+      const dummyScope = fakeSentryScope();
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(dummyScope));
+      const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
+
+      const err = new Error("Simple error");
+      captureServerException(err);
+
+      expect(captureSpy).toHaveBeenCalledWith(err);
+
+      withScopeSpy.mockRestore();
+      captureSpy.mockRestore();
+    });
+
+    it("captureServerMessage 正确注入 tags 并指定 level", () => {
+      const tags: Record<string, unknown> = {};
+      let extras: Record<string, unknown> | undefined;
+
+      const mockScope = fakeSentryScope({
+        setTag(key, value) {
+          tags[key] = value;
+          return mockScope;
+        },
+        setExtras(input) {
+          extras = input;
+          return mockScope;
+        },
+      });
+
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(mockScope));
+      const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+
+      captureServerMessage("High memory alert", "warning", {
+        traceId: "tr-alert",
+        memoryUsage: "92%",
+      });
+
+      expect(captureSpy).toHaveBeenCalledWith("High memory alert", "warning");
+      expect(tags.traceId).toBe("tr-alert");
+      expect(extras).toEqual({ traceId: "tr-alert", memoryUsage: "92%" });
+
+      withScopeSpy.mockRestore();
+      captureSpy.mockRestore();
+    });
+
+    it("captureServerMessage 上报前清洗消息文本里的凭据与直链签名", () => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(
+        fakeWithScope(fakeSentryScope())
+      );
+      const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+
+      captureServerMessage(
+        "取流失败 https://mxx.163.com/track/a.mp3?signature=dummysignaturevalue 凭据 token=dummytokenvalue",
+        "error"
+      );
+
+      const sent = captureSpy.mock.calls[0]?.[0];
+      expect(sent).not.toContain("dummysignaturevalue");
+      expect(sent).not.toContain("dummytokenvalue");
+      expect(sent).toContain("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+      expect(sent).toContain("token=***[REDACTED]");
+      expect(captureSpy.mock.calls[0]?.[1]).toBe("error");
+
+      withScopeSpy.mockRestore();
+      captureSpy.mockRestore();
+    });
+  });
+
+  describe("flushServerSentry & closeServerSentry 优雅停机排空", () => {
+    beforeEach(() => {
+      const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+      initServerSentry(createMockEnv());
+      initSpy.mockRestore();
+    });
+
+    it("flushServerSentry 成功排空缓冲事件", async () => {
+      const flushSpy = spyOn(Sentry, "flush").mockResolvedValue(true);
+      const result = await flushServerSentry(1500);
+      expect(result).toBe(true);
+      expect(flushSpy).toHaveBeenCalledWith(1500);
+      flushSpy.mockRestore();
+    });
+
+    it("flushServerSentry 发生异常时平滑降级返回 false", async () => {
+      const flushSpy = spyOn(Sentry, "flush").mockRejectedValue(new Error("Network down"));
+      const result = await flushServerSentry(1500);
+      expect(result).toBe(false);
+      flushSpy.mockRestore();
+    });
+
+    it("closeServerSentry 成功关闭并重置初始化状态", async () => {
+      const closeSpy = spyOn(Sentry, "close").mockResolvedValue(true);
+      expect(isServerSentryEnabled()).toBe(true);
+
+      const result = await closeServerSentry(2000);
+      expect(result).toBe(true);
+      expect(closeSpy).toHaveBeenCalledWith(2000);
+      expect(isServerSentryEnabled()).toBe(false);
+
+      closeSpy.mockRestore();
+    });
+
+    it("closeServerSentry 发生异常时安全置为未启用并返回 false", async () => {
+      const closeSpy = spyOn(Sentry, "close").mockRejectedValue(new Error("Close timeout"));
+      const result = await closeServerSentry(1000);
+      expect(result).toBe(false);
+      expect(isServerSentryEnabled()).toBe(false);
+      closeSpy.mockRestore();
+    });
+  });
+});
+
+describe("服务端遥测统一脱敏出口", () => {
+  afterEach(() => {
+    _resetServerSentryForTest();
+  });
+
+  it("递归保留 Error 诊断、共享引用与循环 cause，同时屏蔽原始 sample", () => {
+    const error = new Error("upstream token=dummy-private-token");
+    error.cause = error;
+    const shared = { password: "dummy-password", roomId: "room-safe" };
+    const cleaned = redactData({
+      error,
+      left: shared,
+      right: shared,
+      sample: '{"cookie":"dummy-cookie"',
+      url: "https://example.com/?token=dummy-query&song=1",
+    }) as any;
+    expect(cleaned.error.errorName).toBe("Error");
+    expect(cleaned.error.stack).toContain("Error:");
+    expect(cleaned.error.cause).toBe("[CIRCULAR]");
+    expect(cleaned.left).toEqual(cleaned.right);
+    expect(cleaned.left.roomId).toBe("room-safe");
+    for (const secret of ["dummy-private-token", "dummy-password", "dummy-cookie", "dummy-query"])
+      expect(JSON.stringify(cleaned)).not.toContain(secret);
+    expect(cleaned.url).toContain("song=1");
+    expect(describeError(error).cause).toBe("[CIRCULAR]");
+  });
+
+  it("登录验证码与口令同级 100% 掩码，身份凭证仍保留前 4 位", () => {
+    const cleaned = redactData({
+      loginCode: "888888",
+      otp: "123456",
+      verifyCode: "242424",
+      captcha: "9977",
+      sessionToken: "dummy-session-long",
+      roomId: "room-safe",
+    }) as Record<string, unknown>;
+    for (const key of ["loginCode", "otp", "verifyCode", "captcha"])
+      expect(cleaned[key]).toBe("***[REDACTED]");
+    expect(cleaned.sessionToken).toBe("dumm***[REDACTED]");
+    expect(cleaned.roomId).toBe("room-safe");
+
+    const text = redactLogText("投递登录验证码 loginCode=888888 与 otp: 123456，房间 room-safe");
+    expect(text).not.toContain("888888");
+    expect(text).not.toContain("123456");
+    expect(text).toContain("room-safe");
+  });
+
+  it("原生 beforeSend / beforeSendLog 清理非 wrapper 事件且保留完整异常栈结构", async () => {
+    let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
+    const init = spyOn(Sentry, "init").mockImplementation((input) => {
+      options = input;
+      return undefined;
+    });
+    try {
+      initServerSentry(createMockEnv());
+      const frames = Array.from({ length: 40 }, (_, i) => ({
+        function: `frame${i}`,
+        lineno: i,
+        filename: "https://example.com/module?password=dummy-query",
+        vars: { sessionToken: "dummy-session-long" },
+      }));
+      const event: any = {
+        event_id: "dummy-event",
+        extra: { nested: { password: "dummy-password", cookie: "dummy-cookie-long" } },
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "authorization: Bearer dummy-bearer-value",
+              stacktrace: { frames },
+            },
+          ],
+        },
+        breadcrumbs: [
+          {
+            category: "http",
+            data: { cookie: "dummy-cookie-long" },
+            message: "password=dummy-password",
+          },
+        ],
+      };
+      const result = await options!.beforeSend!(event, {});
+      expect((result as any).exception.values[0].stacktrace.frames).toHaveLength(40);
+      expect((result as any).exception.values[0].stacktrace.frames[39].function).toBe("frame39");
+      expect((result as any).event_id).toBe("dummy-event");
+      for (const secret of [
+        "dummy-password",
+        "dummy-cookie-long",
+        "dummy-session-long",
+        "dummy-bearer-value",
+        "dummy-query",
+      ])
+        expect(JSON.stringify(result)).not.toContain(secret);
+      const log = options!.beforeSendLog!({
+        level: "warn",
+        message: "token=dummy-log-token",
+        attributes: { nested: { password: "dummy-password" } },
+      });
+      expect(log!.level).toBe("warn");
+      expect(JSON.stringify(log)).not.toContain("dummy-log-token");
+      expect(JSON.stringify(log)).not.toContain("dummy-password");
+    } finally {
+      init.mockRestore();
+    }
+  });
+
+  it("wrapper 日志和 extras 在 SDK 调用前已清理；异常本体交由 beforeSend 保留分组", () => {
+    const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    const logs = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
+    let extras: Record<string, unknown> | undefined;
+    const scope = fakeSentryScope({
+      setExtras(input) {
+        extras = input;
+        return scope;
+      },
+    });
+    const scoped = spyOn(Sentry, "withScope").mockImplementation(fakeWithScope(scope));
+    const exception = spyOn(Sentry, "captureException").mockImplementation(() => "");
+    try {
+      initServerSentry(createMockEnv());
+      const context = {
+        password: "dummy-password",
+        nested: { cookie: "dummy-cookie-long" },
+        traceId: "trace-safe",
+      };
+      captureServerLog("password=dummy-password", "error", context);
+      expect(JSON.stringify(logs.mock.calls)).not.toContain("dummy-password");
+      const error = new Error("failure");
+      captureServerException(error, context);
+      expect(exception).toHaveBeenCalledWith(error);
+      expect(JSON.stringify(extras)).not.toContain("dummy-cookie-long");
+      expect(extras!.traceId).toBe("trace-safe");
+    } finally {
+      init.mockRestore();
+      logs.mockRestore();
+      scoped.mockRestore();
+      exception.mockRestore();
+    }
+  });
+});
+
+/**
+ * F05：一次性 WS 建连凭据 `ticket` 走 URL 查询串进入握手，SDK 的自动 URL 采集会把整串
+ * 存成事件/span 属性。这里的断言口径是「任何采集出口都拿不到票据明文」——
+ * 键表、文本链、URL 查询串清洗、span 与 metric 出口逐一覆盖。
+ */
+describe("一次性建连凭据 ticket 不进任何采集出口", () => {
+  const TICKET = "TICKETdummysupersecretvalue";
+  const WS_URL = `https://example.invalid/api/cee/ws?clientType=desktop&ticket=${TICKET}&room=1`;
+
+  it("ticket 与口令同级全掩码，非敏感查询参数原样保留", () => {
+    const cleaned = redactData({
+      ticket: TICKET,
+      channelTicket: TICKET,
+      roomId: "room-safe",
+    }) as Record<string, unknown>;
+    expect(cleaned.ticket).toBe("***[REDACTED]");
+    expect(cleaned.channelTicket).toBe("***[REDACTED]");
+    expect(cleaned.roomId).toBe("room-safe");
+    expect(redactLogText(`握手票据 ticket=${TICKET} 与 ticket: ${TICKET}`)).not.toContain(TICKET);
+
+    const scrubbed = redactUrlQuery(WS_URL);
+    expect(scrubbed).not.toContain(TICKET);
+    expect(scrubbed).toContain("clientType=desktop");
+    expect(scrubbed).toContain("room=1");
+    // 无查询串与未知参数不受影响：清洗只针对键表命中的参数。
+    expect(redactUrlQuery("https://example.invalid/readyz")).toBe("https://example.invalid/readyz");
+  });
+
+  it("beforeSend 重写 request 的整串 URL 与查询串，span 与 metric 出口同样清洗", async () => {
+    const options = captureInitOptions();
+
+    const event: any = {
+      request: {
+        url: WS_URL,
+        query_string: `clientType=desktop&ticket=${TICKET}`,
+        headers: [
+          ["cookie", "dummy-cookie-long"],
+          ["user-agent", "Baka/1"],
+        ],
+      },
+      breadcrumbs: [{ category: "http", data: { url: WS_URL } }],
+      exception: {
+        values: [
+          { type: "Error", value: "握手失败", stacktrace: { frames: [{ filename: WS_URL }] } },
+        ],
+      },
+    };
+    const sent = (await options.beforeSend!(event, {})) as any;
+    const text = JSON.stringify(sent);
+    for (const secret of [TICKET, "dummy-cookie-long"]) expect(text).not.toContain(secret);
+    expect(sent.request.url).toContain("clientType=desktop");
+    // headers 统一回写成按键索引的对象（SDK 的声明形状），掩码只改值不改结构语义。
+    expect(sent.request.headers["cookie"]).toContain("***[REDACTED]");
+    expect(sent.request.headers["user-agent"]).toBe("Baka/1");
+    expect(sent.exception.values[0].stacktrace.frames[0].filename).toContain("room=1");
+
+    const span = options.beforeSendSpan!({
+      span_id: "aaaaaaaaaaaaaaaa",
+      trace_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      start_timestamp: 1,
+      op: "http.server",
+      description: `GET /api/cee/ws?ticket=${TICKET}`,
+      data: {
+        "url.full": WS_URL,
+        "http.target": `/api/cee/ws?ticket=${TICKET}&room=1`,
+        "http.status_code": 500,
+      },
+    } as any);
+    const spanText = JSON.stringify(span);
+    expect(spanText).not.toContain(TICKET);
+    expect(spanText).toContain("room=1");
+    expect(span.description).toContain("GET /api/cee/ws");
+
+    const metric = options.beforeSendMetric!({
+      name: "bakagame.operation.duration",
+      type: "distribution",
+      value: 12,
+      attributes: { target: `/api/cee/ws?ticket=${TICKET}`, operation: "HTTP GET /api/cee/ws" },
+    } as any);
+    expect(JSON.stringify(metric)).not.toContain(TICKET);
+    expect(metric?.attributes?.operation).toBe("HTTP GET /api/cee/ws");
+  });
+
+  it("事务事件（采样命中的整条请求）的地址、查询串、子跨度与事务名同样不含凭据原值", async () => {
+    const options = captureInitOptions();
+    expect(typeof options.beforeSendTransaction).toBe("function");
+
+    const transaction: any = {
+      type: "transaction",
+      transaction: `GET /api/cee/ws?ticket=${TICKET}`,
+      request: {
+        url: WS_URL,
+        query_string: `clientType=desktop&ticket=${TICKET}`,
+        headers: { cookie: "dummy-cookie-long", "user-agent": "Baka/1" },
+      },
+      contexts: {
+        trace: {
+          op: "http.server",
+          data: { "url.full": WS_URL, "http.target": `/api/cee/ws?ticket=${TICKET}&room=1` },
+        },
+      },
+      tags: { target: `/api/cee/ws?ticket=${TICKET}` },
+      spans: [
+        {
+          description: `GET /api/cee/ws?ticket=${TICKET}`,
+          data: { "url.full": WS_URL, "http.status_code": 101 },
+        },
+      ],
+    };
+    const sent = (await options.beforeSendTransaction!(transaction, {})) as any;
+    const text = JSON.stringify(sent);
+    for (const secret of [TICKET, "dummy-cookie-long"]) expect(text).not.toContain(secret);
+    // 非敏感部分原样保留，排障线索不受损。
+    expect(sent.request.url).toContain("clientType=desktop");
+    expect(sent.request.headers["user-agent"]).toBe("Baka/1");
+    expect(sent.transaction).toContain("GET /api/cee/ws");
+    expect(sent.contexts.trace.data["http.target"]).toContain("room=1");
+    expect(sent.spans[0].data["http.status_code"]).toBe(101);
+  });
+});
+
+/**
+ * 上游解灰返回的取流直链：查询串就是有效期内可重放的凭据，而同一条记录会同时进 stdout、
+ * OTLP 与 Sentry。这里只摘查询串、保留 host+path —— 整值掩码会丢掉「命中的是哪个音源」这一
+ * 唯一的排障线索，整串放行则等于把凭据交给第三方观测平台。
+ */
+describe("音频取流直链的签名查询串不进任何遥测出口", () => {
+  const SIGNATURE = "signature=dummysignaturevalue&usign=dummyusignvalue";
+  afterEach(() => {
+    _resetServerSentryForTest();
+  });
+
+  it("摘串后保留 host 与 path，且清洗幂等", () => {
+    const cleaned = stripUrlQuery(`https://mxx.163.com/track/a.mp3?${SIGNATURE}`);
+    expect(cleaned).toBe("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    expect(cleaned).not.toContain("dummysignaturevalue");
+    expect(cleaned).not.toContain("dummyusignvalue");
+    // 同一串可能被多层出口各过一遍：占位标记里没有 `=`，二次清洗不会改写成别的形状。
+    expect(stripUrlQuery(cleaned)).toBe(cleaned);
+    // 无查询、裸问号、只有锚点的地址原样通过：清洗只针对 `key=…` 形态的尾巴。
+    for (const url of [
+      "https://mxx.163.com/track/a.mp3",
+      "https://mxx.163.com/track/a.mp3?",
+      "https://mxx.163.com/track/a.mp3#t=10",
+    ])
+      expect(stripUrlQuery(url)).toBe(url);
+  });
+
+  it("键名点名直链时不看路径形状：无扩展名的代理地址同样只摘查询串", () => {
+    const proxy = `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}`;
+    for (const key of ["audioUrl", "playUrl", "unblockUrl"]) {
+      const cleaned = redactData({ [key]: proxy, songName: "晴.Day" }) as Record<string, unknown>;
+      expect(cleaned[key]).toBe(
+        "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+      );
+      expect(cleaned.songName).toBe("晴.Day");
+    }
+  });
+
+  it("自由文本与错误文案里的媒体直链摘串，业务接口的分页参数不受影响", () => {
+    const cleaned = redactLogText(
+      `取流失败 https://mxx.163.com/track/a.mp3?${SIGNATURE} 对照 https://api.bgm.tv/characters?q=1&page=2`
+    );
+    expect(cleaned).not.toContain("dummysignaturevalue");
+    expect(cleaned).toContain("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    // 只有长成音频文件形态的路径才算直链：分页与查询参数是诊断信息，不能顺手糊掉。
+    expect(cleaned).toContain("https://api.bgm.tv/characters?q=1&page=2");
+  });
+
+  it("span 与 metric 出口的直链属性同样摘串", async () => {
+    const options = captureInitOptions();
+
+    const span = options.beforeSendSpan!({
+      span_id: "aaaaaaaaaaaaaaaa",
+      trace_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      start_timestamp: 1,
+      op: "http.server",
+      description: "GET /api/song/search",
+      data: {
+        "url.full": `https://mxx.163.com/track/a.mp3?${SIGNATURE}`,
+        "media.audio_url": `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}`,
+        "http.status_code": 200,
+      },
+    } as any);
+    const spanText = JSON.stringify(span);
+    expect(spanText).not.toContain("dummysignaturevalue");
+    expect(spanText).toContain("mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    // 带命名空间前缀的键也要命中按键分支：代理直链常常没有文件扩展名，靠路径形状认不出来。
+    expect(span.data!["media.audio_url"]).toBe(
+      "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+    );
+    expect(span.data!["http.status_code"]).toBe(200);
+
+    const metric = options.beforeSendMetric!({
+      name: "bakagame.music.unblock.duration",
+      type: "distribution",
+      value: 12,
+      attributes: { audioUrl: `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}` },
+    } as any);
+    expect(JSON.stringify(metric)).not.toContain("dummysignaturevalue");
+    expect(metric?.attributes?.audioUrl).toBe(
+      "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+    );
+  });
+});
+
+it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () => {
+  const originalRelease = Bun.env.SENTRY_RELEASE,
+    originalNodeEnv = Bun.env.NODE_ENV;
+  const release = spyOn(Release, "resolveServerRelease").mockReturnValue(undefined);
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const warning = spyOn(process.stderr, "write").mockImplementation((() => true) as any);
+  try {
+    Bun.env.SENTRY_RELEASE = "arbitrary-legacy-producer";
+    Bun.env.NODE_ENV = "production";
+    initServerSentry(createMockEnv());
+    const options = init.mock.calls[0]![0]!;
+    expect(options.release).toBe(""); // 显式禁用 SDK 的 undefined 自动探测。
+    expect(options.environment).toBe("development"); // 不重新解析 NODE_ENV。
+    const warnings = warning.mock.calls.map(([chunk]) => String(chunk));
+    expect(warnings.some((line) => line.includes("发布证据缺失或无效"))).toBe(true);
+  } finally {
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE;
+    else Bun.env.SENTRY_RELEASE = originalRelease;
+    if (originalNodeEnv === undefined) delete Bun.env.NODE_ENV;
+    else Bun.env.NODE_ENV = originalNodeEnv;
+    release.mockRestore();
+    init.mockRestore();
+    warning.mockRestore();
+  }
+});
+
+it("Sentry 只消费 Env 的环境标记并保持 canonical 七位 release", () => {
+  const originalRelease = Bun.env.SENTRY_RELEASE;
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  try {
+    Bun.env.SENTRY_RELEASE = "v2.0.0-rc1";
+    initServerSentry(createMockEnv({ otelDeploymentEnvironment: "test" }));
+    const options = init.mock.calls[0]![0]!;
+    expect(options.environment).toBe("test");
+    expect(options.release).toMatch(/^V\d+\.\d+\.\d+（abcdef1）$/);
+    expect(options.release).not.toBe(Bun.env.SENTRY_RELEASE);
+  } finally {
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE;
+    else Bun.env.SENTRY_RELEASE = originalRelease;
+    init.mockRestore();
+  }
+});
+
+describe("部署环境标记的安全态（缺省即失败，不静默切池）", () => {
+  beforeEach(() => {
+    // 同文件更早的用例会真实置位初始化标记，本组断言必须从干净状态出发。
+    _resetServerSentryForTest();
+  });
+
+  it("已配 SENTRY_DSN 但环境标记未显式注入时拒绝初始化", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(() => initServerSentry(createMockEnv({ deploymentMarkerExplicit: false }))).toThrow(
+        /DEPLOYMENT_ENVIRONMENT/
+      );
+      expect(initSpy).not.toHaveBeenCalled();
+      expect(isServerSentryEnabled()).toBe(false);
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
+
+  it("标记显式注入才初始化；未配 DSN 时不存在采集面，不触发缺标拒绝", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      initServerSentry(createMockEnv({ deploymentMarkerExplicit: true }));
+      expect(initSpy).toHaveBeenCalledTimes(1);
+      // 没有 DSN 的实例没有任何会被污染的面，缺标记照常静默停用（本地开发零负担）。
+      initServerSentry(createMockEnv({ sentryDsn: undefined, deploymentMarkerExplicit: false }));
+      expect(initSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
+
+  it("装配 env 时：四个标记来源全缺或只有空赋值都算未显式注入，任一非空即算注入", () => {
+    const keys = [
+      "DEPLOYMENT_ENVIRONMENT",
+      "OTEL_DEPLOYMENT_ENVIRONMENT",
+      "OTEL_RESOURCE_ATTRIBUTES",
+      "NODE_ENV",
+    ] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      expect(readEnv().deploymentMarkerExplicit).toBe(false);
+      // 照 .env.example 抄下来的 `DEPLOYMENT_ENVIRONMENT=` 空赋值视同未设置。
+      Bun.env.DEPLOYMENT_ENVIRONMENT = "";
+      expect(readEnv().deploymentMarkerExplicit).toBe(false);
+      Bun.env.DEPLOYMENT_ENVIRONMENT = "production";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+      delete Bun.env.DEPLOYMENT_ENVIRONMENT;
+      Bun.env.NODE_ENV = "development";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+      delete Bun.env.NODE_ENV;
+      Bun.env.OTEL_RESOURCE_ATTRIBUTES = "deployment.environment=staging";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+});
+
+describe("ignoreErrors 边界：采集链路自身故障不进忽略名单", () => {
+  it("名单只保留可判别的客户端断开文案；隧道文案与宽子串一律移除", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation(() => undefined);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      initServerSentry(createMockEnv());
+      const options = initSpy.mock.calls[0]![0]! as { ignoreErrors?: string[] };
+      const list = options.ignoreErrors ?? [];
+      expect(list).toContain("WebSocket is not open");
+      // 这些子串曾把隧道自身故障与其它上游（网易云/Bangumi/DB）的真实网络故障一起吞掉；
+      // 隧道故障的出口改在 SentryTunnel 的 failureReporter（专用指标 + 限频聚合 issue）。
+      for (const forbidden of [
+        "Connection reset by peer",
+        "Sentry tunnel upstream unavailable",
+        "Sentry tunnel upstream timeout",
+        "Internal Sentry tunnel error",
+      ]) {
+        expect(list).not.toContain(forbidden);
+      }
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
+});

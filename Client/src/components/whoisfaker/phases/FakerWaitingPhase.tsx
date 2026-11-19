@@ -1,0 +1,347 @@
+import { useState } from "react";
+import { Check, X, Gamepad2, Settings, Eye, EyeOff, VenetianMask } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { ReadyProgress } from "@/components/common/room/ReadyProgress";
+import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
+import { SettingStepper } from "@/components/common/room/settings/NumberFields";
+import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import {
+  RoomBasicsFields,
+  canSaveRoomBasics,
+  roomBasicsPayload,
+  type RoomBasicsValues,
+} from "@/components/common/room/RoomBasicsFields";
+import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
+import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerCommandMap } from "@/lib/WhoIsFakerWs";
+import type { GameSendCommand } from "@/lib/GameWs";
+import { errorText } from "@/lib/ErrorMessage";
+import { useWaitingSettingsSave } from "@/hooks/UseWaitingSettingsSave";
+import { useFakerPhaseAction } from "./UseFakerPhaseAction";
+import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
+import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
+import type { RoleConfig, RoleLimits, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+
+const notifyCopyFailed = () =>
+  useWhoIsFakerStore.getState().showToast("复制失败，请手动复制", "error");
+
+export function FakerWaitingPhase() {
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
+  const showToast = useWhoIsFakerStore((s) => s.showToast);
+  const me = snapshot.players.find((p) => p.id === privateState?.playerId);
+  const isHost = me?.isHost ?? false;
+
+  const activePlayers = snapshot.players.filter((p) => p.membership === "active");
+  const nonHostActive = activePlayers.filter((p) => !p.isHost);
+  const canSoloStart = snapshot.testMode && isHost && nonHostActive.length === 0;
+  const allReady =
+    canSoloStart || (nonHostActive.length > 0 && nonHostActive.every((p) => p.isReady));
+  const readyCount = nonHostActive.filter((p) => p.isReady).length;
+  const showProgress = nonHostActive.length > 0;
+
+  // 与猜歌同口径：准备、开始在等服务端应答期间显示加载态并禁用，避免连点发出相反的两条命令。
+  const { exec, busy, pending } = useFakerPhaseAction();
+  const readying = pending === "ready";
+  const starting = pending === "start";
+  const handleReady = () => void exec("player.setReady", { ready: !me?.isReady }, { key: "ready" });
+  const handleStart = () => void exec("game.advancePhase", undefined, { key: "start" });
+
+  // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
+  const restoring = useRoomSettingsRestore("faker", snapshot.roomId, async (memory) => {
+    await sendCommand("room.updateSettings", {
+      revealRoleOnDeath: memory.revealRoleOnDeath,
+      // 上次没有记这个字段时按默认（关闭）重放，不把旧记忆解释成「打开」。
+      spectatorsSeeAnswers: memory.spectatorsSeeAnswers ?? false,
+      roleConfig: memory.roleConfig,
+    });
+  });
+  if (restoring) return <RoomRestoreFallback />;
+
+  if (isHost) {
+    return (
+      <HostWaitingPanel
+        snapshot={snapshot}
+        showProgress={showProgress}
+        readyCount={readyCount}
+        nonHostTotal={nonHostActive.length}
+        allReady={allReady}
+        starting={starting}
+        onStart={handleStart}
+        sendCommand={sendCommand}
+        showToast={showToast}
+      />
+    );
+  }
+
+  // 非房主视角：与房主同一份设置结构，只读；底部是准备按钮。
+  return (
+    <div className="mx-auto w-full max-w-md space-y-5">
+      <PhaseHeader icon={Gamepad2} title="等待开始" />
+      <RoomLinkShare path={`/whoisfaker/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
+      {showProgress && (
+        <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" />
+      )}
+      <FakerSettings snapshot={snapshot} readOnly sendCommand={sendCommand} showToast={showToast} />
+      {me?.membership === "active" && (
+        <div className="flex justify-center">
+          <Button
+            variant={me.isReady ? "outline" : "default"}
+            size="lg"
+            disabled={busy}
+            loading={readying}
+            onClick={handleReady}
+            data-agent-control="faker.ready"
+          >
+            {/* 进行中只把图标换成转圈，文案不变，按钮宽度不跳 */}
+            {me.isReady ? (
+              <>{readying ? null : <X className="h-4 w-4" />}取消准备</>
+            ) : (
+              <>{readying ? null : <Check className="h-4 w-4" />}准备</>
+            )}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 房主视角 ────────────────────────────────────────────── */
+
+interface HostWaitingPanelProps {
+  snapshot: WhoIsFakerRoomSnapshot;
+  showProgress: boolean;
+  readyCount: number;
+  nonHostTotal: number;
+  allReady: boolean;
+  starting?: boolean;
+  onStart: () => void;
+  sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
+  showToast: (text: string, type?: "info" | "error" | "success") => void;
+}
+
+function HostWaitingPanel({
+  snapshot,
+  showProgress,
+  readyCount,
+  nonHostTotal,
+  allReady,
+  starting,
+  onStart,
+  sendCommand,
+  showToast,
+}: HostWaitingPanelProps) {
+  return (
+    <div className="mx-auto w-full max-w-md space-y-5">
+      <PhaseHeader icon={Gamepad2} title="等待玩家加入" />
+
+      <RoomLinkShare path={`/whoisfaker/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
+
+      {/* 进度条：有其他玩家时显示 */}
+      {showProgress && <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" />}
+
+      <FakerSettings
+        key={snapshot.status.roundId || snapshot.roomId}
+        snapshot={snapshot}
+        readOnly={false}
+        sendCommand={sendCommand}
+        showToast={showToast}
+      />
+
+      {/* 开始按钮 */}
+      <Button
+        size="lg"
+        disabled={!allReady || starting}
+        loading={starting}
+        onClick={onStart}
+        className="w-full text-base"
+        data-agent-control="faker.start"
+      >
+        {allReady
+          ? "开始游戏"
+          : nonHostTotal === 0
+            ? "等待玩家加入"
+            : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
+      </Button>
+    </div>
+  );
+}
+
+/* ── 阵营配置 ────────────────────────────────────────────── */
+
+/** 按当前人数上限夹住阵营配置，与服务端 clampRoleConfig 同口径：保存、步进器、开关与只读视图都读这一份。 */
+function effectiveRoleConfig(config: RoleConfig, limits: RoleLimits): RoleConfig {
+  return {
+    undercoverCount: Math.max(1, Math.min(config.undercoverCount, limits.maxUndercoverCount)),
+    hasAngel: limits.canEnableAngel && config.hasAngel,
+    hasBlank: limits.canEnableBlank && config.hasBlank,
+  };
+}
+
+/* ── 设置（房主可改，其他人只读） ───────────────────────── */
+
+interface FakerSettingsProps {
+  snapshot: WhoIsFakerRoomSnapshot;
+  readOnly: boolean;
+  sendCommand: GameSendCommand<WhoIsFakerCommandMap>;
+  showToast: (text: string, type?: "info" | "error" | "success") => void;
+}
+
+/** 当前快照里的设置：非房主直接读它，房主的草稿也从它起步。 */
+const settingsOf = (snapshot: WhoIsFakerRoomSnapshot) => ({
+  name: snapshot.name,
+  isPrivate: snapshot.visibility === "private",
+  password: "",
+  allowSpectators: snapshot.allowSpectators,
+  revealRoleOnDeath: snapshot.settings.revealRoleOnDeath ?? true,
+  spectatorsSeeAnswers: snapshot.settings.spectatorsSeeAnswers ?? false,
+  ...snapshot.settings.roleConfig,
+});
+
+/**
+ * 发送边界：防抖窗口与卸载冲刷里 props 还停在上一次提交，房主可能已经开局、换房或移交了房主，
+ * 所以在这里读 Store 现值，三个条件缺一不可（Engineering §6）。
+ */
+const liveFakerRoom = (roomId: string): WhoIsFakerRoomSnapshot | null => {
+  const { snapshot, privateState } = useWhoIsFakerStore.getState();
+  if (!snapshot || snapshot.roomId !== roomId || snapshot.status.phase !== "waiting") return null;
+  return snapshot.players.find((p) => p.id === privateState?.playerId)?.isHost ? snapshot : null;
+};
+
+/**
+ * 两组折叠设置：「身份设置」管阵营与揭露规则，「房间设置」管房间本身；两组共用一份草稿、一条防抖自动保存。
+ * 非房主看到同一份结构，字段只显示取值，读的是当前快照而不是草稿。
+ */
+function FakerSettings({ snapshot, readOnly, sendCommand, showToast }: FakerSettingsProps) {
+  const limits = snapshot.roleLimits;
+  const [draft, setDraft] = useState(() => settingsOf(snapshot));
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const [roomOpen, setRoomOpen] = useState(false);
+  const values = readOnly ? settingsOf(snapshot) : draft;
+  const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  const editBasics = <K extends keyof RoomBasicsValues>(key: K, value: RoomBasicsValues[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
+  const roleConfig = effectiveRoleConfig(values, limits);
+
+  useWaitingSettingsSave({
+    value: {
+      ...roomBasicsPayload(draft),
+      revealRoleOnDeath: draft.revealRoleOnDeath,
+      spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
+      roleConfig: effectiveRoleConfig(draft, limits),
+    },
+    enabled:
+      !readOnly &&
+      snapshot.status.phase === "waiting" &&
+      canSaveRoomBasics(draft, snapshot.hasPassword),
+    liveRoom: () => liveFakerRoom(snapshot.roomId),
+    send: async (payload) => {
+      await sendCommand("room.updateSettings", payload);
+      return payload;
+    },
+    // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
+    remember: (payload) =>
+      saveRoomSettingsMemory("faker", {
+        revealRoleOnDeath: payload.revealRoleOnDeath,
+        spectatorsSeeAnswers: payload.spectatorsSeeAnswers,
+        roleConfig: payload.roleConfig,
+      }),
+    onError: (error) => showToast(errorText(error, "操作失败，请重试"), "error"),
+  });
+
+  return (
+    <SettingsStack>
+      <SettingsAccordion
+        icon={VenetianMask}
+        title="身份设置"
+        open={rolesOpen}
+        onOpenChange={setRolesOpen}
+        readOnly={readOnly}
+        summary={[
+          `${roleConfig.undercoverCount} 名卧底`,
+          roleConfig.hasAngel ? "天使" : "",
+          roleConfig.hasBlank ? "白板" : "",
+          values.revealRoleOnDeath ? "死亡揭露身份" : "死亡隐藏身份",
+        ]}
+      >
+        <SettingsFields>
+          <SettingStepper
+            label="卧底人数"
+            description={`上限 ${limits.maxUndercoverCount}`}
+            value={roleConfig.undercoverCount}
+            minimum={1}
+            maximum={limits.maxUndercoverCount}
+            format={(value) => `${value} 名`}
+            onChange={(value) => edit("undercoverCount", value)}
+          />
+          <SettingSwitchRow
+            label="天使"
+            description={limits.canEnableAngel ? "同时拿到两个词，属于好人阵营。" : "8 人开启"}
+            checked={roleConfig.hasAngel}
+            disabled={!limits.canEnableAngel}
+            onCheckedChange={(value) => edit("hasAngel", value)}
+          />
+          <SettingSwitchRow
+            label="白板"
+            description={limits.canEnableBlank ? "没有词语，只知道词性。" : "8 人开启"}
+            checked={roleConfig.hasBlank}
+            disabled={!limits.canEnableBlank}
+            onCheckedChange={(value) => edit("hasBlank", value)}
+          />
+          <SettingSwitchRow
+            label="死亡时揭露身份"
+            icon={Eye}
+            checked={values.revealRoleOnDeath}
+            onCheckedChange={(value) => edit("revealRoleOnDeath", value)}
+          />
+        </SettingsFields>
+      </SettingsAccordion>
+
+      <SettingsAccordion
+        icon={Settings}
+        title="房间设置"
+        open={roomOpen}
+        onOpenChange={setRoomOpen}
+        readOnly={readOnly}
+        summary={[
+          values.isPrivate ? "私密房间" : "公开房间",
+          values.allowSpectators ? "允许旁观" : "不允许旁观",
+          values.spectatorsSeeAnswers ? "旁观可见答案" : "旁观隐藏答案",
+        ]}
+      >
+        <SettingsFields>
+          <RoomBasicsFields
+            values={values}
+            onEdit={editBasics}
+            nameMaxLength={40}
+            passwordField={!readOnly}
+            hasPassword={snapshot.hasPassword}
+          >
+            <SettingSwitchRow
+              label="旁观者可见答案"
+              description="局中把双侧词语、全员身份与投票预览发给旁观者；关闭时旁观者看不到答案，结算后照常公开。"
+              icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
+              checked={values.spectatorsSeeAnswers}
+              onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
+            />
+          </RoomBasicsFields>
+        </SettingsFields>
+      </SettingsAccordion>
+
+      <McpSettingsSection
+        allowAgents={snapshot.settings.allowAgents === true}
+        isHost={!readOnly}
+        onChangeAllowAgents={async (value) => {
+          await sendCommand("room.updateSettings", { allowAgents: value });
+        }}
+      />
+    </SettingsStack>
+  );
+}

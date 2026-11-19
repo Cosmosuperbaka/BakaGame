@@ -1,0 +1,153 @@
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it } from "vitest";
+import { CLOUD_SYNC_STORAGE_KEY, getCloudSyncEnabled, setCloudSyncEnabled } from "@/lib/CloudSync";
+import { setPageControl } from "@/stores/UsePageControl";
+import {
+  getSoundEnabled,
+  getSoundVolume,
+  setSoundEnabled,
+  setSoundVolume,
+  SOUND_STORAGE_KEY,
+  SOUND_VOLUME_STORAGE_KEY,
+} from "@/lib/SoundEffects";
+import {
+  setThemeId,
+  setThemePreference,
+  THEME_ID_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+} from "@/lib/Theme";
+import { DEFAULT_THEME_ID, THEMES } from "@/themes/Registry";
+import { SettingsEntry } from "./SettingsEntry";
+
+const resetPreferences = () => {
+  document.documentElement.classList.remove("dark");
+  setThemePreference("system");
+  setThemeId(DEFAULT_THEME_ID);
+  setSoundEnabled(true);
+  setSoundVolume(1);
+  setPageControl({ status: "off" });
+  setCloudSyncEnabled(true);
+};
+
+beforeEach(resetPreferences);
+
+const openSettings = async (agentsBlocked?: boolean) => {
+  const user = userEvent.setup();
+  render(<SettingsEntry agentsBlocked={agentsBlocked} />);
+  await user.click(screen.getByRole("button", { name: "设置" }));
+  return { user, dialog: await screen.findByRole("dialog") };
+};
+
+describe("SettingsEntry", () => {
+  it("齿轮入口打开统一设置面板，四组偏好都在同一处", async () => {
+    const { user, dialog } = await openSettings();
+    expect(dialog).toHaveTextContent("设置");
+    expect(within(dialog).getByRole("switch", { name: "交给 Agent 操作" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("radiogroup", { name: "主题" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("radiogroup", { name: "明暗" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "提示音" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "启用云同步" })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "连接信息" }));
+    expect(dialog).toHaveTextContent("/api/mcp");
+    expect(dialog).toHaveTextContent("站点连接");
+  });
+
+  it("主题按注册表逐款列出，切换立即写入本地偏好与 data-theme", async () => {
+    const { user, dialog } = await openSettings();
+    const group = within(dialog).getByRole("radiogroup", { name: "主题" });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios.map((radio) => radio.getAttribute("value"))).toEqual(THEMES.map((t) => t.id));
+    expect(within(group).getByRole("radio", { name: DEFAULT_THEME_ID })).toBeChecked();
+
+    // 先切到其余各款再切回默认：每一次都是真实的变化，都要落盘并落到 <html>。
+    const order = [...THEMES.filter((t) => t.id !== DEFAULT_THEME_ID), { id: DEFAULT_THEME_ID }];
+    for (const { id } of order) {
+      if (id === DEFAULT_THEME_ID && order.length === 1) break;
+      await user.click(within(group).getByRole("radio", { name: id }));
+      expect(window.localStorage.getItem(THEME_ID_STORAGE_KEY)).toBe(id);
+      expect(document.documentElement.dataset.theme).toBe(id);
+      expect(within(group).getByRole("radio", { name: id })).toBeChecked();
+    }
+    // 主题与明暗互不牵连：切主题不改明暗偏好。
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).not.toBe("dark");
+  });
+
+  it("明暗三档立即写入本地偏好", async () => {
+    const { user, dialog } = await openSettings();
+    const group = within(dialog).getByRole("radiogroup", { name: "明暗" });
+    await user.click(within(group).getByRole("radio", { name: "深色" }));
+
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(within(group).getByRole("radio", { name: "深色" })).toBeChecked();
+  });
+
+  it("提示音开关与音量分别持久化", async () => {
+    const { user, dialog } = await openSettings();
+    const soundSwitch = within(dialog).getByRole("switch", { name: "提示音" });
+    await user.click(soundSwitch);
+
+    expect(getSoundEnabled()).toBe(false);
+    expect(window.localStorage.getItem(SOUND_STORAGE_KEY)).toBe("0");
+    expect(within(dialog).getByRole("slider", { name: "音量" })).toHaveAttribute("data-disabled");
+
+    await user.click(soundSwitch);
+    const slider = within(dialog).getByRole("slider", { name: "音量" });
+    slider.focus();
+    await user.keyboard("{ArrowLeft}");
+
+    expect(getSoundVolume()).toBeCloseTo(0.95, 5);
+    expect(window.localStorage.getItem(SOUND_VOLUME_STORAGE_KEY)).toBe("0.95");
+  });
+
+  it("开启接管后展示一次性配对码与交给 Agent 的指令", async () => {
+    setPageControl({ status: "open", code: "ABCD2345", expiresAt: Date.now() + 60_000 });
+    const { dialog } = await openSettings();
+
+    expect(within(dialog).getByText("ABCD2345")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "复制码" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "复制指令" })).toBeInTheDocument();
+    // 接管开关不是本地偏好：配对本就该一次一码，刷新即失效。
+    expect(window.localStorage.getItem("bakagame:mcp-link")).toBeNull();
+  });
+
+  it("云同步开关持久化", async () => {
+    const { user, dialog } = await openSettings();
+    await user.click(within(dialog).getByRole("switch", { name: "启用云同步" }));
+
+    expect(getCloudSyncEnabled()).toBe(false);
+    expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
+  });
+
+  it("云同步对 Agent 不可见，且与其它小节是同级兄弟（才画得出分隔线）", async () => {
+    const { dialog } = await openSettings();
+    const section = within(dialog)
+      .getByRole("switch", { name: "启用云同步" })
+      .closest("section[data-agent-sensitive]");
+    expect(section).not.toBeNull();
+    // 分隔线由「不是第一节」的兄弟选择器给出：外面再包一层，它就成了自己父级里的第一节。
+    expect(section?.previousElementSibling?.tagName).toBe("SECTION");
+  });
+
+  it("房间内与任何页面是同一块配对入口；房主开了 MCP 才能交给 Agent", async () => {
+    const { dialog } = await openSettings(false);
+    expect(within(dialog).getByRole("switch", { name: "交给 Agent 操作" })).toBeEnabled();
+    expect(dialog).not.toHaveTextContent("会话凭证");
+  });
+
+  it("房间没开 MCP 时说明原因，开关不可用", async () => {
+    const { dialog } = await openSettings(true);
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeDisabled();
+    expect(dialog).toHaveTextContent("本房间未开启 MCP");
+  });
+
+  it("配对码区块对 Agent 不可见，配对成功后设置面板自动收起", async () => {
+    setPageControl({ status: "open", code: "ABCD2345", expiresAt: Date.now() + 60_000 });
+    const { dialog } = await openSettings();
+    expect(within(dialog).getByText("ABCD2345").closest("[data-agent-sensitive]")).not.toBeNull();
+    act(() => setPageControl({ status: "controlled", agentName: "BakaAgent" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});

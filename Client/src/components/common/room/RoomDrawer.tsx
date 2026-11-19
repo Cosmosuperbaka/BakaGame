@@ -1,0 +1,102 @@
+import { useRef, type ReactNode, type RefObject } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { AnimatePresence, motion } from "framer-motion";
+import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
+import { OverlayPanelTitleBar } from "@/components/ui/Sheet";
+import { useCloseFrom } from "@/hooks/UseCloseFrom";
+import { sheetSlide } from "@/lib/motion/Choreography";
+import { cn } from "@/lib/Utils";
+
+/**
+ * 移动端覆盖面板（玩家、聊天、发言历史）。
+ *
+ * 基于 Radix Dialog：焦点锁定在面板内、Esc 与点背板关闭、读屏得到面板标题，关闭后焦点回到入口按钮。
+ * 不使用 Portal：面板渲染在房间主体容器里，绝对定位只覆盖顶栏以下的区域，顶栏始终可见——
+ * 但 modal 语义仍在：面板打开期间顶栏对读屏与指针都不可达，「可见」不等于「可点」。
+ * 自左侧滑入的是玩家与历史，自右侧滑入的是聊天，与桌面端各自栏位的方向一致。
+ */
+export function RoomDrawer({
+  open,
+  onOpenChange,
+  side,
+  title,
+  closeFrom,
+  className,
+  children,
+  triggerRef,
+  fallbackFocusRef,
+}: {
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+  fallbackFocusRef?: RefObject<HTMLButtonElement | null>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  side: "left" | "right";
+  title: string;
+  /** 该面板在此断点及以上常驻显示，视口放大越过它时自动关闭覆盖面板 */
+  closeFrom: "md" | "xl";
+  /** 宽度等尺寸类，默认左侧 `w-72`、右侧 `w-80` */
+  className?: string;
+  children: ReactNode;
+}) {
+  const restoreFallback = useRef(false);
+  useCloseFrom(
+    open,
+    (next) => {
+      restoreFallback.current = true;
+      onOpenChange(next);
+    },
+    closeFrom
+  );
+
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <AnimatePresence>
+        {open ? (
+          <>
+            <DialogPrimitive.Overlay forceMount asChild>
+              <OverlayBackdrop placement="container" />
+            </DialogPrimitive.Overlay>
+            <DialogPrimitive.Content
+              forceMount
+              asChild
+              aria-describedby={undefined}
+              onOpenAutoFocus={() => {
+                restoreFallback.current = false;
+              }}
+              onCloseAutoFocus={
+                triggerRef
+                  ? (event) => {
+                      event.preventDefault();
+                      const target = restoreFallback.current
+                        ? fallbackFocusRef?.current
+                        : triggerRef.current;
+                      if (target?.isConnected) target.focus();
+                    }
+                  : undefined
+              }
+            >
+              <motion.aside
+                custom={side}
+                variants={sheetSlide}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                // 贴边同色实影补上落位过冲露出的缝，静止时落在房间容器之外被裁掉（同 Sheet）。
+                className={cn(
+                  "absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg",
+                  side === "left"
+                    ? "left-0 border-r [--tw-ring-shadow:-1rem_0_0_0_var(--color-panel)]"
+                    : "right-0 border-l [--tw-ring-shadow:1rem_0_0_0_var(--color-panel)]",
+                  className ?? (side === "left" ? "w-72" : "w-80")
+                )}
+              >
+                <OverlayPanelTitleBar title={title} />
+                <div className="min-h-0 flex-1">{children}</div>
+              </motion.aside>
+            </DialogPrimitive.Content>
+          </>
+        ) : null}
+      </AnimatePresence>
+    </DialogPrimitive.Root>
+  );
+}

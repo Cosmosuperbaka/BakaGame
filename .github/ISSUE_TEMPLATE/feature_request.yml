@@ -1,0 +1,27 @@
+name: 功能建议
+description: 想要新玩法、新设置，或者觉得哪里不好用
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 关于哪部分
+      options:
+        - Who is Faker（谁是卧底）
+        - Songuessr（猜歌）
+        - CEE（猜动漫角色）
+        - 全站或其他
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 哪里不方便
+      description: 你想做什么，现在为什么做不到或做起来麻烦。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望怎样
+      description: 想到什么写什么，不用考虑实现。

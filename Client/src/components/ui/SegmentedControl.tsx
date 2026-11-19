@@ -1,0 +1,100 @@
+import * as React from "react";
+import { motion } from "framer-motion";
+import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
+import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
+import { tappable } from "@/lib/motion/Feedback";
+import { cn } from "@/lib/Utils";
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  /**
+   * 选项内容。除文字外也允许品牌图标与状态点这类复合内容：
+   * 分段控件的语义只有「选中/未选中」，标签里多出来的图形不改变可选值，
+   * 可访问名由内容本身算出，图形侧请自带 `aria-hidden`，状态文字用 `sr-only` 补。
+   */
+  label: React.ReactNode;
+  disabled?: boolean;
+}
+
+interface SegmentedControlProps<T extends string> {
+  value: T;
+  options: SegmentedOption<T>[];
+  onValueChange: (value: T) => void;
+  /** 页面上已有可见标签时改传 `aria-labelledby` 指向它，二者给一个即可。 */
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
+  /** `sm` 用于工具条等密集区域，高度与 `Button size="sm"` 对齐。 */
+  size?: "default" | "sm";
+  className?: string;
+}
+
+const SIZES = {
+  default: { root: "h-9 p-1", item: "px-4 text-sm" },
+  sm: { root: "h-8 p-0.5", item: "px-3 text-xs" },
+} as const;
+
+/**
+ * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供。
+ * 外形与步进器、年份范围同一种全圆角凹槽：宽度贴合选项（各段等宽、取最长一段），不再横跨整行；
+ * 选中的那一颗是胶囊底块（`SlidingIndicator shape="pill"`），按量到的位置滑动，所在弹窗缩放开合时不跟着飘。
+ * 需要撑满时调用处传 `w-full`。
+ */
+export function SegmentedControl<T extends string>({
+  value,
+  options,
+  onValueChange,
+  size = "default",
+  className,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+}: SegmentedControlProps<T>) {
+  const groupId = React.useId();
+  const sizing = SIZES[size];
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const rect = useIndicatorRect(rootRef, "[data-checked]", value);
+  return (
+    <div
+      ref={rootRef}
+      role="radiogroup"
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+      className={cn(
+        "relative inline-grid w-fit max-w-full auto-cols-fr grid-flow-col items-center rounded-full bg-muted text-muted-foreground",
+        sizing.root,
+        className
+      )}
+    >
+      <SlidingIndicator rect={rect} shape="pill" />
+      {options.map((option) => {
+        const checked = option.value === value;
+        return (
+          <motion.label
+            key={option.value}
+            {...(option.disabled ? undefined : tappable)}
+            // 视觉隐藏的原生 radio 才是聚焦停靠点；label 只承载按压动画，
+            // 不显式排除的话会被 framer-motion 因 whileTap 自动加上 tabIndex=0。
+            tabIndex={-1}
+            data-checked={checked || undefined}
+            className={cn(
+              "relative flex h-full min-w-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full font-ui font-medium transition-colors",
+              sizing.item,
+              checked ? "text-foreground" : !option.disabled && "hover:text-foreground",
+              option.disabled && "cursor-not-allowed opacity-50"
+            )}
+          >
+            <input
+              type="radio"
+              name={groupId}
+              value={option.value}
+              checked={checked}
+              disabled={option.disabled}
+              onChange={() => onValueChange(option.value)}
+              className="sr-only"
+            />
+            <span className="relative">{option.label}</span>
+          </motion.label>
+        );
+      })}
+    </div>
+  );
+}

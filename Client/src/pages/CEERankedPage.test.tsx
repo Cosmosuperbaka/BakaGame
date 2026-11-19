@@ -1,0 +1,345 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, MemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CEE_RANKED_SEASONS } from "@bakagame/shared/values";
+import { formatRankedSeasonStart } from "@/components/cee/ranked/CEERankedFormat";
+import { TooltipProvider } from "@/components/ui/Tooltip";
+import { RANKED_IDLE_STATE, rankedProfile, rankedSeries } from "@/stories/fixtures/CEERanked";
+import { useAccountStore } from "@/stores/UseAccountStore";
+import { useCEEStore } from "@/stores/UseCEEStore";
+import { useCEERankedStore } from "@/stores/UseCEERankedStore";
+import CEERankedPage from "./CEERankedPage";
+
+const initialAccount = useAccountStore.getState();
+const initialCEE = useCEEStore.getState();
+const initialRanked = useCEERankedStore.getState();
+
+/** 模拟壳注入的桥接：页面只认它的存在，不在这里走签名。 */
+const installShell = () => {
+  window.__BAKA_CHANNEL__ = {
+    clientType: "desktop",
+    platform: "windows",
+    clientVersion: "1.0.0",
+    channelTicket: "",
+    selfCheck: vi.fn(),
+  } as never;
+};
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <TooltipProvider>
+        <CEERankedPage />
+      </TooltipProvider>
+    </MemoryRouter>
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete window.__BAKA_CHANNEL__;
+  useAccountStore.setState(initialAccount, true);
+  useCEEStore.setState(initialCEE, true);
+  useCEERankedStore.setState(initialRanked, true);
+});
+
+describe("CEERankedPage", () => {
+  it("网页端只给客户端下载说明，不自行推断准入", () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    renderPage();
+
+    expect(screen.getByRole("heading", { level: 1, name: /^排位赛/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "排位赛只在客户端开放" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /开始匹配/ })).not.toBeInTheDocument();
+  });
+
+  it("客户端未登录时引导登录", () => {
+    installShell();
+    useAccountStore.setState({ status: "guest", profile: null });
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: "登录后参加排位赛" })).toBeInTheDocument();
+  });
+
+  it("账号状态还在读取时不渲染正文", () => {
+    installShell();
+    useAccountStore.setState({ status: "loading", profile: null });
+    renderPage();
+
+    expect(screen.queryByRole("heading", { name: /登录后参加排位赛|排位赛只在客户端开放/ })).toBe(
+      null
+    );
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+  });
+
+  it("已登录但排位未就绪时，连接中占位写出可见文字", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({ ready: false, syncFailed: false, state: null, profile: null });
+    renderPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("正在连接排位…");
+    expect(screen.getByText("正在连接排位…")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+  });
+
+  it("状态请求失败时给出说明与重试入口", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({ ready: false, syncFailed: true, state: null, profile: null });
+    renderPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("暂时读不到排位状态");
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
+  });
+
+  it("点重试再发一次状态请求，在途期间入口转圈并挡住连点", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    // 与真实 store 同一口径：发出即撤下失败、记下重试在途，回包前一直挂着。
+    const retryStatus = vi.fn(() => {
+      useCEERankedStore.setState({ syncFailed: false, syncRetrying: true });
+      return new Promise<void>(() => {});
+    });
+    useCEERankedStore.setState({
+      ready: false,
+      syncFailed: true,
+      syncRetrying: false,
+      state: null,
+      profile: null,
+      retryStatus,
+    });
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    expect(retryStatus).toHaveBeenCalledTimes(1);
+    const retry = screen.getByRole("button", { name: "重试" });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("暂时读不到排位状态");
+    fireEvent.click(retry);
+    expect(retryStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("就绪后按状态给出排位首页", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: RANKED_IDLE_STATE,
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "开始匹配" })).toBeInTheDocument();
+    expect(screen.getByText("1532")).toBeInTheDocument();
+  });
+
+  it("有进行中的赛季时标题旁挂赛季徽章，并写出赛季截止日期", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: RANKED_IDLE_STATE,
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    expect(screen.getByText("S1 赛季")).toBeInTheDocument();
+    expect(screen.getByText("本赛季至 12月31日")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始匹配" })).toBeEnabled();
+  });
+
+  it("赛季还没开始时不挂徽章，匹配置灰并写出开赛日期", () => {
+    const next = CEE_RANKED_SEASONS[0];
+    if (!next) throw new Error("赛季清单里至少要有 S1");
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: RANKED_IDLE_STATE,
+      profile: { ...rankedProfile("rated"), season: null, nextSeason: next },
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    expect(screen.queryByText(/赛季$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始匹配" })).toBeDisabled();
+    expect(
+      screen.getByText(`排位赛季还没开始，${formatRankedSeasonStart(next.startsAt)} 开赛`)
+    ).toBeInTheDocument();
+  });
+
+  it("赛季已结束且没有下个赛季时，匹配置灰只说本赛季已结束", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: RANKED_IDLE_STATE,
+      profile: { ...rankedProfile("rated"), season: null, nextSeason: null },
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    expect(screen.queryByText(/赛季$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始匹配" })).toBeDisabled();
+    expect(screen.getByText("本赛季已结束")).toBeInTheDocument();
+  });
+
+  it("断线时保留上一份状态只读展示：顶栏报断线，正文不可操作；连上后撤下", async () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEEStore.setState({ connected: false });
+    useCEERankedStore.setState({
+      ready: true,
+      state: { status: "series", series: rankedSeries("playing") },
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    // 不换回「正在连接排位…」占位：比分与对局照旧在，只是整块不可操作。
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    const guesses = screen.getByRole("region", { name: "你的猜测" });
+    expect(guesses.closest("[inert]")).not.toBeNull();
+    expect(screen.getAllByText("断线中...").length).toBeGreaterThan(0);
+
+    act(() => useCEEStore.setState({ connected: true }));
+    expect(screen.getByRole("region", { name: "你的猜测" }).closest("[inert]")).toBeNull();
+    await waitFor(() => expect(screen.queryAllByText("断线中...")).toEqual([]));
+  });
+
+  it("对局中途断线不释放排位页：上一份状态留着，不退回连接中占位", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEEStore.setState({ connected: true });
+    useCEERankedStore.setState({
+      ready: true,
+      state: { status: "series", series: rankedSeries("playing") },
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+    expect(screen.getByLabelText("比分 0 比 1")).toBeInTheDocument();
+
+    act(() => useCEEStore.setState({ connected: false }));
+    expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("比分 0 比 1")).toBeInTheDocument();
+  });
+
+  it("系列赛进行中时换成顶栏比分与对局主体", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: { status: "series", series: rankedSeries("playing") },
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+    });
+    renderPage();
+
+    expect(screen.getByLabelText("比分 0 比 1")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "你的猜测" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回主页" })).toBeDisabled();
+  });
+
+  it.each(["intermission", "won"] as const)(
+    "%s 阶段的答案图走排位命令，不向多人房取图",
+    async (stage) => {
+      // 懒加载图片靠视口观察器触发取图：桩成「一挂上就可见」。
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          private readonly callback: IntersectionObserverCallback;
+          constructor(callback: IntersectionObserverCallback) {
+            this.callback = callback;
+          }
+          observe() {
+            this.callback(
+              [{ isIntersecting: true } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver
+            );
+          }
+          disconnect() {}
+        }
+      );
+      installShell();
+      useAccountStore.setState({ status: "signedIn", profile: {} as never });
+      const characterImage = vi.fn(async () => "/api/bangumi/pic/answer.jpg");
+      const sendCommand = vi.fn(async () => ({}));
+      useCEEStore.setState({ sendCommand } as never);
+      useCEERankedStore.setState({
+        ready: true,
+        state: { status: "series", series: rankedSeries(stage) },
+        profile: rankedProfile("rated"),
+        loadProfile: vi.fn(async () => {}),
+        characterImage,
+      });
+      renderPage();
+
+      await waitFor(() => expect(characterImage).toHaveBeenCalled());
+      expect(sendCommand).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("CEERankedPage 的离页导航", () => {
+  /** 数据路由下才走 View Transitions；桩住浏览器入口，看两处离页导航是否都经它换页。 */
+  function renderInRouter() {
+    const startViewTransition = vi.fn((update: () => void) => {
+      update();
+      const done = Promise.resolve();
+      return { finished: done, ready: done, updateCallbackDone: done, skipTransition: () => {} };
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition,
+    });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/cee/ranked",
+          element: (
+            <TooltipProvider>
+              <CEERankedPage />
+            </TooltipProvider>
+          ),
+        },
+        { path: "/", element: <p>主页</p> },
+        { path: "/cee", element: <p>多人大厅</p> },
+      ],
+      { initialEntries: ["/cee/ranked"] }
+    );
+    render(<RouterProvider router={router} />);
+    return startViewTransition;
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "startViewTransition");
+  });
+
+  it("返回主页经统一的页面过渡换页", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const startViewTransition = renderInRouter();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回主页" }));
+
+    await screen.findByText("主页");
+    expect(startViewTransition).toHaveBeenCalled();
+  });
+
+  it("准入页的返回多人模式经统一的页面过渡换页", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const startViewTransition = renderInRouter();
+
+    fireEvent.click(screen.getByRole("link", { name: "返回多人模式" }));
+
+    await screen.findByText("多人大厅");
+    expect(startViewTransition).toHaveBeenCalled();
+  });
+});

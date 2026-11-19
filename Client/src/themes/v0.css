@@ -1,0 +1,152 @@
+/*
+ * 主题 v0：shadcn/ui 默认样式（new-york · neutral），项目最早上线时的样子。
+ * 中性灰白、无纸纹理、无暖色；系统无衬线字体，标题层与正文层同一栈；阴影取 Tailwind 默认档，
+ * 层级主要靠一层浅灰描边。核心令牌沿用 shadcn 官方取值，项目扩展令牌按同一气质补齐。
+ *
+ * 与官方取值的偏离只为过本项目的对比度与层序口径（DesignTokens.test.ts）：
+ * - 次要文字与状态色压到能在 `muted`、`secondary` 上读清（官方次要文字在 muted 上约 4.3:1）；
+ * - 焦点环、图表首档与侧栏主色与主色同值（项目约定，见默认主题注释）；
+ * - 暗色的凹陷档 `muted` 压到页面底之下，与亮色同一层序（官方暗色 muted 比卡片还亮）。
+ * 选择器写法见 v1.css 头注释；非默认主题不带兜底选择器。
+ */
+
+[data-theme="v0"] {
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.52 0.21 27.5);
+  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-solid: oklch(0.52 0.21 27.5);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.205 0 0);
+  --chart-1: oklch(0.205 0 0);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.205 0 0);
+  /* 房间工作面板与卡片同为白底，靠描边分层：shadcn 的面板就是一张张带边框的白卡。 */
+  --panel: oklch(1 0 0);
+  /* 本人气泡就是主色实底：近黑底白字，与他人的浅灰气泡一眼分开。 */
+  --bubble-self: var(--primary);
+  --bubble-self-foreground: var(--primary-foreground);
+  /* 状态色取 Tailwind 调色板同色相的深档，作文字在浅灰档上也读得清。 */
+  --success: oklch(0.49 0.095 163);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.52 0.125 55);
+  --warning-foreground: oklch(0.985 0 0);
+  --info: oklch(0.5 0.135 250);
+  --info-foreground: oklch(0.985 0 0);
+  --questioner: oklch(0.5 0.2 293);
+  --questioner-foreground: oklch(0.985 0 0);
+  /* 字体：一套系统无衬线，中文落系统 CJK 黑体；标题层与正文层同栈，层级只靠字号与字重。
+     等宽沿用 Tailwind 默认的系统等宽栈，中文同样落系统黑体。三层都不下载网页字体。 */
+  --font-kai:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: var(--font-kai);
+  --font-serif: var(--font-kai);
+  /* 控件层：按钮、标签页、分段控件与徽章，与标题层同栈。 */
+  --font-ui: var(--font-serif);
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  --radius: 0.625rem;
+  --radius-step: 2px;
+  /* Tailwind 默认阴影档：纯黑低透明度、自上而下，不偏移。 */
+  --shadow-2xs: 0 1px 0 0 rgb(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --paper-grain: none;
+  --tracking-normal: 0em;
+  --leading-scale: 1;
+}
+
+.dark[data-theme="v0"],
+.dark [data-theme="v0"] {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  /* 凹陷档压到页面底之下：叠在面板与卡片上读作凹槽，与亮色同一层序。 */
+  --muted: oklch(0.115 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  /* 文字档在暗底上很亮，实底另取深一档红配白字，不让危险按钮成为全页最亮的块。 */
+  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-solid: oklch(0.505 0.19 25);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.922 0 0);
+  --chart-1: oklch(0.922 0 0);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.922 0 0);
+  --panel: oklch(0.205 0 0);
+  /* 主色在暗色是近白，整块铺成本人气泡会成为房间页最亮的块；改取主色在面板上的一层淡底配正文色。 */
+  --bubble-self: color-mix(in oklab, var(--primary) 16%, var(--panel));
+  --bubble-self-foreground: var(--foreground);
+  --success: oklch(0.765 0.15 163);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.8 0.15 75);
+  --warning-foreground: oklch(0.145 0 0);
+  --info: oklch(0.75 0.13 237);
+  --info-foreground: oklch(0.145 0 0);
+  --questioner: oklch(0.75 0.13 295);
+  --questioner-foreground: oklch(0.145 0 0);
+  /* 暗底上纯黑 10% 看不见：同一组偏移，透明度抬到浮层仍能立起来。 */
+  --shadow-2xs: 0 1px 0 0 rgb(0 0 0 / 0.25);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.6);
+  --paper-grain: none;
+}

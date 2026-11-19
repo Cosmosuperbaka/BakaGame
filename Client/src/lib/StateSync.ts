@@ -1,0 +1,50 @@
+import { applyPatch, type Operation } from "fast-json-patch";
+import type { StatePatchOperation, StateSyncPayload } from "@bakagame/shared";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+export function isStateSyncPayload<T>(value: unknown): value is StateSyncPayload<T> {
+  if (!isRecord(value) || (value.mode !== "full" && value.mode !== "patch")) return false;
+  if (typeof value.revision !== "number") return false;
+  return value.mode === "full"
+    ? "state" in value
+    : typeof value.baseRevision === "number" && Array.isArray(value.operations);
+}
+
+export function applyStatePatch<T>(current: T, operations: StatePatchOperation[]): T {
+  const cloned = structuredClone(current);
+  const result = applyPatch(cloned as object, operations as Operation[], true);
+  return result.newDocument as T;
+}
+
+export interface StateSyncResult<T> {
+  state?: T;
+  revision?: number;
+  needsFullSync: boolean;
+}
+
+export function consumeStateSync<T>(
+  current: T | null,
+  currentRevision: number | undefined,
+  payload: unknown
+): StateSyncResult<T> {
+  if (!isStateSyncPayload<T>(payload)) {
+    return { needsFullSync: true };
+  }
+  if (payload.mode === "full") {
+    return { state: payload.state, revision: payload.revision, needsFullSync: false };
+  }
+  if (!current || currentRevision !== payload.baseRevision) {
+    return { needsFullSync: true };
+  }
+  try {
+    return {
+      state: applyStatePatch(current, payload.operations),
+      revision: payload.revision,
+      needsFullSync: false,
+    };
+  } catch {
+    return { needsFullSync: true };
+  }
+}

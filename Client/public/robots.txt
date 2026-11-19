@@ -1,0 +1,31 @@
+# BakaGame 站点抓取规则
+#
+# 所有爬虫按同一组规则抓取，包括 AI 搜索与训练用的爬虫：它们在没有具名分组时都遵守 *。
+# 只有某家需要与众不同的规则时才单独加命名分组；命名分组不继承 *，
+# 届时必须把下面的屏蔽清单在组内完整重复一遍。
+
+User-agent: *
+Allow: /
+
+# 房间页内容由服务端运行时状态决定，爬虫抓取到的只有空壳，
+# 既无索引价值又浪费抓取配额，明确屏蔽。
+Disallow: /whoisfaker/room/
+Disallow: /songuessr/room/
+Disallow: /cee/room/
+
+# 单人练习、排位与状态页同理；它们在初始 HTML 与运行时都标记 noindex。
+Disallow: /songuessr/solo
+Disallow: /cee/ranked
+Disallow: /status
+
+# 管理后台
+Disallow: /admin
+
+# 接口不是页面；只留 MCP 服务发现给 Agent 读取。
+Disallow: /api/
+Allow: /api/.well-known/
+
+Sitemap: https://game.baka.website/sitemap.xml
+
+# 写给 LLM 与 AI 搜索的站点说明
+# https://game.baka.website/llms.txt

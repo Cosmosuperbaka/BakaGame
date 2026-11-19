@@ -1,0 +1,224 @@
+import { createRequire } from "node:module";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { changeFilters, declaredOutputs, repoRoot } from "./support/Workflow.mjs";
+
+/**
+ * dorny/paths-filter 过滤集合的单测。
+ *
+ * 存在的理由（审查 F55/F56）：作业级 `if: needs.changes.outputs.<key> == 'true'` 决定一次提交
+ * 跑哪些测试，而「测试守护的文件」与「触发该测试的过滤集合」分属两处，任何人都可能只改一边。
+ * ci.yml 里的规则是自由文本，没人核对；本文件把两边钉在一起：
+ *
+ * 1. 用 YAML 解析器从 ci.yml 真实取出 `filters` 输入（不复制规则），改 workflow 会立刻反映到这里；
+ * 2. 夹具矩阵断言每类改动的入选/不入选；
+ * 3. 反向不变量：扫描 Server 测试里以仓库根为锚读取的**真实仓库文件路径**，逐条要求它命中
+ *    所在作业所需的过滤集合——新增一份被测试读取的壳文件却忘了加过滤，就会红。
+ *
+ * 匹配语义用 picomatch({ dot: true }) 近似 paths-filter 的内部实现；本文件守护的是「我们自己声明的
+ * 规则是否覆盖该覆盖的东西」，不声称复刻该 Action 的选项细节（升级 Action 若语义变化，
+ * 由这里的夹具失败暴露）。用 `node --test` 运行（`test:ci`），客户端过滤集合也由本文件守护。
+ */
+
+const require = createRequire(join(repoRoot, "Server/package.json"));
+const picomatch = require("picomatch");
+
+const filters = changeFilters();
+const matchers = new Map(
+  Object.entries(filters).map(([name, patterns]) => [
+    name,
+    patterns.map((pattern) => picomatch(pattern, { dot: true })),
+  ])
+);
+
+function hit(name, path) {
+  const rules = matchers.get(name);
+  assert.ok(rules, `ci.yml 的 filters 里没有名为 ${name} 的过滤集合`);
+  return rules.some((rule) => rule(path));
+}
+
+// 既认「以仓库根为锚的字面量」，也认 `../../Client/x` 这类向上相对的写法（McpDiscovery 就是后者）。
+const REPO_FILE =
+  /["'](?:(?:\.\.\/)+)?((?:Client|Desktop|Mobile|Agents|tools)\/[^"']+?\.[A-Za-z0-9]+)["']/g;
+// 向上相对写法本身就证明它在读仓库内别处的文件，不需要再找根锚。
+const RELATIVE_REPO_FILE =
+  /["'](?:\.\.\/)+((?:Client|Desktop|Mobile|Agents|tools)\/[^"']+?\.[A-Za-z0-9]+)["']/g;
+
+test("filters 解析本身可信：六个过滤集合都非空", () => {
+  assert.deepEqual(Object.keys(filters).sort(), [
+    "android",
+    "client",
+    "desktop",
+    "e2e",
+    "knip",
+    "server",
+  ]);
+  for (const [name, patterns] of Object.entries(filters))
+    assert.ok(patterns.length > 0, `${name} 过滤集合为空，等于该作业永不触发`);
+});
+
+test("过滤名与 steps.filter 对外导出的名字一一对应", () => {
+  assert.deepEqual(declaredOutputs().sort(), Object.keys(filters).sort());
+});
+
+/**
+ * 反向不变量（F55 的正解）：测试真正读到的仓库文件必须触发跑到该测试的作业。
+ * 口径：文件里以 `import.meta.dir, "../.."` 为根锚，再用字面量相对路径读取一个带扩展名的仓库文件。
+ * 临时目录夹具（如 Release.test.ts 的 `join(f.root, "Client/src/data")`）没有根锚，天然不误入。
+ */
+for (const [filter, dir] of [
+  ["server", "Server/test"],
+  ["client", "Client/src"],
+]) {
+  const root = join(repoRoot, dir);
+  const files = readdirSync(root, { recursive: true })
+    .filter((name) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(name))
+    .sort();
+  if (files.length === 0) continue;
+  const guarded = new Set();
+  for (const name of files) {
+    const source = readFileSync(join(root, name), "utf8");
+    const rooted = /import\.meta\.dir,\s*["']\.\.\/\.\.["']/.test(source);
+    for (const match of source.matchAll(rooted ? REPO_FILE : RELATIVE_REPO_FILE))
+      guarded.add(match[1]);
+  }
+  test(`${dir} 读取的仓库内其他文件都在 ${filter} 过滤里（当前 ${guarded.size} 项）`, () => {
+    for (const path of guarded) assert.equal(hit(filter, path), true, path);
+  });
+}
+
+test("向上相对写法的字面量也会被护栏识别（防正则回退）", () => {
+  const sample = 'new URL("../../Client/public/llms.txt", import.meta.url)';
+  assert.deepEqual(
+    [...sample.matchAll(RELATIVE_REPO_FILE)].map((match) => match[1]),
+    ["Client/public/llms.txt"]
+  );
+  assert.deepEqual(
+    [...sample.matchAll(REPO_FILE)].map((match) => match[1]),
+    ["Client/public/llms.txt"]
+  );
+});
+
+test("被守护的具体文件清单符合预期（防解析空转）", () => {
+  const source = readFileSync(
+    join(repoRoot, "Server/test/ClientVersionConsistency.test.ts"),
+    "utf8"
+  );
+  const guarded = [...source.matchAll(REPO_FILE)].map((match) => match[1]);
+  assert.deepEqual([...new Set(guarded)].sort(), [
+    "Desktop/src-tauri/Cargo.lock",
+    "Desktop/src-tauri/Cargo.toml",
+    "Desktop/src-tauri/tauri.conf.json",
+    "Mobile/android/app/build.gradle",
+    "Mobile/package.json",
+  ]);
+});
+
+/**
+ * F61 的触发集合：工具链一致性断言读的文件必须命中 server 过滤，否则它「在跑但永不触发」，
+ * 正是 F55 那一类静默失效。清单写死在这里，脚本新读一个文件却不登记就会红。
+ */
+test("BuildToolchain.mjs 守护的文件都在 server 过滤里", () => {
+  const source = readFileSync(join(repoRoot, "Server/test/ci/BuildToolchain.mjs"), "utf8");
+  const guarded = [...source.matchAll(REPO_FILE)].map((match) => match[1]);
+  assert.deepEqual([...new Set(guarded)].sort(), [
+    "Desktop/src-tauri/Cargo.lock",
+    "Mobile/android/build.gradle",
+    "Mobile/android/gradle/wrapper/gradle-wrapper.properties",
+  ]);
+  // 该脚本还读没有目录前缀的清单与 workflow，上面的正则抓不到，逐条点名防解析空转。
+  for (const path of ["package.json", "Server/package.json", ".github/workflows/ci.yml"])
+    assert.equal(hit("server", path), true, path);
+});
+
+const cases = [
+  // F55：只改壳版本号也要跑 Server CI。
+  ["server", "Desktop/src-tauri/tauri.conf.json", true],
+  ["server", "Desktop/src-tauri/Cargo.toml", true],
+  ["server", "Desktop/src-tauri/Cargo.lock", true],
+  ["server", "Mobile/package.json", true],
+  ["server", "Mobile/android/app/build.gradle", true],
+  ["server", "Mobile/android/gradle/wrapper/gradle-wrapper.properties", true],
+  // 发布元数据：deploy.yml 把它喂给 buildServerReleaseMetadata，没有稳定 semver 要在这里红。
+  ["server", "Client/src/data/changelog.json", true],
+  // MCP 发现文档由服务端用例读取，只改它们也要跑服务端作业。
+  ["server", "Client/public/.well-known/mcp.json", true],
+  ["server", "Client/public/llms.txt", true],
+  ["server", "Server/test/ClientVersionConsistency.test.ts", true],
+  ["server", "Server/src/Index.ts", true],
+  // F56：只改依赖清单也要跑两端测试与部署门禁。
+  ["server", "pnpm-lock.yaml", true],
+  ["server", "pnpm-workspace.yaml", true],
+  ["server", "package.json", true],
+  ["server", ".github/workflows/ci.yml", true],
+  ["server", ".github/workflows/deploy.yml", true],
+  ["server", "Client/public/robots.txt", false],
+  ["server", "Client/src/App.tsx", false],
+  ["server", "Client/package.json", false],
+  ["server", "Client/src/data/Awards.ts", false],
+  ["server", "Agents/Testing.md", false],
+  ["server", "README.md", false],
+  ["server", "tools/build_bangumi_db.py", false],
+
+  ["client", "Client/src/App.tsx", true],
+  ["client", "Client/src/data/changelog.json", true],
+  ["client", "Client/package.json", true],
+  ["client", "Client/.storybook/main.ts", true],
+  ["client", "Client/e2e/App.spec.ts", false],
+  ["client", "Client/e2e/fixtures/deep/a.ts", false],
+  ["client", "Client/playwright.config.ts", true],
+  ["client", "Server/src/shared/models/A.ts", true],
+  ["client", "Server/test/ci/ServerCiFilter.mjs", false],
+  ["client", "pnpm-lock.yaml", true],
+  ["client", "pnpm-workspace.yaml", true],
+  ["client", "package.json", true],
+  ["client", "Server/src/Index.ts", false],
+  ["client", "Desktop/src-tauri/tauri.conf.json", false],
+  ["client", "Mobile/package.json", false],
+  ["client", ".github/workflows/deploy.yml", false],
+
+  // 桌面壳加载远程 URL，不内嵌前端产物：改 Client 不该重打安装包。
+  ["desktop", "Desktop/src-tauri/tauri.conf.json", true],
+  ["desktop", "Desktop/src-tauri/Cargo.lock", true],
+  ["desktop", ".github/workflows/ci.yml", true],
+  ["desktop", "Client/src/App.tsx", false],
+  ["desktop", "Mobile/package.json", false],
+  ["desktop", "Server/src/Index.ts", false],
+  ["desktop", "pnpm-lock.yaml", false],
+
+  ["android", "Mobile/android/app/build.gradle", true],
+  ["android", "Mobile/package.json", true],
+  ["android", "Mobile/package-lock.json", true],
+  ["android", "Mobile/android/app/src/main/AndroidManifest.xml", true],
+  // 安卓壳内嵌 Client 产物，前端一改 APK 内容就变。
+  ["android", "Client/src/App.tsx", true],
+  ["android", "pnpm-lock.yaml", true],
+  ["android", "pnpm-workspace.yaml", true],
+  ["android", "package.json", true],
+  ["android", "Server/src/Index.ts", false],
+  ["android", "Desktop/src-tauri/tauri.conf.json", false],
+  // 两个壳共用的 HTTPDNS 解析向量：桌面（Desktop/**）与安卓都要被它触发。
+  ["android", "Desktop/src-tauri/tests/httpdns_vectors.tsv", true],
+  ["desktop", "Desktop/src-tauri/tests/httpdns_vectors.tsv", true],
+
+  ["knip", "knip.jsonc", true],
+  ["knip", "Client/src/App.tsx", true],
+  ["knip", "Server/src/Index.ts", true],
+  ["knip", "Server/test/ci/ServerCiFilter.mjs", true],
+  ["knip", "pnpm-lock.yaml", true],
+  ["knip", "Mobile/package.json", false],
+
+  ["e2e", "Client/src/App.tsx", true],
+  ["e2e", "Server/src/Index.ts", true],
+  ["e2e", "pnpm-lock.yaml", true],
+  ["e2e", "pnpm-workspace.yaml", true],
+  ["e2e", "package.json", true],
+  ["e2e", "knip.jsonc", false],
+  ["e2e", "Agents/Spec.md", false],
+];
+
+for (const [filter, path, expected] of cases)
+  test(`${filter} OR filter ${path} => ${expected}`, () =>
+    assert.equal(hit(filter, path), expected));

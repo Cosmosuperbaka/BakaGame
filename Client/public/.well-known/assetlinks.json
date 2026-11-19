@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "website.baka.game",
+      "sha256_cert_fingerprints": [
+        "73:BD:C4:C5:50:6F:EF:C2:65:B9:52:B5:62:3B:B2:C2:21:DF:7E:F7:1F:BA:C6:A3:48:AC:7A:8E:C5:90:90:94",
+        "67:53:D6:29:C4:E9:3B:2B:12:7D:7B:5E:FD:E4:2B:A4:FC:B8:A6:4B:23:21:C9:34:35:13:47:BA:7C:B5:29:E5"
+      ]
+    }
+  }
+]

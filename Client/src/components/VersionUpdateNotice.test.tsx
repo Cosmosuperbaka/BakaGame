@@ -1,0 +1,284 @@
+import { render, screen, waitFor, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockCommitHistory } = vi.hoisted(() => ({
+  mockCommitHistory: {
+    currentCommit: "commit-v1",
+  },
+}));
+
+vi.mock("virtual:build-info", () => ({
+  get currentCommit() {
+    return mockCommitHistory.currentCommit;
+  },
+}));
+
+import { VERSION_CHECK_INTERVAL_MS, VersionUpdateNotice } from "./VersionUpdateNotice";
+
+describe("VersionUpdateNotice", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    mockCommitHistory.currentCommit = "commit-v1";
+    // 默认按生产构建环境跑，开发环境单独用用例覆盖。
+    vi.stubEnv("DEV", false);
+  });
+
+  afterEach(() => {
+    delete window.__BAKA_CHANNEL__;
+    vi.unstubAllEnvs();
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("does not check or display when running in dev environment", async () => {
+    vi.stubEnv("DEV", true);
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={true} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("移动壳不轮询网页构建：资源更新走热更新清单", async () => {
+    window.__BAKA_CHANNEL__ = {
+      clientType: "mobile",
+      platform: "android",
+      clientVersion: "0.1.2",
+    };
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={true} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("does not check or display when current commit is dev", async () => {
+    mockCommitHistory.currentCommit = "dev";
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={true} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("does not check or display when active is false", async () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={false} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("does not display notice when deployed build matches current commit", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<!doctype html><html><head><meta name="bakagame-build" content="commit-v1"></head></html>',
+    } as Response);
+
+    render(<VersionUpdateNotice />);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("displays notice with status role, message and refresh button when a newer build is deployed", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<!doctype html><html><head><meta name="bakagame-build" content="commit-v2"></head></html>',
+    } as Response);
+
+    const onReload = vi.fn();
+    const user = userEvent.setup();
+
+    render(<VersionUpdateNotice onReload={onReload} />);
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("游戏有新版本，请刷新后继续游玩");
+
+    const refreshButton = screen.getByRole("button", { name: /刷新/ });
+    expect(refreshButton).toBeInTheDocument();
+
+    await user.click(refreshButton);
+    expect(onReload).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles fetch failure or non-ok response gracefully without false alarms", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => "Bad Gateway",
+    } as Response);
+
+    render(<VersionUpdateNotice />);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("triggers check on window focus and visibilitychange", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<!doctype html><html><head><meta name="bakagame-build" content="commit-v1"></head></html>',
+    } as Response);
+    globalThis.fetch = fetchMock;
+
+    render(<VersionUpdateNotice />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    // 模拟回到前台
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // 模拟 visibilitychange 为 visible
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  it("cleans up timer and listeners on unmount", async () => {
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    const removeWindowListenerSpy = vi.spyOn(window, "removeEventListener");
+    const removeDocListenerSpy = vi.spyOn(document, "removeEventListener");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<!doctype html><html><head><meta name="bakagame-build" content="commit-v1"></head></html>',
+    } as Response);
+
+    const { unmount } = render(<VersionUpdateNotice />);
+
+    unmount();
+
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    expect(removeWindowListenerSpy).toHaveBeenCalledWith("focus", expect.any(Function));
+    expect(removeDocListenerSpy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+  });
+
+  it("在途检查期间的重复触发被合并，且请求不带取消信号", async () => {
+    let release: (() => void) | undefined;
+    const fetchSpy = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () =>
+            resolve({
+              ok: true,
+              text: async () =>
+                '<!doctype html><html><head><meta name="bakagame-build" content="commit-v1"></head></html>',
+            } as Response);
+        })
+    );
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    render(<VersionUpdateNotice active={true} />);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit;
+    expect(init.signal).toBeUndefined();
+    await act(async () => release?.());
+  });
+
+  describe("轮询节制", () => {
+    const html = (build: string) =>
+      ({
+        ok: true,
+        text: async () =>
+          `<!doctype html><html><head><meta name="bakagame-build" content="${build}"></head></html>`,
+      }) as Response;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("页面在后台时不请求，回到前台才补一次检查", async () => {
+      vi.useFakeTimers();
+      const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v1"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS * 3);
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      visibility.mockReturnValue("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("前台按固定间隔检查", async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v1"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("发现新版之后停止轮询，也不再响应聚焦与可见性变化", async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v2"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(screen.getByRole("status")).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS * 3);
+      });
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+});

@@ -1,0 +1,254 @@
+import { AnimatePresence } from "framer-motion";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { PublicProfile } from "@bakagame/shared";
+import { clearProfileCacheForTest } from "@/lib/ProfileCache";
+import { PlayerRow } from "./PlayerRow";
+
+const publicProfile = vi.hoisted(() =>
+  vi.fn<(input: { userId: string }) => Promise<PublicProfile>>()
+);
+
+vi.mock("@/lib/Api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/Api")>()),
+  api: { account: { publicProfile } },
+}));
+
+afterEach(() => {
+  clearProfileCacheForTest();
+  publicProfile.mockReset();
+});
+
+describe("PlayerRow 资料卡", () => {
+  it("房主与离线收成图标，无障碍名仍是同一份文字", () => {
+    render(
+      <>
+        <PlayerRow name="房主小明" score={12} host />
+        <PlayerRow name="掉线的小红" score={3} online={false} />
+      </>
+    );
+    // 可见的是图标；文字作为这枚图标的无障碍名（aria-label），读屏与按名定位都能命中。
+    // 状态因此不靠颜色单独表达，也不依赖一段视觉隐藏的文本。
+    for (const name of ["房主", "离线"]) {
+      const icon = screen.getByRole("img", { name });
+      expect(icon.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("已出局与测试人机同样带无障碍名", () => {
+    render(
+      <>
+        <PlayerRow name="出局的人" score={0} eliminated />
+        <PlayerRow name="人机一号" score={0} bot />
+      </>
+    );
+    // 这两个名字是 E2E 用来数人头的锚点（`getByLabel("已出局")` / `getByLabel("测试人机")`），
+    // 单测在这里先钉住，免得玩家行再改版时只剩图标、名字又一次悄悄丢掉。
+    expect(screen.getByRole("img", { name: "已出局" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "测试人机" })).toBeInTheDocument();
+  });
+
+  it("可点的行按钮名字仍是「名字 操作」，状态与分数写进它的描述，读屏不丢房主、离线与分数", () => {
+    render(
+      <>
+        <PlayerRow
+          name="房主小明"
+          score={12}
+          host
+          actions={[{ icon: null, label: "移交房主", onClick: vi.fn() }]}
+        />
+        <PlayerRow
+          name="掉线的小红"
+          score={3}
+          online={false}
+          actions={[{ icon: null, label: "移出房间", onClick: vi.fn() }]}
+        />
+      </>
+    );
+    // jsdom 的可访问描述计算不认「描述指向按钮自己的子节点」，这里直接核对被指向的那块内容；
+    // 读屏实际读到什么，由 Storybook 里的真机 AX 树实测。
+    const described = (button: HTMLElement) =>
+      document.getElementById(button.getAttribute("aria-describedby") ?? "") as HTMLElement;
+    const host = described(screen.getByRole("button", { name: "房主小明 操作" }));
+    expect(within(host).getByRole("img", { name: "房主" })).toBeInTheDocument();
+    expect(within(host).getByLabelText("12 分")).toBeInTheDocument();
+    const dropped = described(screen.getByRole("button", { name: "掉线的小红 操作" }));
+    expect(within(dropped).getByRole("img", { name: "离线" })).toBeInTheDocument();
+  });
+
+  it("游客且无操作权限时整行不可点", () => {
+    render(<PlayerRow name="游客" score={0} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("登录玩家显示账号头像，点开资料卡：账号昵称与游戏昵称分开写，QQ 号默认不公开", async () => {
+    const user = userEvent.setup();
+    publicProfile.mockResolvedValue({
+      id: "u1",
+      name: "阿狸",
+      image: "/api/account/avatar/u1?v=1",
+      qqNumber: null,
+      badges: [],
+      equippedBadge: null,
+    });
+    const { container } = render(
+      <PlayerRow
+        name="房间里的名字"
+        score={3}
+        account={{ userId: "u1", image: "/api/account/avatar/u1?v=1" }}
+      />
+    );
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(
+      "/api/account/avatar/u1?v=1"
+    );
+    await user.click(screen.getByRole("button", { name: "房间里的名字 资料" }));
+    expect(await screen.findByText("阿狸")).toBeInTheDocument();
+    expect(screen.getByText("游戏昵称 房间里的名字")).toBeInTheDocument();
+    expect(screen.getByText("QQ 号未公开")).toBeInTheDocument();
+    expect(publicProfile).toHaveBeenCalledWith({ userId: "u1" });
+  });
+
+  it("本人公开 QQ 时显示号码；同一访问内再次打开不重复请求", async () => {
+    const user = userEvent.setup();
+    publicProfile.mockResolvedValue({
+      id: "u2",
+      name: "小艾",
+      image: null,
+      qqNumber: "10001",
+      badges: [],
+      equippedBadge: null,
+    });
+    render(
+      <PlayerRow
+        name="小艾"
+        score={0}
+        account={{ userId: "u2", image: null }}
+        actions={[{ icon: null, label: "踢出玩家", onClick: () => {} }]}
+      />
+    );
+
+    const trigger = screen.getByRole("button", { name: "小艾 操作" });
+    await user.click(trigger);
+    expect(await screen.findByText("10001")).toBeInTheDocument();
+    expect(screen.queryByText(/游戏昵称/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "踢出玩家" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await user.click(trigger);
+    expect(await screen.findByText("10001")).toBeInTheDocument();
+    expect(publicProfile).toHaveBeenCalledOnce();
+  });
+
+  it("只展示佩戴中的身份徽章，并与昵称同一行渲染", async () => {
+    publicProfile.mockResolvedValue({
+      id: "u4",
+      name: "小开",
+      image: null,
+      qqNumber: null,
+      badges: [
+        { kind: "contributor", serial: null },
+        { kind: "pioneer", serial: 42 },
+      ],
+      equippedBadge: "contributor",
+    });
+    render(<PlayerRow name="小开" score={0} account={{ userId: "u4", image: null }} />);
+
+    expect(await screen.findByText("贡献者")).toBeInTheDocument();
+    expect(screen.queryByText("先行者·№42")).not.toBeInTheDocument();
+    expect(screen.getByText("小开").parentElement).toHaveTextContent("贡献者");
+  });
+
+  it("资料读取失败时就地提示，可直接重试", async () => {
+    const user = userEvent.setup();
+    // 挂载时昵称旁的徽章会先取一次资料并与资料卡共用缓存；清掉它，让打开资料卡另起一次请求来验证失败提示。
+    publicProfile.mockResolvedValueOnce({
+      id: "u3",
+      name: "某人",
+      image: null,
+      qqNumber: null,
+      badges: [],
+      equippedBadge: null,
+    });
+    render(<PlayerRow name="某人" score={0} account={{ userId: "u3", image: null }} />);
+    clearProfileCacheForTest();
+
+    publicProfile.mockRejectedValueOnce(new Error("offline"));
+    const trigger = screen.getByRole("button", { name: "某人 资料" });
+    await user.click(trigger);
+    expect(await screen.findByRole("alert")).toHaveTextContent("资料加载失败");
+
+    publicProfile.mockResolvedValueOnce({
+      id: "u3",
+      name: "重试成功",
+      image: null,
+      qqNumber: null,
+      badges: [],
+      equippedBadge: null,
+    });
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByText("重试成功")).toBeInTheDocument();
+    expect(publicProfile).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("PlayerRow 悬停底", () => {
+  it("只有能点开的行才有悬停底，不可操作的行不假装可点", () => {
+    const { container } = render(
+      <>
+        <PlayerRow name="旁观的人" score={0} />
+        <PlayerRow
+          name="可操作的人"
+          score={0}
+          actions={[{ icon: null, label: "踢出玩家", onClick: () => {} }]}
+        />
+      </>
+    );
+    const plain = screen.getByText("旁观的人").closest("div.relative");
+    expect(plain?.className).not.toContain("hover:bg-accent/40");
+    expect(screen.getByRole("button", { name: "可操作的人 操作" }).className).toContain(
+      "hover:bg-accent/40"
+    );
+    expect(container).toBeTruthy();
+  });
+});
+
+/** 玩家栏的一个分组：换组时行换 key、保留 layoutId（同 usePlayerRowKeys 的做法）。 */
+function Groups({ group }: { group: "players" | "spectators" }) {
+  return (
+    <>
+      <section aria-label="玩家">
+        <AnimatePresence>
+          {group === "players" ? (
+            <PlayerRow key="seal-0" name="海豹" score={0} layoutId="seal" />
+          ) : null}
+        </AnimatePresence>
+      </section>
+      <section aria-label="旁观">
+        <AnimatePresence>
+          {group === "spectators" ? (
+            <PlayerRow key="seal-1" name="海豹" score={0} layoutId="seal" />
+          ) : null}
+        </AnimatePresence>
+      </section>
+    </>
+  );
+}
+
+const rowShell = (label: string) =>
+  screen.getByRole("region", { name: label }).querySelector<HTMLElement>(":scope > div");
+
+describe("PlayerRow 换组", () => {
+  it("换组挂上的新行以终态出现、由布局动画带过去，不从透明起点淡入（飞行中才不会半透明）", () => {
+    const { rerender } = render(<Groups group="players" />);
+    rerender(<Groups group="spectators" />);
+    expect(rowShell("旁观")?.style.opacity).toBe("1");
+  });
+
+  it("新进来的玩家照常从 listItem 起点入场", () => {
+    render(<Groups group="spectators" />);
+    expect(rowShell("旁观")?.style.opacity).toBe("0");
+  });
+});

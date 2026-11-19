@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 站点图标与清单由构建期从同一张源图生成到产物根目录（scripts/vite-plugins/SiteIcons.ts）。 -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      首帧外观恢复：必须在样式表与入口模块之前同步执行，否则会先闪一帧默认主题或亮色。
+      主题（data-theme）与明暗（.dark）是两个独立维度，各读各的本地键，不复制任何颜色值；
+      解析逻辑与 src/lib/Theme.ts 同名键一致，两处必须同步（Theme.test.ts 核对键名与落位方式）。
+      主题的合法值与默认值不手写：构建插件从 src/themes/Registry.ts 写入下面两个占位
+      （scripts/vite-plugins/ThemeRegistry.ts），未知值一律回落默认主题。
+    -->
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const themes = __BAKAGAME_THEME_IDS__;
+        let theme = null;
+        try {
+          theme = localStorage.getItem("bakagame:theme-id");
+        } catch {
+          // 隐私模式下读不到：用默认主题。
+        }
+        root.setAttribute(
+          "data-theme",
+          themes.includes(theme) ? theme : __BAKAGAME_DEFAULT_THEME__
+        );
+
+        let stored = null;
+        try {
+          stored = localStorage.getItem("bakagame:theme");
+        } catch {
+          // 隐私模式下读不到：按系统偏好处理。
+        }
+        let dark;
+        if (stored === "light" || stored === "dark") {
+          dark = stored === "dark";
+        } else {
+          try {
+            dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch {
+            dark = false;
+          }
+        }
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
+
+    <!--
+      页面级元信息（title / description / canonical / og）一律不写在这里。
+      本站是 SPA，这些标签由各页面的 Seo 组件渲染进 <head>；
+      若在入口 HTML 里再写一份，会在 <head> 中产生同名重复标签，
+      搜索引擎遇到重复 canonical 会判定整组失效，比缺失更糟。
+      此处只保留全站共通的站点级标签与首屏兜底标题。
+    -->
+    <title>BakaGame</title>
+    <!-- Agent 发现入口：远程 MCP 端点与机器可读说明书；玩家侧只在房间的 MCP 设置里获取接入 Prompt。 -->
+    <link rel="mcp" href="/api/mcp" type="application/json" />
+    <link
+      rel="alternate"
+      type="application/json"
+      href="/.well-known/mcp.json"
+      title="MCP discovery"
+    />
+    <!-- 写给 AI 助手与爬虫的站点说明：玩法、规则与 MCP 接入。 -->
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/Main.tsx"></script>
+  </body>
+</html>

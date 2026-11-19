@@ -1,0 +1,116 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+**/*.trace
+
+# Archives
+**/*.zip
+**/*.tar.gz
+**/*.tgz
+
+# Dependencies
+node_modules
+/.pnp
+.pnp.js
+# 锁文件权威关系（详见 Agents/Conventions.md §4）：
+#   唯一权威 = 根级 pnpm-lock.yaml（workspace 安装锁，进 Git）
+#   package-lock.json / bun.lock 为历史残留，一律不保留、不进 Git
+#
+# 这里的排除**必须带根锚定并逐条列出成员**。无锚定的全局 glob 会连带忽略 Mobile/ ——
+# 而 Mobile 不是 pnpm workspace 成员（见 pnpm-workspace.yaml），npm 锁是它唯一能冻结
+# 依赖集合的手段：CI 用 `npm ci` 签出正式 APK，锁不入库就等于每次浮动解析后签名发版。
+# 新增 workspace 成员时要一并补它的排除项，否则成员的 npm 锁会误入库与 pnpm-lock 对抗。
+/package-lock.json
+/Client/package-lock.json
+/Server/package-lock.json
+/bun.lock
+/Client/bun.lock
+/Server/bun.lock
+
+# Build outputs
+dist
+dist-ssr
+coverage
+playwright-report
+test-results
+Client/dist
+Client/.generated-public
+Client/storybook-static
+Client/storybook-shots
+Server/.next/
+Server/out/
+Server/build
+
+# Environment and local config
+*.local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Tooling
+.vercel
+**/*.bun
+*.pem
+
+# Agent workspace and local memory
+.workbuddy/
+.workbuddy-tmp/
+# Agent 本地笔记（踩坑、生产相关信息）：不追踪，见 AGENTS.md「本地笔记」
+.agent-notes/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+word-bank.json
+bangumi-enrichment.sqlite
+
+# 番剧数据库不进 Git：体积大，随代码分发会吃穿仓库的带宽与存储额度
+Server/data/*.sqlite
+# 图床缓存（分片 SQLite + 清单）同样是构建产物：体积大且可由数据构建工具重跑。
+Server/data/images/
+Server/data/*.sqlite.backup
+Server/data/*.sqlite.backup.prev
+Server/data/*.sqlite.backup-journal
+Server/data/*.tagdiff.json
+
+# 运行时存储：房间快照、本地日志与索引库都落在 Server/storage，可由服务重建。
+/Server/storage/
+
+# 本地构建工具不进 Git。数据集只在首次部署时构建一次（本地跑），之后由后端
+# 自己更新（爬 API + 应用角色标签 diff），CI 不再生产数据 —— 所以
+# build_bangumi_db.py 也一并移出：它不是运行时依赖。
+# 注意：apply_tag_diff / 刷新标签的**运行时**版本在 Server/src 以 TS 实现，
+# 必须随部署走；tools/ 下这些只是本地一次性用的原型。
+tools/
+/tasks
+
+# 字体子集与上游字体下载缓存：都由 Client/scripts/build-fonts.mjs 在构建期重建。
+# 源 TTF 不随仓库分发，缓存可随时删除；站点只分发 woff2 子集。
+Client/.cache/
+Client/src/assets/fonts/lxgw-wenkai/
+Client/src/assets/fonts/lxgw-wenkai.css
+Client/src/assets/fonts/lxgw-wenkai.manifest.json
+Client/public/assets/fonts/lxgw-wenkai/
+
+# 压测运行产物（逐跳 JSON 与合成 HTML）是本地测量数据，随 HEAD 与机器而变，
+# 只作当次交付材料；复现口径见 Agents/Deployment.md §6，不进 Git。
+Server/tasks/
+/.qoder-credits
+/.mimosa
+/.qoder
+/.claude

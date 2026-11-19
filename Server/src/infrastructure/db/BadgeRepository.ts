@@ -1,0 +1,149 @@
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
+
+import {
+  BADGE_CATALOG,
+  BADGE_KINDS,
+  RETIRED_BADGE_IDS,
+  type AccountBadge,
+  type BadgeKind,
+} from "../../shared/Badges";
+import type { Database } from "./Database";
+import { badge, user, userBadge, userRegistration } from "./Schema";
+
+/**
+ * 账号徽章的读写口。目录由 `ensureCatalog` 幂等补齐并清理显式下线的类型；
+ * 授予关系只经这里写入，房间与对局快照不读这里。
+ */
+export interface BadgeRepository {
+  ensureCatalog(): Promise<void>;
+  badgesOf(userId: string): Promise<AccountBadge[]>;
+  badgesOfMany(userIds: readonly string[]): Promise<Map<string, AccountBadge[]>>;
+  /** `grantedBy` 为空表示系统自动授予；没有佩戴徽章时顺带佩戴这一枚。 */
+  grant(userId: string, badgeId: BadgeKind, grantedBy: string | null, now: Date): Promise<void>;
+  revoke(userId: string, badgeId: BadgeKind): Promise<void>;
+  /** 只保留指定账号的某类徽章；`keepUserId` 为空时清空该类徽章。 */
+  resetExclusive(badgeId: BadgeKind, keepUserId: string | null): Promise<void>;
+}
+
+const isBadgeKind = (value: string): value is BadgeKind =>
+  (BADGE_KINDS as readonly string[]).includes(value);
+
+export class DatabaseBadgeRepository implements BadgeRepository {
+  private catalog: Promise<void> | null = null;
+
+  constructor(
+    private readonly database: Database,
+    /** 显式下线的类型；缺省取共享清单。仅测试注入。 */
+    private readonly retiredIds: readonly string[] = RETIRED_BADGE_IDS
+  ) {}
+
+  ensureCatalog(): Promise<void> {
+    this.catalog ??= this.syncCatalog().catch((error: unknown) => {
+      this.catalog = null;
+      throw error;
+    });
+    return this.catalog;
+  }
+
+  private async syncCatalog(): Promise<void> {
+    const db = await this.database.client();
+    for (const entry of BADGE_CATALOG) {
+      await db
+        .insert(badge)
+        .values(entry)
+        .onDuplicateKeyUpdate({
+          set: { label: entry.label, description: entry.description, sortOrder: entry.sortOrder },
+        });
+    }
+    // 只清显式下线的类型（授予关系随外键级联）；未知类型原样保留，读取侧会跳过它们。
+    if (this.retiredIds.length > 0)
+      await db.delete(badge).where(inArray(badge.id, [...this.retiredIds]));
+  }
+
+  async badgesOf(userId: string): Promise<AccountBadge[]> {
+    return (await this.badgesOfMany([userId])).get(userId) ?? [];
+  }
+
+  async badgesOfMany(userIds: readonly string[]): Promise<Map<string, AccountBadge[]>> {
+    const unique = [...new Set(userIds)];
+    if (!unique.length) return new Map();
+    const db = await this.database.client();
+    const rows = await db
+      .select({
+        userId: userBadge.userId,
+        badgeId: userBadge.badgeId,
+        serial: userRegistration.seq,
+      })
+      .from(userBadge)
+      .innerJoin(badge, eq(userBadge.badgeId, badge.id))
+      .leftJoin(userRegistration, eq(userRegistration.userId, userBadge.userId))
+      .where(inArray(userBadge.userId, unique))
+      .orderBy(asc(badge.sortOrder));
+    const grouped = new Map<string, AccountBadge[]>();
+    for (const row of rows) {
+      // 回滚到旧版本时，库里可能有新版本才认识的类型：跳过，不下发给客户端。
+      if (!isBadgeKind(row.badgeId)) continue;
+      const kind = row.badgeId;
+      const list = grouped.get(row.userId) ?? [];
+      list.push({ kind, serial: kind === "pioneer" ? (row.serial ?? null) : null });
+      grouped.set(row.userId, list);
+    }
+    return grouped;
+  }
+
+  async grant(
+    userId: string,
+    badgeId: BadgeKind,
+    grantedBy: string | null,
+    now: Date
+  ): Promise<void> {
+    await this.ensureCatalog();
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(userBadge)
+        .values({ userId, badgeId, grantedBy, grantedAt: now })
+        .onDuplicateKeyUpdate({ set: { grantedBy, grantedAt: now } });
+      // 只在没有佩戴徽章时给新徽章让位；玩家主动选择过就不覆盖。
+      await tx
+        .update(user)
+        .set({ equippedBadge: badgeId })
+        .where(and(eq(user.id, userId), isNull(user.equippedBadge)));
+    });
+  }
+
+  async revoke(userId: string, badgeId: BadgeKind): Promise<void> {
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(userBadge)
+        .where(and(eq(userBadge.userId, userId), eq(userBadge.badgeId, badgeId)));
+      await tx
+        .update(user)
+        .set({ equippedBadge: null })
+        .where(and(eq(user.id, userId), eq(user.equippedBadge, badgeId)));
+    });
+  }
+
+  async resetExclusive(badgeId: BadgeKind, keepUserId: string | null): Promise<void> {
+    await this.ensureCatalog();
+    const db = await this.database.client();
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(userBadge)
+        .where(
+          keepUserId
+            ? and(eq(userBadge.badgeId, badgeId), ne(userBadge.userId, keepUserId))
+            : eq(userBadge.badgeId, badgeId)
+        );
+      await tx
+        .update(user)
+        .set({ equippedBadge: null })
+        .where(
+          keepUserId
+            ? and(eq(user.equippedBadge, badgeId), ne(user.id, keepUserId))
+            : eq(user.equippedBadge, badgeId)
+        );
+    });
+  }
+}

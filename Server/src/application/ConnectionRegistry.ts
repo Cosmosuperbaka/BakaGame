@@ -1,0 +1,219 @@
+import type { ConnectionRecord } from "../shared/Index";
+import { AppError } from "../domain/Errors";
+
+export class ConnectionRegistry {
+  private readonly connections = new Map<string, ConnectionRecord>();
+  private readonly roomIndex = new Map<string, Set<ConnectionRecord>>();
+  private readonly playerIndex = new Map<string, ConnectionRecord>();
+  private readonly lobbySubscribers = new Set<ConnectionRecord>();
+
+  // ==================== 席位变更入口 ====================
+  // 索引由 registerConnection 里拦截的属性赋值维护，任何一处赋值都会同步索引。
+  // 业务代码改席位一律走下面两个方法：房间与玩家成对改，不留「换了房间还挂着旧玩家」的中间态。
+  // 唯一例外是 CEE 原版适配器：它不持有本登记表，只能经属性赋值改席位，索引同样由拦截维护。
+  /** 连接与其席位彻底脱钩（房间与玩家一起清空）。 */
+  detach(connection: ConnectionRecord): void {
+    connection.roomId = undefined;
+    connection.playerId = undefined;
+  }
+
+  /** 原子地把连接绑定到某个房间的某个玩家。 */
+  attach(connection: ConnectionRecord, roomId: string, playerId: string): void {
+    connection.roomId = roomId;
+    connection.playerId = playerId;
+  }
+
+  registerConnection(connection: ConnectionRecord): void {
+    this.connections.set(connection.id, connection);
+
+    let currentRoomId = connection.roomId;
+    let currentPlayerId = connection.playerId;
+    let currentLobbySubscribed = connection.lobbySubscribed;
+
+    const updateRoomIndex = (oldRoom?: string, newRoom?: string) => {
+      if (oldRoom) {
+        const set = this.roomIndex.get(oldRoom);
+        if (set) {
+          set.delete(connection);
+          if (set.size === 0) this.roomIndex.delete(oldRoom);
+        }
+      }
+      if (newRoom) {
+        if (!this.roomIndex.has(newRoom)) {
+          this.roomIndex.set(newRoom, new Set());
+        }
+        this.roomIndex.get(newRoom)!.add(connection);
+      }
+      updateLobbyIndex();
+    };
+
+    const updatePlayerIndex = (oldPlayer?: string, newPlayer?: string) => {
+      if (oldPlayer && this.playerIndex.get(oldPlayer) === connection) {
+        this.playerIndex.delete(oldPlayer);
+      }
+      if (newPlayer) {
+        this.playerIndex.set(newPlayer, connection);
+      }
+    };
+
+    const updateLobbyIndex = () => {
+      if (currentLobbySubscribed && !currentRoomId) {
+        this.lobbySubscribers.add(connection);
+      } else {
+        this.lobbySubscribers.delete(connection);
+      }
+    };
+
+    // 初始化索引
+    if (currentRoomId) updateRoomIndex(undefined, currentRoomId);
+    if (currentPlayerId) updatePlayerIndex(undefined, currentPlayerId);
+    updateLobbyIndex();
+
+    // 拦截属性赋值，动态维护二级索引
+    Object.defineProperty(connection, "roomId", {
+      get: () => currentRoomId,
+      set: (next: string | undefined) => {
+        if (currentRoomId !== next) {
+          const prev = currentRoomId;
+          currentRoomId = next;
+          updateRoomIndex(prev, next);
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+
+    Object.defineProperty(connection, "playerId", {
+      get: () => currentPlayerId,
+      set: (next: string | undefined) => {
+        if (currentPlayerId !== next) {
+          const prev = currentPlayerId;
+          currentPlayerId = next;
+          updatePlayerIndex(prev, next);
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+
+    Object.defineProperty(connection, "lobbySubscribed", {
+      get: () => currentLobbySubscribed,
+      set: (next: boolean) => {
+        if (currentLobbySubscribed !== next) {
+          currentLobbySubscribed = next;
+          updateLobbyIndex();
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+  }
+
+  unregisterConnection(connectionId: string): ConnectionRecord | undefined {
+    const connection = this.connections.get(connectionId);
+    if (connection) {
+      this.connections.delete(connectionId);
+      if (connection.roomId) {
+        const set = this.roomIndex.get(connection.roomId);
+        if (set) {
+          set.delete(connection);
+          if (set.size === 0) this.roomIndex.delete(connection.roomId);
+        }
+      }
+      if (connection.playerId && this.playerIndex.get(connection.playerId) === connection) {
+        this.playerIndex.delete(connection.playerId);
+      }
+      this.lobbySubscribers.delete(connection);
+    }
+    return connection;
+  }
+
+  getConnection(connectionId: string): ConnectionRecord {
+    const connection = this.connections.get(connectionId);
+    if (!connection) {
+      throw new AppError("CONNECTION_NOT_FOUND", "连接不存在或已断开");
+    }
+    return connection;
+  }
+
+  findConnection(connectionId: string): ConnectionRecord | undefined {
+    return this.connections.get(connectionId);
+  }
+
+  findConnectionByPlayer(roomId: string, playerId: string): ConnectionRecord | undefined {
+    const connection = this.playerIndex.get(playerId);
+    return connection?.roomId === roomId ? connection : undefined;
+  }
+
+  /** 这条连接所在的标签页是否正被 Agent 操作：座位徽标与进房准入都看这里。 */
+  isAgentDriven(connectionId: string | undefined): boolean {
+    if (!connectionId) return false;
+    return this.connections.get(connectionId)?.agentDriven?.() === true;
+  }
+
+  /** 这张标签页坐在哪些房间：一张标签页在一款游戏里通常只有一个，这里不假设。 */
+  roomIdsOfTab(tabKey: string): string[] {
+    const rooms = new Set<string>();
+    for (const connection of this.connections.values())
+      if (connection.tabKey === tabKey && connection.roomId) rooms.add(connection.roomId);
+    return [...rooms];
+  }
+
+  getLobbySubscribers(): ConnectionRecord[] {
+    return Array.from(this.lobbySubscribers);
+  }
+
+  getRoomConnections(roomId: string): ConnectionRecord[] {
+    const set = this.roomIndex.get(roomId);
+    return set ? Array.from(set) : [];
+  }
+
+  private failedBroadcasts = 0;
+
+  broadcastToLobby(payload: unknown): void {
+    for (const conn of this.lobbySubscribers) {
+      try {
+        conn.send(payload);
+      } catch {
+        this.failedBroadcasts += 1;
+      }
+    }
+  }
+
+  broadcastToRoom(roomId: string, payload: unknown): void {
+    const roomSet = this.roomIndex.get(roomId);
+    if (!roomSet) return;
+    for (const conn of roomSet) {
+      try {
+        conn.send(payload);
+      } catch {
+        this.failedBroadcasts += 1;
+      }
+    }
+  }
+
+  broadcastToAll(payload: unknown): void {
+    for (const conn of this.connections.values()) {
+      try {
+        conn.send(payload);
+      } catch {
+        this.failedBroadcasts += 1;
+      }
+    }
+  }
+
+  findConnectionByPlayerId(playerId: string): ConnectionRecord | undefined {
+    return this.playerIndex.get(playerId);
+  }
+
+  get stats() {
+    return {
+      totalConnections: this.connections.size,
+      lobbySubscribers: this.lobbySubscribers.size,
+    };
+  }
+
+  get failedBroadcastCount(): number {
+    return this.failedBroadcasts;
+  }
+}

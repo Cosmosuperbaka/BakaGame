@@ -1,0 +1,215 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "react-router";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { TEST_ROOM_ID } from "@/config/Constants";
+import { getSavedUsername, guestName, saveUsername } from "@/lib/Storage";
+import { normalizeCEERoomId } from "@/lib/CEESession";
+import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
+import { isAbortError } from "@/lib/ErrorMessage";
+import { isProtocolError } from "@/lib/WebsocketClient";
+
+/**
+ * 房间路由只带统一房号：来源（增强房 / 原版房）由服务端的房号目录判定，
+ * 进入成功后才从快照得知，加入表单不预先假设。
+ */
+/** 归密码步处理的加入失败：缺密码、密码错误、错误次数过多。 */
+export const CEE_PASSWORD_ERROR_CODES = new Set([
+  "PASSWORD_REQUIRED",
+  "PASSWORD_INCORRECT",
+  "TOO_MANY_ATTEMPTS",
+]);
+const isPasswordFailure = (failure: unknown): boolean =>
+  isProtocolError(failure) && CEE_PASSWORD_ERROR_CODES.has(failure.code);
+
+export function useCEERoomLifecycle() {
+  const { roomId: routeRoomId } = useParams();
+  const roomId = routeRoomId ? normalizeCEERoomId(routeRoomId) : undefined;
+  const navigate = usePageNavigate();
+  const connected = useCEEStore((state) => state.connected);
+  const lobbyReady = useCEEStore((state) => state.lobbyReady);
+  const roomClosedAt = useCEEStore((state) => state.roomClosedAt);
+  // 断线保留画面、重连回座交给运行时；回座没成而房间还在时它记下失座，这里据此重走一遍入房。
+  const seatLostAt = useCEEStore((state) => state.seatLostAt);
+  // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
+  const [mountTime] = useState(() => Date.now());
+  const closed = roomClosedAt !== null && roomClosedAt >= mountTime;
+  useEffect(() => {
+    useCEEStore.getState().clearRoomClosed();
+    return () => useCEEStore.getState().clearRoomClosed();
+  }, []);
+  const [joining, setJoining] = useState(true);
+  const [needsJoin, setNeedsJoin] = useState(false);
+  const [name, setName] = useState(getSavedUsername);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  // 服务端的错误码：是否进入密码步、密码框是否标红按它判断，不匹配文案。
+  const [errorCode, setErrorCode] = useState("");
+  const fail = (failure: unknown) => {
+    setError(ceeErrorMessage(failure));
+    setErrorCode(isProtocolError(failure) ? failure.code : "");
+  };
+  /** 无法就地解决的失败：提示后回大厅，不把玩家留在永不结束的「正在加入」里。 */
+  const leaveWithNotice = (failure: unknown) => {
+    useCEEStore.getState().showToast(ceeErrorMessage(failure), "error");
+    void navigate("/cee", { replace: true });
+  };
+  const cancelled = (failure: unknown, controller: AbortController) =>
+    controller.signal.aborted || isAbortError(failure);
+  const attempted = useRef("");
+  const manualJoin = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      manualJoin.current?.abort();
+    },
+    [roomId]
+  );
+
+  /**
+   * 直链进入：房号未命中（服务重启后房间随内存清空、测试房、已关闭房间的分享链接）时，
+   * 用同一房号就地开一间增强房再进入，与另外两个游戏的直链行为一致。
+   * 密码错误、重名等其它业务拒绝保持原样报错，不触发建房。
+   */
+  const joinOrCreate = async (
+    targetRoomId: string,
+    userName: string,
+    passwordDraft: string,
+    controller: AbortController
+  ) => {
+    try {
+      await useCEEStore
+        .getState()
+        .joinRoom(targetRoomId, userName, passwordDraft, controller.signal);
+    } catch (failure) {
+      if (!isProtocolError(failure) || failure.code !== "ROOM_NOT_FOUND") throw failure;
+      await useCEEStore.getState().createRoom(
+        {
+          source: "native",
+          roomId: targetRoomId,
+          // 房间名协议上限 32：用户名最多 32 字符，「的房间」后缀要留出空间。
+          name: targetRoomId === TEST_ROOM_ID ? "CEE 测试房" : `${userName.slice(0, 29)}的房间`,
+          userName,
+          visibility: "public",
+          allowSpectators: true,
+        },
+        controller.signal
+      );
+    }
+  };
+
+  /**
+   * 直链自动进房：没存过名字就用访客名，不弹设置用户名（卧底与猜歌这时会弹名字框，三款现状不同）。
+   * 密码错误、房间已满等业务拒绝在此报出，页面按错误码决定是否转入密码步。
+   */
+  const autoJoin = async (targetRoomId: string, controller: AbortController) => {
+    const userName = name.trim() || guestName();
+    try {
+      await joinOrCreate(targetRoomId, userName, "", controller);
+      if (controller.signal.aborted) return;
+      saveUsername(userName);
+      setName(userName);
+      setNeedsJoin(false);
+    } catch (failure) {
+      if (cancelled(failure, controller)) return;
+      if (isPasswordFailure(failure)) {
+        fail(failure);
+        // 密码步只有密码框：把这次用的名字（没存过名字时是访客名）放进表单，手动确认才有名字可用。
+        // 只放进表单，不记进本机，记名字仍等进房成功。
+        setName(userName);
+        // 直链进私密房必须落到密码步；否则 needsJoin 为假，页面只剩一个永不结束的转圈。
+        setNeedsJoin(true);
+        return;
+      }
+      leaveWithNotice(failure);
+    }
+  };
+
+  useEffect(() => {
+    if (!roomId || closed) {
+      void navigate("/cee", { replace: true });
+      return;
+    }
+    if (!connected || !lobbyReady) return;
+    if (attempted.current === roomId) return;
+    attempted.current = roomId;
+    const controller = new AbortController();
+    const restore = async () => {
+      const store = useCEEStore.getState();
+      // 已在房里（含断线后保留的画面，回座由运行时负责），页面不再恢复一次。
+      if (store.roomId === roomId && store.snapshot) {
+        setJoining(false);
+        return;
+      }
+      try {
+        const restored = await store.reconnectRoom(roomId, controller.signal);
+        if (controller.signal.aborted) return;
+        // 房间确已不在时由上面的关闭分支退回大厅，这里不能再按房号开一间。
+        if (!restored && useCEEStore.getState().roomClosedAt === null)
+          await autoJoin(roomId, controller);
+      } catch (failure) {
+        if (!cancelled(failure, controller)) leaveWithNotice(failure);
+      } finally {
+        if (!controller.signal.aborted) setJoining(false);
+      }
+    };
+    void restore();
+    return () => {
+      controller.abort();
+      attempted.current = "";
+    };
+  }, [roomId, connected, lobbyReady, closed, seatLostAt, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 手动确认（密码步提交）：用表单里的名字与密码重试。 */
+  const join = async () => {
+    if (!roomId || !name.trim() || joining || manualJoin.current) return;
+    const controller = new AbortController();
+    manualJoin.current = controller;
+    setJoining(true);
+    setError("");
+    setErrorCode("");
+    try {
+      await joinOrCreate(roomId, name.trim(), password, controller);
+      if (controller.signal.aborted) return;
+      saveUsername(name.trim());
+      setNeedsJoin(false);
+    } catch (failure) {
+      if (cancelled(failure, controller)) return;
+      if (isPasswordFailure(failure)) {
+        fail(failure);
+        return;
+      }
+      leaveWithNotice(failure);
+    } finally {
+      if (manualJoin.current === controller) manualJoin.current = null;
+      if (!controller.signal.aborted) setJoining(false);
+    }
+  };
+  // 先换页、房间页卸载时再退房（另两款同一口径）：先退再走的话，跨页过渡拍下的旧页就成了
+  // 清空快照后的「正在加入」（DesignGuide §8）。换页前登记一笔，大厅挂载时房间还没让出，
+  // 据此知道退房由这里负责、不再显示骨架；失败提示由大厅等这次退房时报出。
+  const [exiting, setExiting] = useState(false);
+  useEffect(() => {
+    if (!exiting) return;
+    return () => void useCEEStore.getState().leaveRoom();
+  }, [exiting]);
+  const leave = useCallback(() => {
+    manualJoin.current?.abort();
+    useCEEStore.getState().markExit();
+    setExiting(true);
+    void navigate("/cee");
+  }, [navigate]);
+
+  return {
+    roomId,
+    connected,
+    joining,
+    needsJoin,
+    name,
+    setName,
+    password,
+    setPassword,
+    error,
+    errorCode,
+    join,
+    leave,
+  };
+}

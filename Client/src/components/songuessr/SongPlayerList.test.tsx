@@ -1,0 +1,351 @@
+import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { SonGuessrPlayerView } from "@bakagame/shared";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { SongPlayerList } from "./SongPlayerList";
+
+const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGuessrPlayerView => ({
+  id: "player-1",
+  name: "测试玩家",
+  score: 10,
+  team: null,
+  membership: "active",
+  online: true,
+  isReady: true,
+  isBot: false,
+  isHost: false,
+  roundStatus: "waiting",
+  correctGuesses: 0,
+  totalGuesses: 0,
+  roundMarks: [],
+  guessesUsed: 0,
+  ...overrides,
+});
+
+describe("SonGuessr PlayerList", () => {
+  it("本轮作答结果按枚举渲染成图标，整串作为一个图像读给读屏", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({
+        id: "host-1",
+        name: "房主小艾",
+        isHost: true,
+        roundMarks: ["correct"],
+      }),
+      createMockPlayer({ id: "player-2", name: "还没作答", isHost: false }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="host-1"
+        isHost
+        phase="roundResult"
+        allowSpectators
+      />
+    );
+
+    // 悬停与读屏给出同一份文字序列，颜色不是唯一线索。
+    expect(screen.getByRole("img", { name: "房主小艾 本轮结果：猜中" })).toBeInTheDocument();
+    // 没有作答过的玩家不产生结果条：按名字限定到结果条本身，
+    // 不去数整页的 `img` —— 房主、测试人机这类状态图标同样是图像角色。
+    expect(screen.getAllByRole("img", { name: /本轮结果：/ })).toHaveLength(1);
+  });
+
+  it("渲染房主标识与玩家基础信息", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "host-1", name: "房主小艾", isHost: true }),
+      createMockPlayer({ id: "player-2", name: "普通玩家", isHost: false }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="host-1"
+        isHost
+        phase="waiting"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("房主小艾")).toBeInTheDocument();
+    expect(screen.getByText("普通玩家")).toBeInTheDocument();
+    expect(screen.getByText("房主")).toBeInTheDocument();
+  });
+
+  it("Agent 玩家带可见徽标，不伪装成真人", () => {
+    render(
+      <SongPlayerList
+        players={[createMockPlayer({ id: "agent-1", name: "BakaAgent", isAgent: true })]}
+        myPlayerId="host-1"
+        isHost
+        phase="waiting"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("Agent")).toBeInTheDocument();
+  });
+
+  it("在等待阶段正确展示准备与等待就绪状态徽章", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "p1", name: "已准备玩家", isReady: true }),
+      createMockPlayer({ id: "p2", name: "未准备玩家", isReady: false }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="p1"
+        isHost={false}
+        phase="waiting"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("准备")).toBeInTheDocument();
+    expect(screen.getByText("等待")).toBeInTheDocument();
+  });
+
+  it("在进行中阶段正确展示抢答中、答对与出题状态", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "p1", name: "出题人", roundStatus: "submitter" }),
+      createMockPlayer({ id: "p2", name: "猜歌中玩家", roundStatus: "guessing" }),
+      createMockPlayer({ id: "p3", name: "已答对玩家", roundStatus: "correct" }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="p1"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("出题")).toBeInTheDocument();
+    expect(screen.getByText("猜歌")).toBeInTheDocument();
+    expect(screen.getByText("猜中")).toBeInTheDocument();
+  });
+
+  it("听歌识番时作答状态写「猜番」", () => {
+    render(
+      <SongPlayerList
+        players={[createMockPlayer({ id: "p2", name: "猜番中玩家", roundStatus: "guessing" })]}
+        myPlayerId="p2"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+        questionType="anime"
+      />
+    );
+
+    expect(screen.getByText("猜番")).toBeInTheDocument();
+    expect(screen.queryByText("猜歌")).not.toBeInTheDocument();
+  });
+
+  it("准确展示玩家得分数字与分值单位", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "p1", name: "高分玩家", score: 88 }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="p1"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("88")).toBeInTheDocument();
+    expect(screen.getByText("分")).toBeInTheDocument();
+  });
+
+  it("长昵称仍可完整识别并通过键盘打开管理操作", async () => {
+    const user = userEvent.setup();
+    const name = "这是一个需要截断展示的很长玩家昵称";
+    const sendCommand = vi.fn().mockResolvedValue({});
+    const originalSendCommand = useSonGuessrStore.getState().sendCommand;
+    useSonGuessrStore.setState({ sendCommand });
+
+    try {
+      render(
+        <SongPlayerList
+          players={[createMockPlayer({ name, score: 12345 })]}
+          myPlayerId="host"
+          isHost
+          phase="waiting"
+          allowSpectators={false}
+        />
+      );
+
+      expect(screen.getByText(name)).toBeInTheDocument();
+      expect(screen.getByLabelText("12345 分")).toBeInTheDocument();
+      await user.tab();
+      expect(screen.getByRole("button", { name: `${name} 操作` })).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await user.click(await screen.findByRole("button", { name: "转移房主" }));
+      expect(sendCommand).toHaveBeenCalledWith("song.room.transferHost", { playerId: "player-1" });
+    } finally {
+      useSonGuessrStore.setState({ sendCommand: originalSendCommand });
+    }
+  });
+
+  describe("房主与旁观操作的在途锁", () => {
+    const originalSendCommand = useSonGuessrStore.getState().sendCommand;
+    const originalShowToast = useSonGuessrStore.getState().showToast;
+    afterEach(() => {
+      useSonGuessrStore.setState({
+        sendCommand: originalSendCommand,
+        showToast: originalShowToast,
+      });
+    });
+
+    const renderAsHost = () =>
+      render(
+        <SongPlayerList
+          players={[
+            createMockPlayer({ id: "host-1", name: "房主小艾", isHost: true }),
+            createMockPlayer({ id: "player-2", name: "玩家甲" }),
+            createMockPlayer({ id: "player-3", name: "玩家乙" }),
+          ]}
+          myPlayerId="host-1"
+          isHost
+          phase="waiting"
+          allowSpectators
+        />
+      );
+
+    it("命令还没返回时，同一帧里连点只发一条", async () => {
+      let finish!: () => void;
+      const sendCommand = vi.fn(
+        () =>
+          new Promise<object>((resolve) => {
+            finish = () => resolve({});
+          })
+      );
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      const toggle = screen.getByRole("button", { name: "加入旁观" });
+      // 同一批事件里连点：重渲染之前按钮还没来得及禁用，只有锁挡得住第二下。
+      act(() => {
+        toggle.click();
+        toggle.click();
+      });
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+      expect(sendCommand).toHaveBeenCalledWith("song.player.setSpectator", { spectator: true });
+      await act(async () => finish());
+    });
+
+    it("转让房主在途时，另一个目标的踢出也被挡住，返回后恢复可用", async () => {
+      const user = userEvent.setup();
+      let finish!: () => void;
+      const sendCommand = vi.fn(
+        () =>
+          new Promise<object>((resolve) => {
+            finish = () => resolve({});
+          })
+      );
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      await user.click(screen.getByRole("button", { name: "玩家甲 操作" }));
+      await user.click(await screen.findByRole("button", { name: "转移房主" }));
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: "玩家乙 操作" }));
+      expect(await screen.findByRole("button", { name: "踢出玩家" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "加入旁观" })).toBeDisabled();
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+
+      await act(async () => finish());
+      expect(screen.getByRole("button", { name: "加入旁观" })).toBeEnabled();
+    });
+
+    it("命令失败时提示原因并释放锁", async () => {
+      const showToast = vi.fn();
+      const sendCommand = vi
+        .fn()
+        .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以操作" })
+        .mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never, showToast });
+      renderAsHost();
+
+      await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+      expect(showToast).toHaveBeenCalledWith("只有房主可以操作", "error");
+
+      await act(async () => screen.getByRole("button", { name: "加入旁观" }).click());
+      expect(sendCommand).toHaveBeenCalledTimes(2);
+    });
+
+    it("踢出玩家发出 kick 指令并带目标玩家编号", async () => {
+      const user = userEvent.setup();
+      const sendCommand = vi.fn().mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommand as never });
+      renderAsHost();
+
+      await user.click(screen.getByRole("button", { name: "玩家甲 操作" }));
+      await user.click(await screen.findByRole("button", { name: "踢出玩家" }));
+      expect(sendCommand).toHaveBeenCalledWith("song.room.kick", { playerId: "player-2" });
+    });
+  });
+
+  it("组队时按队伍分块：标题给合计分与共享次数，观战与队伍猜中各有状态", () => {
+    const players: SonGuessrPlayerView[] = [
+      createMockPlayer({ id: "s", name: "出题人", team: 2, roundStatus: "submitter" }),
+      createMockPlayer({ id: "o", name: "观战队友", team: 2, roundStatus: "observing", score: 4 }),
+      createMockPlayer({
+        id: "a",
+        name: "甲",
+        team: 1,
+        roundStatus: "correct",
+        guessesUsed: 2,
+        score: 3,
+      }),
+      createMockPlayer({
+        id: "b",
+        name: "乙",
+        team: 1,
+        roundStatus: "teamCorrect",
+        guessesUsed: 2,
+        score: 5,
+      }),
+      createMockPlayer({
+        id: "c",
+        name: "丙",
+        team: null,
+        roundStatus: "guessing",
+        guessesUsed: 1,
+      }),
+    ];
+
+    render(
+      <SongPlayerList
+        players={players}
+        myPlayerId="c"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+        maxGuesses={3}
+      />
+    );
+
+    const sections = screen.getAllByRole("region");
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([
+      "1 队",
+      "2 队",
+      "个人游玩",
+    ]);
+    expect(within(sections[0]!).getByLabelText("合计 8 分")).toBeInTheDocument();
+    expect(within(sections[0]!).getByText("2 人 · 2/3 次")).toBeInTheDocument();
+    expect(within(sections[0]!).getByText("队伍猜中")).toBeInTheDocument();
+    // 出题人与观战队友都不在作答，队伍标题不给次数
+    expect(within(sections[1]!).getByText("2 人")).toBeInTheDocument();
+    expect(within(sections[1]!).getByText("观战")).toBeInTheDocument();
+  });
+});

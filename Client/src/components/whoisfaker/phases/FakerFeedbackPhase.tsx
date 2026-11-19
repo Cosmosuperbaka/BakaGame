@@ -1,0 +1,207 @@
+import { motion } from "framer-motion";
+import { CircleHelp, FastForward, Sunrise, Vote } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { listContainer, listItem } from "@/lib/motion/Choreography";
+import { sunrise } from "@/lib/motion/NamedMoves";
+import { feedbackNextLabel, playerNameOf, tallyVotes } from "@/lib/WhoIsFakerHistory";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
+import type { RoundFeedback, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+import { useFakerPhaseAction } from "./UseFakerPhaseAction";
+import { GuessReadout } from "./FakerBlankGuessPhase";
+import { OutcomeLine, VoteRow } from "../layout/FakerVoteLines";
+
+/** 投票反馈：每个人投给了谁、各自得票，以及最终谁出局或进入平票 PK。 */
+function VoteFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
+  const votes = feedback.votes ?? [];
+  const tally = tallyVotes(votes);
+  const nameOf = (id: string) => playerNameOf(snapshot.players, id);
+  const eliminated = feedback.eliminatedPlayerIds.map(nameOf);
+  const candidates = (feedback.tieBreakCandidateIds ?? []).map(nameOf);
+
+  return (
+    <div className="space-y-5">
+      <PhaseHeader
+        icon={Vote}
+        title={
+          feedback.tieBreak
+            ? `第 ${feedback.day} 天 · 平票 PK 结果`
+            : `第 ${feedback.day} 天投票结果`
+        }
+        iconClassName={feedback.tieBreak ? "text-warning" : undefined}
+      />
+
+      <OutcomeLine
+        size="base"
+        names={eliminated}
+        empty={votes.length ? "无人出局" : "无人投票，无人出局"}
+        tieBreak={candidates}
+      />
+
+      {tally.length ? (
+        <section className="space-y-2 rounded-md bg-muted p-4">
+          <h3 className="text-xs font-semibold text-muted-foreground">得票</h3>
+          <motion.ul
+            className="flex flex-wrap gap-2"
+            variants={listContainer(tally.length)}
+            initial="initial"
+            animate="animate"
+          >
+            {tally.map(({ targetId, count }) => {
+              const out = feedback.eliminatedPlayerIds.includes(targetId);
+              return (
+                <motion.li key={targetId} variants={listItem}>
+                  {/* 出局者是实底红胶囊，只有描边胶囊才垫页面底：给实底胶囊垫底会把白字压在白底上 */}
+                  <Badge
+                    variant={out ? "destructive" : "outline"}
+                    className={out ? "gap-1.5" : "gap-1.5 bg-background"}
+                  >
+                    <span>{targetId === ABSTAIN_TARGET_ID ? "弃票" : nameOf(targetId)}</span>
+                    <span className="tabular-nums">{count} 票</span>
+                  </Badge>
+                </motion.li>
+              );
+            })}
+          </motion.ul>
+        </section>
+      ) : null}
+
+      {votes.length ? (
+        <section className="space-y-2 rounded-md bg-muted p-4">
+          <h3 className="text-xs font-semibold text-muted-foreground">票型</h3>
+          <motion.ul
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+            variants={listContainer(votes.length)}
+            initial="initial"
+            animate="animate"
+          >
+            {votes.map((vote) => {
+              const abstained = vote.targetId === ABSTAIN_TARGET_ID;
+              return (
+                <VoteRow
+                  key={vote.voterId}
+                  animated
+                  actor={nameOf(vote.voterId)}
+                  verb={abstained ? "选择" : "投给"}
+                  target={abstained ? "弃票" : nameOf(vote.targetId)}
+                  muted={abstained}
+                />
+              );
+            })}
+          </motion.ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/** 夜晚反馈即「天亮」：只公布谁在夜里出局，凶手留到结算历史里再揭晓。 */
+function NightFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
+  const eliminated = feedback.eliminatedPlayerIds.map((id) => playerNameOf(snapshot.players, id));
+  return (
+    <div className="space-y-5">
+      <div className="flex min-h-22 flex-col items-center justify-start text-center">
+        {/* 日出图标自下升起，与「天亮」语义一致 */}
+        <motion.span
+          className="flex h-11 w-11 items-center justify-center rounded-md bg-muted"
+          {...sunrise}
+        >
+          <Sunrise className="h-5 w-5 text-warning" />
+        </motion.span>
+        <h2 className="mt-3 text-2xl font-semibold leading-8">天亮了</h2>
+      </div>
+      <div className="space-y-1 rounded-md bg-muted px-4 py-5">
+        <p className="text-center text-xs text-muted-foreground">第 {feedback.day} 天夜里</p>
+        <OutcomeLine size="base" names={eliminated} empty="平安夜，无人出局" />
+      </div>
+    </div>
+  );
+}
+
+/** 白板猜词反馈：猜词过程全房已实时看过，这里只把最终两词与对错摆出来。 */
+function BlankGuessFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
+  const record = feedback.blankGuess;
+  const guesser = record ? playerNameOf(snapshot.players, record.playerId) : "白板";
+  return (
+    <div className="mx-auto max-w-md space-y-5">
+      <PhaseHeader icon={CircleHelp} title="白板猜词结果" iconClassName="text-warning" />
+      <p className="text-center text-sm font-medium">{guesser} 的猜测</p>
+      <GuessReadout words={record?.guessedWords} submitted />
+      <div className="flex flex-col items-center gap-1.5">
+        <Badge variant={record?.success ? "matched" : "destructive"} className="px-3 py-1 text-sm">
+          {record?.success ? "猜中" : "未猜中"}
+        </Badge>
+        {feedback.blankGuessReviewed ? (
+          <p className="text-xs text-muted-foreground">经主持人裁定</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 阶段反馈：投票、夜晚与白板猜词结算后停在这里，由出题人手动继续。
+ * 旁观者在上一阶段看过实时预览，结果页紧接着出现，读作同一件事的收尾。
+ */
+export function FakerFeedbackPhase() {
+  const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
+  const privateState = useWhoIsFakerStore((s) => s.privateState);
+  const { exec, busy } = useFakerPhaseAction();
+  const feedback = snapshot.status.feedback;
+  // 测试房跳转后可能没有出题人，服务端放开给房内任何人继续
+  const canContinue = (privateState?.isQuestioner ?? false) || snapshot.testMode;
+
+  const handleContinue = () => void exec("game.advancePhase");
+
+  if (!feedback) {
+    return <p className="py-12 text-center text-sm text-muted-foreground">结果同步中…</p>;
+  }
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6">
+      {feedback.kind === "vote" ? (
+        <VoteFeedback feedback={feedback} snapshot={snapshot} />
+      ) : feedback.kind === "night" ? (
+        <NightFeedback feedback={feedback} snapshot={snapshot} />
+      ) : (
+        <BlankGuessFeedback feedback={feedback} snapshot={snapshot} />
+      )}
+
+      <div className="flex justify-center pt-2">
+        {canContinue ? (
+          <Button
+            size="lg"
+            onClick={handleContinue}
+            loading={busy}
+            data-agent-control="faker.advance"
+          >
+            {busy ? null : <FastForward className="h-4 w-4" />}
+            {feedbackNextLabel(feedback)}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">等待主持人继续</p>
+        )}
+      </div>
+    </div>
+  );
+}

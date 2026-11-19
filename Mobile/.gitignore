@@ -1,0 +1,29 @@
+# 依赖与生成物
+node_modules/
+dist-web/
+# 热更新资源包（scripts/web-bundle.mjs 输出）：由 CI 推到对象存储，不入库
+build/
+# gradle 产物与本地配置（sdk.dir 等机器相关路径不入库）
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+android/gradlew
+android/gradlew.bat
+android/gradle/wrapper/gradle-wrapper.jar
+# cap sync 生成的 Capacitor 配置与 web 资产（由 CLI 重建，不入库避免与脚本注入产物打架）
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/capacitor.build.gradle
+android/capacitor.settings.gradle
+android/capacitor-cordova-android-plugins/
+# res/xml 下 cap sync 生成的 config.xml 不入库；网络配置文件是手写源码，必须随仓库走。
+android/app/src/main/res/xml/*
+!android/app/src/main/res/xml/network_security_config.xml
+
+# 签名材料：密钥库与口令绝不入库（正式签名走 CI secret，见 README）
+keystore/
+*.keystore
+*.jks
+*.p12

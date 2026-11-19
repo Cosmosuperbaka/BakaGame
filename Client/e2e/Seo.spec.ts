@@ -1,0 +1,314 @@
+import { SITE_ORIGIN } from "../src/data/PageMeta";
+import { test, expect, getLoopback, isLoopbackUrl } from "./fixtures/Isolation";
+
+/** 关于页里各有独立地址的三个标签：路径、标签页标题、外壳 H1。 */
+const ABOUTS_TAB_PAGES = [
+  ["/abouts/changelog", "更新日志 - BakaGame", "BakaGame 更新日志"],
+  ["/abouts/privacy", "隐私说明 - BakaGame", "BakaGame 隐私说明"],
+  ["/abouts/terms", "用户条款 - BakaGame", "BakaGame 用户条款"],
+] as const;
+
+// 该用例验证 SEO 元信息是否正确注入：
+// 本项目是 SPA，静态外壳提供爬虫正文与元信息，启动后由 Seo 组件
+// 写入当前路由的 title/description/canonical/robots，真实浏览器同时验证没有重复标签。
+// 页面标题写页面是什么，不堆搜索词；toHaveTitle 用严格相等断言，防止被悄悄加长。
+test.describe("页面 SEO 元信息", () => {
+  test("首页标题带标语，注入描述与 canonical", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("BakaGame - 1000万以内最好玩的小游戏网站");
+
+    const description = page.locator('head meta[name="description"]');
+    await expect(description).toHaveAttribute("content", /BakaGame/);
+
+    const canonical = page.locator('head link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/`);
+  });
+
+  test("谁是卧底大厅有独立标题、描述与 canonical", async ({ page }) => {
+    await page.goto("/whoisfaker");
+    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+
+    const description = page.locator('head meta[name="description"]');
+    await expect(description).toHaveAttribute("content", /谁是卧底/);
+
+    const canonical = page.locator('head link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/whoisfaker`);
+  });
+
+  test("猜歌大厅有独立标题、描述与 canonical", async ({ page }) => {
+    await page.goto("/songuessr");
+    await expect(page).toHaveTitle("Songuessr - BakaGame");
+
+    const description = page.locator('head meta[name="description"]');
+    await expect(description).toHaveAttribute("content", /Songuessr/);
+
+    const canonical = page.locator('head link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", `${SITE_ORIGIN}/songuessr`);
+  });
+
+  test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
+    await page.goto("/cee");
+    await expect(page).toHaveTitle("猜动漫角色 CEE（猜猜呗增强版） - BakaGame");
+    const description = page.locator('head meta[name="description"]');
+    await expect(description).toHaveAttribute("content", /猜动漫角色/);
+    await expect(page.locator('head meta[property="og:description"]')).toHaveAttribute(
+      "content",
+      (await description.getAttribute("content"))!
+    );
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+      "href",
+      `${SITE_ORIGIN}/cee`
+    );
+    await expect(page.locator('head meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "index,follow"
+    );
+    // 结构化数据与 FAQPage 各用固定 id 管理：运行时按 id 覆盖后仍各只有一份，不产生重复标签。
+    const structuredData = page.locator('head script[id="bakagame-structured-data"]');
+    await expect(structuredData).toHaveCount(1);
+    expect(JSON.parse((await structuredData.textContent())!)).toMatchObject({
+      "@type": ["VideoGame", "WebApplication"],
+      name: "CEE（二刺猿笑传之猜猜呗增强版）",
+      url: `${SITE_ORIGIN}/cee`,
+    });
+    const faqData = page.locator('head script[id="bakagame-faq-structured-data"]');
+    await expect(faqData).toHaveCount(1);
+    expect(JSON.parse((await faqData.textContent())!)).toMatchObject({
+      "@type": "FAQPage",
+      mainEntity: expect.arrayContaining([expect.objectContaining({ name: "猜动漫角色怎么玩？" })]),
+    });
+  });
+
+  for (const route of ["/songuessr/solo", "/cee/room/1234", "/cee/room/5678"]) {
+    test(`${route} 对局页标记 noindex`, async ({ page }) => {
+      await page.goto(route);
+      const robots = page.locator('head meta[name="robots"]');
+      await expect(robots).toHaveAttribute("content", /noindex/);
+    });
+  }
+
+  // 静态外壳只服务不执行 JS 的爬虫，对执行 JS 的客户端必须在首帧之前消失，
+  // 否则用户进站会先看到一段裸文本（曾是线上实际观感问题）。
+  // 这里把应用脚本全部掐掉，模拟「首屏 JS 最慢」的极端情况：外壳仍不得出现在页面上，
+  // 而原始 HTML 里必须留有正文——两边都不能少。
+  for (const [route, text] of [
+    ["/whoisfaker", "出题人现场写词的谁是卧底"],
+    ["/cee", "多人猜动漫角色"],
+  ]) {
+    test(`${route} 静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空`, async ({
+      page,
+      pageQuality,
+    }) => {
+      const raw = await (await getLoopback(page.request, route)).text();
+      expect(raw).toContain(text);
+      expect(raw).toContain('<div id="root"><main>');
+
+      // 本例的全部手段就是掐掉每一个脚本，被 abort 的请求必然在控制台留下资源加载失败；
+      // 那是被测手段的副产物，不是页面缺陷，故只静音这一页的这类回显。
+      pageQuality.muteResourceNoise(page);
+      await page.route("**/*.js", (route) =>
+        isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback()
+      );
+      await page.goto(route, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#root")).toBeEmpty();
+    });
+  }
+
+  // FAQ 走「外壳正文 + FAQPage 结构化数据」双通道：不执行 JS 的爬虫两种信号都能读到，
+  // 而正文位于 #root 内，随外壳在首帧前一起清空（由上面的清空用例覆盖）。
+  test("四个大厅的静态外壳均含 FAQ 问答与 FAQPage 结构化数据", async ({ page }) => {
+    for (const route of ["/", "/whoisfaker", "/songuessr", "/cee"]) {
+      const raw = await (await getLoopback(page.request, route)).text();
+      expect(raw).toContain("常见问题");
+      expect(raw).toContain('"@type":"FAQPage"');
+      expect(raw).toContain('id="bakagame-faq-structured-data"');
+    }
+  });
+
+  // 社媒卡片只渲染描述的前两行：登记页面的 og:description 必须以分享标语开头，
+  // 否则最想让人看到的一句话会被后文挤掉。构建期注入与运行时同源，这里验爬虫视角的原始 HTML。
+  test("所有登记页面的分享描述均以标语开头", async ({ page }) => {
+    for (const route of [
+      "/",
+      "/whoisfaker",
+      "/songuessr",
+      "/cee",
+      "/abouts",
+      ...ABOUTS_TAB_PAGES.map(([path]) => path),
+    ]) {
+      const raw = await (await getLoopback(page.request, route)).text();
+      expect(raw).toContain(
+        '<meta property="og:description" content="1000万以内最好玩的小游戏网站。'
+      );
+    }
+  });
+
+  // 执行脚本的抓取器读的是渲染结果：外壳在首帧前清空之后，首页必须留有指向三个大厅的真链接。
+  test("首页渲染后有指向三个大厅、版本页与状态页的站内链接", async ({ page }) => {
+    await page.goto("/");
+    for (const href of ["/whoisfaker", "/songuessr", "/cee", "/status"]) {
+      await expect(page.locator(`#root a[href="${href}"]`).first()).toBeVisible();
+    }
+    await expect(page.locator('#root a[href="/abouts/changelog"]')).toBeVisible();
+    // 资源还在加载时结束用例，夹具收尾的 unrouteAll 会偶发卡住：等页面静下来再交还。
+    await page.waitForLoadState("networkidle");
+  });
+
+  // 大厅渲染后只剩房间列表时只有几十个字；玩法说明收起时正文仍在 DOM 里（hidden=until-found）。
+  for (const route of ["/whoisfaker", "/songuessr", "/cee"]) {
+    test(`${route} 渲染后正文（含收起的玩法说明）不少于 300 字`, async ({ page }) => {
+      await page.goto(route);
+      await expect(page.getByRole("button", { name: "玩法说明" })).toBeVisible();
+      const length = await page.locator("#root").evaluate((root) => root.textContent!.length);
+      expect(length).toBeGreaterThanOrEqual(300);
+      await page.waitForLoadState("networkidle");
+    });
+  }
+
+  // 页面分块按需下载，启动清理又发生在渲染之前：这段空档里标签页标题必须仍是外壳写的那个，
+  // 不能空白（浏览器会显示网址）；Seo 挂载后改写同一个 title，head 里始终只有一个。
+  test("页面分块下载期间标题不空窗，挂载后 head 里只有一个 title", async ({ page }) => {
+    const entry = new Set(
+      [
+        ...(await (await getLoopback(page.request, "/")).text()).matchAll(
+          /(?:src|href)="(\/assets\/[^"]+\.js)"/g
+        ),
+      ].map((match) => match[1])
+    );
+    await page.route("**/assets/*.js", async (route) => {
+      if (entry.has(new URL(route.request().url()).pathname)) return route.fallback();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return route.fallback();
+    });
+    await page.addInitScript(() => {
+      const samples: { title: string; count: number }[] = [];
+      (window as unknown as { __titleSamples: typeof samples }).__titleSamples = samples;
+      setInterval(() => {
+        samples.push({
+          title: document.title,
+          count: document.head.querySelectorAll("title").length,
+        });
+      }, 10);
+    });
+
+    await page.goto("/whoisfaker");
+    await expect(page.getByRole("button", { name: "玩法说明" })).toBeVisible();
+    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+
+    const samples = await page.evaluate(
+      () =>
+        (window as unknown as { __titleSamples: { title: string; count: number }[] }).__titleSamples
+    );
+    expect(samples.length).toBeGreaterThan(20);
+    expect(samples.every((sample) => sample.title !== "")).toBe(true);
+    expect(samples.every((sample) => sample.count === 1)).toBe(true);
+    await page.waitForLoadState("networkidle");
+  });
+
+  test("左键点首页入口在当前页过渡到大厅，入口带 href", async ({ page }) => {
+    await page.goto("/");
+    const entry = page.getByRole("link", { name: "Who is Faker 开始游戏" });
+    await expect(entry).toHaveAttribute("href", "/whoisfaker");
+    await entry.click();
+    await expect(page).toHaveURL(/\/whoisfaker$/);
+    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+  });
+
+  test("未知路径显示页面不存在并标记 noindex，地址不变", async ({ page }) => {
+    await page.goto("/no-such-page-xyz");
+    await expect(page.getByRole("heading", { level: 1, name: "页面不存在" })).toBeVisible();
+    await expect(page).toHaveURL(/\/no-such-page-xyz$/);
+    await expect(page.locator('head meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "noindex,follow"
+    );
+    await expect(page.getByRole("link", { name: "回到首页" })).toHaveAttribute("href", "/");
+  });
+
+  // 托管平台按前缀把运行时地址改写到这些文件后，不执行脚本的抓取器与链接预览读到的就是它们。
+  for (const [file, title] of [
+    ["/whoisfaker/room.html", "Who is Faker 房间邀请 - BakaGame"],
+    ["/songuessr/room.html", "Songuessr 房间邀请 - BakaGame"],
+    ["/cee/room.html", "CEE 房间邀请 - BakaGame"],
+    ["/runtime.html", "BakaGame"],
+    ["/404.html", "页面不存在 - BakaGame"],
+  ]) {
+    test(`${file} 外壳只带标题、描述、分享字段与 noindex`, async ({ page }) => {
+      const raw = await (await getLoopback(page.request, file)).text();
+      expect(raw).toContain(`<title>${title}</title>`);
+      expect(raw).toContain('<meta name="robots" content="noindex,follow" data-static-seo="1" />');
+      expect(raw).toContain('<meta property="og:image:width" content="1200"');
+      expect(raw).not.toContain('rel="canonical"');
+      expect(raw).not.toContain("application/ld+json");
+      expect(raw).toContain('<div id="root"></div>');
+    });
+  }
+
+  // 标签参数不产生新页面：外壳的 canonical 收拢到关于页本身；
+  // 指向有独立地址的标签时，应用启动后原地换成那个地址，canonical 随之指过去。
+  test("关于页带标签参数时外壳 canonical 指向关于页，启动后换成标签的独立地址", async ({
+    page,
+  }) => {
+    const raw = await (await getLoopback(page.request, "/abouts?tab=privacy")).text();
+    expect(raw).toContain(
+      `<link rel="canonical" href="${SITE_ORIGIN}/abouts" data-static-seo="1" />`
+    );
+
+    await page.goto("/abouts?tab=privacy");
+    await expect(page).toHaveURL(/\/abouts\/privacy$/);
+    await expect(page).toHaveTitle("隐私说明 - BakaGame");
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+      "href",
+      `${SITE_ORIGIN}/abouts/privacy`
+    );
+    await page.waitForLoadState("networkidle");
+  });
+
+  // 更新日志、隐私说明、用户条款各有独立地址：爬虫读外壳、执行脚本的客户端读运行时，两边的标题与 canonical 一致，
+  // 站点地图收录这三个地址。
+  for (const [path, title, h1] of ABOUTS_TAB_PAGES) {
+    test(`${path} 有独立标题、描述与 canonical，外壳与站点地图同步`, async ({ page }) => {
+      const raw = await (await getLoopback(page.request, path)).text();
+      expect(raw).toContain(`<title>${title}</title>`);
+      expect(raw).toContain(`<h1>${h1}</h1>`);
+      expect(raw).toContain(
+        `<link rel="canonical" href="${SITE_ORIGIN}${path}" data-static-seo="1" />`
+      );
+      const sitemap = await (await getLoopback(page.request, "/sitemap.xml")).text();
+      expect(sitemap).toContain(`<loc>${SITE_ORIGIN}${path}</loc>`);
+
+      await page.goto(path);
+      await expect(page).toHaveTitle(title);
+      await expect(page.getByRole("tab", { selected: true })).toHaveText(
+        title.replace(" - BakaGame", "")
+      );
+      await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+        "href",
+        `${SITE_ORIGIN}${path}`
+      );
+      await expect(page.locator('head meta[name="robots"]')).toHaveAttribute(
+        "content",
+        "index,follow"
+      );
+      await page.waitForLoadState("networkidle");
+    });
+  }
+
+  test("关于页里点标签换到该标签的独立地址与标题", async ({ page }) => {
+    await page.goto("/abouts");
+    await page.getByRole("tab", { name: "用户条款" }).click();
+    await expect(page).toHaveURL(/\/abouts\/terms$/);
+    await expect(page).toHaveTitle("用户条款 - BakaGame");
+    await page.getByRole("tab", { name: "开源致谢" }).click();
+    await expect(page).toHaveURL(/\/abouts$/);
+    await expect(page).toHaveTitle("关于 BakaGame：更新日志、开源致谢与隐私条款");
+    await page.waitForLoadState("networkidle");
+  });
+
+  test("登记页的分享图写出宽高与替代文字", async ({ page }) => {
+    const raw = await (await getLoopback(page.request, "/cee")).text();
+    expect(raw).toContain(`<meta property="og:image" content="${SITE_ORIGIN}/og/og-cee.jpg"`);
+    expect(raw).toContain('<meta property="og:image:height" content="630"');
+    expect(raw).toContain('<meta property="og:image:alt"');
+  });
+});

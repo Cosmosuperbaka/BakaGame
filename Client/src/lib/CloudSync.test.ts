@@ -1,0 +1,250 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CloudSettings } from "@bakagame/shared";
+
+import type { ApiClient } from "./Api";
+import {
+  CLOUD_SYNC_STORAGE_KEY,
+  getCloudSyncEnabled,
+  readLocalPreferences,
+  setCloudSyncEnabled,
+  startCloudSync,
+} from "./CloudSync";
+import {
+  getStoredSongMusicSession,
+  saveSongMusicSession,
+  clearStoredSongMusicSession,
+} from "./SonGuessrMusicSession";
+import { notifyPreferencesChanged, onPreferencesApplied } from "./PreferenceBus";
+import { saveUsername } from "./Storage";
+
+const netease = {
+  cookie: "MUSIC_U=cloud",
+  account: { platform: "netease" as const, nickname: "云端" },
+};
+
+const fakeClient = (cloud: CloudSettings) => {
+  const savePreferences = vi.fn<
+    (input: { value: Record<string, unknown> }) => Promise<{ updatedAt: string }>
+  >(async () => ({ updatedAt: "2026-10-13T00:00:00.000Z" }));
+  const saveMusicSession = vi.fn<(input: unknown) => Promise<{ updatedAt: string }>>(async () => ({
+    updatedAt: "2026-10-13T00:00:00.000Z",
+  }));
+  const client = {
+    settings: { get: vi.fn(async () => cloud), savePreferences, saveMusicSession },
+  } as unknown as ApiClient;
+  return { client, savePreferences, saveMusicSession };
+};
+
+const flush = async () => {
+  for (let index = 0; index < 30; index += 1) await Promise.resolve();
+};
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("云同步", () => {
+  it("只收同步范围内的键", () => {
+    window.localStorage.setItem("bakagame:username", "阿狸");
+    window.localStorage.setItem("songuessr_volume", "0.4");
+    window.localStorage.setItem("bakagame:room-settings:cee", "{}");
+    window.localStorage.setItem("bakagame:room-restore:cee", "ROOM");
+    window.localStorage.setItem("bakagame:visitor", "abcdefghijklmnop");
+    expect(readLocalPreferences()).toEqual({
+      "bakagame:username": "阿狸",
+      songuessr_volume: "0.4",
+      "bakagame:room-settings:cee": "{}",
+    });
+  });
+
+  it("登录时逐键合并：同键以云端为准，本地独有的键保留并回传", async () => {
+    window.localStorage.setItem("songuessr_volume", "0.4");
+    window.localStorage.setItem("bakagame:username", "本机");
+    const applied = vi.fn();
+    const stopApplied = onPreferencesApplied(applied);
+    const { client, savePreferences } = fakeClient({
+      preferences: {
+        value: { songuessr_volume: "0.9", "bakagame:room-create:faker": '{"visibility":"public"}' },
+        updatedAt: "x",
+      },
+      music: { netease: null, qq: null },
+    });
+
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(window.localStorage.getItem("songuessr_volume")).toBe("0.9");
+    expect(window.localStorage.getItem("bakagame:room-create:faker")).toBe(
+      '{"visibility":"public"}'
+    );
+    expect(applied).toHaveBeenCalledOnce();
+    expect(savePreferences).toHaveBeenCalledWith({
+      value: {
+        songuessr_volume: "0.9",
+        "bakagame:username": "本机",
+        "bakagame:room-create:faker": '{"visibility":"public"}',
+      },
+    });
+    stop();
+    stopApplied();
+  });
+
+  it("云端与本地一致时不上传；之后的本地改动防抖合并成一次上传，停止后不再上传", async () => {
+    window.localStorage.setItem("songuessr_volume", "0.5");
+    const { client, savePreferences } = fakeClient({
+      preferences: { value: { songuessr_volume: "0.5" }, updatedAt: "x" },
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(savePreferences).not.toHaveBeenCalled();
+
+    saveUsername("甲");
+    saveUsername("乙");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(savePreferences).toHaveBeenCalledOnce();
+    expect(savePreferences.mock.calls[0]?.[0].value).toMatchObject({ "bakagame:username": "乙" });
+
+    stop();
+    saveUsername("丙");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(savePreferences).toHaveBeenCalledOnce();
+  });
+
+  it("两边都没有偏好时不建空文档", async () => {
+    const { client, savePreferences } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    notifyPreferencesChanged();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(savePreferences).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("音乐账号：云端有则写回本地且不回传，只有本地有则上传", async () => {
+    saveSongMusicSession(
+      { cookie: "qqmusic_key=local", account: { platform: "qq", nickname: "本机" } },
+      true,
+      "qq"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+
+    expect(getStoredSongMusicSession("netease")).toMatchObject({
+      cookie: "MUSIC_U=cloud",
+      persistent: true,
+    });
+    expect(saveMusicSession).toHaveBeenCalledOnce();
+    expect(saveMusicSession).toHaveBeenCalledWith({
+      platform: "qq",
+      session: { cookie: "qqmusic_key=local", account: { platform: "qq", nickname: "本机" } },
+    });
+
+    // 登录期间退出音乐账号：删除云端副本。
+    clearStoredSongMusicSession("netease");
+    await flush();
+    expect(saveMusicSession).toHaveBeenLastCalledWith({ platform: "netease", session: null });
+    stop();
+  });
+
+  it("音乐账号：没勾选保存登录状态的凭据不上传，开始同步前就在本机的也不上传", async () => {
+    saveSongMusicSession(
+      { cookie: "qqmusic_key=session-only", account: { platform: "qq", nickname: "临时" } },
+      false,
+      "qq"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(saveMusicSession).not.toHaveBeenCalled();
+
+    // 同步期间新登录、同样不勾选保存登录状态：仍然一个字节都不上传。
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=session-only", account: { platform: "netease", nickname: "临时" } },
+      false,
+      "netease"
+    );
+    await flush();
+    expect(saveMusicSession).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("音乐账号：同一平台从保存登录状态改为不保存时，云端旧副本随之删除", async () => {
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=kept", account: { platform: "netease", nickname: "保存" } },
+      true,
+      "netease"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(saveMusicSession).toHaveBeenCalledOnce();
+
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=other", account: { platform: "netease", nickname: "另一个" } },
+      false,
+      "netease"
+    );
+    await flush();
+    expect(saveMusicSession).toHaveBeenLastCalledWith({ platform: "netease", session: null });
+    stop();
+  });
+
+  it("读取云端失败时不改本地、不上传", async () => {
+    window.localStorage.setItem("songuessr_volume", "0.3");
+    const client = {
+      settings: {
+        get: vi.fn(async () => {
+          throw new Error("offline");
+        }),
+        savePreferences: vi.fn(),
+        saveMusicSession: vi.fn(),
+      },
+    } as unknown as ApiClient;
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    saveUsername("甲");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(window.localStorage.getItem("songuessr_volume")).toBe("0.3");
+    expect(
+      client.settings.savePreferences as unknown as ReturnType<typeof vi.fn>
+    ).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("云同步开关只保存在本机，不进入同步范围", () => {
+    setCloudSyncEnabled(true);
+    expect(getCloudSyncEnabled()).toBe(true);
+    setCloudSyncEnabled(false);
+    expect(getCloudSyncEnabled()).toBe(false);
+    expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
+    expect(readLocalPreferences()).not.toHaveProperty(CLOUD_SYNC_STORAGE_KEY);
+    setCloudSyncEnabled(true);
+    expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("1");
+  });
+
+  it("云同步开关落盘的键名与取值是纯字符串，不是包了一层的对象", () => {
+    setCloudSyncEnabled(false);
+    expect(window.localStorage.getItem("bakagame:cloud-sync")).toBe("0");
+    setCloudSyncEnabled(true);
+    expect(window.localStorage.getItem("bakagame:cloud-sync")).toBe("1");
+  });
+});

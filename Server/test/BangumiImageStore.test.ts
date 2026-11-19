@@ -1,0 +1,143 @@
+import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { BangumiImageStore } from "../src/infrastructure/BangumiImageStore";
+
+function fixture() {
+  const dir = mkdtempSync(join(tmpdir(), "bakagame-image-store-"));
+  for (let i = 0; i < 16; i++) {
+    const db = new Database(join(dir, `images-${String(i).padStart(2, "0")}.sqlite`));
+    db.exec(
+      "CREATE TABLE images (path TEXT PRIMARY KEY, bytes BLOB NOT NULL, content_type TEXT NOT NULL, fetched_at INTEGER NOT NULL);"
+    );
+    db.close();
+  }
+  return dir;
+}
+
+test("分片规则与构建脚本一致（python zlib.crc32 实测値）", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    expect(store.shardCount).toBe(16);
+    const cases: Array<[string, number]> = [
+      ["/r/200/pic/cover/l/c9/f0/8_wK0z3.jpg", 10], // python: 1205221818 % 16
+      ["/pic/crt/g/b1/9c/87968_crt_z9LaF.jpg", 3], // python: 1351984339 % 16
+      ["/r/400/pic/crt/l/b1/9c/87968_crt_z9LaF.jpg", 6], // python: 2709939238 % 16
+    ];
+    for (const [path, shard] of cases) {
+      expect(Bun.hash.crc32(path) % 16).toBe(shard);
+      store.put(path, new Uint8Array([1, 2, 3]));
+      const db = new Database(join(dir, `images-${String(shard).padStart(2, "0")}.sqlite`), {
+        readonly: true,
+      });
+      expect(db.query("SELECT count(*) AS n FROM images WHERE path=?").get(path)).toEqual({ n: 1 });
+      db.close();
+    }
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 20_000);
+
+test("put/has/get 回环与只读拒绝", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    expect(store.has("/x/a.jpg")).toBe(false);
+    store.put("/x/a.jpg", new Uint8Array([0x66, 0x74, 0x79, 0x70]), "image/avif");
+    expect(store.has("/x/a.jpg")).toBe(true);
+    const got = store.get("/x/a.jpg")!;
+    expect(got.contentType).toBe("image/avif");
+    expect([...got.bytes]).toEqual([0x66, 0x74, 0x79, 0x70]);
+    expect(store.count()).toBe(1);
+    store.close();
+
+    const ro = BangumiImageStore.open(dir, { readOnly: true })!;
+    expect(ro.get("/x/a.jpg")?.contentType).toBe("image/avif");
+    expect(() => ro.put("/x/b.jpg", new Uint8Array([1]))).toThrow("只读图床实例不能写入");
+    ro.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 20_000);
+
+test("目录缺失或没有分片 → undefined（调用方降级为无图床）", () => {
+  expect(
+    BangumiImageStore.open(join(tmpdir(), `bakagame-missing-${crypto.randomUUID()}`))
+  ).toBeUndefined();
+  const empty = mkdtempSync(join(tmpdir(), "bakagame-empty-"));
+  try {
+    expect(BangumiImageStore.open(empty)).toBeUndefined();
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test("markRemote 只落索引：has 为真、isRemote 为真、get 不再回字节", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bakagame-remote-"));
+  try {
+    const db = new Database(join(dir, "images-00.sqlite"));
+    db.exec(
+      "CREATE TABLE images (path TEXT PRIMARY KEY, bytes BLOB NOT NULL, content_type TEXT NOT NULL, fetched_at INTEGER NOT NULL);"
+    );
+    db.close();
+
+    const store = BangumiImageStore.open(dir, { now: () => 7 })!;
+    store.markRemote("/r/200/pic/cover/l/ab/cd/1.jpg");
+    expect(store.has("/r/200/pic/cover/l/ab/cd/1.jpg")).toBe(true);
+    expect(store.isRemote("/r/200/pic/cover/l/ab/cd/1.jpg")).toBe(true);
+    // 字节在 R2，本地没有内容可回：读取侧必须走 302，不能拿到空 buffer。
+    expect(store.get("/r/200/pic/cover/l/ab/cd/1.jpg")).toBeUndefined();
+    expect(store.isRemote("/r/200/pic/cover/l/ab/cd/2.jpg")).toBe(false);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("markRemote 两步写入是原子的：第二步失败不留下空字节的索引行", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    // 破坏 images_remote：第一条写 images 成功、第二条写 images_remote 必然失败。
+    const shard = join(
+      dir,
+      `images-${String(Bun.hash.crc32("/x/r.jpg") % 16).padStart(2, "0")}.sqlite`
+    );
+    const raw = new Database(shard);
+    raw.exec("DROP TABLE images_remote");
+    raw.close();
+    expect(() => store.markRemote("/x/r.jpg")).toThrow();
+    // 半截状态会让更新器永远以为「已缓存」而不再补图。
+    expect(store.has("/x/r.jpg")).toBe(false);
+    expect(store.count()).toBe(0);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("has 只认真有内容的图：空字节且不在 R2 的残留行不算已缓存，已标记在 R2 的算", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    const shardOf = (path: string) =>
+      join(dir, `images-${String(Bun.hash.crc32(path) % 16).padStart(2, "0")}.sqlite`);
+    // 历史上的半截写入留下的残留：有索引行、字节为空、也没有登记在 R2。
+    const raw = new Database(shardOf("/x/broken.jpg"));
+    raw.query("INSERT INTO images VALUES (?, x'', 'image/avif', 0)").run("/x/broken.jpg");
+    raw.close();
+    expect(store.has("/x/broken.jpg")).toBe(false);
+
+    store.markRemote("/x/cloud.jpg");
+    expect(store.has("/x/cloud.jpg")).toBe(true);
+    store.put("/x/local.jpg", new Uint8Array([1]));
+    expect(store.has("/x/local.jpg")).toBe(true);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

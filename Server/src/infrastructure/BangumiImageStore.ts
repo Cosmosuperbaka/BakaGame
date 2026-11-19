@@ -1,0 +1,162 @@
+import { Database } from "bun:sqlite";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * 图床分片存储。分片规则与 `tools/build_bangumi_images.py` 完全一致：
+ * `crc32(path) % 分片数`，且分片数是从目录里实际存在的 `images-XX.sqlite`
+ * 推断的——构建脚本用什么分片数，运行时就读什么，不硬编码 16。
+ *
+ * 线程模型：SQLite 连接是线程专属的。写连接只在数据 Worker 里打开（缺失下载
+ * 入库，单写者）；主线程的只读路由连接与 worker 的写连接天然可以并存（SQLite
+ * 多连接 + `busy_timeout` 兜底）。两端各自持有独立的 BangumiImageStore 实例。
+ */
+export interface StoredImage {
+  bytes: Uint8Array;
+  contentType: string;
+}
+
+/**
+ * 图床存储的读写口径。线上是 `R2ImageStore`（字节在 R2、本地只留索引），
+ * 没有 R2 配置时退回 `BangumiImageStore` 本身（字节与索引都在分片里）。
+ * 两者对调用方等价，切换只由装配决定，业务代码不分支。
+ */
+export interface ImageStore {
+  readonly shardCount: number;
+  has(path: string): boolean;
+  /** 字节是否已经搬到 R2；为 true 时读取侧应 302，不要再读本地。 */
+  isRemote(path: string): boolean;
+  /** 只落索引、不写字节（字节已经在 R2）。只读实例调用会抛错。 */
+  markRemote(path: string, contentType?: string): void;
+  get(path: string): StoredImage | undefined;
+  put(path: string, bytes: Uint8Array, contentType?: string): void | Promise<void>;
+  count(): number;
+  close(): void;
+}
+
+const SHARD_PATTERN = /^images-\d+\.sqlite$/;
+
+export class BangumiImageStore implements ImageStore {
+  private readonly connections: Database[];
+  private readonly readOnly: boolean;
+  private readonly now: () => number;
+
+  /** 打开目录下的全部分片；目录不存在或没有分片时返回 `undefined`（调用方按「无图床」降级）。 */
+  static open(
+    directory: string,
+    options: { readOnly?: boolean; now?: () => number } = {}
+  ): BangumiImageStore | undefined {
+    if (!existsSync(directory)) return undefined;
+    const names = readdirSync(directory)
+      .filter((name) => SHARD_PATTERN.test(name))
+      .sort();
+    if (!names.length) return undefined;
+    return new BangumiImageStore(directory, names, options);
+  }
+
+  private constructor(
+    directory: string,
+    names: string[],
+    options: { readOnly?: boolean; now?: () => number }
+  ) {
+    this.readOnly = options.readOnly ?? false;
+    this.now = options.now ?? Date.now;
+    this.connections = names.map((name) => {
+      const target = join(directory, name);
+      // bun:sqlite 显式传 `readonly: false` 会抛 SQLITE_MISUSE（与 `create: false` 同款坑），
+      // 因此可写连接不传选项对象。
+      const db = this.readOnly ? new Database(target, { readonly: true }) : new Database(target);
+      db.exec("PRAGMA busy_timeout = 5000");
+      // 只读连接也能看到这张表（可写连接建好之后）；老分片没有它时按「不在 R2」处理。
+      if (!this.readOnly) {
+        db.exec("CREATE TABLE IF NOT EXISTS images_remote (path TEXT PRIMARY KEY)");
+      }
+      return db;
+    });
+  }
+
+  get shardCount(): number {
+    return this.connections.length;
+  }
+
+  private shard(path: string): Database {
+    return this.connections[Bun.hash.crc32(path) % this.connections.length]!;
+  }
+
+  /**
+   * 这张图是否已缓存。只认「有字节」或「已登记在 R2」：空字节又不在 R2 的行是半截写入的残留，
+   * 把它当已缓存，更新器就永远不会再补这张图。
+   */
+  has(path: string): boolean {
+    const row = this.shard(path)
+      .query<{ size: number }, [string]>("SELECT length(bytes) AS size FROM images WHERE path=?")
+      .get(path);
+    if (row === null) return false;
+    return row.size > 0 || this.isRemote(path);
+  }
+
+  /**
+   * 字节是否已经搬到 R2。只读连接在可写连接建表之前会拿到 `no such table`，
+   * 那时按「不在 R2」处理，读取侧退回本地字节——宁可变慢，也不要 302 到不存在的对象。
+   */
+  isRemote(path: string): boolean {
+    try {
+      return (
+        this.shard(path)
+          .query<{ present: number }, [string]>(
+            "SELECT 1 AS present FROM images_remote WHERE path=?"
+          )
+          .get(path) !== null
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** 标记「字节在 R2」并落一条不含字节的索引（`bytes` 存空串，索引与字节彻底分家）。 */
+  markRemote(path: string, contentType = "image/avif"): void {
+    if (this.readOnly) throw new Error("只读图床实例不能写入");
+    const db = this.shard(path);
+    // 两条写入同生共死：只成功一半会留下空字节的索引行，读取侧既拿不到字节也不会 302。
+    db.transaction(() => {
+      db.query<never, [string, string, number]>(
+        "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,x'',?,?)"
+      ).run(path, contentType, this.now());
+      db.query<never, [string]>("INSERT OR REPLACE INTO images_remote (path) VALUES (?)").run(path);
+    })();
+  }
+
+  get(path: string): StoredImage | undefined {
+    const row = this.shard(path)
+      .query<{ bytes: Uint8Array; content_type: string }, [string]>(
+        "SELECT bytes, content_type FROM images WHERE path=?"
+      )
+      .get(path);
+    if (!row) return undefined;
+    // 空字节只可能是 `markRemote` 留下的索引行：真图不可能 0 字节，别把它当可返回的内容。
+    if (row.bytes.byteLength === 0) return undefined;
+    return { bytes: row.bytes, contentType: row.content_type };
+  }
+
+  /** 写入（或覆盖）一张图；只读实例调用会抛错——路由侧应把写入转交数据 Worker。 */
+  put(path: string, bytes: Uint8Array, contentType = "image/avif"): void {
+    if (this.readOnly) throw new Error("只读图床实例不能写入");
+    this.shard(path)
+      .query<never, [string, Uint8Array, string, number]>(
+        "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,?,?,?)"
+      )
+      .run(path, bytes, contentType, this.now());
+  }
+
+  count(): number {
+    return this.connections.reduce(
+      (sum, db) =>
+        sum + (db.query<{ n: number }, []>("SELECT count(*) AS n FROM images").get()?.n ?? 0),
+      0
+    );
+  }
+
+  close(): void {
+    for (const db of this.connections) db.close();
+  }
+}

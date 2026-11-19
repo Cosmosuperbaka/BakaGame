@@ -1,0 +1,108 @@
+import type { ToastItem } from "@/components/Toast";
+
+/** 同时最多显示几条：再来新的，最早的一条让位，屏幕右上角不被一串提示占满。 */
+export const TOAST_LIMIT = 3;
+/** 普通信息与成功的停留时长。 */
+export const TOAST_MS = 3000;
+/** 错误多停一会儿：失败原因往往更长，也更需要读完。 */
+export const TOAST_ERROR_MS = 5000;
+/** 停机维护的说明比普通提示长，三款统一停留这么久。 */
+export const SHUTDOWN_TOAST_MS = 10_000;
+
+export interface ToastState {
+  toasts: ToastItem[];
+  /** 默认是普通信息；报错的调用点必须显式传 `"error"`，不靠默认值。时长缺省按类型取。 */
+  showToast: (text: string, type?: ToastItem["type"], durationMs?: number) => void;
+  dismissToast: (id: ToastItem["id"]) => void;
+  /** 玩家正看着这条（指针悬停或焦点在上面）：停表，剩余时长留着。 */
+  pauseToast: (id: ToastItem["id"]) => void;
+  /** 玩家移开了：按停表时剩下的时长继续。 */
+  resumeToast: (id: ToastItem["id"]) => void;
+  clearToasts: () => void;
+}
+
+type ToastSet = (patch: Partial<ToastState> | ((state: ToastState) => Partial<ToastState>)) => void;
+type ToastGet = () => ToastState;
+
+const defaultDuration = (type: ToastItem["type"]) => (type === "error" ? TOAST_ERROR_MS : TOAST_MS);
+
+/**
+ * 三款玩法共用的提示队列。定时器句柄留在切片闭包内：提示的存续只由切片负责，调用方不各自持一份计时器。
+ * 去重与让位都按当前列表判断，不按闭包里的记账：预置工具与测试会直接改写列表。
+ */
+export function createToastSlice(set: ToastSet, get: ToastGet): ToastState {
+  /** 每条提示的倒计时；`timer` 为空表示停着，`remaining` 是还剩多久。 */
+  const countdowns = new Map<
+    ToastItem["id"],
+    { timer: ReturnType<typeof setTimeout> | null; remaining: number; startedAt: number }
+  >();
+  let counter = 0;
+
+  const stop = (id: ToastItem["id"]) => {
+    const countdown = countdowns.get(id);
+    if (!countdown) return;
+    if (countdown.timer !== null) clearTimeout(countdown.timer);
+    countdowns.delete(id);
+  };
+
+  const dismissToast = (id: ToastItem["id"]) => {
+    stop(id);
+    set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) }));
+  };
+
+  const run = (id: ToastItem["id"]) => {
+    const countdown = countdowns.get(id);
+    if (!countdown || countdown.timer !== null) return;
+    countdown.startedAt = Date.now();
+    countdown.timer = setTimeout(() => dismissToast(id), countdown.remaining);
+  };
+
+  /** 从头计时；正停着的（玩家正看着）只换剩余时长，等玩家移开再走。 */
+  const arm = (id: ToastItem["id"], durationMs: number) => {
+    const paused = countdowns.get(id)?.timer === null;
+    stop(id);
+    countdowns.set(id, { timer: null, remaining: durationMs, startedAt: 0 });
+    if (!paused) run(id);
+  };
+
+  const pauseToast = (id: ToastItem["id"]) => {
+    const countdown = countdowns.get(id);
+    if (!countdown || countdown.timer === null) return;
+    clearTimeout(countdown.timer);
+    countdown.timer = null;
+    countdown.remaining = Math.max(0, countdown.remaining - (Date.now() - countdown.startedAt));
+  };
+
+  const showToast = (text: string, type: ToastItem["type"] = "info", durationMs?: number) => {
+    const ms = durationMs ?? defaultDuration(type);
+    const current = get().toasts;
+    // 同一句话连发：不叠出第二条，原地重播并重新计时，玩家能看出「又来了一次」。
+    const same = current.find((item) => item.text === text && item.type === type);
+    if (same) {
+      set({
+        toasts: current.map((item) =>
+          item === same ? { ...item, repeat: (item.repeat ?? 0) + 1 } : item
+        ),
+      });
+      arm(same.id, ms);
+      return;
+    }
+    const next = [...current, { id: ++counter, text, type }];
+    const evicted = next.slice(0, Math.max(0, next.length - TOAST_LIMIT));
+    evicted.forEach((item) => stop(item.id));
+    set({ toasts: next.slice(evicted.length) });
+    arm(counter, ms);
+  };
+
+  return {
+    toasts: [],
+    showToast,
+    dismissToast,
+    pauseToast,
+    resumeToast: run,
+    clearToasts: () => {
+      countdowns.forEach((_, id) => stop(id));
+      set({ toasts: [] });
+    },
+  };
+}

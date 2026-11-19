@@ -1,0 +1,57 @@
+// ==================== 账号共享常量（前后端唯一来源） ====================
+
+/** QQ 号：首位非零，5~11 位数字（与腾讯号段一致）。 */
+export const QQ_NUMBER_PATTERN = /^[1-9]\d{4,10}$/;
+/** 登录邮箱只接受 `QQ号@qq.com`：账号身份由 QQ 号锚定。 */
+export const QQ_EMAIL_PATTERN = /^([1-9]\d{4,10})@qq\.com$/;
+
+export const ACCOUNT_NAME_MAX_LENGTH = 24;
+export const LOGIN_CODE_LENGTH = 6;
+/** 验证码输入校验（前端输入框与测试共用）。 */
+export const LOGIN_CODE_PATTERN = /^\d{6}$/;
+/** 验证码有效期（秒）。 */
+export const LOGIN_CODE_TTL_SECONDS = 300;
+/** 同一邮箱两次发码的最小间隔（秒），前端倒计时与后端限流共用。 */
+export const LOGIN_CODE_RESEND_SECONDS = 60;
+
+/** 账号 HTTP 前缀：Better Auth 与 oRPC 都挂在 `/api` 下，边缘才会放行到源站。 */
+export const AUTH_BASE_PATH = "/api/auth";
+export const ACCOUNT_AVATAR_PATH = "/api/account/avatar";
+
+export const qqEmailOf = (qqNumber: string): string => `${qqNumber}@qq.com`;
+
+export const qqNumberOfEmail = (email: string): string | undefined =>
+  QQ_EMAIL_PATTERN.exec(email.trim().toLowerCase())?.[1];
+
+/**
+ * QQ 官方头像地址，地址里带 QQ 号，不得出现在任何他人可见的响应里。服务端的头像代理用它回源；
+ * 浏览器直接请求它只有一处：登录弹窗里停输后的预览头像（此时 QQ 号是用户自己刚输入的）。
+ * 隐私页写明了这处例外，改用途时同步那里的说法。
+ */
+export const qlogoUrlOf = (qqNumber: string, size: 100 | 640 = 640): string =>
+  `https://q1.qlogo.cn/g?b=qq&nk=${qqNumber}&s=${size}`;
+
+/**
+ * 站内头像地址：经源站代理，URL 只含用户 ID，不暴露 QQ 号（QQ 号默认隐私）。
+ * `version` 是头像字节摘要，变化即换 URL，浏览器缓存因此可以永久有效。
+ */
+export const accountAvatarUrlOf = (userId: string, version: string): string =>
+  `${ACCOUNT_AVATAR_PATH}/${encodeURIComponent(userId)}?v=${encodeURIComponent(version)}`;
+
+/** 账号昵称规整：折叠空白、去控制字符、按码点截断。空串表示不合法。 */
+export const normalizeAccountName = (raw: string): string =>
+  Array.from(
+    raw
+      // eslint-disable-next-line no-control-regex -- 昵称必须剥掉 C0 控制字符与 DEL，与 Rules.ts 的 stripControlChars 同一口径
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+  )
+    .slice(0, ACCOUNT_NAME_MAX_LENGTH)
+    .join("");
+
+/** 云同步偏好文档上限：只放轻量键值（音量、房间设置记忆等），不承载大对象。 */
+export const PREFERENCES_MAX_BYTES = 32 * 1024;
+export const FEEDBACK_TITLE_MAX_LENGTH = 60;
+export const FEEDBACK_CONTENT_MAX_LENGTH = 2000;
+export const FEEDBACK_REPLY_MAX_LENGTH = 2000;

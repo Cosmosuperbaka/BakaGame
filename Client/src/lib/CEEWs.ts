@@ -1,0 +1,138 @@
+import type { CEECommand, CEEPayload, CEEResponse } from "@bakagame/shared";
+import {
+  bakaChannelQuery,
+  isBakaClient,
+  lastHandshakeHadTicket,
+  waitForChannelTicket,
+} from "@/lib/BakaChannel";
+import {
+  createWebSocketClient,
+  isProtocolError,
+  type ProtocolError,
+  type RawSend,
+  type SendOptions,
+} from "@/lib/WebsocketClient";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { attachTabSession } from "@/lib/TabSession";
+import { createGameWs, type CommandPolicy } from "@/lib/GameWs";
+
+// 原生客户端在每次建连时把通道凭据拼进握手 URL，网页环境拿到空串。
+// 走查询串而非进房载荷：CEE 命令 schema 是 strict 的塞不下额外字段，而共享 WS 客户端只把
+// path 原样拼进 URL、没有首帧注册机制——查询串是不改动公共客户端的最小通道。
+// 必须传函数而不是结果：ticket 一次性、30 秒即焚，构造时读一次会让重连全部带上废票。
+const client = createWebSocketClient("/api/ws", {
+  handshakeQuery: bakaChannelQuery,
+  prelude: attachTabSession,
+  sendInterceptor: (next) => sendWithChannelProof(next),
+});
+
+/** 等壳签票的上限：等不到就不建带票连接，给可重试错误，不白跑一次注定被拒的握手。 */
+const CHANNEL_TICKET_WAIT_MS = 6_000;
+/** 换票重连的等待上限：要覆盖 1 秒退避加一次握手，不能用普通请求的 10 秒语义。 */
+const CHANNEL_RECONNECT_WAIT_MS = 8_000;
+const RANKED_ADMISSION_COMMANDS = new Set<string>([
+  "cee.ranked.status",
+  "cee.ranked.queue",
+  "cee.ranked.playBot",
+]);
+const ADMISSION_COMMANDS = new Set<string>([
+  "cee.room.create",
+  "cee.room.join",
+  "cee.room.reconnect",
+  // 排位的三条准入命令同样吃连接级通道证明；服务端入口按 `cee.ranked.` 前缀分流。
+  ...RANKED_ADMISSION_COMMANDS,
+]);
+
+const channelNotReady = (): ProtocolError => ({
+  code: "CLIENT_CHANNEL_NOT_READY",
+  message: "客户端通道尚未就绪",
+});
+
+const isChannelRefused = (error: unknown): boolean =>
+  isProtocolError(error) && error.code === "CLIENT_REQUIRED";
+
+/**
+ * 用一张新票重新握手，并确认这次握手确实带上了票。
+ *
+ * 服务端的通道证明挂在**连接**上，同一连接上重发命令补不上证明；票是一次性的，
+ * 所以只能重新建连。壳此时若还签不出票（未注册、离线、自检判死），返回 false。
+ */
+async function reconnectWithTicket(): Promise<boolean> {
+  if (!(await waitForChannelTicket(CHANNEL_TICKET_WAIT_MS))) return false;
+  client.refreshIdentity();
+  try {
+    await client.waitForConnection(CHANNEL_RECONNECT_WAIT_MS);
+  } catch {
+    return false;
+  }
+  return lastHandshakeHadTicket();
+}
+
+/** 服务端明确拒绝票据后换一张重试一次；仍被拒就换成玩家能据此重试的文案。 */
+async function resendAfterRefusal(
+  rawSend: RawSend,
+  type: string,
+  payload: Record<string, unknown>,
+  options: SendOptions | undefined
+): Promise<Record<string, unknown>> {
+  if (!(await reconnectWithTicket())) return rejectedProtocol(channelNotReady());
+  try {
+    return await rawSend(type, payload, options);
+  } catch (error) {
+    if (isChannelRefused(error)) return rejectedProtocol(channelNotReady());
+    throw error;
+  }
+}
+
+/** 准入类命令的通道证明：发送前按需先换带票连接，被拒后换票重试一次。 */
+function sendWithChannelProof(rawSend: RawSend): RawSend {
+  return async (type, payload, options) => {
+    const shell = isBakaClient();
+    const antiCheatCreate = type === "cee.room.create" && payload.bakaAntiCheat === true;
+    // 进入 CEE 页面时壳还在异步签票：这条连接建出来就没有通道证明，且不会自己补。
+    // 反作弊建房与排位准入都先换一次带票连接，否则开关可见、请求必被服务端拒。
+    if (
+      shell &&
+      (antiCheatCreate || RANKED_ADMISSION_COMMANDS.has(type)) &&
+      !lastHandshakeHadTicket()
+    ) {
+      if (!(await reconnectWithTicket())) return rejectedProtocol(channelNotReady());
+    }
+    try {
+      return await rawSend(type, payload, options);
+    } catch (error) {
+      // 票被拒（过期、已被上一次连接消费、来源地址不符）：换一张票重连后重试一次。
+      // 只重试准入类命令：它们的失败发生在建人/建房之前，重发不会产生第二份状态。
+      const retryable = shell && isChannelRefused(error) && ADMISSION_COMMANDS.has(type);
+      if (!retryable) throw error;
+      return resendAfterRefusal(rawSend, type, payload, options);
+    }
+  };
+}
+
+export const ceeWsClient = client;
+
+export type CEECommandMap = {
+  [K in CEECommand]: { payload: CEEPayload<K>; ack: CEEResponse<K> };
+};
+
+export const { connect, disconnect, waitForConnection, send, onMessage, onStatus } =
+  createGameWs<CEECommandMap>(ceeWsClient);
+
+/**
+ * 出题、取图与导入要回源上游，入房要等原版会话建立：耗时都由服务端决定，
+ * 客户端超时只会制造假失败（Spec §6）。
+ */
+export const CEE_COMMAND_POLICY: CommandPolicy<CEECommandMap> = {
+  "cee.room.create": { timeout: 0 },
+  "cee.room.join": { timeout: 0 },
+  "cee.room.reconnect": { timeout: 0 },
+  "cee.game.start": { timeout: 0 },
+  "cee.game.next": { timeout: 0 },
+  "cee.game.setAnswer": { timeout: 0 },
+  "cee.game.imageHint": { timeout: 0 },
+  "cee.character.image": { timeout: 0 },
+  "cee.subject.image": { timeout: 0 },
+  "cee.directory.import": { timeout: 0 },
+  "cee.ranked.characterImage": { timeout: 0 },
+};

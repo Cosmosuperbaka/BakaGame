@@ -1,0 +1,157 @@
+import groovy.json.JsonSlurper
+
+// 应用模块：Capacitor 壳 + BakaChannel 原生插件（插件源码直接放 app 内，
+// 经 MainActivity 的 bridge.registerPlugin 注册，不做独立 npm 插件包）。
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// HTTPDNS 的 AppID/密钥只在构建期从环境变量注入，仓库里只有变量名。
+// AES 模式需要 16 位密钥；HTTPS Token 模式优先，二者都没有时壳不启用回环解析隧道。
+def bakaHttpDnsAppId = System.getenv("BAKA_HTTPDNS_APP_ID") ?: ""
+def bakaHttpDnsSecret = System.getenv("BAKA_HTTPDNS_SECRET_KEY") ?: ""
+def bakaHttpDnsToken = System.getenv("BAKA_HTTPDNS_TOKEN") ?: ""
+def bakaHttpDnsDomain = System.getenv("BAKA_HTTPDNS_DOMAIN") ?: ""
+if (!bakaHttpDnsDomain && System.getenv("VITE_SERVER_URL")) {
+    // 壳的页面 origin 与接口同源；域名与 C2 的 server.hostname 用同一个来源。
+    try {
+        bakaHttpDnsDomain = new URL(System.getenv("VITE_SERVER_URL")).getHost()
+    } catch (Exception ignored) {
+        bakaHttpDnsDomain = ""
+    }
+}
+// 版本只在 Mobile/package.json 写一处：versionName 直接取它，versionCode 由它推导为
+// major * 10000 + minor * 100 + patch（随版本单调上升，不用手抬）。minor 与 patch 各限 0-99，
+// 越界会让不同版本撞同一个 versionCode、升级包装不上，所以宁可让构建失败。
+def bakaVersionName = new JsonSlurper().parse(file('../../package.json')).version
+def bakaVersionParts = String.valueOf(bakaVersionName).tokenize('.')
+if (bakaVersionParts.size() != 3 || !bakaVersionParts.every { it ==~ /[0-9]{1,4}/ }) {
+    throw new GradleException("Mobile/package.json 的 version 必须是 major.minor.patch 三段数字：${bakaVersionName}")
+}
+def bakaVersionNumbers = bakaVersionParts.collect { it.toInteger() }
+if (bakaVersionNumbers[1] > 99 || bakaVersionNumbers[2] > 99) {
+    throw new GradleException("minor 与 patch 超过 99，versionCode 推导会撞码：${bakaVersionName}")
+}
+def bakaVersionCode =
+    bakaVersionNumbers[0] * 10000 + bakaVersionNumbers[1] * 100 + bakaVersionNumbers[2]
+// Java 字符串字面量转义：BuildConfig 是生成的 Java 源文件。
+def bakaJavaString = { String value ->
+    '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+}
+// 不 apply @capacitor/android 里的脚本：7.x 的包里**没有** capacitor.gradle
+// （实测 7.4.0 与 7.6.9 都只有 capacitor/build.gradle），原先这行会让 Gradle 直接
+// 报 "Could not read script ... capacitor.gradle as it does not exist"，整个 APK 构建失败。
+// Capacitor 运行时的接入方式就在 settings.gradle 的 include ':capacitor-android'
+// 与下面 dependencies 里的 implementation project(':capacitor-android')，两处已齐。
+
+android {
+    namespace 'website.baka.game'
+    compileSdk 35
+    // 本机已装 build-tools 34.0.0/36.0.0，无 35.0.0；显式钉住避免 AGP 触发联网下载
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'website.baka.game'
+        // Key Attestation 自 API 24 起可用，minSdk 与计划 P3.2 口径一致
+        minSdk 24
+        targetSdk 35
+        // 两项都由上面从 Mobile/package.json 推导，不在这里手写
+        versionCode bakaVersionCode
+        versionName bakaVersionName
+
+        // 密钥进 DEX 的 BuildConfig，不进 Web 产物；空值表示本次构建未启用 HTTPDNS。
+        buildConfigField "String", "HTTPDNS_APP_ID", bakaJavaString(bakaHttpDnsAppId)
+        buildConfigField "String", "HTTPDNS_SECRET_KEY", bakaJavaString(bakaHttpDnsSecret)
+        buildConfigField "String", "HTTPDNS_TOKEN", bakaJavaString(bakaHttpDnsToken)
+        buildConfigField "String", "HTTPDNS_DOMAIN", bakaJavaString(bakaHttpDnsDomain)
+    }
+
+    buildFeatures {
+        // AGP 8 起 BuildConfig 生成默认关闭；下面四个字段要落进 BuildConfig。
+        buildConfig true
+    }
+
+    // 正式签名：四项环境变量齐全才装配，缺任意一项就退回「release 不签名」，
+    // 免得没有密钥的构建一上来就报错。密钥本体与口令都不进仓库，路径也交给环境变量。
+    def keystorePath = System.getenv("BAKA_KEYSTORE_PATH")
+    // 变量名统一加 baka 前缀：`keyAlias keyAlias` 这种同名的命令式写法会被 Groovy 解析成
+    // 「对 String 调用 call(...)」，报 "No signature of method: java.lang.String.call()"，
+    // 而错误发生在整个 project 求值阶段，看起来跟签名毫无关系。一律改成显式赋值。
+    def bakaKeystorePassword = System.getenv("BAKA_KEYSTORE_PASSWORD")
+    def bakaKeyAlias = System.getenv("BAKA_KEY_ALIAS")
+    def bakaKeyPassword = System.getenv("BAKA_KEY_PASSWORD")
+    def releaseKeystore =
+        keystorePath && bakaKeystorePassword && bakaKeyAlias && bakaKeyPassword
+        ? keystorePath : null
+
+    signingConfigs {
+        if (releaseKeystore) {
+            bakaRelease {
+                storeFile = file(releaseKeystore)
+                storePassword = bakaKeystorePassword
+                keyAlias = bakaKeyAlias
+                keyPassword = bakaKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // WebView 远程调试仅 debug 构建开启（Capacitor 按 BuildConfig.DEBUG 处理）
+        }
+        release {
+            minifyEnabled false
+            // 没有密钥时产物保持 unsigned：Android Key Attestation 要求签名摘要匹配
+            // （见 README §7 与 Server/docs/ClientChannel.md），未签名的包只能拿 degraded 档
+            if (releaseKeystore) signingConfig signingConfigs.findByName('bakaRelease')
+        }
+    }
+
+    testOptions {
+        // 被测类里的 android.util.Log 等调用在 JVM 单测里按默认值返回，不抛「未模拟」异常
+        unitTests.returnDefaultValues = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // 产物名带版本号：分发既用带版本的对象名，也用不带版本号的固定别名
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            outputFileName = "BakaGame-${variant.versionName}-${variant.name}.apk"
+        }
+    }
+}
+
+// 依赖锁（F71）：APK 的 JVM 依赖面以 app/gradle.lockfile 为准，解析结果与锁不一致就构建失败。
+// capacitor-android 的传递依赖经 project 依赖汇入本模块的类路径，已被这里的锁覆盖；
+// 它的工程目录在 node_modules 里，不单独加锁。STRICT 让「没有锁状态的配置」同样报错，
+// 新增依赖或升级版本后必须在 Mobile/android 下重新执行：
+//   gradle :app:dependencies --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+    lockMode = LockMode.STRICT
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    // styles.xml 的 AppTheme.NoActionBarLaunch 继承 Theme.SplashScreen，该主题由这个库提供。
+    // 不声明就会在 processDebugResources 阶段报 "resource style/Theme.SplashScreen not found"。
+    implementation 'androidx.core:core-splashscreen:1.0.1'
+    // 电容的 com.getcapacitor.BridgeActivity 继承 AppCompatActivity（Capacitor 5 起如此），
+    // 但它在 capacitor-android 里是 implementation 依赖、不会传递到本模块的编译类路径。
+    // 缺了它 Kotlin 侧会报一整片连锁错误（AppCompatActivity 不可访问 → Plugin 基类解析失败
+    // → asyncCall / context / reject 全部 unresolved），看着像十几个 bug，其实只有一个。
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    // WebView 的 WebAuthn 开关（MainActivity 的 setWebAuthenticationSupport）从 1.12.1 起提供；
+    // 钉 1.14.0 与官方 WebView 通行密钥指引同一枚。设备 WebView 太旧时会由
+    // WebViewFeature.isFeatureSupported 兜住，继续按不支持 WebAuthn 降级。
+    implementation 'androidx.webkit:webkit:1.14.0'
+
+    // 纯逻辑的 JVM 单元测试（app/src/test）：只在测试配置里，不进 APK 的依赖面。
+    testImplementation 'junit:junit:4.13.2'
+}

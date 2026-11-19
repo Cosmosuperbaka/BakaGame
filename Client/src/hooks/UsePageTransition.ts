@@ -1,0 +1,116 @@
+import { useCallback, useContext, useLayoutEffect, type MouseEvent } from "react";
+import {
+  UNSAFE_ViewTransitionContext,
+  useNavigate,
+  type NavigateOptions,
+  type To,
+} from "react-router";
+import { isAboutsPath } from "@/lib/AboutsTabs";
+
+/**
+ * 页面导航默认走 View Transitions：旧页定格成快照向前退出、新页自后方推入（见 `index.css` 的页面过渡）。
+ * 浏览器不支持时 React Router 直接切换，测试与 Storybook 的声明式路由忽略该选项。
+ */
+export function usePageNavigate() {
+  const navigate = useNavigate();
+  return useCallback(
+    (to: To, options?: NavigateOptions) => navigate(to, { viewTransition: true, ...options }),
+    [navigate]
+  );
+}
+
+/** 普通左键单击：新标签、新窗口与下载类点击（中键、带修饰键）交还浏览器处理。 */
+export function isPlainLeftClick(event: MouseEvent<HTMLElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+/**
+ * 站内真链接的点击处理：元素本身是 `a[href]`，抓取器、中键与「在新标签页打开」都拿得到地址；
+ * 普通左键截下来走 `usePageNavigate` 的页面过渡，观感与按钮式导航一致。
+ * `onNavigate` 返回 false 时不导航（例如已有一次导航在途），但仍吞掉默认跳转。
+ */
+export function usePageLinkClick() {
+  const navigate = usePageNavigate();
+  return useCallback(
+    (to: string, onNavigate?: () => boolean | void) => (event: MouseEvent<HTMLElement>) => {
+      if (!isPlainLeftClick(event)) return;
+      event.preventDefault();
+      if (onNavigate?.() === false) return;
+      void navigate(to);
+    },
+    [navigate]
+  );
+}
+
+export interface PageTransitionEnds {
+  from: string;
+  to: string;
+}
+
+/**
+ * 正在进行的页面过渡两端的路径；没有过渡时为 null。
+ *
+ * 公开的 `useViewTransitionState` 离开数据路由（单元测试、Storybook 的 MemoryRouter）会直接抛错，
+ * 这里改读它背后的同一个上下文，默认值即「不在过渡中」。上下文属于 React Router 的不稳定导出，
+ * 升级后的契约由 `UsePageTransition.test.tsx` 把关。
+ */
+export function usePageTransitionEnds(): PageTransitionEnds | null {
+  const context = useContext(UNSAFE_ViewTransitionContext);
+  if (!context.isTransitioning) return null;
+  return { from: context.currentLocation.pathname, to: context.nextLocation.pathname };
+}
+
+/**
+ * 跨页共享元素的 `view-transition-name`。同名元素在新旧两页之间读作同一个对象，由浏览器连续移动并交叉淡化。
+ *
+ * 只在本次过渡的另一端是 `partner` 时命名：同一页上可能有多个候选（主页三张游戏卡、大厅里每张房间卡），
+ * 若一律命名，名字会重复，不相干的过渡里它们也会脱离整页单独淡出。`partner` 省略表示任何过渡都命名
+ * （该页只有一个候选，如房间顶栏的房名）；传 false 表示没有对应页面，从不命名。
+ */
+export function useSharedElementName(name: string, partner?: string | false): string | undefined {
+  const ends = usePageTransitionEnds();
+  if (!ends || partner === false) return undefined;
+  if (partner !== undefined && ends.from !== partner && ends.to !== partner) return undefined;
+  return name;
+}
+
+const pathDepth = (pathname: string) => pathname.split("/").filter(Boolean).length;
+
+/** 只属于某一对页面的过渡形态；其它导航省略，走 `index.css` 的默认前后推入。 */
+export type PageTransitionKind = "credits";
+
+/**
+ * 本次过渡的专属形态。关于项目页（`/abouts` 及各标签的独立路径）与任何页面之间都走「自底缘升起 / 落回页脚」，
+ * 读作从页脚版本号拉出一整页，而不是页面被前后推入。方向（前进/返回）仍由 `data-page-direction` 决定。
+ */
+export function pageTransitionKind(
+  from: string | undefined,
+  to: string | undefined
+): PageTransitionKind | undefined {
+  const touchesAbouts = [from, to].some((path) => path !== undefined && isAboutsPath(path));
+  return touchesAbouts ? "credits" : undefined;
+}
+
+/**
+ * 把过渡方向写到 `<html data-page-direction>`、把专属形态写到 `<html data-page-transition>`：
+ * 去往更深一层的页面（主页→大厅→房间）为 forward，回到更浅的页面为 back，CSS 据此对调新旧两层的前后关系。
+ * 浏览器的前进后退同样经过这里。布局副作用在 React Router 发起 `startViewTransition` 之前执行，
+ * 方向与形态总能赶上本次快照。
+ */
+export function usePageTransitionDirection(): void {
+  const ends = usePageTransitionEnds();
+  const from = ends?.from;
+  const to = ends?.to;
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (from === undefined || to === undefined) {
+      delete root.dataset.pageDirection;
+      delete root.dataset.pageTransition;
+      return;
+    }
+    root.dataset.pageDirection = pathDepth(to) < pathDepth(from) ? "back" : "forward";
+    const kind = pageTransitionKind(from, to);
+    if (kind) root.dataset.pageTransition = kind;
+    else delete root.dataset.pageTransition;
+  }, [from, to]);
+}

@@ -1,0 +1,906 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  CEERankedHistoryEntry,
+  CEERankedProfile,
+  CEERankedSeatView,
+  CEERankedSettlement,
+  CEERankedState,
+  ServerMessage,
+  StatePatchOperation,
+} from "@bakagame/shared";
+import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { deferred } from "@/test/Deferred";
+import { useAccountStore } from "./UseAccountStore";
+
+// 只假到最底层的 WS 客户端与壳通道：`@/lib/CEEWs` 用真实实现，这样排位准入命令的
+// 「先换票再发」也一并被这份测试覆盖（简报要求）。
+const socket = vi.hoisted(() => {
+  const send = vi.fn();
+  const messageHandlers: Array<(message: ServerMessage) => void> = [];
+  const statusHandlers: Array<(connected: boolean) => void> = [];
+  // 订阅过的消息处理函数另存一份：释放后仍要能直接调用它，验证「晚到的推送被忽略」。
+  const seenHandlers: Array<(message: ServerMessage) => void> = [];
+  // 与真实客户端一致：连接可用时注册状态监听会立刻回调一次「已连上」。
+  const link = { up: true };
+  const drop = <T>(list: T[], item: T): T[] => list.filter((candidate) => candidate !== item);
+  const client = {
+    send,
+    refreshIdentity: vi.fn(),
+    waitForConnection: vi.fn(async () => undefined),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    onMessage(handler: (message: ServerMessage) => void) {
+      messageHandlers.push(handler);
+      seenHandlers.push(handler);
+      return () => {
+        const next = drop(messageHandlers, handler);
+        messageHandlers.length = 0;
+        messageHandlers.push(...next);
+      };
+    },
+    onStatus(handler: (connected: boolean) => void) {
+      statusHandlers.push(handler);
+      if (link.up) handler(true);
+      return () => {
+        const next = drop(statusHandlers, handler);
+        statusHandlers.length = 0;
+        statusHandlers.push(...next);
+      };
+    },
+  };
+  return {
+    client,
+    send,
+    refreshIdentity: client.refreshIdentity,
+    waitForConnection: client.waitForConnection,
+    isBakaClient: vi.fn(() => false),
+    lastHandshakeHadTicket: vi.fn(() => true),
+    waitForChannelTicket: vi.fn(async () => true),
+    reportError: vi.fn(),
+    showToast: vi.fn(),
+    emit(message: ServerMessage) {
+      for (const handler of [...messageHandlers]) handler(message);
+    },
+    emitStatus(connected: boolean) {
+      link.up = connected;
+      for (const handler of [...statusHandlers]) handler(connected);
+    },
+    setLink(up: boolean) {
+      link.up = up;
+    },
+    lastSeenHandler: () => seenHandlers[seenHandlers.length - 1],
+    resetHandlers() {
+      link.up = true;
+      messageHandlers.length = 0;
+      statusHandlers.length = 0;
+      seenHandlers.length = 0;
+    },
+  };
+});
+
+vi.mock("@/lib/WebsocketClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/WebsocketClient")>();
+  return {
+    ...actual,
+    // 与真实客户端一致：带发送拦截器的客户端（CEE）其 `send` 经拦截器包装底层发送。
+    createWebSocketClient: (
+      _path: string,
+      options?: import("@/lib/WebsocketClient").WebSocketClientOptions
+    ) =>
+      options?.sendInterceptor
+        ? {
+            ...socket.client,
+            send: options.sendInterceptor((type, payload, sendOptions) =>
+              socket.send(type, payload, sendOptions)
+            ),
+          }
+        : socket.client,
+  };
+});
+
+vi.mock("@/lib/BakaChannel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/BakaChannel")>();
+  return {
+    ...actual,
+    bakaChannelQuery: () => "",
+    isBakaClient: socket.isBakaClient,
+    lastHandshakeHadTicket: socket.lastHandshakeHadTicket,
+    waitForChannelTicket: socket.waitForChannelTicket,
+  };
+});
+
+vi.mock("./UseCEEStore", () => ({
+  useCEEStore: {
+    getState: () => ({ reportError: socket.reportError, showToast: socket.showToast }),
+  },
+}));
+
+import { clearCEERankedQueryCache, useCEERankedStore } from "./UseCEERankedStore";
+
+const idleState: CEERankedState = { status: "idle" };
+const queuedState: CEERankedState = {
+  status: "queued",
+  queuedAt: 1_700_000_000_000,
+  botAvailableAt: 1_700_000_010_000,
+  botFallbackAt: 1_700_000_030_000,
+  window: 0,
+};
+const seat = (name: string, isBot: boolean): CEERankedSeatView => ({
+  name,
+  isBot,
+  rating: 1_500,
+  placementPlayed: null,
+  points: 0,
+  attempts: 0,
+  allowance: 10,
+  finished: false,
+  online: true,
+});
+const seriesState = (settlement: CEERankedSettlement): CEERankedState => ({
+  status: "series",
+  series: {
+    seriesId: "series-1",
+    tier: { id: "d3", name: "资深" },
+    phase: "settled",
+    rated: true,
+    self: seat("我", false),
+    opponent: seat("新人偶", true),
+    game: null,
+    nextGameAt: null,
+    games: [],
+    result: {
+      outcome: "won",
+      reason: "completed",
+      settlement,
+      ratingBefore: 1_500,
+      ratingAfter: 1_520,
+      placementPlayed: null,
+    },
+  },
+});
+const profileFixture: CEERankedProfile = {
+  rating: 1_520,
+  placementPlayed: 5,
+  placementTotal: 5,
+  seriesPlayed: 12,
+  wins: 7,
+  losses: 4,
+  draws: 1,
+  botRatedToday: 2,
+  botRatedLimit: 5,
+  recent: [],
+  recentHasMore: false,
+  season: null,
+  nextSeason: null,
+};
+
+const fullFrame = (revision: number, state: CEERankedState): ServerMessage => ({
+  type: "event",
+  event: "cee.ranked.state",
+  payload: { mode: "full", revision, state },
+});
+const patchFrame = (
+  revision: number,
+  baseRevision: number,
+  operations: StatePatchOperation[]
+): ServerMessage => ({
+  type: "event",
+  event: "cee.ranked.state",
+  payload: { mode: "patch", revision, baseRevision, operations },
+});
+
+/** 门面会透传第三个 options 参数，断言命令名与载荷时不必复述它。 */
+const callsOf = (command: string) =>
+  socket.send.mock.calls.filter((call: unknown[]) => call[0] === command);
+const firstPayloadOf = (command: string) => callsOf(command)[0]?.[1];
+
+/** 门面上有好几层 await：用一个宏任务把在途 Promise 一次性冲干净。 */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** 默认应答：状态命令回 `state`，其余命令回空对象。 */
+const reply = (state: CEERankedState = idleState) =>
+  socket.send.mockImplementation((command: unknown) =>
+    Promise.resolve(command === "cee.ranked.status" ? state : {})
+  );
+
+let release: (() => void) | null = null;
+const attachRanked = () => {
+  release = useCEERankedStore.getState().attach();
+  return release;
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  socket.resetHandlers();
+  socket.isBakaClient.mockReturnValue(false);
+  socket.lastHandshakeHadTicket.mockReturnValue(true);
+  socket.waitForChannelTicket.mockResolvedValue(true);
+  socket.waitForConnection.mockResolvedValue(undefined);
+  clearCEERankedQueryCache();
+  useCEERankedStore.setState({
+    ready: false,
+    syncFailed: false,
+    syncRetrying: false,
+    state: null,
+    profile: null,
+    profileLoading: false,
+    historyLoading: false,
+    leaderboard: null,
+    leaderboardLoading: false,
+    pending: {},
+  });
+  reply();
+});
+
+afterEach(() => {
+  release?.();
+  release = null;
+});
+
+describe("排位状态同步", () => {
+  it("全量帧直接落地状态与修订号", async () => {
+    attachRanked();
+    await settle();
+
+    socket.emit(fullFrame(1, queuedState));
+    await settle();
+
+    expect(useCEERankedStore.getState().state).toEqual(queuedState);
+    expect(useCEERankedStore.getState().ready).toBe(true);
+    // 全量帧自带修订号，链路连续，不该再补发一次状态请求。
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+  });
+
+  it("修订号连续时按补丁增量应用", async () => {
+    attachRanked();
+    await settle();
+    socket.emit(fullFrame(1, queuedState));
+    await settle();
+
+    socket.emit(patchFrame(2, 1, [{ op: "replace", path: "/window", value: 3 }]));
+    await settle();
+
+    const state = useCEERankedStore.getState().state;
+    expect(state?.status === "queued" && state.window).toBe(3);
+    expect(state?.status === "queued" && state.queuedAt).toBe(1_700_000_000_000);
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+  });
+
+  it("修订号对不上时重发全量，且在途期间不重复发", async () => {
+    const pendingStatus = deferred<CEERankedState>();
+    let statusCount = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command !== "cee.ranked.status") return Promise.resolve({});
+      statusCount += 1;
+      return statusCount === 1 ? Promise.resolve(idleState) : pendingStatus.promise;
+    });
+
+    attachRanked();
+    await settle();
+
+    // ack 只带状态不带修订号：任何带 baseRevision 的补丁都算对不上。
+    socket.emit(patchFrame(9, 8, [{ op: "replace", path: "/window", value: 1 }]));
+    socket.emit(patchFrame(10, 9, [{ op: "replace", path: "/window", value: 2 }]));
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+
+    pendingStatus.resolve(queuedState);
+    await settle();
+    expect(useCEERankedStore.getState().state).toEqual(queuedState);
+
+    socket.emit(patchFrame(11, 10, [{ op: "replace", path: "/window", value: 4 }]));
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(3);
+  });
+
+  it("全量帧先于状态回包到达时，回包不清掉修订号，后续补丁照常增量应用", async () => {
+    // 服务端处理 status 时先推带修订号的全量帧、再回 ACK：回包到达时事件流已经给过基线。
+    const pendingStatus = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? pendingStatus.promise : Promise.resolve({})
+    );
+    attachRanked();
+    await settle();
+
+    socket.emit(fullFrame(5, queuedState));
+    await settle();
+    pendingStatus.resolve(queuedState);
+    await settle();
+
+    socket.emit(patchFrame(6, 5, [{ op: "replace", path: "/window", value: 2 }]));
+    await settle();
+    const state = useCEERankedStore.getState().state;
+    expect(state?.status === "queued" && state.window).toBe(2);
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+  });
+
+  it("断线保留上一份状态只读展示；重连后自动请求全量，以服务端为准整体替换", async () => {
+    attachRanked();
+    await settle();
+    socket.emit(fullFrame(1, queuedState));
+    await settle();
+
+    socket.emitStatus(false);
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, state: queuedState });
+
+    const fresh = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? fresh.promise : Promise.resolve({})
+    );
+    socket.emitStatus(true);
+    // 全量回来之前到的差量不能续在断线前的那份上：基线已作废，只等全量。
+    socket.emit(patchFrame(2, 1, [{ op: "replace", path: "/window", value: 9 }]));
+    await settle();
+    expect(useCEERankedStore.getState().state).toEqual(queuedState);
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+
+    fresh.resolve(idleState);
+    await settle();
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, state: idleState });
+  });
+
+  it("没连上时挂上排位页：不发注定失败的状态请求，连上后再取", async () => {
+    socket.setLink(false);
+    attachRanked();
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(0);
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: false, syncFailed: false });
+    expect(socket.reportError).not.toHaveBeenCalled();
+
+    socket.emitStatus(true);
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+    expect(useCEERankedStore.getState().ready).toBe(true);
+  });
+
+  it("释放之后到达的推送一律忽略", async () => {
+    attachRanked();
+    await settle();
+    const handler = socket.lastSeenHandler();
+    release?.();
+    release = null;
+
+    if (handler) handler(fullFrame(1, queuedState));
+    await settle();
+
+    expect(useCEERankedStore.getState().state).toBeNull();
+    expect(useCEERankedStore.getState().ready).toBe(false);
+  });
+
+  it("重新进入排位页后，上一次在途的全量回包不再覆盖新状态", async () => {
+    const stale = deferred<CEERankedState>();
+    const fresh = deferred<CEERankedState>();
+    let statusCount = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command !== "cee.ranked.status") return Promise.resolve({});
+      statusCount += 1;
+      return statusCount === 1 ? stale.promise : fresh.promise;
+    });
+
+    attachRanked();
+    await settle();
+    release?.();
+    release = null;
+    attachRanked();
+    await settle();
+
+    fresh.resolve(idleState);
+    await settle();
+    stale.resolve(queuedState);
+    await settle();
+
+    expect(useCEERankedStore.getState().state).toEqual(idleState);
+  });
+
+  it("本场结算从 pending 落到 rated 时自动刷新档案一次", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(
+        command === "cee.ranked.status"
+          ? idleState
+          : command === "cee.ranked.profile"
+            ? profileFixture
+            : {}
+      )
+    );
+    attachRanked();
+    await settle();
+
+    socket.emit(fullFrame(1, seriesState("pending")));
+    await settle();
+    socket.emit(fullFrame(2, seriesState("rated")));
+    await settle();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+    expect(useCEERankedStore.getState().profile).toEqual(profileFixture);
+
+    // 已经是 rated 的后续推送不再重复刷档案。
+    socket.emit(fullFrame(3, seriesState("rated")));
+    await settle();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+  });
+});
+
+describe("状态请求失败与重试", () => {
+  /** 状态请求按次序应答：给出的每一项依次用掉，用完后重复最后一项。 */
+  const statusReplies = (...replies: Array<() => Promise<unknown>>) => {
+    let calls = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command !== "cee.ranked.status") return Promise.resolve({});
+      const next = replies[Math.min(calls, replies.length - 1)];
+      calls += 1;
+      return next ? next() : Promise.resolve(idleState);
+    });
+  };
+  const timeout = () => rejectedProtocol({ code: "TIMEOUT", message: "请求超时" });
+
+  it("已连接时状态请求失败：记下失败，仍未就绪", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: false, syncFailed: true });
+    expect(socket.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it("失败之后事件流送来状态：就绪并撤下失败", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    socket.emit(fullFrame(1, idleState));
+    await settle();
+
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, syncFailed: false });
+  });
+
+  it("失败之后断线即撤下失败，重连后照常自动重发", async () => {
+    statusReplies(timeout, () => Promise.resolve(idleState));
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    socket.emitStatus(false);
+    expect(useCEERankedStore.getState().syncFailed).toBe(false);
+
+    socket.emitStatus(true);
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, syncFailed: false });
+  });
+
+  it("请求途中断过线：失败归重连收拾，不记成失败", async () => {
+    const pendingStatus = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? pendingStatus.promise : Promise.resolve({})
+    );
+    attachRanked();
+    await settle();
+
+    socket.emitStatus(false);
+    pendingStatus.reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+    await settle();
+
+    expect(useCEERankedStore.getState().syncFailed).toBe(false);
+  });
+
+  it("重试再发一次状态请求，在途期间不重复发，成功后就绪", async () => {
+    const retried = deferred<CEERankedState>();
+    statusReplies(timeout, () => retried.promise);
+    attachRanked();
+    await settle();
+    expect(useCEERankedStore.getState().syncFailed).toBe(true);
+
+    const first = useCEERankedStore.getState().retryStatus();
+    const second = useCEERankedStore.getState().retryStatus();
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({ syncFailed: false, syncRetrying: true });
+
+    retried.resolve(idleState);
+    await Promise.all([first, second]);
+    expect(useCEERankedStore.getState()).toMatchObject({
+      ready: true,
+      syncFailed: false,
+      syncRetrying: false,
+    });
+  });
+
+  it("重试再次失败：回到失败态，重试入口解锁", async () => {
+    statusReplies(timeout);
+    attachRanked();
+    await settle();
+
+    await useCEERankedStore.getState().retryStatus();
+
+    expect(callsOf("cee.ranked.status")).toHaveLength(2);
+    expect(useCEERankedStore.getState()).toMatchObject({
+      ready: false,
+      syncFailed: true,
+      syncRetrying: false,
+    });
+  });
+});
+
+describe("排位命令", () => {
+  it("排队在请求发出到回包期间持有进行中锁", async () => {
+    const ack = deferred<Record<string, unknown>>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.queue" ? ack.promise : Promise.resolve({})
+    );
+    attachRanked();
+
+    const running = useCEERankedStore.getState().queue();
+    expect(useCEERankedStore.getState().pending.queue).toBe(true);
+    expect(firstPayloadOf("cee.ranked.queue")).toEqual({});
+
+    ack.resolve({});
+    await running;
+    expect(useCEERankedStore.getState().pending.queue).toBeUndefined();
+  });
+
+  it("猜测命令带角色 id，回包成功返回 true", async () => {
+    attachRanked();
+    await settle();
+
+    const running = useCEERankedStore.getState().guess(7);
+    expect(firstPayloadOf("cee.ranked.guess")).toEqual({ characterId: 7 });
+    expect(useCEERankedStore.getState().pending.guess).toBe(true);
+
+    await expect(running).resolves.toBe(true);
+    expect(useCEERankedStore.getState().pending.guess).toBeUndefined();
+  });
+
+  it("通道类错误用排位措辞，不进通用上报", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status"
+        ? Promise.resolve(idleState)
+        : rejectedProtocol({ code: "CLIENT_REQUIRED", message: "服务端原文" })
+    );
+    attachRanked();
+    await settle();
+    socket.reportError.mockClear();
+
+    await useCEERankedStore.getState().queue();
+    expect(socket.showToast).toHaveBeenCalledWith(
+      `排位赛需要使用 BakaGame 客户端，请下载安装后再参与：${BAKA_CLIENT_DOWNLOAD_URL}`,
+      "error"
+    );
+    expect(socket.reportError).not.toHaveBeenCalled();
+  });
+
+  it("其余失败走 CEE 的统一上报，服务端中文原文直接给玩家", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status"
+        ? Promise.resolve(idleState)
+        : rejectedProtocol({ code: "RANKED_BOT_NOT_READY", message: "人机对手尚未就绪" })
+    );
+    attachRanked();
+    await settle();
+
+    const guessed = await useCEERankedStore.getState().guess(3);
+    expect(guessed).toBe(false);
+    expect(socket.reportError).toHaveBeenCalledWith({
+      code: "RANKED_BOT_NOT_READY",
+      message: "人机对手尚未就绪",
+    });
+    expect(socket.showToast).not.toHaveBeenCalled();
+  });
+
+  it("档案加载中置 profileLoading，回包后落档并复位", async () => {
+    const ack = deferred<CEERankedProfile>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.profile" ? ack.promise : Promise.resolve({})
+    );
+    attachRanked();
+
+    const running = useCEERankedStore.getState().loadProfile();
+    expect(useCEERankedStore.getState().profileLoading).toBe(true);
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+
+    ack.resolve(profileFixture);
+    await running;
+    expect(useCEERankedStore.getState().profile).toEqual(profileFixture);
+    expect(useCEERankedStore.getState().profileLoading).toBe(false);
+  });
+
+  it("同时发起的档案加载只发一条请求，回包前加载态不提前消失", async () => {
+    const ack = deferred<CEERankedProfile>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.profile" ? ack.promise : Promise.resolve({})
+    );
+    attachRanked();
+
+    const first = useCEERankedStore.getState().loadProfile();
+    const second = useCEERankedStore.getState().loadProfile();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+    await second;
+    expect(useCEERankedStore.getState().profileLoading).toBe(true);
+
+    ack.resolve(profileFixture);
+    await first;
+    expect(useCEERankedStore.getState().profileLoading).toBe(false);
+  });
+
+  it("档案加载途中结算落定：先到的旧回包之后补刷一次，不留下结算前的战绩", async () => {
+    const stale = deferred<CEERankedProfile>();
+    let profileCalls = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command === "cee.ranked.status") return Promise.resolve(idleState);
+      if (command !== "cee.ranked.profile") return Promise.resolve({});
+      profileCalls += 1;
+      return profileCalls === 1 ? stale.promise : Promise.resolve(profileFixture);
+    });
+    attachRanked();
+    await settle();
+
+    const running = useCEERankedStore.getState().loadProfile();
+    socket.emit(fullFrame(1, seriesState("pending")));
+    socket.emit(fullFrame(2, seriesState("rated")));
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+
+    stale.resolve({ ...profileFixture, recent: [] });
+    await running;
+    await settle();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(2);
+    expect(useCEERankedStore.getState().profile).toEqual(profileFixture);
+  });
+
+  it("释放页面后清掉上一个账号的档案与榜单，换号进入不会短暂看到旧战绩", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(
+        command === "cee.ranked.profile"
+          ? profileFixture
+          : command === "cee.ranked.leaderboard"
+            ? { entries: [] }
+            : {}
+      )
+    );
+    attachRanked();
+    await useCEERankedStore.getState().loadProfile();
+    await useCEERankedStore.getState().loadLeaderboard();
+    expect(useCEERankedStore.getState().profile).not.toBeNull();
+    expect(useCEERankedStore.getState().leaderboard).not.toBeNull();
+
+    release?.();
+    release = null;
+    expect(useCEERankedStore.getState()).toMatchObject({
+      profile: null,
+      leaderboard: null,
+      profileLoading: false,
+    });
+  });
+
+  it("账号变化时清掉档案与榜单，旧账号在途的回包不再落进新账号的页面", async () => {
+    const ack = deferred<CEERankedProfile>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.profile" ? ack.promise : Promise.resolve({})
+    );
+    useCEERankedStore.setState({ profile: profileFixture, leaderboard: { entries: [] } as never });
+    attachRanked();
+    useAccountStore.setState({ profile: { id: "account-a" } as never });
+    const running = useCEERankedStore.getState().loadProfile();
+
+    useAccountStore.setState({ profile: { id: "account-b" } as never });
+    expect(useCEERankedStore.getState()).toMatchObject({
+      profile: null,
+      leaderboard: null,
+      profileLoading: false,
+    });
+
+    ack.resolve(profileFixture);
+    await running;
+    expect(useCEERankedStore.getState().profile).toBeNull();
+  });
+
+  it("四个查询各发对应的排位命令，并在复用窗口内合并同键请求", async () => {
+    attachRanked();
+    await settle();
+    socket.send.mockImplementation((command: unknown) => {
+      if (command === "cee.ranked.characterSearch")
+        return Promise.resolve({ results: [{ id: 1, name: "Nao", nameCn: "直" }] });
+      if (command === "cee.ranked.subjectSearch")
+        return Promise.resolve({ results: [{ id: 2, name: "Sora", nameCn: "空" }] });
+      if (command === "cee.ranked.characterImage")
+        return Promise.resolve({ imageUrl: "https://example.com/a.png" });
+      return Promise.resolve({ results: [] });
+    });
+
+    const characters = await useCEERankedStore.getState().searchCharacters("  直  ");
+    expect(characters).toEqual([{ id: 1, name: "Nao", nameCn: "直" }]);
+    await useCEERankedStore.getState().searchCharacters("直");
+    expect(callsOf("cee.ranked.characterSearch")).toHaveLength(1);
+    expect(firstPayloadOf("cee.ranked.characterSearch")).toEqual({ keyword: "  直  " });
+
+    await useCEERankedStore.getState().searchSubjects("空");
+    expect(firstPayloadOf("cee.ranked.subjectSearch")).toEqual({ keyword: "空" });
+
+    await useCEERankedStore.getState().loadSubjectCharacters(12);
+    await useCEERankedStore.getState().loadSubjectCharacters(12);
+    expect(callsOf("cee.ranked.subjectCharacters")).toHaveLength(1);
+    expect(firstPayloadOf("cee.ranked.subjectCharacters")).toEqual({ subjectId: 12 });
+
+    const image = await useCEERankedStore.getState().characterImage(9, "large");
+    expect(image).toBe("https://example.com/a.png");
+    expect(firstPayloadOf("cee.ranked.characterImage")).toEqual({
+      characterId: 9,
+      size: "large",
+    });
+    // 取图要回源上游，耗时由服务端决定：不能带上客户端超时。
+    expect(callsOf("cee.ranked.characterImage")[0]?.[2]).toEqual({ timeout: 0 });
+  });
+
+  it("失败的查询不进复用窗口，下一次照常回源", async () => {
+    attachRanked();
+    await settle();
+    let attempts = 0;
+    socket.send.mockImplementation(() => {
+      attempts += 1;
+      return attempts === 1
+        ? rejectedProtocol({ code: "UPSTREAM_UNAVAILABLE", message: "上游暂时不可用" })
+        : Promise.resolve({ results: [{ id: 1, name: "A", nameCn: "甲" }] });
+    });
+
+    await expect(useCEERankedStore.getState().searchCharacters("甲")).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+    });
+    const retried = await useCEERankedStore.getState().searchCharacters("甲");
+    expect(retried).toHaveLength(1);
+    expect(callsOf("cee.ranked.characterSearch")).toHaveLength(2);
+  });
+
+  it("排位查询不带房间身份，也不设客户端超时", async () => {
+    attachRanked();
+    await settle();
+    socket.send.mockResolvedValue({ results: [] });
+
+    await useCEERankedStore.getState().searchCharacters("直");
+    await useCEERankedStore.getState().searchSubjects("空");
+    await useCEERankedStore.getState().loadSubjectCharacters(12);
+
+    // 排位按账号鉴权：这三条不能套多人房那份注入房号与会话凭据的发送壳。
+    for (const command of [
+      "cee.ranked.characterSearch",
+      "cee.ranked.subjectSearch",
+      "cee.ranked.subjectCharacters",
+    ]) {
+      expect(callsOf(command)).toHaveLength(1);
+      expect(callsOf(command)[0]?.[2]).toBeUndefined();
+    }
+  });
+});
+
+describe("壳内排位准入", () => {
+  it("握手没带票时，排位状态命令先换票重连再发出", async () => {
+    socket.isBakaClient.mockReturnValue(true);
+    socket.lastHandshakeHadTicket.mockReturnValueOnce(false).mockReturnValue(true);
+    attachRanked();
+    await settle();
+
+    expect(socket.waitForChannelTicket).toHaveBeenCalledTimes(1);
+    expect(socket.refreshIdentity).toHaveBeenCalledTimes(1);
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+  });
+
+  it("服务端拒绝准入后换票重发一次，玩家看不到失败", async () => {
+    socket.isBakaClient.mockReturnValue(true);
+    attachRanked();
+    await settle();
+    socket.send
+      .mockRejectedValueOnce({ code: "CLIENT_REQUIRED", message: "服务端原文" })
+      .mockResolvedValueOnce({});
+
+    await useCEERankedStore.getState().queue();
+
+    expect(callsOf("cee.ranked.queue")).toHaveLength(2);
+    expect(socket.refreshIdentity).toHaveBeenCalledTimes(1);
+    expect(socket.reportError).not.toHaveBeenCalled();
+  });
+
+  it("壳签不出票时不发注定被拒的人机命令，并提示通道未就绪", async () => {
+    socket.isBakaClient.mockReturnValue(true);
+    socket.lastHandshakeHadTicket.mockReturnValue(false);
+    socket.waitForChannelTicket.mockResolvedValue(false);
+
+    await useCEERankedStore.getState().playBot();
+
+    expect(socket.refreshIdentity).not.toHaveBeenCalled();
+    expect(socket.send).not.toHaveBeenCalled();
+    expect(socket.reportError).toHaveBeenCalledWith({
+      code: "CLIENT_CHANNEL_NOT_READY",
+      message: "客户端通道尚未就绪",
+    });
+  });
+
+  it("网页环境下排位命令不做任何换票动作", async () => {
+    socket.isBakaClient.mockReturnValue(false);
+    socket.lastHandshakeHadTicket.mockReturnValue(false);
+    await useCEERankedStore.getState().queue();
+
+    expect(socket.waitForChannelTicket).not.toHaveBeenCalled();
+    expect(socket.refreshIdentity).not.toHaveBeenCalled();
+    expect(callsOf("cee.ranked.queue")).toHaveLength(1);
+  });
+});
+
+describe("战绩翻页与排行榜", () => {
+  const entry = (seriesId: string, endedAt: number): CEERankedHistoryEntry => ({
+    seriesId,
+    endedAt,
+    tierId: "d1",
+    opponentName: "阿稳",
+    opponentIsBot: true,
+    outcome: "won",
+    selfPoints: 2,
+    opponentPoints: 0,
+    ratingDelta: 8,
+    placement: false,
+  });
+
+  it("按最后一条的结束时刻往前翻，拼在后面并去重，翻完不再请求", async () => {
+    useCEERankedStore.setState({
+      profile: {
+        ...profileFixture,
+        recent: [entry("a", 300), entry("b", 200)],
+        recentHasMore: true,
+      },
+    });
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(
+        command === "cee.ranked.history"
+          ? { entries: [entry("b", 200), entry("c", 100)], hasMore: false }
+          : {}
+      )
+    );
+
+    await useCEERankedStore.getState().loadMoreHistory();
+
+    expect(firstPayloadOf("cee.ranked.history")).toEqual({ before: 200 });
+    const profile = useCEERankedStore.getState().profile;
+    expect(profile?.recent.map((item) => item.seriesId)).toEqual(["a", "b", "c"]);
+    expect(profile?.recentHasMore).toBe(false);
+    expect(useCEERankedStore.getState().historyLoading).toBe(false);
+
+    await useCEERankedStore.getState().loadMoreHistory();
+    expect(callsOf("cee.ranked.history")).toHaveLength(1);
+  });
+
+  it("翻页途中资料被刷新（刚结算完），旧游标的那一页丢掉", async () => {
+    const page = deferred<unknown>();
+    useCEERankedStore.setState({
+      profile: { ...profileFixture, recent: [entry("a", 300)], recentHasMore: true },
+    });
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.history" ? page.promise : Promise.resolve({})
+    );
+
+    const loading = useCEERankedStore.getState().loadMoreHistory();
+    const refreshed = {
+      ...profileFixture,
+      recent: [entry("n", 400)],
+      recentHasMore: true,
+    };
+    useCEERankedStore.setState({ profile: refreshed });
+    page.resolve({ entries: [entry("z", 1)], hasMore: false });
+    await loading;
+
+    expect(useCEERankedStore.getState().profile).toEqual(refreshed);
+  });
+
+  it("排行榜取到后落进 store，同一时刻只发一条", async () => {
+    const board = deferred<unknown>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.leaderboard" ? board.promise : Promise.resolve({})
+    );
+    const first = useCEERankedStore.getState().loadLeaderboard();
+    const second = useCEERankedStore.getState().loadLeaderboard();
+    expect(useCEERankedStore.getState().leaderboardLoading).toBe(true);
+    const value = { entries: [], self: null, total: 0 };
+    board.resolve(value);
+    await Promise.all([first, second]);
+
+    expect(callsOf("cee.ranked.leaderboard")).toHaveLength(1);
+    expect(useCEERankedStore.getState().leaderboard).toEqual(value);
+    expect(useCEERankedStore.getState().leaderboardLoading).toBe(false);
+  });
+});

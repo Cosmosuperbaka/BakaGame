@@ -1,0 +1,26 @@
+# HTTPDNS 应答解析的共享向量：桌面壳（Rust）与安卓壳（Kotlin）各自的单测读同一份，
+# 两端对同一条应答必须给出同样的结果。改解析规则时两端与本文件一起改。
+#
+# 格式：制表符分隔。
+#   limit<TAB>名称<TAB>数值                      两端共用的常量
+#   case<TAB>名称<TAB>应答原文<TAB>桌面期望<TAB>安卓期望
+# 期望写法：`ips=地址;地址 ttl=秒` 或 `error`。应答原文不裁剪空白。
+# 桌面与安卓期望不同的行是「已知分叉」，用来把差异显式记在数据里（目前只有地址族）。
+limit	maxResponseBytes	8192
+limit	defaultTtlSeconds	60
+limit	maxTtlSeconds	3600
+limit	queryTimeoutMillis	1500
+case	单个地址带TTL	1.2.3.4,300	ips=1.2.3.4 ttl=300	ips=1.2.3.4 ttl=300
+case	多个地址	1.2.3.4;5.6.7.8,60	ips=1.2.3.4;5.6.7.8 ttl=60	ips=1.2.3.4;5.6.7.8 ttl=60
+case	带客户端地址后缀	1.2.3.4;5.6.7.8,120 | 9.9.9.9	ips=1.2.3.4;5.6.7.8 ttl=120	ips=1.2.3.4;5.6.7.8 ttl=120
+case	缺TTL取默认值	1.2.3.4	ips=1.2.3.4 ttl=60	ips=1.2.3.4 ttl=60
+case	TTL为0抬到1	1.2.3.4,0	ips=1.2.3.4 ttl=1	ips=1.2.3.4 ttl=1
+case	TTL过大压到上限	1.2.3.4,99999	ips=1.2.3.4 ttl=3600	ips=1.2.3.4 ttl=3600
+case	首尾与分隔处的空白被容忍	 1.2.3.4 ; 5.6.7.8 , 30 	ips=1.2.3.4;5.6.7.8 ttl=30	ips=1.2.3.4;5.6.7.8 ttl=30
+case	非法地址被丢弃	999.1.1.1;1.2.3.4,60	ips=1.2.3.4 ttl=60	ips=1.2.3.4 ttl=60
+case	全是非法地址	abc,60	error	error
+case	TTL不是数字	1.2.3.4,abc	error	error
+case	空应答		error	error
+case	只有空白	   	error	error
+case	应答含IPv6（已知分叉：桌面保留，安卓丢弃）	2001:db8::1;1.2.3.4,60	ips=2001:db8::1;1.2.3.4 ttl=60	ips=1.2.3.4 ttl=60
+case	只有IPv6（已知分叉）	2001:db8::1,60	ips=2001:db8::1 ttl=60	error

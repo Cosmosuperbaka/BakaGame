@@ -1,0 +1,233 @@
+{
+  "$schema": "https://edgeone.ai/schema/edgeone.json",
+  "outputDirectory": "./dist",
+  "headers": [
+    {
+      "source": "/api/*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.css",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.woff2",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.woff",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.ttf",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/stickers/*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/emojis/*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.webp",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.png",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.jpg",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.jpeg",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.gif",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/*.svg",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "caches": [
+    {
+      "source": "/api/*",
+      "cacheTtl": 0
+    },
+    {
+      "source": "/assets/*.js",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/assets/*.css",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/assets/*.woff2",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/assets/*.woff",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/assets/*.ttf",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/stickers/*",
+      "cacheTtl": 31536000
+    },
+    {
+      "source": "/emojis/*",
+      "cacheTtl": 86400
+    },
+    {
+      "source": "/assets/*.webp",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/assets/*.png",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/assets/*.jpg",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/assets/*.jpeg",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/assets/*.gif",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/assets/*.svg",
+      "cacheTtl": 604800
+    },
+    {
+      "source": "/sitemap.xml",
+      "cacheTtl": 3600
+    },
+    {
+      "source": "/robots.txt",
+      "cacheTtl": 3600
+    }
+  ]
+}

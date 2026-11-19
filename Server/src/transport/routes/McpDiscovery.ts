@@ -1,0 +1,182 @@
+import { Elysia } from "elysia";
+import { MCP_INSTRUCTIONS, MCP_POLICY } from "../../mcp/Policy";
+import { TOOLS } from "../../mcp/Tools";
+
+/** Agent 只拿到站点链接时，按这几份公开文件发现远程 MCP，不依赖人类额外提示。 */
+const POLICY = MCP_POLICY.split("\n");
+const INSTRUCTIONS = MCP_INSTRUCTIONS;
+
+/**
+ * 同一个发现文件的路径别名。
+ *
+ * - `/.well-known/mcp.json` 是 Agent 约定俗成的位置，必须存在。
+ * - `/api/...` 是**边缘只转发 `/api/*`** 时的逃生口：前端静态托管把
+ *   未命中静态资源的请求交给 SPA 兜底，`/.well-known/*` 会退回一份 HTML；而 `/api/*`
+ *   由边缘反代到后端，能拿到活数据（含 `enabled` 与全量工具清单）。
+ *
+ * 两份路径共用同一个 handler，不复制内容：静态文件只需要指向 `/api` 别名即可，
+ * 真相仍然只有这一处。
+ */
+const WELL_KNOWN_PATHS = ["/.well-known/mcp.json", "/api/.well-known/mcp.json"] as const;
+const SERVER_CARD_PATHS = [
+  "/.well-known/mcp/server-card.json",
+  "/api/.well-known/mcp/server-card.json",
+] as const;
+const LEGACY_CARD_PATHS = ["/mcp/server-card", "/api/mcp/server-card"] as const;
+
+/** 取代理链里最靠前的一跳值：`X-Forwarded-*` 允许逗号列表，只用第一个。 */
+const firstHop = (value: string | null): string | undefined => {
+  const head = value?.split(",")[0]?.trim();
+  return head ? head.toLowerCase() : undefined;
+};
+
+/**
+ * 公开 origin。
+ *
+ * 边缘终止 TLS 后回源是明文，`request.url` 只看得到 http；
+ * 发现文件里写 `http://` 会让 Agent 连到一条要 301 的地址，POST 重定向还可能丢包体。
+ * 所以优先采信代理声明的协议与主机，两者都没有时才用请求本身的 origin。
+ * 只接受 http/https，避免把调用方传进来的奇怪协议拼进返回体。
+ *
+ * 转发头与 Host 都由调用方控制，而结果会写进可公共缓存的发现文件：边缘若没有覆盖
+ * 客户端自带的 `X-Forwarded-Host`，一次请求就能把指向攻击者主机的 MCP 端点种进缓存，
+ * 让之后的 Agent 带着座位凭证连过去。因此拼出的 origin 必须落在站点来源白名单内，
+ * 否则退回配置的服务地址。
+ */
+const publicOrigin = (
+  request: Request,
+  fallback: string,
+  isTrustedOrigin?: (origin: string) => boolean
+): string => {
+  const origin = claimedOrigin(request, fallback);
+  return !isTrustedOrigin || isTrustedOrigin(origin) ? origin : fallback;
+};
+
+/**
+ * 发现文件可信的公开来源：只认站点前端与服务端自己的公开地址。
+ * 不复用 WebSocket 的来源白名单——那份名单还放行内嵌壳的 `https://localhost` 与私网互认，
+ * 对「指向哪里的 MCP 端点」这个问题它们都不是合法答案。
+ */
+export const isPublicSiteOrigin = (
+  origin: string,
+  clientUrl: string,
+  serverUrl: string
+): boolean => {
+  const publicOrigins = new Set<string>();
+  for (const raw of [...clientUrl.split(","), serverUrl]) {
+    try {
+      publicOrigins.add(new URL(raw.trim()).origin);
+    } catch {
+      // 配置项里无法解析的条目不构成可信来源
+    }
+  }
+  return publicOrigins.has(origin);
+};
+
+/** 结果随这两个头变化：共享缓存必须分开存，不能拿一份响应回给另一组头。 */
+const DISCOVERY_VARY = "x-forwarded-host, x-forwarded-proto";
+
+const claimedOrigin = (request: Request, fallback: string): string => {
+  const proto = firstHop(request.headers.get("x-forwarded-proto"));
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || undefined;
+
+  let origin = fallback;
+  try {
+    origin = new URL(request.url).origin;
+  } catch {
+    // request.url 不可解析时保持 fallback
+  }
+
+  try {
+    const url = new URL(origin);
+    // 直接拼 origin：改 `protocol` 会把回源端口（4850）一起带过去，
+    // 而 forwarded host 不带端口时那个端口对外并不存在。
+    const scheme = proto === "https" || proto === "http" ? proto : url.protocol.replace(":", "");
+    return `${scheme}://${host ?? url.host}`;
+  } catch {
+    return fallback;
+  }
+};
+
+export const mcpDiscoveryRoutes = ({
+  mcpEnabled,
+  serverUrl,
+  version,
+  isTrustedOrigin,
+}: {
+  mcpEnabled: boolean;
+  serverUrl: string;
+  version: string;
+  /** 站点来源白名单；不在其内的转发主机或 Host 一律退回 `serverUrl`。 */
+  isTrustedOrigin?: (origin: string) => boolean;
+}) => {
+  const app = new Elysia({ name: "mcp-discovery", normalize: false });
+
+  for (const path of WELL_KNOWN_PATHS)
+    app.get(path, ({ request, set }) => {
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
+      set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
+      return {
+        schemaVersion: 1,
+        enabled: mcpEnabled,
+        mcpServers: mcpEnabled
+          ? {
+              bakagame: {
+                type: "http",
+                url: `${origin}/api/mcp`,
+              },
+            }
+          : {},
+        // 指向 `/api` 别名：根路径在只转发 `/api/*` 的边缘上会被 SPA 兜底成 HTML，
+        // 而 server-card 里带全量工具清单，必须真的能读到。
+        serverCard: `${origin}/api/.well-known/mcp/server-card.json`,
+        documentation: `${origin}/llms.txt`,
+        instructions: INSTRUCTIONS,
+        policy: POLICY,
+      };
+    });
+
+  for (const path of SERVER_CARD_PATHS)
+    app.get(path, ({ request, set }) => {
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
+      set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
+      return {
+        schemaVersion: 1,
+        name: "bakagame-mcp",
+        title: "BakaGame",
+        description:
+          "BakaGame 的远程 MCP：三款多人游戏的大厅、房间、对局操作与本人私有状态。只允许纯 Agent 自行游玩。",
+        version,
+        enabled: mcpEnabled,
+        transport: {
+          type: "streamable-http",
+          url: `${origin}/api/mcp`,
+        },
+        protocolVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+        capabilities: { tools: { listChanged: false } },
+        authentication: { type: "none" },
+        documentation: `${origin}/llms.txt`,
+        instructions: INSTRUCTIONS,
+        policy: POLICY,
+        tools: TOOLS.map(({ name, description }) => ({ name, description })),
+      };
+    });
+
+  for (const path of LEGACY_CARD_PATHS)
+    app.get(path, ({ request, set }) => {
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
+      set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
+      return {
+        schemaVersion: 1,
+        name: "bakagame-mcp",
+        transport: { type: "streamable-http", url: `${origin}/api/mcp` },
+        enabled: mcpEnabled,
+        policy: POLICY,
+      };
+    });
+
+  return app;
+};

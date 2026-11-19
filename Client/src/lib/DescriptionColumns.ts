@@ -1,0 +1,221 @@
+import type { DescriptionRecord, PublicPlayerView, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+import { speechModeOf, speechOrderOf } from "@/lib/WhoIsFakerSpeech";
+
+/** 发言历史的一列。轮次、平票 PK 与补充发言各自独立编号。 */
+export interface DescriptionColumn {
+  key: string;
+  label: string;
+  /** 列的种类：常规轮次、平票 PK 或补充发言；配色由下方两张表按种类映射。 */
+  tone: "default" | "tieBreak" | "supplement";
+  /** 在整张表中的列序号，0-based。表格据此给奇偶列上交替底色。 */
+  index: number;
+  /**
+   * 本列应当发言的玩家。
+   * 出题人、旁观者、已出局以及本列未被点名的玩家不在其中，
+   * 他们的格子留空，不显示待提交占位。
+   */
+  expectedPlayerIds: Set<string>;
+}
+
+export interface DescriptionColumnModel {
+  columns: DescriptionColumn[];
+  /** playerId → columnKey → 发言记录 */
+  byPlayer: Map<string, Map<string, DescriptionRecord>>;
+  /** playerId → columnKey → 1-based 发言顺位序号 */
+  playerOrder: Map<string, Map<string, number>>;
+}
+
+/** 计算应发言名单所需的快照状态字段 */
+export type SpeechStatus = WhoIsFakerRoomSnapshot["status"];
+
+/** 把发言记录归入所属列，并给出该记录的列键。 */
+function columnKeyOf(record: DescriptionRecord): string {
+  if (record.kind === "tieBreak") return `tie-${record.tieBreakIndex ?? 1}`;
+  if (record.kind === "supplement") return `sup-${record.supplementIndex ?? 1}`;
+  return `cycle-${record.cycle}`;
+}
+
+/**
+ * 当前正在进行的发言列及其应发言名单。
+ * 只有处于发言阶段时才有值；投票、夜晚等阶段没有待提交的格子。
+ */
+export function pendingColumn(status: SpeechStatus): {
+  key: string;
+  playerIds: readonly string[];
+} | null {
+  const pending = pendingColumnOf(status);
+  return pending && { key: columnKeyOfPending(pending), playerIds: pending.playerIds };
+}
+
+/** 进行中的发言列：种类与编号分开保存，收集各类列编号时不必从字符串键里再解码。 */
+interface PendingColumn {
+  kind: "cycle" | "tie" | "sup";
+  index: number;
+  playerIds: readonly string[];
+}
+
+const columnKeyOfPending = ({ kind, index }: PendingColumn): string => `${kind}-${index}`;
+
+function pendingColumnOf(status: SpeechStatus): PendingColumn | null {
+  const mode = speechModeOf(status);
+  const playerIds = speechOrderOf(status);
+  if (mode === "supplement") return { kind: "sup", index: status.supplementIndex ?? 1, playerIds };
+  if (mode === "tieBreak") {
+    if (status.tieBreakStage !== "description") return null;
+    return { kind: "tie", index: status.tieBreakIndex ?? 1, playerIds };
+  }
+  if (status.phase !== "description") return null;
+  return { kind: "cycle", index: status.day, playerIds };
+}
+
+/** 三类列的编号集合，加上「该列应发言的人」的登记表。 */
+interface ColumnBuckets {
+  cycles: Set<number>;
+  ties: Set<number>;
+  supplements: Set<number>;
+  /** 按列 key 取应发言名单，首次访问时建立。 */
+  expectFor(key: string): Set<string>;
+}
+
+const createColumnBuckets = (): ColumnBuckets => {
+  const expected = new Map<string, Set<string>>();
+  return {
+    cycles: new Set<number>(),
+    ties: new Set<number>(),
+    supplements: new Set<number>(),
+    expectFor(key: string) {
+      const found = expected.get(key);
+      if (found) return found;
+      const created = new Set<string>();
+      expected.set(key, created);
+      return created;
+    },
+  };
+};
+
+/** 实际发言过的记录决定列的存在与格子归属。 */
+function collectSpokenColumns(records: DescriptionRecord[], buckets: ColumnBuckets): void {
+  for (const record of records) {
+    if (record.kind === "tieBreak") buckets.ties.add(record.tieBreakIndex ?? 1);
+    else if (record.kind === "supplement") buckets.supplements.add(record.supplementIndex ?? 1);
+    else buckets.cycles.add(record.cycle);
+    buckets.expectFor(columnKeyOf(record)).add(record.playerId);
+  }
+}
+
+/** 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。 */
+function collectPendingColumns(status: SpeechStatus, buckets: ColumnBuckets): void {
+  const pending = pendingColumnOf(status);
+  if (!pending) return;
+  const { kind, index, playerIds } = pending;
+  if (kind === "cycle") buckets.cycles.add(index);
+  else if (kind === "tie") buckets.ties.add(index);
+  else buckets.supplements.add(index);
+  const bucket = buckets.expectFor(columnKeyOfPending(pending));
+  for (const playerId of playerIds) bucket.add(playerId);
+}
+
+/** 进行中那一列的应发言玩家按名单顺序补出预期顺位。 */
+function orderPendingSpeakers(
+  status: SpeechStatus,
+  setOrder: (playerId: string, colKey: string, order: number) => void
+): void {
+  const pending = pendingColumn(status);
+  if (!pending) return;
+  pending.playerIds.forEach((playerId, index) => setOrder(playerId, pending.key, index + 1));
+}
+
+/**
+ * 按“正常轮次 → 平票 PK → 补充发言”的顺序展开列，
+ * 并建立 玩家 × 列 的发言索引与顺位索引，供表格与玩家栏共用。
+ *
+ * 传入 `status` 时，当前进行中的那一列会补上尚未提交的应发言玩家；
+ * 已结束的列只把实际发言过的人算作应发言，因此不会给出题人、
+ * 旁观者或当时已出局的玩家留下待提交占位。
+ */
+export function buildDescriptionColumns(
+  descriptions: DescriptionRecord[],
+  status?: SpeechStatus
+): DescriptionColumnModel {
+  const buckets = createColumnBuckets();
+  collectSpokenColumns(descriptions, buckets);
+  // 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。
+  if (status) collectPendingColumns(status, buckets);
+
+  const ascending = (a: number, b: number) => a - b;
+  const columns: DescriptionColumn[] = [
+    ...[...buckets.cycles].sort(ascending).map((cycle) => ({
+      key: `cycle-${cycle}`,
+      label: `第 ${cycle} 轮`,
+      tone: "default" as const,
+      expectedPlayerIds: buckets.expectFor(`cycle-${cycle}`),
+    })),
+    ...[...buckets.ties].sort(ascending).map((index) => ({
+      key: `tie-${index}`,
+      label: `平票 ${index}`,
+      tone: "tieBreak" as const,
+      expectedPlayerIds: buckets.expectFor(`tie-${index}`),
+    })),
+    ...[...buckets.supplements].sort(ascending).map((index) => ({
+      key: `sup-${index}`,
+      label: `补充 ${index}`,
+      tone: "supplement" as const,
+      expectedPlayerIds: buckets.expectFor(`sup-${index}`),
+    })),
+    // 列序在三类列全部展开后才确定，因此统一在这里补齐。
+  ].map((column, index) => ({ ...column, index }));
+
+  const byPlayer = new Map<string, Map<string, DescriptionRecord>>();
+  const playerOrder = new Map<string, Map<string, number>>();
+
+  const setOrder = (playerId: string, colKey: string, order: number) => {
+    let row = playerOrder.get(playerId);
+    if (!row) {
+      row = new Map<string, number>();
+      playerOrder.set(playerId, row);
+    }
+    row.set(colKey, order);
+  };
+
+  for (const record of descriptions) {
+    const colKey = columnKeyOf(record);
+    const row = byPlayer.get(record.playerId) ?? new Map<string, DescriptionRecord>();
+    row.set(colKey, record);
+    byPlayer.set(record.playerId, row);
+
+    if (record.order !== undefined) {
+      setOrder(record.playerId, colKey, record.order);
+    }
+  }
+
+  // 补齐进行中那一列的应发言玩家的预期发言顺位
+  if (status) orderPendingSpeakers(status, setOrder);
+
+  return { columns, byPlayer, playerOrder };
+}
+
+/** 列标题的文字色，用于区分轮次、平票与补充三类列。 */
+export const DESCRIPTION_HEAD_TONES: Record<DescriptionColumn["tone"], string> = {
+  default: "text-muted-foreground",
+  tieBreak: "text-warning",
+  supplement: "text-info",
+};
+
+/**
+ * 表格的交替底色。行与列各自奇偶叠加成棋盘格，
+ * 使横向跨列与纵向跨行都有落点可循。
+ * 底色取极低透明度的前景色，在暖白纸底与深色底上都只是轻微明暗差，
+ * 不引入新的色相。
+ */
+export const descriptionCellShade = (rowIndex: number, columnIndex: number): string =>
+  (rowIndex + columnIndex) % 2 === 0 ? "bg-foreground/[0.035]" : "";
+
+/** 旁观席无需发言，空单元格保持纯底色，避免形成没有业务含义的棋盘格。 */
+export const descriptionCellShadeForPlayer = (
+  player: PublicPlayerView,
+  rowIndex: number,
+  columnIndex: number
+): string =>
+  player.membership === "spectator" || player.roundStatus === "questioner"
+    ? ""
+    : descriptionCellShade(rowIndex, columnIndex);

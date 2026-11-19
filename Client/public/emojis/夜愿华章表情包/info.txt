@@ -1,0 +1,36 @@
+# 由 https://bili-emoji-downloader-vue.vercel.app/?keyword=%E5%A4%9C%E6%84%BF&tabBar=0 导出，项目地址: https://github.com/magicFeirl/bili-emoji-downloader-vue
+# 表情包版权归原作者所有
+# 名称：夜愿华章表情包
+# 购买地址: https://www.bilibili.com/blackboard/activity-Mz9T5bO5Q3.html?id=1766745363001&type=equity-link-collect-home&part=card
+
+
+# [夜愿华章表情包_摘墨镜]
+https://i0.hdslb.com/bfs/garb/a2f96b4e869e531e645343a2023a4c28b73ae100.png
+# [夜愿华章表情包_领域展开]
+https://i0.hdslb.com/bfs/garb/bdf83e21501a5b2707fe46336455dec8eee24617.png
+# [夜愿华章表情包_喜极而泣]
+https://i0.hdslb.com/bfs/garb/df9b97a2d5effbbf61c9fa23327f6332bbae70f8.png
+# [夜愿华章表情包_叫我吗]
+https://i0.hdslb.com/bfs/garb/c63b4b65c43eda5c31f3762417ebefc6eaf422a3.png
+# [夜愿华章表情包_wink]
+https://i0.hdslb.com/bfs/garb/26bac641730a804db8e25daaf6b95904c2c5c1b2.png
+# [夜愿华章表情包_生气]
+https://i0.hdslb.com/bfs/garb/76a28d6aedf34b6035732b7b952ccc85e5f48bea.png
+# [夜愿华章表情包_豪饮]
+https://i0.hdslb.com/bfs/garb/6aa401bd6f86edab755005b5bae1333e6238e85b.png
+# [夜愿华章表情包_帅气抹脸]
+https://i0.hdslb.com/bfs/garb/b25c5544864af1d6f664c372dd8485849fd01e41.png
+# [夜愿华章表情包_摇摇]
+https://i0.hdslb.com/bfs/garb/a730c3968790a33b26e3ec2d3cf8123afc43ce34.png
+# [夜愿华章表情包_张望]
+https://i0.hdslb.com/bfs/garb/3491caf34ed9170bfc06e397614b50745d676553.png
+# [夜愿华章表情包_哇]
+https://i0.hdslb.com/bfs/garb/2bb8cafb0b8e51a077c62fd5dd968375d3fde8d5.png
+# [夜愿华章表情包_再见]
+https://i0.hdslb.com/bfs/garb/9498785912a7eb62f33b02479731af408ae4c160.png
+# [夜愿华章表情包_不可以]
+https://i0.hdslb.com/bfs/garb/e361fc432cc7b452937ac85a9a290e4881af9dc4.png
+# [夜愿华章表情包_伸手]
+https://i0.hdslb.com/bfs/garb/37bb4646080fabeb3a176d37b36e7e8aa923db73.png
+# [夜愿华章表情包_鼓掌]
+https://i0.hdslb.com/bfs/garb/c41b706167103f3be1ddab648fb8e7a10c7d4e27.png

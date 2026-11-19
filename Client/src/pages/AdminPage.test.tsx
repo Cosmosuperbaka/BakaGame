@@ -1,0 +1,983 @@
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  AccountProfile,
+  AdminAntiCheatReview,
+  AdminFeedbackDetail,
+  AdminOverview,
+  AdminRoom,
+  AdminRuntimeSetting,
+  AdminUser,
+  QQLookupStatus,
+} from "@bakagame/shared";
+import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
+import { MIRROR_STALE } from "@/stories/fixtures/BangumiMirror";
+import AdminPage from "./AdminPage";
+
+const admin = vi.hoisted(() => ({
+  stats: { overview: vi.fn(), sentry: vi.fn() },
+  rooms: { list: vi.fn(), close: vi.fn(), kick: vi.fn() },
+  users: {
+    list: vi.fn(),
+    get: vi.fn(),
+    ban: vi.fn(),
+    unban: vi.fn(),
+    setRole: vi.fn(),
+    revokeSessions: vi.fn(),
+    grantBadge: vi.fn(),
+    revokeBadge: vi.fn(),
+  },
+  feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
+  antiCheat: { list: vi.fn(), history: vi.fn(), setStatus: vi.fn() },
+  games: { list: vi.fn(), get: vi.fn() },
+  audit: { list: vi.fn() },
+  qq: { status: vi.fn(), refreshNames: vi.fn() },
+  settings: { list: vi.fn(), set: vi.fn() },
+  bangumiMirror: { status: vi.fn() },
+}));
+
+vi.mock("@/lib/Api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/Api")>()),
+  api: { admin },
+}));
+
+const profile = (role: AccountProfile["role"]): AccountProfile => ({
+  id: "u-admin",
+  name: "管理员",
+  qqNumber: "90001",
+  image: null,
+  showQq: false,
+  role,
+  createdAt: "2026-10-01T00:00:00.000Z",
+  badges: [],
+  equippedBadge: null,
+});
+
+const overview: AdminOverview = {
+  users: { total: 12, admins: 1, banned: 2, newToday: 3 },
+  feedback: { open: 4, processing: 1, resolved: 0, closed: 0 },
+  live: {
+    faker: { rooms: 1, onlinePlayers: 5 },
+    song: { rooms: 2, onlinePlayers: 3 },
+    cee: { rooms: 0, onlinePlayers: 0 },
+  },
+  daily: [
+    {
+      day: "2026-10-13",
+      visitors: 40,
+      signedInVisitors: 6,
+      views: 90,
+      newUsers: 3,
+      games: { faker: 2, song: 5, cee: 1 },
+      roundPlayers: 30,
+    },
+  ],
+  pages: [{ path: "/songuessr", views: 50 }],
+};
+
+const user: AdminUser = {
+  id: "u-1",
+  name: "Alice",
+  qqNumber: "10001",
+  image: null,
+  role: "user",
+  banned: false,
+  banReason: null,
+  banExpires: null,
+  showQq: false,
+  qqName: "阿狸",
+  badges: [{ kind: "pioneer", serial: 42 }],
+  equippedBadge: "pioneer",
+  createdAt: "2026-10-02T00:00:00.000Z",
+};
+
+const room: AdminRoom = {
+  game: "faker",
+  roomId: "1234",
+  name: "周末局",
+  phase: "waiting",
+  visibility: "public",
+  hasPassword: false,
+  hidden: false,
+  roundNumber: 0,
+  createdAt: "2026-10-13T00:00:00.000Z",
+  lastActiveAt: "2026-10-13T00:05:00.000Z",
+  players: [
+    {
+      id: "p-1",
+      name: "Bob",
+      online: true,
+      membership: "active",
+      host: true,
+      bot: false,
+      userId: null,
+    },
+  ],
+};
+
+const unavailable: QQLookupStatus = {
+  state: "unavailable",
+  uin: null,
+  nickname: null,
+  checkedAt: "2026-10-13T00:00:00.000Z",
+  error: "NapCat 当前没有登录任何 QQ 号",
+};
+const active: QQLookupStatus = {
+  state: "active",
+  uin: "12345",
+  nickname: "查询号",
+  checkedAt: "2026-10-13T00:00:00.000Z",
+  error: null,
+};
+
+const review: AdminAntiCheatReview = {
+  id: "rev-1",
+  roomId: "ABCD",
+  roundNumber: 3,
+  playerName: "Bob",
+  player: { id: "u-1", name: "Alice", qqNumber: "10001", image: null },
+  clientType: "mobile",
+  score: 4,
+  reasons: ["节奏恒定（间隔变异系数 0.012）", "未检索直接猜（4/4 次）"],
+  features: {
+    intervals: [800, 790, 810, 795],
+    cv: 0.012,
+    noSearchGuesses: 4,
+    unmatchedSearches: 0,
+    guesses: 4,
+    firstGuessCorrect: true,
+  },
+  status: "open",
+  createdAt: "2026-10-18T10:05:00.000Z",
+};
+
+/** 一条登录用户提交的反馈；详情比列表多正文、UA 与回复线程。 */
+const feedback: Omit<AdminFeedbackDetail, "content" | "userAgent" | "replies"> = {
+  id: "fb-1",
+  kind: "bug",
+  title: "歌词不同步",
+  status: "open",
+  createdAt: "2026-10-13T00:00:00.000Z",
+  lastReplyAt: null,
+  user: { id: "u-1", name: "Alice", qqNumber: "10001", image: null },
+  page: "/songuessr",
+  sentryEventId: null,
+};
+
+/** 每个旋钮给一种典型状态：跟随缺省、库内覆盖、布尔项、没有环境变量的模式开关。 */
+const runtimeSettings: AdminRuntimeSetting[] = [
+  {
+    key: "clientMinDesktopVersion",
+    title: "桌面壳最低准入版本",
+    note: "低于该版本的桌面壳不能进反作弊房。",
+    envVar: "CLIENT_MIN_DESKTOP_VERSION",
+    kind: "version",
+    defaultValue: "0.1.1",
+    storedValue: null,
+    effectiveValue: "0.1.1",
+    updatedAt: null,
+    updatedBy: null,
+  },
+  {
+    key: "clientMinMobileVersion",
+    title: "移动壳最低准入版本",
+    note: "同桌面项，作用于移动壳。",
+    envVar: "CLIENT_MIN_MOBILE_VERSION",
+    kind: "version",
+    defaultValue: "",
+    storedValue: "0.2.0",
+    effectiveValue: "0.2.0",
+    updatedAt: "2026-10-18T10:05:00.000Z",
+    updatedBy: "Alice",
+  },
+  {
+    key: "enableGeneralUnblock",
+    title: "网易云全局解灰",
+    note: "关闭后受限曲目不再换取完整音频。",
+    envVar: "ENABLE_GENERAL_UNBLOCK",
+    kind: "boolean",
+    defaultValue: "true",
+    storedValue: null,
+    effectiveValue: "true",
+    updatedAt: null,
+    updatedBy: null,
+  },
+  {
+    key: "enableFakerEntry",
+    title: "谁是卧底",
+    note: "临时关闭后首页入口置灰并标注「暂时关闭」，不能新开房间。",
+    envVar: null,
+    kind: "boolean",
+    defaultValue: "true",
+    storedValue: "false",
+    effectiveValue: "false",
+    updatedAt: "2026-11-07T10:05:00.000Z",
+    updatedBy: "Alice",
+  },
+];
+
+const renderAdmin = (path = "/admin") => {
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/admin" element={<AdminPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  return userEvent.setup();
+};
+
+/** 在用户列表里点开 Alice 的详情，返回详情弹窗。 */
+const openUserDetail = async (events: ReturnType<typeof userEvent.setup>, table: HTMLElement) => {
+  await events.click(within(table).getByRole("button", { name: /Alice/ }));
+  return screen.findByRole("dialog", { name: "用户详情" });
+};
+
+beforeEach(() => {
+  admin.stats.overview.mockResolvedValue(overview);
+  admin.stats.sentry.mockResolvedValue({
+    configured: false,
+    errors24h: null,
+    unresolvedIssues: null,
+    issues: [],
+    transactions: null,
+    warnings: [],
+    fetchedAt: null,
+  });
+  admin.rooms.list.mockResolvedValue([room]);
+  admin.users.list.mockResolvedValue({ items: [user], total: 1 });
+  admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
+  admin.qq.status.mockResolvedValue(unavailable);
+  admin.settings.list.mockResolvedValue({ items: runtimeSettings });
+  admin.settings.set.mockResolvedValue({ items: runtimeSettings });
+  // 概览会读一条待复核计数；默认给空队列，需要条数的用例各自覆盖。
+  admin.antiCheat.list.mockResolvedValue({ items: [], total: 0 });
+  // 详情弹窗读一次跨局均值；默认给「算不出 CV」，需要数字的用例各自覆盖。
+  admin.antiCheat.history.mockResolvedValue({
+    windowDays: 30,
+    rounds: 1,
+    avgGuesses: 4.6,
+    firstGuessHits: 1,
+    avgCv: null,
+    maxScore: 5,
+  });
+  // jsdom 没有指针捕获，Radix 下拉的点选会读到它。
+  if (!("hasPointerCapture" in Element.prototype)) {
+    Object.assign(Element.prototype, {
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+    });
+  }
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  // 只清调用记录会留下上一次用例 mockRejectedValue/mockResolvedValue 的实现，
+  // 后续依赖缺省桩的用例会被悄悄污染。
+  vi.resetAllMocks();
+  resetAccountStoreForTest();
+});
+
+describe("管理后台", () => {
+  it("游客看到登录提示，普通用户看到无权限，都不请求后台接口", () => {
+    useAccountStore.setState({ status: "guest", profile: null });
+    renderAdmin();
+    expect(screen.getByRole("heading", { name: "请先登录" })).toBeInTheDocument();
+    act(() => useAccountStore.setState({ status: "signedIn", profile: profile("user") }));
+    expect(screen.getByRole("heading", { name: "没有访问权限" })).toBeInTheDocument();
+    expect(admin.stats.overview).not.toHaveBeenCalled();
+  });
+
+  it("管理员默认进入概览：汇总、每日数据与未配置的 Sentry", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    renderAdmin();
+    expect(await screen.findByText("注册账号")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    const daily = screen.getByRole("table", { name: "每日数据" });
+    expect(within(daily).getByText("10-13")).toBeInTheDocument();
+    expect(within(daily).getByText("8")).toBeInTheDocument();
+    expect(await screen.findByText(/未配置 SENTRY_API_TOKEN/)).toBeInTheDocument();
+    expect(admin.stats.overview).toHaveBeenCalledWith({ days: 14 });
+  });
+
+  it("用户列表展示 QQ 昵称，点开详情可以封禁", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.ban.mockResolvedValue({ ...user, banned: true });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    expect(within(table).getByText("阿狸")).toBeInTheDocument();
+
+    await events.click(within(table).getByRole("button", { name: /Alice/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("还没有对局记录")).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "封禁" }));
+    const submit = within(dialog).getByRole("button", { name: "封禁并踢下线" });
+    expect(submit).toBeDisabled();
+    await events.type(within(dialog).getByLabelText("封禁原因"), "刷屏");
+    await events.click(submit);
+    expect(admin.users.ban).toHaveBeenCalledWith({
+      userId: "u-1",
+      reason: "刷屏",
+      expiresInHours: 24,
+    });
+  });
+
+  it("用户页展示徽章，授予贡献者要先确认", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.grantBadge.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    expect(within(table).getByText("先行者·№42")).toBeInTheDocument();
+
+    const dialog = await openUserDetail(events, table);
+    expect(await within(dialog).findByText("先行者·№42")).toBeInTheDocument();
+    expect(within(dialog).getByText("佩戴中")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("button", { name: "授予贡献者" }));
+    const confirm = await screen.findByRole("dialog", { name: "授予贡献者徽章" });
+    expect(admin.users.grantBadge).not.toHaveBeenCalled();
+    await events.click(within(confirm).getByRole("button", { name: "授予" }));
+    expect(admin.users.grantBadge).toHaveBeenCalledTimes(1);
+    expect(admin.users.grantBadge).toHaveBeenCalledWith({
+      userId: "u-1",
+      badge: "contributor",
+    });
+    expect(await within(dialog).findByText("已授予「Alice」贡献者徽章。")).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "强制下线",
+      "强制下线",
+      "revokeSessions",
+      { userId: "u-1" },
+      "已让「Alice」的全部登录会话失效",
+    ],
+    [
+      "设为管理员",
+      "设为管理员",
+      "setRole",
+      { userId: "u-1", role: "admin" },
+      "已把「Alice」设为管理员。",
+    ],
+  ] as const)(
+    "%s要先确认：未确认不发请求，取消不发请求，确认后只发一次并给出结果",
+    async (button, label, method, args, success) => {
+      useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+      admin.users[method].mockResolvedValue({ ok: true });
+      const events = renderAdmin("/admin?tab=users");
+      const table = await screen.findByRole("table", { name: "用户列表" });
+      const dialog = await openUserDetail(events, table);
+      await within(dialog).findByText("还没有对局记录");
+
+      await events.click(within(dialog).getByRole("button", { name: button }));
+      const confirm = await screen.findByRole("dialog", { name: label });
+      // 确认框点名对象，写清后果。
+      expect(confirm).toHaveTextContent("「Alice」");
+      expect(admin.users[method]).not.toHaveBeenCalled();
+
+      await events.click(within(confirm).getByRole("button", { name: "取消" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: label })).toBeNull());
+      expect(admin.users[method]).not.toHaveBeenCalled();
+
+      await events.click(within(dialog).getByRole("button", { name: button }));
+      const again = await screen.findByRole("dialog", { name: label });
+      await events.click(within(again).getByRole("button", { name: label }));
+      expect(admin.users[method]).toHaveBeenCalledTimes(1);
+      expect(admin.users[method]).toHaveBeenCalledWith(args);
+      expect(await within(dialog).findByText(new RegExp(success))).toBeInTheDocument();
+    }
+  );
+
+  it("确认后请求失败：原因留在确认框内，框不关闭，可以重试", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.revokeSessions.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      ok: true,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "强制下线" }));
+    const confirm = await screen.findByRole("dialog", { name: "强制下线" });
+    await events.click(within(confirm).getByRole("button", { name: "强制下线" }));
+    expect(await within(confirm).findByRole("alert")).toBeInTheDocument();
+    expect(confirm).toBeInTheDocument();
+
+    await events.click(within(confirm).getByRole("button", { name: "强制下线" }));
+    expect(admin.users.revokeSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("确认请求在途时确认框不可再点，不会重复发请求", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    let finish: (value: { ok: true }) => void = () => {};
+    admin.users.revokeSessions.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "强制下线" }));
+    const confirm = await screen.findByRole("dialog", { name: "强制下线" });
+    const submit = within(confirm).getByRole("button", { name: "强制下线" });
+    await events.click(submit);
+    expect(submit).toBeDisabled();
+    expect(within(confirm).getByRole("button", { name: "取消" })).toBeDisabled();
+    await events.click(submit);
+    expect(admin.users.revokeSessions).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true }));
+  });
+
+  it("主理人账号：强制下线与取消管理员禁用并写明原因，服务端一定会拒绝它们", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      role: "admin",
+      badges: [{ kind: "owner", serial: null }],
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    expect(within(dialog).getByRole("button", { name: "强制下线" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "取消管理员" })).toBeDisabled();
+    expect(within(dialog).getByText(/主理人账号不能被强制下线或取消管理员/)).toBeInTheDocument();
+  });
+
+  it("其它管理员账号可以被取消管理员与强制下线（服务端只保护主理人）", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      role: "admin",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    expect(within(dialog).getByRole("button", { name: "强制下线" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "取消管理员" })).toBeEnabled();
+  });
+
+  it("解封按详情里的账号调用一次，成功后给出结果", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      banned: true,
+      banReason: "刷屏",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    admin.users.unban.mockResolvedValue({ ...user, banned: false });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "解封" }));
+    expect(admin.users.unban).toHaveBeenCalledTimes(1);
+    expect(admin.users.unban).toHaveBeenCalledWith({ userId: "u-1" });
+    expect(await within(dialog).findByText("已解封「Alice」。")).toBeInTheDocument();
+  });
+
+  it("撤销贡献者徽章要先确认：取消不发请求，确认后只发一次并给出结果", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      badges: [
+        { kind: "pioneer", serial: 42 },
+        { kind: "contributor", serial: null },
+      ],
+      equippedBadge: "contributor",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    admin.users.revokeBadge.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "撤销贡献者" }));
+    const confirm = await screen.findByRole("dialog", { name: "撤销贡献者徽章" });
+    expect(confirm).toHaveTextContent("「Alice」");
+    expect(admin.users.revokeBadge).not.toHaveBeenCalled();
+
+    await events.click(within(confirm).getByRole("button", { name: "取消" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "撤销贡献者徽章" })).toBeNull()
+    );
+    expect(admin.users.revokeBadge).not.toHaveBeenCalled();
+
+    await events.click(within(dialog).getByRole("button", { name: "撤销贡献者" }));
+    const again = await screen.findByRole("dialog", { name: "撤销贡献者徽章" });
+    await events.click(within(again).getByRole("button", { name: "撤销" }));
+    expect(admin.users.revokeBadge).toHaveBeenCalledTimes(1);
+    expect(admin.users.revokeBadge).toHaveBeenCalledWith({
+      userId: "u-1",
+      badge: "contributor",
+    });
+    expect(await within(dialog).findByText("已撤销「Alice」的贡献者徽章。")).toBeInTheDocument();
+  });
+
+  it("关闭房间需要确认，失败文案留在确认框内", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.rooms.close.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce({ ok: true });
+    const events = renderAdmin("/admin?tab=rooms");
+    await events.click(await screen.findByRole("button", { name: "关闭房间" }));
+    const dialog = await screen.findByRole("dialog");
+    await events.click(within(dialog).getByRole("button", { name: "关闭房间" }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "关闭房间" }));
+    expect(admin.rooms.close).toHaveBeenLastCalledWith({ game: "faker", roomId: "1234" });
+    expect(admin.rooms.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("移出玩家要先确认：取消不发请求，确认后按房间与玩家调用并刷新列表", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.rooms.kick.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=rooms");
+
+    await events.click(await screen.findByRole("button", { name: "移出 Bob" }));
+    const dialog = await screen.findByRole("dialog", { name: "移出玩家" });
+    expect(dialog).toHaveTextContent("「Bob」");
+    expect(dialog).toHaveTextContent("「周末局」");
+    expect(admin.rooms.kick).not.toHaveBeenCalled();
+
+    await events.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "移出玩家" })).toBeNull());
+    expect(admin.rooms.kick).not.toHaveBeenCalled();
+
+    await events.click(screen.getByRole("button", { name: "移出 Bob" }));
+    const again = await screen.findByRole("dialog", { name: "移出玩家" });
+    await events.click(within(again).getByRole("button", { name: "移出" }));
+    expect(admin.rooms.kick).toHaveBeenCalledTimes(1);
+    expect(admin.rooms.kick).toHaveBeenCalledWith({
+      game: "faker",
+      roomId: "1234",
+      playerId: "p-1",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "移出玩家" })).toBeNull());
+    expect(admin.rooms.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("房间卡的阶段显示中文名，不露出英文枚举", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    renderAdmin("/admin?tab=rooms");
+    expect(await screen.findByText(/等待中/)).toBeInTheDocument();
+    expect(screen.queryByText(/waiting/)).toBeNull();
+  });
+
+  it("对局记录一房一行，详情按回合展开并合并时间线", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const startedAt = "2026-10-13T00:00:00.000Z";
+    const listed = {
+      id: "rec-1",
+      game: "song",
+      roomId: "ABCD",
+      roundCount: 2,
+      startedAt,
+      endedAt: "2026-10-13T00:20:00.000Z",
+      players: [{ playerId: "p-1", userId: null, name: "Bob", score: 3 }],
+    };
+    admin.games.list.mockResolvedValue({ items: [listed], total: 1 });
+    admin.games.get.mockResolvedValue({
+      ...listed,
+      rounds: [
+        {
+          number: 1,
+          startedAt,
+          endedAt: "2026-10-13T00:05:00.000Z",
+          players: [{ playerId: "p-1", userId: null, name: "Bob", score: 1 }],
+          summary: { song: { title: "曲目一" } },
+        },
+        {
+          number: 2,
+          startedAt: "2026-10-13T00:06:00.000Z",
+          endedAt: "2026-10-13T00:10:00.000Z",
+          players: [{ playerId: "p-1", userId: null, name: "Bob", score: 2 }],
+          summary: { song: { title: "曲目二" } },
+        },
+      ],
+      timeline: [
+        {
+          at: Date.parse(startedAt) + 60_000,
+          type: "guess",
+          round: 1,
+          name: "Bob",
+          result: "wrong",
+        },
+      ],
+    });
+
+    const events = renderAdmin("/admin?tab=games");
+    const table = await screen.findByRole("table", { name: "对局列表" });
+    await events.click(within(table).getByRole("button", { name: /2 回合/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("回合（2）")).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/第 1 回合/).length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("本局总分")).toBeInTheDocument();
+    expect(admin.games.get).toHaveBeenCalledWith({ id: "rec-1" });
+
+    // 合并时间线不渲染也算「详情加载成功」，这里逐列锁定：距离开局、回合、类型与其余字段。
+    const timeline = within(dialog)
+      .getByRole("heading", { name: "关键事件（1）" })
+      .closest("section") as HTMLElement;
+    expect(within(timeline).getByText("1:00")).toBeInTheDocument();
+    expect(within(timeline).getByText("第 1 回合")).toBeInTheDocument();
+    expect(within(timeline).getByText("guess")).toBeInTheDocument();
+    expect(within(timeline).getByText('{"name":"Bob","result":"wrong"}')).toBeInTheDocument();
+  });
+
+  it("反馈列表点开后可回复：失败留在弹窗，成功后展示回复并清空输入", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const detail: AdminFeedbackDetail = {
+      ...feedback,
+      content: "副歌提前了半拍",
+      userAgent: "测试浏览器",
+      replies: [],
+    };
+    const replied: AdminFeedbackDetail = {
+      ...detail,
+      status: "processing",
+      lastReplyAt: "2026-10-13T01:00:00.000Z",
+      replies: [
+        {
+          id: 1,
+          content: "已修复，请刷新",
+          createdAt: "2026-10-13T01:00:00.000Z",
+          author: { id: "u-admin", name: "管理员", qqNumber: "90001", image: null },
+        },
+      ],
+    };
+    admin.feedback.list.mockResolvedValue({ items: [feedback], total: 1 });
+    admin.feedback.get.mockResolvedValue(detail);
+    admin.feedback.reply.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(replied);
+
+    const events = renderAdmin("/admin?tab=feedback");
+    const table = await screen.findByRole("table", { name: "反馈列表" });
+    await events.click(within(table).getByRole("button", { name: /歌词不同步/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("副歌提前了半拍")).toBeInTheDocument();
+    expect(admin.feedback.get).toHaveBeenCalledWith({ id: "fb-1" });
+
+    const reply = within(dialog).getByLabelText("回复");
+    await events.type(reply, "已修复，请刷新");
+    await events.click(within(dialog).getByRole("button", { name: "发送回复" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("回复失败，请稍后重试");
+    expect(admin.feedback.reply).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "发送回复" }));
+    expect(admin.feedback.reply).toHaveBeenLastCalledWith({
+      id: "fb-1",
+      content: "已修复，请刷新",
+    });
+    expect(await within(dialog).findByRole("region", { name: "回复记录" })).toHaveTextContent(
+      "已修复，请刷新"
+    );
+    expect(reply).toHaveValue("");
+    expect(admin.feedback.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("反馈详情可直接改状态：调用状态接口并就地显示新状态", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const detail: AdminFeedbackDetail = {
+      ...feedback,
+      content: "副歌提前了半拍",
+      userAgent: "测试浏览器",
+      replies: [],
+    };
+    admin.feedback.list.mockResolvedValue({ items: [feedback], total: 1 });
+    admin.feedback.get.mockResolvedValue(detail);
+    admin.feedback.setStatus.mockResolvedValue({
+      ...feedback,
+      status: "resolved",
+      lastReplyAt: null,
+    });
+
+    const events = renderAdmin("/admin?tab=feedback");
+    const table = await screen.findByRole("table", { name: "反馈列表" });
+    await events.click(within(table).getByRole("button", { name: /歌词不同步/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("副歌提前了半拍")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("combobox", { name: "状态" }));
+    await events.click(await screen.findByRole("option", { name: "已解决" }));
+    expect(admin.feedback.setStatus).toHaveBeenCalledTimes(1);
+    expect(admin.feedback.setStatus).toHaveBeenCalledWith({ id: "fb-1", status: "resolved" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("combobox", { name: "状态" })).toHaveTextContent("已解决")
+    );
+    expect(admin.feedback.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("QQ 昵称来源：显示 NapCat 在线状态，可刷新全部昵称", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.qq.status.mockResolvedValue(active);
+    admin.qq.refreshNames.mockResolvedValue({ checked: 3, updated: 1, remaining: 0 });
+    const events = renderAdmin("/admin?tab=qq");
+    expect(await screen.findByText("查询号")).toBeInTheDocument();
+    expect(screen.getByText("12345")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeEnabled();
+
+    await events.click(screen.getByRole("button", { name: "刷新全部昵称" }));
+    expect(admin.qq.refreshNames).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/已检查 3 个账号，更新 1 个昵称/)).toBeInTheDocument();
+  });
+
+  it("Bangumi 镜像：从接口读状态，超期时列出提示，可手动刷新", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.bangumiMirror.status.mockResolvedValue(MIRROR_STALE);
+    const events = renderAdmin("/admin?tab=bangumi");
+    expect(await screen.findByText("作品数据已超过 3 天没有成功刷新")).toBeInTheDocument();
+    expect(admin.bangumiMirror.status).toHaveBeenCalledTimes(1);
+
+    await events.click(screen.getByRole("button", { name: "刷新" }));
+    expect(admin.bangumiMirror.status).toHaveBeenCalledTimes(2);
+  });
+
+  it("Bangumi 镜像：读取失败时给出错误态", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.bangumiMirror.status.mockRejectedValue(new Error("网络错误"));
+    renderAdmin("/admin?tab=bangumi");
+    expect(await screen.findByText("镜像状态加载失败")).toBeInTheDocument();
+  });
+
+  it("QQ 昵称来源：不可用时给出原因并禁用刷新", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.qq.status.mockResolvedValue(unavailable);
+    renderAdmin("/admin?tab=qq");
+    expect(await screen.findByText("NapCat 当前没有登录任何 QQ 号")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
+  });
+
+  it("运行期旋钮：三行给出生效值、取值来源与环境变量缺省", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    const rows = within(table).getAllByRole("row");
+    const [, desktop, mobile, unblock] = rows;
+    const cells = (row: HTMLElement) => within(row).getAllByRole("cell");
+    // 没有覆盖时，生效值就是环境变量缺省。
+    expect(cells(desktop)[1]).toHaveTextContent("0.1.1");
+    expect(cells(desktop)[2]).toHaveTextContent("环境变量缺省");
+    // 移动壳：库内 0.2.0 盖过「不设门槛」的环境变量缺省，并写明谁改的。
+    expect(cells(mobile)[1]).toHaveTextContent("0.2.0");
+    expect(cells(mobile)[2]).toHaveTextContent("库内覆盖");
+    expect(cells(mobile)[3]).toHaveTextContent("不设门槛");
+    expect(cells(mobile)[4]).toHaveTextContent("Alice");
+    // 布尔项只显示开/关，true 与 false 不露给管理员。
+    expect(cells(unblock)[1]).toHaveTextContent("开");
+    expect(unblock).not.toHaveTextContent("true");
+  });
+
+  it("运行期旋钮：模式开关没有环境变量，缺省一栏只写开，弹窗不提环境变量", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const events = renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    const faker = within(table).getAllByRole("row")[4];
+    const cells = within(faker).getAllByRole("cell");
+    expect(cells[1]).toHaveTextContent("关");
+    expect(cells[2]).toHaveTextContent("库内覆盖");
+    expect(cells[3]).toHaveTextContent(/^开$/);
+
+    await events.click(within(faker).getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("缺省为开，没有对应的环境变量");
+    expect(dialog).not.toHaveTextContent("null");
+    expect(within(dialog).getByRole("switch", { name: "谁是卧底" })).not.toBeChecked();
+  });
+
+  it("运行期旋钮：改版本门槛写回服务端并重新拉取，失败留在弹窗内", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.settings.set.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      items: runtimeSettings,
+    });
+    const events = renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    await events.click(within(table).getAllByRole("button", { name: "修改" })[0]);
+
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("桌面壳最低准入版本");
+    expect(input).toHaveValue("0.1.1");
+    await events.clear(input);
+    await events.type(input, "0.3.0");
+    await events.click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(await within(dialog).findByText("保存失败，请稍后重试")).toBeInTheDocument();
+    expect(admin.settings.list).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(admin.settings.set).toHaveBeenCalledWith({
+      key: "clientMinDesktopVersion",
+      value: "0.3.0",
+    });
+    expect(admin.settings.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("复核队列按状态列出，处置失败留在弹窗内、成功后重新拉取", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.setStatus.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      ok: true,
+    });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    expect(admin.antiCheat.list).toHaveBeenCalledWith({ status: "open", limit: 20, offset: 0 });
+    expect(within(table).getByText("移动端")).toBeInTheDocument();
+    expect(
+      within(table).getByText("节奏恒定（间隔变异系数 0.012）；未检索直接猜（4/4 次）")
+    ).toBeInTheDocument();
+
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("未检索直接猜（4/4 次）")).toBeInTheDocument();
+    expect(within(dialog).getByText("0.012")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    expect(admin.antiCheat.list).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+    expect(admin.antiCheat.list).toHaveBeenCalledTimes(2);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("跨局均值给出同身份窗口数字，读失败只影响这一小块", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockResolvedValue({
+      windowDays: 30,
+      rounds: 4,
+      avgGuesses: 4.6,
+      firstGuessHits: 2,
+      avgCv: 0.087,
+      maxScore: 5,
+    });
+    admin.antiCheat.setStatus.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(admin.antiCheat.history).toHaveBeenCalledWith({ id: "rev-1" });
+    const heading = await within(dialog).findByRole("heading", { name: "同身份近 30 天的记录" });
+    const block = heading.closest("section") as HTMLElement;
+    expect(within(block).getByText("4 个（含本条）")).toBeInTheDocument();
+    expect(within(block).getByText("4.6")).toBeInTheDocument();
+    expect(within(block).getByText("2 / 4 回合")).toBeInTheDocument();
+    expect(within(block).getByText("0.087")).toBeInTheDocument();
+    // 均值只是上下文：处置按钮照常可用。
+    expect(within(block).getByText(/不参与打分/)).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+  });
+
+  it("跨局均值读失败时留一行说明，条目本身照常处置", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockRejectedValue(new Error("boom"));
+    admin.antiCheat.setStatus.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(await within(dialog).findByText("跨局条目读取失败")).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+  });
+
+  it("窗口内没有可比条目时明说，算不出 CV 也不编一个 0", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockResolvedValue({
+      windowDays: 30,
+      rounds: 0,
+      avgGuesses: 0,
+      firstGuessHits: 0,
+      avgCv: null,
+      maxScore: 0,
+    });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("窗口内没有其它可比条目。")).toBeInTheDocument();
+  });
+
+  it("每条 CV 都算不出的身份，均值仍写明样本不足", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    const heading = await within(dialog).findByRole("heading", { name: "同身份近 30 天的记录" });
+    expect(
+      within(heading.closest("section") as HTMLElement).getByText("样本不足")
+    ).toBeInTheDocument();
+  });
+
+  it("概览显示待复核条数，点去复核切到反作弊标签", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [], total: 3 });
+    const events = renderAdmin();
+
+    const label = await screen.findByText("反作弊待复核");
+    expect(within(label.parentElement as HTMLElement).getByText("3")).toBeInTheDocument();
+    // 概览只要条数：分页与筛选留给复核队列，这里只取一条。
+    expect(admin.antiCheat.list).toHaveBeenCalledWith({ status: "open", limit: 1 });
+
+    await events.click(screen.getByRole("button", { name: "去复核" }));
+    // 标题旁带队列总数，accessible name 是「反作弊复核 3」，按前缀匹配。
+    expect(await screen.findByRole("heading", { name: /^反作弊复核/ })).toBeInTheDocument();
+  });
+
+  it("窄屏标签栏横滑时，直链进入的当前标签被挪进可见范围", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.audit.list.mockResolvedValue({ items: [], total: 0 });
+    // jsdom 没有布局：只给标签栏滚动容器与当前标签各一个矩形，其余元素都是零矩形。
+    const rect = (left: number, right: number) =>
+      ({
+        left,
+        right,
+        top: 0,
+        bottom: 40,
+        width: right - left,
+        height: 40,
+        x: left,
+        y: 0,
+      }) as DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "tab" && this.dataset.state === "active")
+          return rect(600, 640);
+        if (this.querySelector(':scope > [role="tablist"]')) return rect(0, 340);
+        return rect(0, 0);
+      });
+    try {
+      renderAdmin("/admin?tab=audit");
+      expect(await screen.findByRole("tab", { name: "审计", selected: true })).toBeInTheDocument();
+      const scroller = screen.getByRole("tablist").parentElement as HTMLElement;
+      // 640 - 340 + 32 的余量。
+      expect(scroller.scrollLeft).toBe(332);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

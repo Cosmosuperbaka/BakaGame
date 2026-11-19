@@ -1,0 +1,223 @@
+import type { ComponentProps } from "react";
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { iconTappable, pressable, pressableStrong } from "@/lib/motion/Feedback";
+import { Button } from "./Button";
+
+const { motionButtonProps } = vi.hoisted(() => ({ motionButtonProps: vi.fn() }));
+
+// jsdom不测动画几何，只在framer-motion边界核对组件选择的公共交互令牌。
+vi.mock("framer-motion", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("framer-motion")>();
+  const { forwardRef } = await import("react");
+  type MotionButtonProps = ComponentProps<"button"> & {
+    whileHover?: unknown;
+    whileTap?: unknown;
+    transition?: unknown;
+  };
+  const MotionButton = forwardRef<HTMLButtonElement, MotionButtonProps>(
+    ({ whileHover, whileTap, transition, ...props }, ref) => {
+      motionButtonProps({ whileHover, whileTap, transition });
+      return <button {...props} ref={ref} />;
+    }
+  );
+  return {
+    ...actual,
+    motion: new Proxy(actual.motion, {
+      get(target, property, receiver) {
+        return property === "button" ? MotionButton : Reflect.get(target, property, receiver);
+      },
+    }),
+  };
+});
+
+const feedback = () => motionButtonProps.mock.lastCall?.[0];
+
+describe("Button", () => {
+  it("默认状态下正确渲染文案且可点击", async () => {
+    const handleClick = vi.fn();
+    render(<Button onClick={handleClick}>点击测试</Button>);
+
+    const button = screen.getByRole("button", { name: "点击测试" });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByTestId("button-spinner")).not.toBeInTheDocument();
+
+    await userEvent.click(button);
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("当 loading 为 true 时显示旋转动效且处于禁用状态，阻止点击交互", async () => {
+    const handleClick = vi.fn();
+    render(
+      <Button loading onClick={handleClick}>
+        开始游戏
+      </Button>
+    );
+
+    const button = screen.getByRole("button", { name: "开始游戏" });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+
+    const spinner = screen.getByTestId("button-spinner");
+    expect(spinner).toBeInTheDocument();
+    expect(spinner).toHaveAttribute("aria-hidden", "true");
+
+    await userEvent.click(button);
+    expect(handleClick).not.toHaveBeenCalled();
+  });
+
+  it("当 disabled 为 true 时即使未加载也处于禁用状态", async () => {
+    const handleClick = vi.fn();
+    render(
+      <Button disabled onClick={handleClick}>
+        再来一轮
+      </Button>
+    );
+
+    const button = screen.getByRole("button", { name: "再来一轮" });
+    expect(button).toBeDisabled();
+    expect(screen.queryByTestId("button-spinner")).not.toBeInTheDocument();
+
+    await userEvent.click(button);
+    expect(handleClick).not.toHaveBeenCalled();
+  });
+
+  it("省略variant与显式default使用相同主要操作反馈", () => {
+    const view = render(<Button>默认操作</Button>);
+    const implicit = feedback();
+    expect(implicit).toEqual(pressableStrong);
+
+    view.rerender(<Button variant="default">默认操作</Button>);
+    expect(feedback()).toEqual(implicit);
+    expect(screen.getByRole("button", { name: "默认操作" })).toBeEnabled();
+  });
+
+  it.each(["outline", "secondary", "ghost"] as const)(
+    "%s保持普通反馈，不被默认variant修复提升为主要操作",
+    (variant) => {
+      render(<Button variant={variant}>次要操作</Button>);
+      expect(feedback()).toEqual(pressable);
+    }
+  );
+
+  it("危险按钮用主要反馈，图标尺寸优先使用图标反馈，link不缩放", () => {
+    const view = render(<Button variant="destructive">删除</Button>);
+    expect(feedback()).toEqual(pressableStrong);
+    view.rerender(<Button size="icon" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
+    view.rerender(<Button variant="destructive" size="icon" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
+    // 小号与行内号图标钮同样是图标钮：换了尺寸档不该悄悄换成文字按钮的按压反馈。
+    view.rerender(<Button size="icon-sm" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
+    view.rerender(<Button variant="destructive" size="icon-xs" aria-label="图标操作" />);
+    expect(feedback()).toEqual(iconTappable);
+    view.rerender(<Button variant="link">文本入口</Button>);
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
+  });
+
+  it("loading和disabled移除交互反馈，恢复后重新启用默认主要反馈", () => {
+    const view = render(<Button loading>提交</Button>);
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
+    expect(screen.getByRole("button", { name: "提交" })).toHaveAttribute("aria-busy", "true");
+    view.rerender(<Button disabled>提交</Button>);
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
+    expect(screen.getByRole("button", { name: "提交" })).toBeDisabled();
+    view.rerender(<Button>提交</Button>);
+    expect(feedback()).toEqual(pressableStrong);
+    expect(screen.getByRole("button", { name: "提交" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "提交" })).not.toHaveAttribute("aria-busy");
+  });
+
+  it("asChild保持子元素语义且不叠加motion反馈", () => {
+    render(
+      <Button asChild>
+        <a href="/whoisfaker">进入大厅</a>
+      </Button>
+    );
+    expect(screen.getByRole("link", { name: "进入大厅" })).toHaveAttribute("href", "/whoisfaker");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(motionButtonProps).not.toHaveBeenCalled();
+  });
+});
+
+describe("Button 默认类型", () => {
+  it("没写 type 时是 button，放进表单也不会误提交；显式 submit 仍提交", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Button>取消</Button>
+        <Button type="submit">确认</Button>
+      </form>
+    );
+    expect(screen.getByRole("button", { name: "取消" })).toHaveAttribute("type", "button");
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "确认" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("asChild 时不替子元素设 type（链接不该带 type）", () => {
+    render(
+      <Button asChild>
+        <a href="/x">去看看</a>
+      </Button>
+    );
+    expect(screen.getByRole("link", { name: "去看看" })).not.toHaveAttribute("type");
+  });
+});
+
+describe("Button 尺寸档", () => {
+  const classesOf = (size: "xs" | "sm" | "icon" | "icon-sm" | "icon-xs", className?: string) => {
+    const view = render(
+      <Button size={size} className={className}>
+        档位
+      </Button>
+    );
+    const tokens = view.getByRole("button").className.split(/\s+/);
+    view.unmount();
+    return tokens;
+  };
+
+  it("xs 比 sm 矮一档、内边距更窄，字号相同", () => {
+    expect(classesOf("sm")).toEqual(expect.arrayContaining(["h-8", "px-3", "text-xs"]));
+    const xs = classesOf("xs");
+    expect(xs).toEqual(expect.arrayContaining(["h-7", "px-2", "text-xs"]));
+    expect(xs).not.toContain("h-8");
+    expect(xs).not.toContain("px-3");
+  });
+
+  it("图标钮三档各自定宽高，互不残留", () => {
+    expect(classesOf("icon")).toEqual(expect.arrayContaining(["h-9", "w-9"]));
+    const small = classesOf("icon-sm");
+    expect(small).toEqual(expect.arrayContaining(["h-8", "w-8"]));
+    expect(small).not.toContain("h-9");
+    const inline = classesOf("icon-xs");
+    expect(inline).toEqual(expect.arrayContaining(["h-5", "w-5"]));
+    expect(inline).not.toContain("h-9");
+  });
+
+  it("调用点仍可用 className 覆盖档位里的单项", () => {
+    const tokens = classesOf("xs", "px-3");
+    expect(tokens).toContain("px-3");
+    expect(tokens).not.toContain("px-2");
+    expect(tokens).toContain("h-7");
+  });
+});

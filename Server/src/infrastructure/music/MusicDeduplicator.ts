@@ -1,0 +1,574 @@
+import type { SongSearchResult } from "../../shared/SonGuessr";
+import type { MusicPlatform } from "./MusicProvider";
+import { toSimplified } from "../ChineseConverter";
+
+export interface AggregatedSongSearchResult extends SongSearchResult {
+  /** 综合排序打分 */
+  relevanceScore?: number;
+  /** 上游平台搜索返回的初始位置位次 (从 0 开始) */
+  upstreamRank?: number;
+}
+
+/**
+ * 默认平台偏好：网易云先于 QQ。
+ *
+ * 两边都有账号时按产品口径优先网易云；只有 QQ 账号的房间由调用方传入反向偏好，
+ * 避免把共有曲目默认归到本房没有直接凭据的一侧。偏好只决定「共有曲目由谁代表」
+ * 与同分决胜，不压过相关度（见 `compareAggregatedSongs`）。
+ */
+export const MUSIC_PLATFORM_PREFERENCE: readonly MusicPlatform[] = ["netease", "qq"];
+
+export const songPlatform = (id: string): string => id.split(":")[0] ?? "";
+
+export const platformRank = (
+  platform: string,
+  preference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE
+): number => {
+  const index = preference.indexOf(platform as MusicPlatform);
+  return index < 0 ? preference.length : index;
+};
+
+/**
+ * 可播判定的完整上下文。
+ *
+ * `availablePlatforms` 表示能播放非会员曲目的平台：网易云恒可用（解灰兜底），QQ 的
+ * 匿名通道也恒可用（免费曲能取到 128k/m4a 直链）。会员曲另由 `vipPlatforms` 判定；
+ * 匿名 QQ 开关关闭且池里没有 QQ 账号时，聚合器不会产出 QQ 候选。
+ */
+export interface SongPlayabilityContext {
+  availablePlatforms: readonly MusicPlatform[];
+  vipPlatforms?: readonly MusicPlatform[];
+}
+
+/**
+ * 本房当下能不能播这首。
+ *
+ * - 网易云：恒可播（解灰兜底），会员档不参与判定 —— 见 `Server/docs/NeteaseMusicApi.md`。
+ * - QQ：需要池里有账号；曲目标了会员专享而池内账号都不是会员时取不到直链。
+ *   `vipStatus` 未知时按「非会员」以外的口径放行，交给真实音频判定兜底。
+ */
+export function isPlayableSong(song: SongSearchResult, context: SongPlayabilityContext): boolean {
+  const platform = songPlatform(song.id);
+  // 本方法只服务这两家音源：QQ 之外一律按可播处理，不按账号档判死。
+  if (platform !== "qq") return true;
+  if (!context.availablePlatforms.includes("qq")) return false;
+  return !song.requiresVip || (context.vipPlatforms ?? []).includes("qq");
+}
+
+/** 给结果补上可播标记与不可播原因；可播时不加任何字段，线上载荷不因此变大。 */
+export function markSongPlayability<T extends SongSearchResult>(
+  song: T,
+  context: SongPlayabilityContext
+): T {
+  return isPlayableSong(song, context)
+    ? song
+    : { ...song, playable: false, unplayableReason: "需要 QQ 音乐会员账号" };
+}
+
+/**
+ * 文本强规范化：繁简归一、NFKC 字符归一、小写化、剥离所有空格与标点符号.
+ */
+export function normalizeComparableText(value: string): string {
+  return toSimplified(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s\-_—–/:：·.'"“”‘’()（）[\]【】{}《》〈〉~～!！?？`#@*^&|\\+=]+/g, "");
+}
+
+/**
+ * 剥离标题中的副标题噪音 (如 Live、伴奏、Remix、电视剧插曲等)，提取纯正曲名.
+ */
+export function extractCanonicalTitle(title: string): string {
+  let cleaned = toSimplified(title || "").normalize("NFKC");
+
+  // 1. 剥离括号内的各类版本描述
+  cleaned = cleaned.replace(
+    /[([（【][^()[\]（）【】]*(?:live|remaster|remix|feat|ft\.|ver\.|version|伴奏|instrumental|inst|重制|原声|原唱|心动曲|插曲|片头曲|片尾曲|主题曲|ed|op|theme|ost|edition|acoustic|deluxe|edit|cut|cover|翻唱|纯音乐)[^()[\]（）【】]*[)\]）】]/gi,
+    ""
+  );
+
+  // 2. 剥离连字符后的尾部后缀 (例如: "晴天 - Live", "歌曲名 - 伴奏")
+  cleaned = cleaned.replace(
+    /\s*[-—–]\s*(?:live|remaster\w*|remix|伴奏|instrumental|inst|重制版?|原声版?|原唱|cover|翻唱|纯音乐).*/gi,
+    ""
+  );
+
+  const normalized = normalizeComparableText(cleaned);
+  return normalized || normalizeComparableText(title);
+}
+
+/**
+ * 歌手字符串拆分为独立人名集合 (支持各种常见分隔符).
+ */
+export function extractArtistTokens(artistStr: string): string[] {
+  if (!artistStr) return [];
+  return artistStr
+    .split(/[/&、+×\s]+|(?:\s+feat\.?\s+)|\bft\.?\b/gi)
+    .map((token) => normalizeComparableText(token))
+    .filter((token) => token.length > 0);
+}
+
+const ARTIST_ALIASES: Record<string, string[]> = {
+  生物股长: ["いきものがかり"],
+  いきものがかり: ["生物股长"],
+  tk: ["tkfrom凛として时雨"],
+  tkfrom凛として时雨: ["tk"],
+  garnidelia: ["美依礼芽", "美依礼芽maria", "maria"],
+  美依礼芽: ["garnidelia"],
+  美依礼芽maria: ["garnidelia"],
+};
+
+/**
+ * 检查两个歌手集合是否存在显著交集.
+ */
+export function artistsOverlap(artistsA: string[], artistsB: string[]): boolean {
+  const aliasesA = artistsA.flatMap((artist) => [artist, ...(ARTIST_ALIASES[artist] || [])]);
+  const aliasesB = artistsB.flatMap((artist) => [artist, ...(ARTIST_ALIASES[artist] || [])]);
+  return aliasesA.some((aliasA) => aliasesB.some((aliasB) => aliasesMatch(aliasA, aliasB)));
+}
+
+/** 两个歌手别名相同，或都不短于两个字符且互相包含。 */
+const aliasesMatch = (aliasA: string, aliasB: string): boolean =>
+  aliasA === aliasB ||
+  (aliasA.length >= 2 &&
+    aliasB.length >= 2 &&
+    (aliasA.includes(aliasB) || aliasB.includes(aliasA)));
+
+/**
+ * 物理时长容差门限：原版同一录音室母带在各平台的编码时长偏差通常 <= 3000ms.
+ */
+export function durationMatches(durA?: number, durB?: number, toleranceMs = 3000): boolean {
+  if (typeof durA !== "number" || typeof durB !== "number" || durA <= 0 || durB <= 0) {
+    return true;
+  }
+  return Math.abs(durA - durB) <= toleranceMs;
+}
+
+/** 比较一首歌所需的规范化结果；聚类时每首歌只算一次，不在 O(n²) 比较里反复规范化。 */
+interface SongFingerprint {
+  canonTitle: string;
+  normTitle: string;
+  artistTokens: string[];
+}
+
+const fingerprintOf = (song: SongSearchResult): SongFingerprint => ({
+  canonTitle: extractCanonicalTitle(song.title),
+  normTitle: normalizeComparableText(song.title),
+  artistTokens: extractArtistTokens(song.artist),
+});
+
+/**
+ * 判定两首歌曲是否属于同一作品实体 (Canonical Work).
+ */
+export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult): boolean {
+  return matchesSameWork(songA, fingerprintOf(songA), songB, fingerprintOf(songB));
+}
+
+function matchesSameWork(
+  songA: SongSearchResult,
+  fpA: SongFingerprint,
+  songB: SongSearchResult,
+  fpB: SongFingerprint
+): boolean {
+  const { canonTitle: canonA } = fpA;
+  const { canonTitle: canonB } = fpB;
+  if (!canonA || !canonB) return false;
+
+  const titleMatches =
+    canonA === canonB ||
+    (canonA.length >= 2 &&
+      canonB.length >= 2 &&
+      (canonA.includes(canonB) || canonB.includes(canonA)));
+  if (!titleMatches) {
+    return false;
+  }
+
+  if (!artistsOverlap(fpA.artistTokens, fpB.artistTokens)) {
+    return false;
+  }
+
+  // 时长防线：标题歌手一致但时长相差 > 3s 的（如 Live 版、加长版、伴奏），强制不合并。
+  // 任一侧缺时长时没有这道证据，只允许完整曲名完全一致的候选合流；否则
+  // 「晴天」会把「晴天 - Live / 伴奏」一并吞掉。
+  const bothHaveDuration =
+    typeof songA.durationMs === "number" &&
+    songA.durationMs > 0 &&
+    typeof songB.durationMs === "number" &&
+    songB.durationMs > 0;
+  if (bothHaveDuration) {
+    return durationMatches(songA.durationMs, songB.durationMs, 3000);
+  }
+  return fpA.normTitle === fpB.normTitle;
+}
+
+/** 识别翻唱或消音/衍生版本. */
+export function isDerivationSong(song: SongSearchResult): boolean {
+  if (song.originCoverType === 2) return true;
+  const t = (song.title || "").toLowerCase();
+  const a = (song.artist || "").toLowerCase();
+  return (
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b|片段|铃声|加速|变速|慢速|dj版|remix|翻唱|翻录|\bcover\b|カヴァー|原唱[：:])/i.test(
+      t
+    ) || /(?:群星|网络歌手)/i.test(a)
+  );
+}
+
+/**
+ * 版本噪音的负向分：搜索词明确要这个版本时不再扣分。
+ *
+ * 独立成函数是为了让主打分链保持可读；判定口径与原来逐条一致，只把「无条件惩罚」
+ * 改成「查询感知」。
+ */
+function calculateVersionPenalty(
+  song: SongSearchResult,
+  keyword: string,
+  normKeyword: string
+): number {
+  const rawTitle = (song.title || "").toLowerCase();
+  const rawArtist = (song.artist || "").toLowerCase();
+  const rawKeyword = (keyword || "").toLowerCase();
+  const wantsInstrumental =
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
+      rawKeyword
+    );
+  const wantsClip = /(?:片段|铃声|剪辑|加速|变速|慢速|dj版|remix)/i.test(rawKeyword);
+  const wantsLive = /(?:live|现场)/i.test(rawKeyword);
+  const wantsCover = normKeyword.includes("cover") || normKeyword.includes("翻唱");
+
+  let penalty = 0;
+  if (
+    !wantsInstrumental &&
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
+      rawTitle
+    )
+  ) {
+    penalty -= 160;
+  }
+  if (!wantsClip && /(?:片段|铃声|剪辑|加速|变速|慢速|dj版|remix)/i.test(rawTitle)) {
+    penalty -= 160;
+  }
+  if (
+    (song.originCoverType === 2 ||
+      /(?:翻唱|翻录|\bcover\b|カヴァー|自翻|试唱|原唱[：:])/i.test(rawTitle)) &&
+    !wantsCover
+  ) {
+    penalty -= 100;
+  }
+  if (!wantsLive && /(?:live|现场)/i.test(rawTitle)) penalty -= 25;
+  if (/(?:群星|网络歌手)/i.test(rawArtist)) penalty -= 60;
+  return penalty;
+}
+
+/**
+ * 计算歌曲的相关度打分.
+ */
+export function calculateRelevanceScore(
+  song: SongSearchResult & { upstreamRank?: number },
+  keyword: string,
+  isDualPlatform: boolean
+): number {
+  const normKeyword = normalizeComparableText(keyword);
+  const normTitle = normalizeComparableText(song.title);
+  const canonTitle = extractCanonicalTitle(song.title);
+  const normArtist = normalizeComparableText(song.artist);
+
+  let score = 0;
+
+  // 1. 上游权威检索排位先验分 (搜索引擎已根据全网海量点播与官方歌手给出的位次)
+  const rank = song.upstreamRank ?? 10;
+  const rankBonus = Math.max(0, Math.round(80 / (1 + rank * 0.45)));
+  score += rankBonus;
+
+  // 检查标题括号内的译名 / 副标题 (如 "ブルーバード (青鸟)" 或 "恋愛サーキュレーション (恋爱循环)")
+  const parenMatch = (song.title || "").match(/^(.*?)\s*[(（](.*?)[)）]\s*$/);
+  let subTitleExactMatch = false;
+  if (parenMatch) {
+    const subCanon = extractCanonicalTitle(parenMatch[2]!);
+    if (subCanon === normKeyword) {
+      subTitleExactMatch = true;
+    }
+  }
+
+  // 2. 标题匹配度：主标题完全匹配 > 括号副标题匹配 > 前缀匹配 > 包含匹配
+  if (canonTitle === normKeyword || normTitle === normKeyword) {
+    score += 100;
+  } else if (subTitleExactMatch) {
+    score += 80;
+  } else if (canonTitle.startsWith(normKeyword) || normTitle.startsWith(normKeyword)) {
+    score += 60;
+  } else if (canonTitle.includes(normKeyword) || normTitle.includes(normKeyword)) {
+    score += 30;
+  }
+
+  // 3. 歌手包含匹配加分
+  if (normKeyword.includes(normArtist) && normArtist.length >= 2) {
+    score += 50;
+  } else if (normArtist === normKeyword) {
+    score += 50;
+  } else if (normArtist.includes(normKeyword)) {
+    score += 25;
+  }
+
+  // 4. 双源互证加分 (两边都检索到同一作品)
+  if (isDualPlatform) {
+    score += 20;
+  }
+
+  // 5. 热度微调
+  if (typeof song.popularity === "number" && song.popularity > 0) {
+    score += Math.min(Math.round(song.popularity / 5), 20);
+  }
+
+  // 6. 负向版本惩罚：搜索词明确要这个版本时不再扣分，否则搜「remix」也会把 remix 压到底。
+  score += calculateVersionPenalty(song, keyword, normKeyword);
+
+  return score;
+}
+
+/** 参与合流与打分的候选：搜索结果加上上游平台位次。 */
+type RankedSong = SongSearchResult & { upstreamRank?: number };
+
+/** 判定为同一作品实体后合流的一组候选：主实体 + 备用音源。 */
+interface SongCluster {
+  primary: RankedSong;
+  alternatives: RankedSong[];
+}
+
+/**
+ * 合流簇内择优：新主实体上位，原主实体降为备用音源。
+ */
+function promoteClusterPrimary(cluster: SongCluster, newPrimary: RankedSong): void {
+  const oldPrimary = cluster.primary;
+  cluster.primary = newPrimary;
+  cluster.alternatives = cluster.alternatives.filter((s) => s.id !== newPrimary.id);
+  cluster.alternatives.push(oldPrimary);
+}
+
+/**
+ * 判定候选是否应取代当前主实体.
+ *
+ * 择优链：非衍生版 > 可播 > 平台偏好（默认网易云先于 QQ，QQ-only 房间反向）>
+ * 包含搜索关键词的官方全名/译名 > 更纯正无噪音的曲名 > 上游排名靠前者 > 同位次时有封面的优先。
+ *
+ * 「可播」与平台偏好排在曲名与上游位次之前：共有曲目以能播的那一侧作为主实体，
+ * 徽章与实际播放源才不会说两件事 —— 常见形态是 QQ 侧曲名更干净、上游位次更前，
+ * 若仍按曲名与位次择优，展示与播放都会落到没有解灰兜底的 QQ 上。
+ */
+function shouldPromoteCandidate(
+  candidate: RankedSong,
+  primary: RankedSong,
+  normKeyword: string,
+  context: SongPlayabilityContext,
+  platformPreference: readonly MusicPlatform[]
+): boolean {
+  const candidateIsDeriv = isDerivationSong(candidate);
+  const primaryIsDeriv = isDerivationSong(primary);
+
+  // 当前不是衍生版、而原主是衍生版 -> 替换；反之两个都是衍生版时不动
+  if (primaryIsDeriv) return !candidateIsDeriv;
+  if (candidateIsDeriv) return false;
+
+  // 优先 0：能播的一方代表这次查询
+  const candidatePlayable = isPlayableSong(candidate, context);
+  const primaryPlayable = isPlayableSong(primary, context);
+  if (candidatePlayable !== primaryPlayable) return candidatePlayable;
+
+  // 优先 1：平台偏好（默认网易云先于 QQ，QQ-only 房间由调用方反转）
+  const platformDiff =
+    platformRank(songPlatform(primary.id), platformPreference) -
+    platformRank(songPlatform(candidate.id), platformPreference);
+  if (platformDiff !== 0) return platformDiff > 0;
+
+  // 优先 2：包含搜索关键词的官方全名/译名 (例如 "ブルーバード (青鸟)" 优于 "ブルーバード")
+  const candidateHasKeyword = normalizeComparableText(candidate.title).includes(normKeyword);
+  const primaryHasKeyword = normalizeComparableText(primary.title).includes(normKeyword);
+  if (candidateHasKeyword !== primaryHasKeyword) return candidateHasKeyword;
+
+  // 优先 3：更纯正无噪音的曲名 (例如 "晴天" 优于 "晴天 (2020 Remaster)")
+  const candidateIsClean =
+    normalizeComparableText(candidate.title) === extractCanonicalTitle(candidate.title);
+  const primaryIsClean =
+    normalizeComparableText(primary.title) === extractCanonicalTitle(primary.title);
+  if (candidateIsClean !== primaryIsClean) return candidateIsClean;
+
+  // 优先 4：上游排名靠前者 (0 > 1)；同位次时（优先 5）原主无封面而候选有封面也替换
+  const candidateRank = candidate.upstreamRank ?? 99;
+  const primaryRank = primary.upstreamRank ?? 99;
+  if (candidateRank !== primaryRank) return candidateRank < primaryRank;
+  return !primary.pictureUrl && Boolean(candidate.pictureUrl);
+}
+
+/** 主实体与任一备用音源分属不同平台时视为双源互证。 */
+function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[]): boolean {
+  const primaryPlatform = primary.id.split(":")[0];
+  return alternatives.some((alt) => alt.id.split(":")[0] !== primaryPlatform);
+}
+
+/**
+ * 排序优先级：可播 > 相关度 > 平台偏好，其后是确定性决胜链（衍生版 / 上游位次 / 双源互证 / 热度）。
+ *
+ * 平台偏好只压在同等相关度之后：共有曲目的代表由 `shouldPromoteCandidate` 决定；
+ * 这里若让平台盖过相关度，只是歌名包含关键词的网易云结果会排到精确命中的 QQ 结果之前。
+ * 末位以 URN 字典序收口，保证并发返回顺序不同也不抖动。
+ */
+function compareAggregatedSongs(
+  a: AggregatedSongSearchResult,
+  b: AggregatedSongSearchResult,
+  platformPreference: readonly MusicPlatform[]
+): number {
+  // 优先级 1：能播的先出
+  const playableA = a.playable === false ? 0 : 1;
+  const playableB = b.playable === false ? 0 : 1;
+  if (playableA !== playableB) return playableB - playableA;
+
+  // 优先级 2：相关度评分
+  const diff = (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0);
+  if (diff !== 0) return diff;
+
+  // 优先级 3：相关度相同时平台偏好（默认网易云先于 QQ）
+  const platformDiff =
+    platformRank(songPlatform(a.id), platformPreference) -
+    platformRank(songPlatform(b.id), platformPreference);
+  if (platformDiff !== 0) return platformDiff;
+
+  // 平分决胜 1：非衍生版优先于衍生版
+  const derivA = isDerivationSong(a) ? 1 : 0;
+  const derivB = isDerivationSong(b) ? 1 : 0;
+  if (derivA !== derivB) return derivA - derivB;
+
+  // 平分决胜 2：上游排名更靠前者优先 (rank 0 优于 rank 1)
+  const rankA = a.upstreamRank ?? 99;
+  const rankB = b.upstreamRank ?? 99;
+  if (rankA !== rankB) return rankA - rankB;
+
+  // 平分决胜 3：双平台互证者优先
+  const dualA = (a.sources?.length ?? 1) > 1 ? 1 : 0;
+  const dualB = (b.sources?.length ?? 1) > 1 ? 1 : 0;
+  if (dualA !== dualB) return dualB - dualA;
+
+  // 平分决胜 4：热度更高者优先
+  const popularityDiff = (b.popularity ?? 0) - (a.popularity ?? 0);
+  if (popularityDiff !== 0) return popularityDiff;
+
+  // 平分决胜 5：URN 字典序，排序完全确定
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * 双平台搜索结果去重、合流与综合排序.
+ *
+ * `context` 只影响「可播」标注与排序（见 `SongPlayabilityContext`）；账号池为空时
+ * 上游 `AggregatedMusicProvider` 根本不会发 QQ 检索，这里也就不会出现 QQ 候选。
+ */
+export function aggregateAndDeduplicateSongs(
+  songs: RankedSong[],
+  keyword: string,
+  limit: number,
+  context: SongPlayabilityContext,
+  platformPreference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE
+): AggregatedSongSearchResult[] {
+  const normKeyword = normalizeComparableText(keyword);
+  const clusters: SongCluster[] = [];
+  const fingerprints = new Map<SongSearchResult, SongFingerprint>();
+  const fingerprint = (song: SongSearchResult): SongFingerprint => {
+    let known = fingerprints.get(song);
+    if (!known) {
+      known = fingerprintOf(song);
+      fingerprints.set(song, known);
+    }
+    return known;
+  };
+
+  for (const song of songs) {
+    const matchedCluster = clusters.find((cluster) =>
+      matchesSameWork(cluster.primary, fingerprint(cluster.primary), song, fingerprint(song))
+    );
+
+    if (!matchedCluster) {
+      clusters.push({
+        primary: song,
+        alternatives: [],
+      });
+      continue;
+    }
+
+    matchedCluster.alternatives.push(song);
+    if (
+      shouldPromoteCandidate(song, matchedCluster.primary, normKeyword, context, platformPreference)
+    ) {
+      promoteClusterPrimary(matchedCluster, song);
+    }
+  }
+
+  // 备用源按「可播 > 平台偏好 > 上游位次」排序：调用方在主源失败时按序尝试，
+  // 第一顺位应当是当前房间最可能放出来的那一侧。
+  const orderedAlternatives = (alternatives: RankedSong[]): RankedSong[] =>
+    [...alternatives].sort((a, b) => {
+      const playableDiff = Number(isPlayableSong(b, context)) - Number(isPlayableSong(a, context));
+      if (playableDiff !== 0) return playableDiff;
+      const platformDiff =
+        platformRank(songPlatform(a.id), platformPreference) -
+        platformRank(songPlatform(b.id), platformPreference);
+      if (platformDiff !== 0) return platformDiff;
+      return (a.upstreamRank ?? 99) - (b.upstreamRank ?? 99);
+    });
+
+  // 计算每个合流实体的最终打分与可播标记
+  const aggregated: AggregatedSongSearchResult[] = clusters.map(({ primary, alternatives }) => ({
+    ...markSongPlayability(primary, context),
+    sources: [primary.id, ...orderedAlternatives(alternatives).map((a) => a.id)],
+    relevanceScore: calculateRelevanceScore(
+      primary,
+      keyword,
+      hasCrossPlatformSource(primary, alternatives)
+    ),
+  }));
+
+  return aggregated
+    .sort((a, b) => compareAggregatedSongs(a, b, platformPreference))
+    .slice(0, limit);
+}
+
+/**
+ * 歌手/专辑这类非歌曲实体的双平台合并：按规范化键去重，再按平台偏好交错输出。
+ *
+ * 简单拼接后截断会让后一个平台的结果在正常输入下永远看不见（网易云先返回满额），
+ * 交错保证两边都有席位；同名项取房间偏好更高的那一侧的 ID，后续取歌也走同一边。
+ */
+export function mergeSearchLists<T extends { id: string }>(
+  netease: T[],
+  qq: T[],
+  keyOf: (item: T) => string,
+  platformPreference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE,
+  limit?: number
+): T[] {
+  const preferred = new Map<string, T>();
+  for (const item of [...netease, ...qq]) {
+    const key = keyOf(item);
+    if (!key) continue;
+    const current = preferred.get(key);
+    if (
+      !current ||
+      platformRank(songPlatform(item.id), platformPreference) <
+        platformRank(songPlatform(current.id), platformPreference)
+    ) {
+      preferred.set(key, item);
+    }
+  }
+
+  const [first, second] = platformPreference[0] === "qq" ? [qq, netease] : [netease, qq];
+  const result: T[] = [];
+  const seen = new Set<string>();
+  const max = Math.max(first.length, second.length);
+  for (let index = 0; index < max; index += 1) {
+    for (const item of [first[index], second[index]]) {
+      if (!item) continue;
+      const key = keyOf(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(preferred.get(key) ?? item);
+      if (limit !== undefined && result.length >= limit) return result;
+    }
+  }
+  return result;
+}

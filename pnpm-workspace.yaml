@@ -1,0 +1,44 @@
+# 根级 pnpm workspace 成员。Server 与 Client 是仅有的两个真实包；
+# apps/* 与 packages/* 预留给未来的可执行应用与可发布共享包，当前不存在对应目录，
+# pnpm 会忽略不匹配任何 package.json 的 glob（不报错）。
+#
+# 安装期行为（node-linker、postinstall 放行）在根 .npmrc，改动前先读那里的注释。
+
+packages:
+  - "Client"
+  - "Server"
+  - "apps/*"
+  - "packages/*"
+
+# pnpm v10 默认拦截所有依赖的构建脚本（postinstall）；这里显式放行两个真正的使用方：
+# - bun：postinstall 负责把 pin 的可执行文件落位到 node_modules/bun/bin（Server 全部脚本
+#   都是 `bun ...`，缺它会命中上游预置的「postinstall 未运行」占位脚本直接退出）；
+# - esbuild：postinstall 只做原生二进制校验。
+# 干净环境（pnpm install --frozen-lockfile）实测缺此白名单必挂服务端 CI。
+onlyBuiltDependencies:
+  - bun
+  - esbuild
+
+# TypeScript 双版本：编译器是 typescript7（npm:typescript@7，tsc），API 面是 typescript
+# （npm:@typescript/typescript6@6，tsc6）。eslint-plugin-sonarjs 把 typescript 写成硬依赖
+# （>=5 <6.1.0），ts-api-utils 又按它的 peer 变体提升；不覆写的话 pnpm 会给它们各自嵌套装
+# 一份真 typescript@5.9.3，类型感知规则就会用 5.9 的 TypeFlags 去读 6.0 创建的 Program，
+# no-misused-promises 直接崩（unionConstituents 拿到不可迭代的结果）。
+# 覆写只针对依赖名 typescript，不动 typescript7 这个别名键。
+overrides:
+  typescript: npm:@typescript/typescript6
+  # 网易云 API 包的传递依赖有已公告的漏洞：follow-redirects 跨域跳转时敏感头处理缺陷
+  # （该包请求带用户音乐 Cookie，生产可达），node-forge 的多项公告。都是同一大版本内的补丁，
+  # 上游版本范围放得下，故在此抬高下限；上游自己升级到不低于这些版本后可删除。
+  follow-redirects: ">=1.16.2"
+  node-forge: ">=1.4.3"
+  # 同一个包自带的 HTTP 服务用到 body-parser，本项目只调它的接口函数、从不启动那个服务；
+  # 测试环境库 jsdom 用到 undici，不进任何产物。这两处公告在生产路径上都够不到，
+  # 抬下限只为让依赖审计不再报高危；各自留在原大版本内，上游跟上后可删除。
+  "body-parser@<1.20.9": ">=1.20.9 <2"
+  "body-parser@>=2.0.0 <2.4.0": ">=2.4.0 <3"
+  "undici@>=8.0.0 <8.12.2": ">=8.12.2 <9"
+  # 同一个网易云 API 包经代理库带进 basic-ftp（只在 ftp:// 的代理自动配置地址下才会用到）与 express 的 qs
+  # （只在那个从不启动的自带服务里用到）。生产路径同样够不到，抬到各自大版本内的补丁下限，上游跟上后可删除。
+  "basic-ftp@<6.2.4": ">=6.2.4 <7"
+  "qs@>=6.7.0 <6.16.1": ">=6.16.1 <7"

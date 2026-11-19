@@ -1,0 +1,595 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+import {
+  markPendingRestore,
+  readRoomSettingsMemory,
+  saveRoomSettingsMemory,
+} from "@/lib/RoomSettingsMemory";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+
+import { FakerWaitingPhase } from "./FakerWaitingPhase";
+
+const initialStoreState = useWhoIsFakerStore.getState();
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+
+const snapshot: WhoIsFakerRoomSnapshot = {
+  roomId: "1234",
+  name: "房间",
+  visibility: "public",
+  allowSpectators: true,
+  hasPassword: false,
+  hostPlayerId: "host",
+  testMode: false,
+  roleLimits: {
+    maxUndercoverCount: 1,
+    canEnableAngel: false,
+    canEnableBlank: false,
+  },
+  settings: {
+    roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+  },
+  status: {
+    phase: "waiting",
+    started: false,
+    day: 0,
+    speechMode: "normal",
+    speechOrder: [],
+    submittedSpeechPlayerIds: [],
+  },
+  players: [
+    {
+      id: "host",
+      name: "房主",
+      score: 0,
+      membership: "active",
+      online: true,
+      isReady: true,
+      isBot: false,
+      isHost: true,
+      roundStatus: "waiting",
+    },
+    {
+      id: "guest",
+      name: "玩家",
+      score: 0,
+      membership: "active",
+      online: true,
+      isReady: false,
+      isBot: false,
+      isHost: false,
+      roundStatus: "waiting",
+    },
+  ],
+  descriptions: [],
+  chat: [],
+};
+
+const privateState: WhoIsFakerPrivateState = {
+  playerId: "guest",
+  sessionToken: "session",
+  canAct: false,
+  canActAtNight: false,
+  isQuestioner: false,
+  canSubmitBlankGuess: false,
+  blankGuessUsed: false,
+  nightActionSubmitted: false,
+};
+
+describe("waiting room sharing", () => {
+  // 记忆的形状校验按需动态加载共享 schema：先暖好模块缓存，免得首次加载拖超时。
+  beforeAll(async () => {
+    window.localStorage.setItem("bakagame:room-settings:faker", "{}");
+    await readRoomSettingsMemory("faker");
+    window.localStorage.clear();
+  }, 30_000);
+
+  beforeEach(() => {
+    useWhoIsFakerStore.setState({ ...initialStoreState, snapshot, privateState }, true);
+  });
+
+  afterEach(() => {
+    try {
+      vi.useRealTimers();
+      cleanup();
+    } finally {
+      useWhoIsFakerStore.setState(initialStoreState, true);
+      // 恢复标记与设置记忆是 localStorage 全局状态，不能跨用例残留。
+      window.localStorage.clear();
+      if (originalClipboardDescriptor) {
+        Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
+    expect(Object.getOwnPropertyDescriptor(navigator, "clipboard")).toEqual(
+      originalClipboardDescriptor
+    );
+    expect(useWhoIsFakerStore.getState()).toBe(initialStoreState);
+    expect(useWhoIsFakerStore.getState().sendCommand).toBe(initialStoreState.sendCommand);
+  });
+
+  it("lets a non-host copy the room link", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/whoisfaker/room/1234`);
+    });
+    expect(screen.getByRole("button", { name: "已复制" })).toBeInTheDocument();
+  });
+
+  it("非房主看到与房主同结构的只读设置：收起时有摘要，展开后只有取值没有控件", () => {
+    render(<FakerWaitingPhase />);
+    const roles = screen.getByRole("button", { name: "身份设置" });
+    expect(roles).toHaveAccessibleDescription("1 名卧底 · 死亡揭露身份");
+    fireEvent.click(roles);
+    expect(screen.getByText("死亡时揭露身份")).toBeInTheDocument();
+    expect(screen.getByText("1 名")).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "卧底人数" })).not.toBeInTheDocument();
+  });
+
+  it("非房主在设置关闭揭露时摘要写死亡隐藏身份", () => {
+    useWhoIsFakerStore.setState({
+      snapshot: {
+        ...snapshot,
+        settings: {
+          ...snapshot.settings,
+          revealRoleOnDeath: false,
+        },
+      },
+    });
+    render(<FakerWaitingPhase />);
+    expect(screen.getByRole("button", { name: "身份设置" })).toHaveAccessibleDescription(
+      "1 名卧底 · 死亡隐藏身份"
+    );
+  });
+
+  it("房主展开房间设置后可切换死亡时揭露身份开关", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      snapshot: {
+        ...snapshot,
+        players: snapshot.players.map((p) =>
+          p.id === "host" ? { ...p, isHost: true } : { ...p, isHost: false }
+        ),
+      },
+      privateState: {
+        ...privateState,
+        playerId: "host",
+      },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    // 揭露规则在身份设置里
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+
+    // 找到死亡时揭露身份开关
+    const toggle = screen.getByRole("switch", { name: "死亡时揭露身份" });
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    // 点击切换为关闭
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("房主设置字段由可见标签命名，密码占位文案随是否已有密码变化", () => {
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand: vi.fn().mockResolvedValue({}),
+    });
+
+    const { unmount } = render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("房间");
+    // 只有两名参与者：卧底上限为 1，天使不可开启；上限与开启条件都挂在控件的说明上。
+    const undercover = screen.getByRole("spinbutton", { name: "卧底人数" });
+    expect(undercover).toHaveValue("1");
+    expect(undercover).toHaveAccessibleDescription("上限 1");
+    expect(screen.getByRole("button", { name: "增加卧底人数" })).toBeDisabled();
+    const angel = screen.getByRole("switch", { name: "天使" });
+    expect(angel).toBeDisabled();
+    expect(angel).toHaveAccessibleDescription("8 人开启");
+
+    // 还没有密码时留空不会保存，占位文案提示房主设置密码。
+    fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));
+    expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
+    unmount();
+
+    useWhoIsFakerStore.setState({
+      snapshot: { ...snapshot, visibility: "private", hasPassword: true },
+    });
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
+  });
+
+  it("房主独自在房时开始按钮提示等待加入，不显示 0/0", () => {
+    useWhoIsFakerStore.setState({
+      snapshot: { ...snapshot, players: snapshot.players.filter((p) => p.id === "host") },
+      privateState: { ...privateState, playerId: "host" },
+    });
+    render(<FakerWaitingPhase />);
+    expect(screen.getByRole("button", { name: "等待玩家加入" })).toBeDisabled();
+  });
+
+  it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
+    let resolve: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn().mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((r) => {
+          resolve = r;
+        })
+    );
+    useWhoIsFakerStore.setState({ sendCommand });
+    render(<FakerWaitingPhase />);
+
+    fireEvent.click(screen.getByRole("button", { name: "准备" }));
+    const pending = screen.getByRole("button", { name: "准备" });
+    expect(pending).toBeDisabled();
+    expect(pending).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(pending);
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+
+    resolve({});
+    expect(await screen.findByRole("button", { name: "准备" })).toBeEnabled();
+  });
+
+  it("房主调整设置后记住这次的房间内设置", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+
+    // 修改经防抖保存进服务端，同时把这次的房间内设置写进记忆，供下次创建时重放。
+    await waitFor(async () =>
+      expect(await readRoomSettingsMemory("faker")).toEqual({
+        revealRoleOnDeath: false,
+        // 快照没带这个字段时按服务端的默认（关闭）记，不臆造房主没选过的偏好。
+        spectatorsSeeAnswers: false,
+        roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+      })
+    );
+    expect(sendCommand).toHaveBeenCalledWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false })
+    );
+  });
+
+  it("房主改设置：防抖 400 毫秒到点才发一条更新设置", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(399);
+    });
+    expect(sendCommand).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false })
+    );
+  });
+
+  it("房主连续改房名：防抖窗口内只发最后一次草稿", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    const name = screen.getByRole("textbox", { name: "房间名称" });
+    fireEvent.change(name, { target: { value: "第一个名字" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fireEvent.change(name, { target: { value: "最后的名字" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ name: "最后的名字" })
+    );
+  });
+
+  it("房主设置保存被拒：弹出服务端给的原因", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    const showToast = vi.fn();
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+      showToast,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(showToast).toHaveBeenCalledWith("设置不合法", "error");
+  });
+
+  it("非房主只读：服务端设置变化也不会发出保存", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand });
+
+    render(<FakerWaitingPhase />);
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: {
+          ...snapshot,
+          settings: { ...snapshot.settings, revealRoleOnDeath: false },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("房主移交后新房主的草稿是服务端当前房名", () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({ sendCommand });
+
+    render(<FakerWaitingPhase />);
+    // 原房主改了房名，随后把房主移交给我。
+    act(() => {
+      useWhoIsFakerStore.setState({
+        snapshot: {
+          ...snapshot,
+          name: "改过的房名",
+          hostPlayerId: "guest",
+          players: snapshot.players.map((p) => ({ ...p, isHost: p.id === "guest" })),
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("改过的房名");
+  });
+
+  it.each([
+    [
+      "对局已开始",
+      () => ({ ...snapshot, status: { ...snapshot.status, phase: "wordSubmission" as const } }),
+    ],
+    ["已换到另一间房", () => ({ ...snapshot, roomId: "5678" })],
+    [
+      "房主已移交给别人",
+      () => ({
+        ...snapshot,
+        hostPlayerId: "guest",
+        players: snapshot.players.map((p) => ({ ...p, isHost: p.id === "guest" })),
+      }),
+    ],
+  ])("防抖期间%s：卸载冲刷不会发出设置", async (_label, leave) => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    const view = render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    // Store 已经变了，但组件的 props 与 enabled 还停在上一次提交：冲刷得自己读房态。
+    useWhoIsFakerStore.setState({ snapshot: leave() });
+    view.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("仍在同一房间的等待阶段且仍是房主：卸载会冲刷设置", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    const view = render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    view.unmount();
+
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith(
+      "room.updateSettings",
+      expect.objectContaining({ revealRoleOnDeath: false })
+    );
+  });
+
+  it("房主设置保存被拒：被拒的值不写进下次建房的记忆", async () => {
+    vi.useFakeTimers();
+    const sendCommand = vi.fn().mockRejectedValue({ code: "BAD", message: "设置不合法" });
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(await readRoomSettingsMemory("faker")).toBeNull();
+  });
+
+  it("记忆写在服务端接受之后：命令还在途时先不记，接受了才记", async () => {
+    vi.useFakeTimers();
+    let accept: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn().mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          accept = resolve;
+        })
+    );
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "身份设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(await readRoomSettingsMemory("faker")).toBeNull();
+
+    accept({});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(await readRoomSettingsMemory("faker")).toMatchObject({ revealRoleOnDeath: false });
+  });
+
+  it("房主可以单独打开旁观者局中看答案的开关", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "旁观者可见答案" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledWith(
+        "room.updateSettings",
+        expect.objectContaining({ spectatorsSeeAnswers: true })
+      )
+    );
+  });
+
+  it("房主开 MCP 接入：单独一条房间设置命令，只带这一项", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "允许 MCP 接入" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
+        allowAgents: true,
+      })
+    );
+  });
+
+  it("MCP 接入保存失败：原样显示服务端文案，开关解锁后可重试", async () => {
+    const sendCommand = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "NOT_HOST", message: "只有房主可以这样做" })
+      .mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    const toggle = screen.getByRole("switch", { name: "允许 MCP 接入" });
+    fireEvent.click(toggle);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("只有房主可以这样做");
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(sendCommand).toHaveBeenCalledTimes(2));
+  });
+
+  it("非房主只看到 MCP 开关的说明，没有可点的开关", () => {
+    render(<FakerWaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "MCP 设置" }));
+    expect(screen.getByText("房主尚未开启 MCP 接入。")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "允许 MCP 接入" })).not.toBeInTheDocument();
+  });
+
+  it("新建房间的等待页先套用上次设置，落定后才出设置面板", async () => {
+    markPendingRestore("faker", "1234");
+    saveRoomSettingsMemory("faker", {
+      revealRoleOnDeath: false,
+      spectatorsSeeAnswers: true,
+      roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+    });
+    let resolve: (value: Record<string, unknown>) => void = () => {};
+    const sendCommand = vi.fn().mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((r) => {
+          resolve = r;
+        })
+    );
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<FakerWaitingPhase />);
+    // 恢复在途：占位先行，设置面板还没挂载；重放的正是上次保存的那份设置。
+    expect(screen.getByRole("status", { name: "正在恢复上次的房间设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "身份设置" })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
+        revealRoleOnDeath: false,
+        spectatorsSeeAnswers: true,
+        roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+      })
+    );
+
+    await act(async () => {
+      resolve({});
+    });
+    expect(
+      screen.queryByRole("status", { name: "正在恢复上次的房间设置" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "身份设置" })).toBeInTheDocument();
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+  });
+});

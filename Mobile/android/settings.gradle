@@ -1,0 +1,6 @@
+// 顶层 settings：app + Capacitor 运行时（从 Mobile/node_modules 相对引用，
+// 与 `cap add android` 生成结果等效）。本项目不使用 Cordova 插件模块，故不 include。
+include ':app'
+
+include ':capacitor-android'
+project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')

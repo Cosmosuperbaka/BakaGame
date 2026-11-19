@@ -1,0 +1,125 @@
+// ==================== 平台通用常量与基础模型 ====================
+// 本文件仅定义跨小游戏（WhoIsFaker、SonGuessr 等）通用的平台级基础设施与模型契约。
+// 各游戏特有模型请至对应领域文件（如 WhoIsFaker.ts, SonGuessr.ts）。
+
+import { Type as t, type Static, type TSchema } from "@sinclair/typebox";
+
+import { GAME_IDS } from "./Protocol";
+import { schemaUnion } from "./SchemaUnion";
+
+// 纯值住在 ModelValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
+export * from "./ModelValues";
+
+/** 游戏标识的运行时校验：取值只来自 `GAME_IDS`，新增一款不需要再改信封。 */
+export const GameIdSchema = schemaUnion(GAME_IDS.map((game) => t.Literal(game)));
+
+/**
+ * 房间可见性：三款游戏同一个契约，类型与运行时校验只在这里写一次。
+ * 游戏侧的建房/改设置载荷一律引用 `RoomVisibilitySchema`，不再各自抄一遍字面量。
+ */
+export const RoomVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
+export type RoomVisibility = Static<typeof RoomVisibilitySchema>;
+export type PlayerMembership = "active" | "spectator" | "kicked";
+export type ChatChannel = "main" | "ghost";
+
+// 房间聊天与系统提示共用一个消息结构，靠 system 字段区分。
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  text: string;
+  createdAt: number;
+  system: boolean;
+  channel?: ChatChannel;
+  ghostRole?: "dead" | "spectator";
+}
+
+/**
+ * 已登录玩家在房间内公开的账号身份：只有用户 ID 与站内头像地址，资料卡再按 ID 拉取。
+ * 游戏昵称与账号昵称互不捆绑，这里不带账号昵称；QQ 号永不进入房间快照。
+ */
+export interface PlayerAccount {
+  userId: string;
+  /** 站内代理头像（`/api/account/avatar/<id>?v=<摘要>`）；首次抓取完成前为空。 */
+  image: string | null;
+}
+
+/**
+ * 一次成功的通道证明落在连接上的最小结论：谁（`clientId`）、什么平台、哪个版本。
+ * 验签细节留在传输层，业务层只问「有没有」，不再二次判断签名。
+ */
+export interface ClientChannelProof {
+  clientId: string;
+  clientType: "desktop" | "mobile";
+  clientVersion: string;
+  keyProtection: "hardware" | "software";
+  /**
+   * 自检软失败命中一次时为可疑：放行但如实标记，供后续行为特征与人工复核参考。
+   * `software` 表示该平台没有硬件级密钥保护，只作标记不影响准入。
+   */
+  integrity?: "clean" | "suspect";
+  /** 低于服务端最低支持版本：普通房不受影响，反作弊房据此回 `CLIENT_OUTDATED`。 */
+  outdated?: boolean;
+}
+
+// 平台注册到连接池里的最小连接抽象。
+export interface ConnectionRecord {
+  id: string;
+  /** 握手时由会话 Cookie 解析出的账号；游客为空。 */
+  account?: PlayerAccount;
+  /**
+   * 握手时解析出的来源地址，按地址聚合的配额用它分桶。
+   * 连接号由服务端每次握手新发，重连即换新桶，所以只按连接计的额度会被多开连接线性放大。
+   */
+  clientIp?: string;
+  /**
+   * 已验签通过的客户端通道证明：只有壳（桌面 / 移动）能给出，浏览器与自写客户端为空。
+   * 反作弊房据此拒绝 Web 接入，普通房不读这个字段，因而对现有玩家零影响。
+   */
+  clientChannel?: ClientChannelProof;
+  /** 握手时声明并由服务端标记的 Agent 连接；房间设置可据此拒绝或放行。 */
+  isAgent?: boolean;
+  /**
+   * 标签页身份键（令牌的摘要）：浏览器连接在首帧绑定，Agent 与旧客户端为空。
+   * 只在服务端内部用于派生玩家号与归属判定，不进快照、私有状态、日志或任何下行帧。
+   */
+  tabKey?: string;
+  /** 这条连接所在的标签页此刻是否被 Agent 操作；由传输层按租约回答，不存状态。 */
+  agentDriven?: () => boolean;
+  roomId?: string;
+  playerId?: string;
+  lobbySubscribed: boolean;
+  send: (payload: unknown) => void;
+  /** 传输层清空该连接的差量基线，下一次状态推送必须发送全量。 */
+  resetStateSync?: () => void;
+  /** housekeeping 调用；传输层仅在到达校准周期时发送全量状态。 */
+  sendStateSyncCalibration?: (payload: unknown) => void;
+  /** 发送非状态事件/ACK，统一交给传输层序列化。 */
+  sendPacket?: (payload: unknown) => void;
+  close: (code?: number, reason?: string) => void;
+}
+
+/**
+ * 客户端指令信封的运行时骨架，与 `Protocol.ts` 的 `ClientEnvelope` 同一契约。
+ *
+ * 每款游戏只提供 `type` 与 `payload`，信封字段与其上限在这里唯一维护：三个玩法逐字抄
+ * 三份时，改一处不会传导到另两处（信封的严格性、字段上限正是最容易漂移的地方）。
+ * 与静态类型不同源的 nullable 信封变体（CEE 线路层）按各自领域文档保持现状。
+ */
+export const createClientEnvelopeSchema = <TType extends string, TPayload extends TSchema>(
+  type: TType,
+  payload: TPayload
+) =>
+  t.Object(
+    {
+      id: t.String({ minLength: 1, maxLength: 128 }),
+      type: t.Literal(type),
+      traceId: t.Optional(t.String({ maxLength: 128 })),
+      // 统一入口的显式归属；缺省时按命令前缀推断，旧路径与旧客户端不需要它。
+      game: t.Optional(GameIdSchema),
+      roomId: t.Optional(t.String({ maxLength: 32 })),
+      sessionToken: t.Optional(t.String({ maxLength: 128 })),
+      payload,
+    },
+    { additionalProperties: false }
+  );

@@ -1,0 +1,181 @@
+// ==================== 服务端全局常量配置 ====================
+
+/** 原版上游请求与事件确认的等待上限（8 秒）；服务选项可注入更小的值给测试用。 */
+export const CEE_ORIGINAL_ACK_TIMEOUT_MS = 8_000;
+
+/** 原版房入房（新建与加入）的限额窗口与次数：每次都会新开一条上游连接，成本落在第三方上。 */
+export const CEE_ORIGINAL_ENTER_WINDOW_MS = 60_000;
+export const CEE_ORIGINAL_ENTER_MAX_PER_WINDOW = 10;
+
+/** 房间无活动清理超时时间（10分钟） */
+export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** 房间因闲置被关闭前的预警提前量：有人在线时提前这么久通知，免得玩家突然收到「房间已关闭」。 */
+export const ROOM_EXPIRING_WARNING_MS = 60 * 1000;
+
+/**
+ * 快照最长可恢复的停机时长：超过它就直接丢弃，不恢复。
+ * 取空闲超时同值 —— 停机这么久，按现有规则那些房间本来就该被回收，
+ * 恢复回来反而与「房间会自然过期」的语义冲突。
+ */
+export const SNAPSHOT_MAX_DOWNTIME_MS = ROOM_IDLE_TIMEOUT_MS;
+
+/** 网络短暂断开后的空房宽限期，避免移动端切后台立即丢失房间。 */
+export const ROOM_EMPTY_GRACE_PERIOD_MS = 90 * 1000;
+
+/** 出题人断线重连超时时间（60秒） */
+export const QUESTIONER_RECONNECT_TIMEOUT_MS = 60 * 1000;
+
+/** 房主断线重连超时时间（60秒） */
+export const HOST_RECONNECT_TIMEOUT_MS = 60 * 1000;
+
+/** 玩家掉线清理超时时间（3分钟） */
+export const PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * 0 分真人旁观者的离线保留时长：没有分数可保留，不占名册太久，
+ * 但要留够一次刷新的时间，否则刷新就等于被移出房间。巡检粒度见 Index.ts 的定时器。
+ */
+export const SPECTATOR_OFFLINE_GRACE_MS = 30 * 1000;
+
+/** 房间聊天记录最大保留条数 */
+export const CHAT_LIMIT = 20;
+
+/**
+ * 私密房密码尝试配额：同一连接对同一房间在统计窗口内最多尝试的次数。
+ * 在校验密码之前计数，超限后正确密码同样被拒；缺少密码不计数。
+ */
+export const JOIN_PASSWORD_MAX_ATTEMPTS = 5;
+export const JOIN_PASSWORD_WINDOW_MS = 60 * 1000;
+
+/**
+ * 私密房密码的聚合配额：同一房间在统计窗口内所有连接合计最多尝试的次数。
+ * 只按「连接 + 房间」计数时，开 N 条连接就有 N 份额度，爆破在聚合上不受限。
+ * 取单连接额度的六倍：几个好友各自试几轮不会互相挤掉，词表爆破仍然刷不动。
+ */
+export const JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = JOIN_PASSWORD_MAX_ATTEMPTS * 6;
+
+/**
+ * 聊天限流：单条连接在统计窗口内最多发送的条数。
+ * 每条聊天都会触发全房广播，不限流等于把一次按键放大成 O(房间人数) 的扇出；
+ * 客户端按钮防抖不能替代服务端配额。
+ */
+export const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
+export const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
+
+/**
+ * 猜歌站内播放地址的跳转配额（按客户端地址、回源对端、全局三层）。
+ * 响应禁止缓存，浏览器每次拖动、断流续播都会重新请求一次；路由本身不发任何出站请求，
+ * 单次成本极小，额度只用来封顶枚举票据与刷请求，要给多人共用出口的正常听众留足余量。
+ */
+export const SONG_AUDIO_REDIRECT_IP_MAX_PER_WINDOW = 240;
+export const SONG_AUDIO_REDIRECT_GLOBAL_MAX_PER_WINDOW = 6_000;
+export const SONG_AUDIO_REDIRECT_WINDOW_MS = 60 * 1000;
+
+/**
+ * WebSocket 握手配额：单个客户端地址的在途连接数与每分钟新建连接数。
+ * 在途数封顶长期持有的连接，速率封顶反复开关的握手开销，两者缺一都能绕过对方。
+ * 浏览器一个标签页只有一条游戏连接，正常玩家远达不到这个量级。
+ */
+export const WS_HANDSHAKE_IP_MAX_CONNECTIONS = 64;
+export const WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW = 120;
+export const WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW = 3_000;
+export const WS_HANDSHAKE_WINDOW_MS = 60 * 1000;
+
+/**
+ * WebSocket 命令幂等：已完成命令的 ACK 在窗口内可回放，飞行中的命令按 `${连接号}:${消息号}` 去重。
+ * 两张表都必须封顶：大量连接持续发新消息号时，无上限的表会一直占堆。
+ */
+export const WS_ACK_REPLAY_TTL_MS = 15_000;
+export const WS_ACK_REPLAY_MAX_ENTRIES = 2048;
+export const WS_IN_FLIGHT_MAX_ENTRIES = 4096;
+
+/**
+ * 客户端设备登记表的闲置回收：登记只在首次注册与换密钥时新增，从不自行消失。
+ * 超过保留期没有换票记录的登记视为已弃用；客户端下次联网会按未注册重新登记。
+ * 清理搭在注册路径上、按间隔节流，不另起定时器。
+ */
+export const CLIENT_DEVICE_IDLE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+export const CLIENT_DEVICE_PURGE_INTERVAL_MS = 60 * 60 * 1000;
+/** 同一设备反复自检不过时，告警级日志的间隔：窗口内只记一条，其余降为信息级。 */
+export const CLIENT_UNTRUSTED_WARN_INTERVAL_MS = 60 * 60 * 1000;
+/** 握手名额租约的确认时限：占位后这么久还没等到连接打开，就当升级已经失败并自动归还。 */
+export const WS_HANDSHAKE_LEASE_MS = 10_000;
+/** 公开状态页实时通道的单来源在途连接上限：一个页面只需要一条，远小于游戏通道的额度。 */
+export const STATUS_WS_IP_MAX_CONNECTIONS = 4;
+
+/**
+ * 每条游戏连接的命令总额度：三款玩法共用同一个窗口与额度，任何命令都先扣它（含被守卫拒绝的）。
+ * 它挡的是单连接的高频乱发，不是业务节流：额度取自猜猜呗原有的现值（10 秒 80 条，每秒 8 条），
+ * 对照正常游玩的量级（准备、描述、投票、聊天；白板草稿有客户端 220 毫秒节流，每秒不到 5 条）
+ * 与 Agent 连续操作（每步要等一次模型往返，远低于每秒 8 条）留有一个数量级以上的余量。
+ */
+export const COMMAND_RATE_LIMIT_WINDOW_MS = 10_000;
+export const COMMAND_RATE_LIMIT_PER_CONNECTION = 80;
+
+/** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
+export const PHASE_RESULT_DISPLAY_MS = 1_500;
+
+/** 测试模式默认词对（用于快速跳转阶段） */
+export const TEST_MODE_DEFAULT_WORD: [string, string] = ["苹果", "香蕉"];
+
+/**
+ * 白板猜词草稿的全房发布合并窗口：窗口内同一房间的多次草稿更新只在窗口末尾发布一次。
+ * 取百毫秒量级：比一次击键间隔长得多、比人眼觉出「实时」的延迟短得多；
+ * 客户端自己还有一层输入节流，这一层挡的是改过的客户端与高频脚本。
+ */
+export const BLANK_GUESS_DRAFT_PUBLISH_WINDOW_MS = 150;
+
+/** 测试房间玩家数上限（含机器人），防止误触把房间撑爆 */
+export const TEST_MODE_MAX_PLAYERS = 12;
+
+/** 单条测试人机增减指令的数量上限：房间不限制总人数，但仍需约束单次批量规模 */
+export const TEST_BOT_BATCH_LIMIT = 64;
+
+/** 机器人名字后缀，按顺序取用，取完后退化为数字编号 */
+export const BOT_NAME_SUFFIXES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
+
+/** 机器人发言用的模板，按索引轮换，避免每个机器人说同一句 */
+export const BOT_DESCRIPTION_TEMPLATES = [
+  "这个东西挺常见的，生活里经常能见到。",
+  "我觉得它的样子比较有特点，不太好形容。",
+  "它用处不少，很多场合都会用到。",
+  "我印象里它的口感或手感还不错。",
+  "描述起来有点难，但大家应该都熟悉。",
+  "它给我的感觉偏日常，不算稀奇。",
+];
+
+/**
+ * HTTP 请求体上限（Bun 原生 `maxRequestBodySize`，缺省 128MB 形同不设）。
+ * 合法调用里最大的是 Sentry 隧道信封（256KB）与云同步设置（32KB），1MB 已留足余量；
+ * 与 WS 侧 256KB 单帧上限同一口径，超限由运行时直接回 413，不进业务解析。
+ */
+export const HTTP_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+/**
+ * 音乐上游单次请求的运行时限（已出队、正在执行的任务）。
+ * 排队等待另有独立计时；运行期没有上界时，一个永不落定的上游请求会永久占住并发槽，
+ * 攒满槽位后整条队列失效。取值要大于任何合法单次请求的耗时，又不能长到让队列卡死太久。
+ */
+export const MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS = 30_000;
+
+/** 新条目发现：单次出站请求的超时（搜索、作品、角色与关联详情）。 */
+export const BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS = 10_000;
+
+/** 新条目发现：一次每日任务的总时间预算，超出后不再处理剩余候选，避免上游拖慢时任务不返回。 */
+export const BANGUMI_DISCOVERY_TOTAL_BUDGET_MS = 30 * 60 * 1000;
+
+/** 新条目发现：同一部作品内角色与关联详情的并发上限（上游是公益服务）。 */
+export const BANGUMI_DISCOVERY_CONCURRENCY = 3;
+
+/** 角色标签增量：拉取 diff 的超时。 */
+export const BANGUMI_TAG_DIFF_TIMEOUT_MS = 30_000;
+
+/** 角色标签增量：拉取全量标签产物的超时（文件远大于 diff）。 */
+export const BANGUMI_TAG_FULL_TIMEOUT_MS = 120_000;
+
+/** Bangumi 上游共享冷却：收到限流且上游没给等待时长时的默认冷却。 */
+export const BANGUMI_UPSTREAM_COOLDOWN_MS = 5_000;
+
+/** Bangumi 上游共享冷却：上游给出的等待时长的封顶，防止一个异常响应把整条出站长时间冻住。 */
+export const BANGUMI_UPSTREAM_MAX_COOLDOWN_MS = 60_000;

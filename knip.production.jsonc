@@ -1,0 +1,14 @@
+{
+  // Knip 生产口径：只把真正的生产入口当入口，测试、故事与脚本不算。
+  // 用途：揪出「只被测试或故事引用」的生产代码与依赖（默认口径把它们当入口，永远不会报）。
+  // 运行：仓库根 `pnpm knip:prod`，只作报告，不进门禁（输出含大量需要人工判断的条目）。
+  // 只覆盖 Client：Server 的 Worker 经 new URL 加载、动态 import 多，生产口径下假阳性太多。
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "Client": {
+      "entry": ["index.html!", "src/Main.tsx!", "src/index.css!"],
+      "project": ["src/**/*.{ts,tsx,css}!"],
+    },
+  },
+  "ignoreExportsUsedInFile": false,
+}

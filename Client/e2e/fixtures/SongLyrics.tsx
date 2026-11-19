@@ -1,0 +1,106 @@
+import { LyricPlayer } from "@applemusic-like-lyrics/core";
+import { StrictMode, createRef } from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import {
+  SongLyricPlayer,
+  type SongLyricPlayerProps,
+} from "@/components/songuessr/lyrics/SongLyricPlayer";
+import {
+  SongClipLyricSheet,
+  type SongClipLyricSheetProps,
+} from "@/components/songuessr/SongClipLyricSheet";
+import "@applemusic-like-lyrics/core/style.css";
+import "@/index.css";
+import "@/themes/ThemeStyles";
+import "@/fonts.css";
+
+// 浏览器桥接只接受可序列化属性；audioRef 始终由夹具持有，不能跨 page.evaluate 传递。
+export type SongLyricsFixtureProps = Partial<Omit<SongLyricPlayerProps, "audioRef">>;
+export type SongClipSelectorFixtureProps = Partial<
+  Omit<SongClipLyricSheetProps, "audioRef" | "onPick">
+>;
+
+// 仅计数，不替代 AMLL 实现；比较实际动画更新次数，不能据此推断 CPU 占用。
+let updates = 0;
+const nativeUpdate = LyricPlayer.prototype.update;
+LyricPlayer.prototype.update = function (delta) {
+  updates++;
+  return nativeUpdate.call(this, delta);
+};
+
+const root = createRoot(document.getElementById("root")!);
+const audio = document.createElement("audio");
+const audioRef = createRef<HTMLAudioElement>();
+audioRef.current = audio;
+// 夹具没有真实媒体：默认按「数据就绪」报告，`stall` 模拟 seek 或缓冲期间媒体时钟不走。
+let stalled = false;
+Object.defineProperty(audio, "readyState", {
+  configurable: true,
+  get: () => (stalled ? HTMLMediaElement.HAVE_METADATA : HTMLMediaElement.HAVE_ENOUGH_DATA),
+});
+Object.defineProperty(audio, "seeking", { configurable: true, get: () => stalled });
+let mode: "player" | "selector" = "player";
+let props: SongLyricPlayerProps = { lines: [], audioRef };
+let selectorProps: SongClipLyricSheetProps = {
+  lines: [],
+  range: [0, 0],
+  anchorIndex: null,
+  onPick: () => {},
+};
+const picks: number[] = [];
+
+function renderRoot() {
+  flushSync(() =>
+    root.render(
+      <StrictMode>
+        <main style={{ width: "min(100% - 32px, 760px)", margin: "32px auto" }}>
+          {mode === "selector" ? (
+            <SongClipLyricSheet {...selectorProps} audioRef={audioRef} onPick={onPick} />
+          ) : (
+            <SongLyricPlayer {...props} />
+          )}
+        </main>
+      </StrictMode>
+    )
+  );
+}
+
+function onPick(index: number) {
+  picks.push(index);
+}
+
+// 只替代媒体解码和房间传输；React、AMLL、字体和浏览器布局均使用生产实现。
+Object.assign(window, {
+  lyricsFixture: {
+    // 歌词内核的类名带构建哈希，只能按片段匹配；用例一律从这里取，内核改名时只改这一处。
+    selectors: {
+      line: "[class*=lyricLineWrapper]",
+      mainLine: "[class*=lyricMainLine]",
+      subLine: "[class*=lyricSubLine]",
+      background: "[class*=bgWrapper]",
+    },
+    updates: () => updates,
+    picks: () => [...picks],
+    render(update: SongLyricsFixtureProps) {
+      mode = "player";
+      props = { ...props, ...update };
+      renderRoot();
+    },
+    renderSelector(update: SongClipSelectorFixtureProps) {
+      mode = "selector";
+      selectorProps = { ...selectorProps, ...update };
+      renderRoot();
+    },
+    time(ms: number, playing: boolean) {
+      audio.currentTime = ms / 1000;
+      Object.defineProperty(audio, "paused", { configurable: true, value: !playing });
+      audio.dispatchEvent(new Event(playing ? "play" : "pause"));
+      audio.dispatchEvent(new Event("timeupdate"));
+    },
+    stall(next: boolean) {
+      stalled = next;
+      audio.dispatchEvent(new Event(next ? "waiting" : "playing"));
+    },
+  },
+});

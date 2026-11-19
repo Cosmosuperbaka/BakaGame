@@ -1,0 +1,264 @@
+import type { GameRecorder } from "../src/domain/GameRecord";
+import type { TestRoomPolicy } from "../src/domain/TestRooms";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
+import { CEENativeService } from "../src/application/CEENativeService";
+import type { CEENativeMessage } from "../src/application/CEENativeCommands";
+import {
+  CEESearchProvenance,
+  ceeCharacterIdsOf,
+  type CEEAntiCheatReviewQueue,
+} from "../src/application/CEEAntiCheatSignals";
+import { AppError } from "../src/domain/Errors";
+import type { CEEDataProvider } from "../src/infrastructure/CEEData";
+import type { CEEImageHints } from "../src/infrastructure/CEEImageHints";
+import type { EventLogger } from "../src/infrastructure/EventLogger";
+import type { TimerSeam } from "../src/application/room/RoomTimers";
+import {
+  createDefaultCEESettings,
+  type CEECharacterView,
+  type CEECommand,
+  type CEERankedCommand,
+  type CEEPayload,
+  type CEEPrivateState,
+  type CEERoomEnterResult,
+  type CEERoomSnapshot,
+  type CEESettings,
+  type ClientChannelProof,
+  type ConnectionRecord,
+  type PlayerAccount,
+} from "../src/shared/Index";
+import { createTestConnection } from "./support/Connection";
+
+export const character = (id: number, shared = false): CEECharacterView => ({
+  id,
+  name: `Character ${id}`,
+  nameCn: `角色${id}`,
+  gender: "female",
+  popularity: 100 + id,
+  summary: "第一条线索。第二条线索。第三条线索。",
+  imageUrl: `https://images.invalid/${id}.jpg`,
+  appearances: [
+    {
+      id: shared || id === 1 ? 100 : 100 + id,
+      name: shared || id === 1 ? "共同作品" : `作品${id}`,
+      nameCn: shared || id === 1 ? "共同作品" : `作品${id}`,
+      year: 2020,
+      rating: 8,
+      ratingCount: 100,
+    },
+  ],
+  highestRating: 8,
+  earliestAppearance: 2020,
+  latestAppearance: 2020,
+  subjectTags: ["校园"],
+  characterTags: ["蓝发"],
+  voiceActors: ["声优甲"],
+  metaTags: ["校园", "蓝发", "声优甲"],
+  comparisonAppearances: [
+    {
+      id: shared || id === 1 ? 100 : 100 + id,
+      name: shared || id === 1 ? "共同作品" : `作品${id}`,
+      nameCn: shared || id === 1 ? "共同作品" : `作品${id}`,
+    },
+  ],
+  extraTags: [],
+});
+type Packet = { type?: string; event?: string; payload?: unknown };
+export interface CEETestClient {
+  record: ConnectionRecord;
+  sent: Packet[];
+  closed: Array<{ code?: number; reason?: string }>;
+  token?: string;
+  id?: string;
+}
+/** 反作弊用例要区分「浏览器接入」「已登录但无客户端」「客户端且已登录」三种连接。 */
+export interface CEETestIdentity {
+  account?: PlayerAccount;
+  clientChannel?: ClientChannelProof;
+}
+/** `roomId` 默认普通房号；单人开局的用例传测试房号（普通房至少两人才能开局）。 */
+export function ceeTestHarness(
+  overrides: Partial<CEEDataProvider> = {},
+  imageHints?: CEEImageHints,
+  {
+    roomId: defaultRoomId = "1234",
+    gameRecorder,
+    reviewQueue,
+    testRooms = TEST_ROOMS_ON,
+    eventLogger,
+    setTimer,
+  }: {
+    roomId?: string;
+    gameRecorder?: GameRecorder;
+    reviewQueue?: CEEAntiCheatReviewQueue;
+    testRooms?: TestRoomPolicy;
+    eventLogger?: EventLogger;
+    setTimer?: TimerSeam;
+  } = {}
+) {
+  let clock = 1_000_000;
+  const getCalls: number[] = [];
+  const data: CEEDataProvider = {
+    searchCharacters: async () => [character(1), character(2)],
+    searchSubjects: async () => [],
+    getSubjectCharacters: async () => [character(1)],
+    getSubjects: async (ids: number[]) =>
+      ids.map((id) => ({
+        id,
+        name: `Subject ${id}`,
+        nameCn: `作品 ${id}`,
+        type: 2,
+        year: 2020,
+        rating: 7,
+        heat: 100,
+      })),
+    getRawCharacter: async () => {
+      throw new AppError("UNUSED", "测试不读取原始资料");
+    },
+    getCharacter: async (id) => {
+      getCalls.push(id);
+      return character(id, id === 2);
+    },
+    chooseRandomCharacter: async () => character(1),
+    importDirectory: async (id) => ({
+      id,
+      subjectIds: [100],
+      missingSubjectIds: [],
+      importedAt: clock,
+    }),
+    resolveCharacterImage: async (id) => `https://images.invalid/${id}.jpg`,
+    resolveSubjectImage: async (id) => `https://images.invalid/s${id}.jpg`,
+    close: () => {},
+    ...overrides,
+  };
+  const provenance = new CEESearchProvenance(() => clock);
+  const service = new CEENativeService({
+    data,
+    now: () => clock,
+    random: () => 0,
+    imageHints,
+    gameRecorder,
+    reviewQueue,
+    provenance,
+    testRooms,
+    eventLogger,
+    setTimer,
+  });
+  const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
+    const sent: Packet[] = [],
+      closed: CEETestClient["closed"] = [];
+    const id = `${name}-${crypto.randomUUID()}`;
+    const record = createTestConnection(id, {
+      account: identity.account,
+      clientChannel: identity.clientChannel,
+      send: (payload) => sent.push(structuredClone(payload) as Packet),
+      sendStateSyncCalibration: (payload) => sent.push(structuredClone(payload) as Packet),
+      close: (code, reason) => {
+        closed.push({ code, reason });
+        service.unregisterConnection(id);
+      },
+    });
+    service.registerConnection(record);
+    return { record, sent, closed };
+  };
+  // 夹具直连增强房服务：排位命令在入口层就被分流，不会走到这里。
+  const send = async <T extends Exclude<CEECommand, CEERankedCommand>>(
+    client: CEETestClient,
+    type: T,
+    payload: CEEPayload<T>,
+    roomId = defaultRoomId
+  ) => {
+    const result = await service.execute(client.record.id, {
+      id: crypto.randomUUID(),
+      type,
+      roomId,
+      sessionToken: client.token,
+      payload,
+    } as CEENativeMessage);
+    // 与生产入口同构：检索结果由入口层记进台账，猜测时据此判断「有没有先搜再猜」。
+    if (type === "cee.character.search")
+      provenance.note(client.record.id, ceeCharacterIdsOf(result));
+    if (type === "cee.room.create" || type === "cee.room.join" || type === "cee.room.reconnect") {
+      const entry = result as CEERoomEnterResult;
+      client.token = entry.sessionToken;
+      client.id = entry.privateState.playerId;
+    }
+    return result;
+  };
+  const latest = <T>(client: CEETestClient, event: string): T => {
+    const packet = [...client.sent].reverse().find((message) => message.event === event);
+    if (!packet) throw new Error(`未收到事件 ${event}`);
+    return packet.payload as T;
+  };
+  const snapshot = (client: CEETestClient) => latest<CEERoomSnapshot>(client, "cee.room.snapshot");
+  const privateState = (client: CEETestClient) =>
+    latest<CEEPrivateState>(client, "cee.game.privateState");
+  /** 反作弊房只能在建房这一刻开启：用例用第三个参数把它带进 create 载荷。 */
+  const create = async (
+    name = "房主",
+    identity: CEETestIdentity = {},
+    options: { bakaAntiCheat?: boolean } = {}
+  ) => {
+    const host = connect(name, identity);
+    await send(host, "cee.room.create", {
+      source: "native",
+      roomId: defaultRoomId,
+      name: "测试房间",
+      userName: name,
+      visibility: "public",
+      allowSpectators: true,
+      ...(options.bakaAntiCheat ? { bakaAntiCheat: true } : {}),
+    });
+    return host;
+  };
+  const join = async (name: string, identity: CEETestIdentity = {}) => {
+    const client = connect(name, identity);
+    await send(client, "cee.room.join", { userName: name });
+    return client;
+  };
+  const configure = (host: CEETestClient, patch: Partial<CEESettings>) =>
+    send(host, "cee.room.settings", {
+      settings: { ...createDefaultCEESettings(2026), timeLimit: 0, ...patch },
+    });
+  const ready = async (...clients: CEETestClient[]) => {
+    for (const client of clients) await send(client, "cee.player.ready", { ready: true });
+  };
+  const guess = (client: CEETestClient, id: number) =>
+    send(client, "cee.game.guess", { characterId: id });
+  /** 手动出题：把出题方式切到手动（保留现有设置）、开始进入选人阶段，再指定出题人。 */
+  const chooseSetter = async (host: CEETestClient, setterId: string) => {
+    const settings = snapshot(host).settings;
+    if (settings.answerMode !== "manual")
+      await send(host, "cee.room.settings", { settings: { ...settings, answerMode: "manual" } });
+    if (snapshot(host).phase !== "choosingSetter") await send(host, "cee.game.start", {});
+    return send(host, "cee.game.chooseSetter", { playerId: setterId });
+  };
+  const advance = (milliseconds: number) => {
+    clock += milliseconds;
+    service.runHousekeeping();
+  };
+  /** 只拨时钟、不跑巡检：用来观察「巡检还没来得及处理」的窗口里，上线路径自己的判断。 */
+  const passTime = (milliseconds: number) => {
+    clock += milliseconds;
+  };
+  return {
+    service,
+    data,
+    connect,
+    send,
+    snapshot,
+    privateState,
+    latest,
+    create,
+    join,
+    configure,
+    ready,
+    guess,
+    chooseSetter,
+    advance,
+    passTime,
+    provenance,
+    getCalls,
+    now: () => clock,
+  };
+}

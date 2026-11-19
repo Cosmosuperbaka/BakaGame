@@ -1,0 +1,288 @@
+import { useId, useState, type FormEvent } from "react";
+import { FEEDBACK_REPLY_MAX_LENGTH } from "@bakagame/shared/values";
+import type { AdminFeedbackDetail, FeedbackKind, FeedbackStatus } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Textarea";
+import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import {
+  AdminDetailDialog,
+  AdminFilterSelect,
+  AdminTable,
+  AdminToolbar,
+  ListState,
+  Pager,
+  QueryStatus,
+  RowButton,
+  UserCell,
+} from "@/components/admin/AdminParts";
+import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
+import { api } from "@/lib/Api";
+import { formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
+import {
+  FEEDBACK_KIND_LABELS,
+  FEEDBACK_STATUS_BADGE,
+  FEEDBACK_STATUS_LABELS,
+} from "@/lib/FeedbackLabels";
+
+const LIMIT = 20;
+const STATUSES = Object.keys(FEEDBACK_STATUS_LABELS) as FeedbackStatus[];
+const STATUS_OPTIONS = STATUSES.map((status) => ({
+  value: status,
+  label: FEEDBACK_STATUS_LABELS[status],
+}));
+const STATUS_FILTER = [{ value: "", label: "全部状态" }, ...STATUS_OPTIONS];
+const KIND_FILTER = [
+  { value: "", label: "全部类型" },
+  ...(Object.keys(FEEDBACK_KIND_LABELS) as FeedbackKind[]).map((kind) => ({
+    value: kind,
+    label: FEEDBACK_KIND_LABELS[kind],
+  })),
+];
+
+function FeedbackThread({
+  detail,
+  onChanged,
+}: {
+  detail: AdminFeedbackDetail;
+  onChanged: (detail: AdminFeedbackDetail) => void;
+}) {
+  const [reply, setReply] = useState("");
+  const replyId = useId();
+  const action = useAdminAction();
+  const anonymous = detail.user === null;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const content = reply.trim();
+    if (!content) return;
+    const ok = await action.run(
+      "reply",
+      async () => onChanged(await api.admin.feedback.reply({ id: detail.id, content })),
+      "回复失败，请稍后重试"
+    );
+    if (ok) setReply("");
+  };
+  const changeStatus = (status: string) => {
+    void action.run("status", async () => {
+      const summary = await api.admin.feedback.setStatus({
+        id: detail.id,
+        status: status as FeedbackStatus,
+      });
+      onChanged({ ...detail, ...summary });
+    });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant="outline" size="xs">
+          {FEEDBACK_KIND_LABELS[detail.kind]}
+        </Badge>
+        <UserCell user={detail.user} fallback="匿名" />
+        <span className="text-muted-foreground">提交于 {formatDateTime(detail.createdAt)}</span>
+      </div>
+      <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-card p-3 text-sm">
+        {detail.content}
+      </p>
+      {/* 三项都没有时不渲染空 dl / 空 section：网格的 gap 会把空元素也算一格，正文与状态之间空出双倍间距。 */}
+      {detail.page || detail.userAgent || detail.sentryEventId ? (
+        <dl className="grid gap-1 text-xs text-muted-foreground">
+          {detail.page ? (
+            <div>
+              <dt className="inline">页面：</dt>
+              <dd className="inline font-mono">{detail.page}</dd>
+            </div>
+          ) : null}
+          {detail.userAgent ? (
+            <div>
+              <dt className="inline">浏览器：</dt>
+              <dd className="inline break-all font-mono">{detail.userAgent}</dd>
+            </div>
+          ) : null}
+          {detail.sentryEventId ? (
+            <div>
+              <dt className="inline">Sentry：</dt>
+              <dd className="inline font-mono">{detail.sentryEventId}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      <div className="w-40">
+        <SettingSelect
+          label="状态"
+          value={detail.status}
+          options={STATUS_OPTIONS}
+          onChange={changeStatus}
+          disabled={action.busy !== null}
+        />
+      </div>
+      {detail.replies.length ? (
+        <section aria-label="回复记录" className="grid gap-2">
+          {detail.replies.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+            >
+              <p className="whitespace-pre-wrap break-words">{item.content}</p>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {item.author?.name ?? "管理员"} · {formatShortDateTime(item.createdAt)}
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {anonymous ? (
+        <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+          匿名反馈没有可联系的对象，无法通过站内回复送达。
+        </p>
+      ) : (
+        <form onSubmit={(event) => void submit(event)} className="grid gap-1.5">
+          {/* 与上方「状态」字段同一种标签（衬线常规）：同一弹窗里不并存两种字段标签写法。 */}
+          <label htmlFor={replyId} className="font-serif text-sm leading-snug">
+            回复
+          </label>
+          <Textarea
+            id={replyId}
+            value={reply}
+            maxLength={FEEDBACK_REPLY_MAX_LENGTH}
+            onChange={(event) => setReply(event.target.value)}
+            placeholder="用户会在「我的反馈」里看到这条回复"
+          />
+          <div className="flex items-center justify-between gap-3">
+            {action.error ? (
+              <FormAlert>{action.error}</FormAlert>
+            ) : (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {reply.length}/{FEEDBACK_REPLY_MAX_LENGTH}
+              </span>
+            )}
+            <Button
+              type="submit"
+              disabled={!reply.trim() || action.busy === "status"}
+              loading={action.busy === "reply"}
+            >
+              发送回复
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function FeedbackLoader({ id, onChanged }: { id: string; onChanged: () => void }) {
+  const query = useAdminQuery(
+    `feedback:${id}`,
+    () => api.admin.feedback.get({ id }),
+    "反馈加载失败"
+  );
+  // 回复与改状态直接返回新数据，覆盖在读取结果之上，不必重新请求。
+  const [override, setOverride] = useState<AdminFeedbackDetail | null>(null);
+  const detail = override ?? query.data;
+  return (
+    <>
+      <QueryStatus query={query} hasData={Boolean(detail)} />
+      {detail ? (
+        <FeedbackThread
+          detail={detail}
+          onChanged={(next) => {
+            setOverride(next);
+            onChanged();
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export function FeedbackPanel() {
+  const [status, setStatus] = useState("open");
+  const [kind, setKind] = useState("");
+  const [open, setOpen] = useState<{ id: string; title: string } | null>(null);
+  const list = useAdminList({
+    name: "feedback",
+    filters: {
+      ...(status ? { status: status as FeedbackStatus } : {}),
+      ...(kind ? { kind: kind as FeedbackKind } : {}),
+    },
+    limit: LIMIT,
+    fallback: "反馈列表加载失败",
+    fetch: (input) => api.admin.feedback.list(input),
+  });
+  const { items } = list;
+
+  return (
+    <div>
+      <AdminToolbar title="反馈" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-32"
+          label="状态"
+          value={status}
+          options={STATUS_FILTER}
+          onChange={setStatus}
+        />
+        <AdminFilterSelect
+          width="w-32"
+          label="类型"
+          value={kind}
+          options={KIND_FILTER}
+          onChange={setKind}
+        />
+      </AdminToolbar>
+      <ListState list={list} emptyText="没有符合条件的反馈" />
+      {items.length ? (
+        <AdminTable label="反馈列表">
+          <thead>
+            <tr>
+              <th scope="col">标题</th>
+              <th scope="col">类型</th>
+              <th scope="col">状态</th>
+              <th scope="col">提交人</th>
+              <th scope="col">提交时间</th>
+              <th scope="col">最近回复</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td className="max-w-64">
+                  <RowButton onClick={() => setOpen({ id: item.id, title: item.title })}>
+                    <span className="block truncate">{item.title}</span>
+                  </RowButton>
+                </td>
+                <td>{FEEDBACK_KIND_LABELS[item.kind]}</td>
+                <td>
+                  <Badge variant={FEEDBACK_STATUS_BADGE[item.status]} size="xs">
+                    {FEEDBACK_STATUS_LABELS[item.status]}
+                  </Badge>
+                </td>
+                <td>
+                  <UserCell user={item.user} fallback="匿名" />
+                </td>
+                <td className="whitespace-nowrap tabular-nums text-muted-foreground">
+                  {formatShortDateTime(item.createdAt)}
+                </td>
+                <td className="whitespace-nowrap tabular-nums text-muted-foreground">
+                  {item.lastReplyAt ? formatShortDateTime(item.lastReplyAt) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </AdminTable>
+      ) : null}
+      <Pager {...list.pager} />
+      <AdminDetailDialog
+        open={open !== null}
+        onClose={() => setOpen(null)}
+        title={open?.title}
+        titleClassName="break-words leading-snug"
+        description="回复会出现在登录用户的「我的反馈」里；匿名反馈无法收到回复。"
+      >
+        {open ? <FeedbackLoader key={open.id} id={open.id} onChanged={list.query.reload} /> : null}
+      </AdminDetailDialog>
+    </div>
+  );
+}

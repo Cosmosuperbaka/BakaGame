@@ -1,0 +1,96 @@
+import { isIP } from "node:net";
+import {
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+  type BrowserContext,
+} from "@playwright/test";
+
+export function isLoopbackUrl(input: string | URL): boolean {
+  const url = new URL(input);
+  if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127."));
+}
+
+/** Every attempted external connection is aborted and remains a teardown failure. */
+export async function installLoopbackGuard(context: BrowserContext) {
+  const failures: string[] = [];
+  await context.route("**/*", async (route) => {
+    const url = route.request().url();
+    if (!isLoopbackUrl(url)) {
+      failures.push(`Forbidden HTTP egress: ${url}`);
+      await route.abort("blockedbyclient");
+      return;
+    }
+    // Browser routing only sees the first request in an HTTP redirect chain.
+    // Fetch locally without following redirects, then fulfill the exact response.
+    let response: APIResponse;
+    try {
+      response = await route.fetch({ maxRedirects: 0 });
+    } catch (error) {
+      failures.push(`Loopback HTTP failed: ${url}: ${String(error)}`);
+      await route.abort("failed");
+      return;
+    }
+    if (response.status() >= 300 && response.status() < 400 && response.headers().location) {
+      failures.push(
+        `Forbidden HTTP redirect: ${response.status()} ${url} -> ${response.headers().location}`
+      );
+      await route.abort("blockedbyclient");
+      return;
+    }
+    // Terminal handling is not retried: fulfill and abort are mutually exclusive.
+    //
+    // 但 `route.fetch` 是异步的：这段等待里页面可能已经导航走，Playwright 随即把这条
+    // 请求判为已处理，`fulfill` 会抛「Route is already handled!」。请求既然不在了，
+    // 就没有什么要补的 —— 只放过这一种错误，其余照旧上抛，守卫本身仍是 fail-closed。
+    try {
+      await route.fulfill({ response });
+    } catch (error) {
+      if (!/Route is already handled/.test(String(error))) throw error;
+    }
+  });
+  await context.routeWebSocket("**/*", async (socket) => {
+    if (isLoopbackUrl(socket.url())) {
+      socket.connectToServer();
+      return;
+    }
+    failures.push(`Forbidden WebSocket egress: ${socket.url()}`);
+    await socket.close({ code: 1008, reason: "E2E only permits loopback" });
+  });
+  return Object.assign(() => expect(failures, failures.join("\n")).toEqual([]), {
+    async drain() {
+      // 页面资源还在加载时就收尾，下面的 unrouteAll 会一直等在途的处理函数：用例报「收尾超时」而断言全过。
+      // 先等各页网络安静下来。有上限：持续有请求的页面（轮询、流式音频）不会把收尾拖长太多。
+      await Promise.all(
+        context
+          .pages()
+          .map((page) =>
+            page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => undefined)
+          )
+      );
+      // Keep a fail-closed page guard while native unrouteAll waits for context handlers.
+      // Removing the context guard without this would briefly reopen external egress.
+      for (const page of context.pages()) {
+        await page.route("**/*", async (route) => {
+          if (!isLoopbackUrl(route.request().url()))
+            failures.push(`Forbidden HTTP egress: ${route.request().url()}`);
+          await route.abort("aborted");
+        });
+      }
+      await context.unrouteAll({ behavior: "wait" });
+    },
+  });
+}
+
+/** APIRequestContext bypasses browser routing: validate first, never follow redirects. */
+export async function getLoopback(request: APIRequestContext, path: string) {
+  const url = new URL(path, "http://127.0.0.1:5173");
+  if (!isLoopbackUrl(url)) throw new Error(`Forbidden API HTTP egress: ${url}`);
+  const response = await request.get(url.href, { maxRedirects: 0 });
+  if (response.status() >= 300 && response.status() < 400) {
+    throw new Error(`Unexpected E2E API redirect: ${response.status()} ${url}`);
+  }
+  return response;
+}

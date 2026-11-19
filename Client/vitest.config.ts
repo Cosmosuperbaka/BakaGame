@@ -1,0 +1,100 @@
+import path from "node:path";
+import { readFileSync } from "node:fs";
+
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vitest/config";
+
+import { latestVersionOf } from "./src/lib/Changelog.ts";
+
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      name: "test-virtual-modules",
+      resolveId(id) {
+        if (id === "virtual:commit-history") return "\0virtual:commit-history";
+        if (id === "virtual:build-info") return "\0virtual:build-info";
+        if (id === "virtual:app-version") return "\0virtual:app-version";
+        if (id === "virtual:sticker-manifest") return "\0virtual:sticker-manifest";
+        if (id === "virtual:credits") return "\0virtual:credits";
+        if (id === "virtual:credits-licenses") return "\0virtual:credits-licenses";
+        if (id.startsWith("virtual:credits-licenses-")) return "\0" + id;
+        return null;
+      },
+      load(id) {
+        if (id === "\0virtual:commit-history") {
+          return 'export default { currentCommit: "dev", commits: [] }';
+        }
+        if (id === "\0virtual:build-info") return 'export const currentCommit = "dev";';
+        // 版本号按构建期同一份推导取，单测里断言的版本才不会与真实日志脱节。
+        if (id === "\0virtual:app-version") {
+          const text = readFileSync(
+            path.resolve(import.meta.dirname, "src/data/changelog.json"),
+            "utf8"
+          );
+          return `export default ${JSON.stringify(latestVersionOf(text) ?? "")}`;
+        }
+        if (id === "\0virtual:sticker-manifest") {
+          return "export default { packs: [] }";
+        }
+        // 依赖清单与桶都只给空桩：单测断言页面行为，不依赖本机安装树。
+        if (id === "\0virtual:credits") return "export default { dependencies: [] }";
+        if (id === "\0virtual:credits-licenses") return "export default {}";
+        if (id.startsWith("\0virtual:credits-licenses-")) return "export default {}";
+        return null;
+      },
+    },
+  ],
+  resolve: {
+    // 共享源码的运行依赖按客户端安装边界解析。
+    dedupe: ["@sinclair/typebox"],
+    // 缺 module 条件时根入口取 CJS，其 dom-export 原生 require 又解析回 ESM，路由上下文会分成两份。
+    conditions: ["module"],
+    alias: [
+      // 更具体的前缀必须排在前面：运行时值走 Values.ts，类型仍从 Index.ts 取。
+      {
+        find: "@bakagame/shared/values",
+        replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Values.ts"),
+      },
+      {
+        find: "@bakagame/shared",
+        replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts"),
+      },
+      { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
+    ],
+  },
+  test: {
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    environment: "jsdom",
+    setupFiles: ["./src/test/Setup.ts"],
+    clearMocks: true,
+    restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      reportsDirectory: "./coverage",
+      // 覆盖率棘轮：阈值 = 一次实测读数 − 0.5pp，只许跟着实测往上走，不许往下调。
+      // 标定口径：vitest 5.0.3 + v8 provider，261 个测试文件全绿时
+      // All files 为 statements 90.58、branches 82.8、functions 88.24、lines 92.4；
+      // 0.5pp 余量覆盖的是复跑抖动（jsdom 里的定时器与动画分支在不同机器上会差得更多）。
+      // 阈值贴着实测会让门禁变成 flaky，而 flaky 的门禁最终被人关掉。
+      // 收紧时机：每补完一个模块的用例集就按同一口径重测一次，把四值重新抬到「实测 − 0.5pp」。
+      // 新增模块却压低实测，是要补覆盖的信号，不是要下调阈值的理由：先给新模块补测试。
+      thresholds: {
+        statements: 90,
+        branches: 82.3,
+        functions: 87.7,
+        lines: 91.9,
+      },
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.stories.tsx",
+        "src/stories/**",
+        "src/test/**",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+      ],
+    },
+  },
+});
