@@ -1,6 +1,7 @@
 # BakaGame
 
 [![CI](https://github.com/Cosmosuperbaka/BakaGame/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cosmosuperbaka/BakaGame/actions/workflows/ci.yml)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FCosmosuperbaka%2FBakaGame.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FCosmosuperbaka%2FBakaGame?ref=badge_shield)
 
 **1000万以内最好玩的小游戏网站。** 一间开给二次元朋友的游戏室：开一间房，把房号发进群，人齐就开。
 
@@ -59,3 +60,7 @@ pnpm dev
 ## 许可证
 
 [AGPL-3.0](LICENSE)。安全问题请按 [SECURITY](SECURITY.md) 私下报告，社区约定见 [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md)。
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FCosmosuperbaka%2FBakaGame.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FCosmosuperbaka%2FBakaGame?ref=badge_large)
