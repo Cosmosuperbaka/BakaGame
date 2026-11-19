@@ -86,6 +86,30 @@ describe("NapCat 昵称客户端", () => {
     });
   });
 
+  test("全部查不到时错误带上 NapCat 的失败说明，便于从日志判断是风控还是号不存在", async () => {
+    const { client, state } = clientOf();
+    state.online = false;
+    await expect(client.nicknames(["10001"])).rejects.toMatchObject({
+      message: expect.stringContaining("retcode=1404"),
+      details: { kind: "empty", reason: expect.stringContaining("not found") },
+    });
+  });
+
+  test("请求超时报「响应超时」，不混成「无法连接」", async () => {
+    const client = new QQNapCatClient({
+      apiUrl: "https://napcat.test/onebot-internal",
+      accessToken: "any-token",
+      fetcher: fakeFetch(async () => {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }),
+      minIntervalMs: 0,
+    });
+    await expect(client.nicknames(["10001"])).rejects.toMatchObject({
+      message: expect.stringContaining("超时"),
+      details: { kind: "network", action: "get_stranger_info" },
+    });
+  });
+
   test("get_login_info 返回登录号自身；掉线时返回 null", async () => {
     const { client, state } = clientOf();
     expect(await client.loginInfo()).toEqual({ uin: "90001", nickname: "查询号" });
@@ -163,6 +187,18 @@ describe("后台查询号", () => {
     });
   });
 
+  test("登录正常但查不到 QQ 资料时状态为不可用：后台不能显示正常而新号全部注册失败", async () => {
+    const { rpc, adminCookie, napcat } = await setup();
+    // 模拟 get_login_info 正常、get_stranger_info 被 QQ 侧拒绝
+    napcat.state.names.clear();
+    const status = await rpc("admin/qq/status", undefined, adminCookie);
+    expect(status.body).toMatchObject({
+      state: "unavailable",
+      uin: "90001",
+      error: expect.stringContaining("查不到 QQ 资料"),
+    });
+  });
+
   test("批量刷新先写审计；实例不可用时返回 503", async () => {
     const { rpc, adminCookie, audit, napcat } = await setup();
     napcat.state.online = false;
@@ -210,6 +246,20 @@ describe("昵称查询与同步", () => {
     expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
   });
 
+  test("新号发码先用回显时查到的昵称，不再重查查询号", async () => {
+    let clock = Date.now();
+    const { rpc, napcat } = await setup({ now: () => clock });
+    clock += 61_000;
+    expect((await rpc<string | null>("account/qqName", { qqNumber: "10001" })).body).toBe("阿狸");
+    // 回显之后查询号抽风：发码仍能用刚才查到的昵称完成注册前置
+    napcat.state.online = false;
+    expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({
+      registered: false,
+      qqName: "阿狸",
+    });
+    expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
+  });
+
   test("账号昵称 = QQ 昵称；QQ 昵称变化后按访问间隔同步", async () => {
     let clock = Date.now();
     const { rpc, signIn, userOf, napcat } = await setup({ now: () => clock });
@@ -244,9 +294,11 @@ describe("昵称查询与同步", () => {
     const refreshed = await rpc("admin/qq/refreshNames", undefined, adminCookie);
     expect(refreshed.body).toEqual({ checked: 24, updated: 1, remaining: 0 });
     expect(audit.entries.at(-1)).toMatchObject({ action: "qq.refreshNames" });
-    // 一个号一次调用，不再是按 20 个一批
-    expect(napcat.state.calls.length - before).toBe(24);
-    expect(new Set(napcat.state.calls.slice(before).map((call) => call[0])).size).toBe(24);
+    // 先用登录号自身探测一次查询能力，再一个号一次调用，不再是按 20 个一批
+    expect(napcat.state.calls[before]).toEqual([ADMIN_QQ]);
+    const refreshCalls = napcat.state.calls.slice(before + 1);
+    expect(refreshCalls.length).toBe(24);
+    expect(new Set(refreshCalls.map((call) => call[0])).size).toBe(24);
 
     const listed = await rpc("admin/users/list", { query: "10001" }, adminCookie);
     expect(listed.body.items).toMatchObject([{ name: "Alice2", qqName: "Alice2" }]);

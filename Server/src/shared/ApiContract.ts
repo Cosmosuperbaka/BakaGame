@@ -384,11 +384,11 @@ export const sentryOverviewSchema = z.object({
 /** QQ 昵称来源（NapCat / OneBot 11）的可用状态；查询号由 NapCat 自己维护，站点不再持有登录态。 */
 export const qqLookupStatusSchema = z.object({
   state: z.enum(["active", "unavailable"]),
-  /** NapCat 当前登录的 QQ 号与昵称；不可用时为空。 */
+  /** NapCat 当前登录的 QQ 号与昵称；连不上或未登录时为空，「已登录但查不到资料」时保留。 */
   uin: z.string().nullable(),
   nickname: z.string().nullable(),
   checkedAt: z.string().nullable(),
-  /** 不可用原因（固定文案，不含内网地址与令牌）。 */
+  /** 不可用原因（固定文案，可附 NapCat 的失败说明；不含内网地址与令牌）。 */
   error: z.string().nullable(),
 });
 

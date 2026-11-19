@@ -48,8 +48,14 @@ export interface AccountServiceOptions {
   now?: () => number;
 }
 
-/** 发码前取 QQ 昵称的限时：查询号慢或挂了直接拒绝注册，不让请求挂死。 */
+/** 登录弹窗昵称回显的限时：只是输入框旁的提示，查询号慢就先空着。 */
 const NICKNAME_LOOKUP_TIMEOUT_MS = 3_000;
+/**
+ * 新号发码前取 QQ 昵称的限时：查询号挂了直接拒绝注册，不让请求挂死。
+ * 比回显宽：`get_stranger_info` 要打 QQ 侧资料卡接口，偶尔要好几秒，发码本身用户也在等；
+ * 与 NapCat 客户端的单次请求超时对齐，不在它还可能返回时提前判失败。
+ */
+const SIGNUP_NICKNAME_TIMEOUT_MS = 8_000;
 
 /** 同一账号头像回源的最小间隔：用户每次访问会触发一次，短时间内反复刷新页面不重复抓。 */
 const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -290,14 +296,18 @@ export class AccountService {
     );
   }
 
-  /** 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。 */
+  /**
+   * 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。
+   * 先用缓存：输入 QQ 号时的回显已经查过一次，哪怕那次超过了回显时限、后台晚些才查到，
+   * 结果也已进缓存。直接重查会让「查询号偏慢」变成「每次点发码都重新等、每次都超时」。
+   */
   private async requireNickname(qqNumber: string): Promise<string> {
     const nicknames = this.options.nicknames;
     const timeout = new Promise<null>((resolve) =>
-      setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null)
+      setTimeout(resolve, SIGNUP_NICKNAME_TIMEOUT_MS, null)
     );
     const name = nicknames
-      ? await Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout])
+      ? await Promise.race([nicknames.resolveNickname(qqNumber).catch(() => null), timeout])
       : null;
     if (!name)
       throw new AppError(

@@ -36,6 +36,12 @@ const statusMessage = (kind: string | undefined): string => {
   return "NapCat 实例暂时不可用";
 };
 
+/** 客户端错误里可入日志的排查字段（失败类别、HTTP 状态、底层原因、NapCat 的失败说明）；不含地址与令牌。 */
+const failureOf = (
+  error: unknown
+): { kind?: string; status?: number; cause?: string; reason?: string | null; action?: string } =>
+  error instanceof AppError ? ((error.details as Record<string, never> | undefined) ?? {}) : {};
+
 /**
  * 通过管理员自建的 NapCat（OneBot 11）查注册用户的 QQ 昵称（见 Server/docs/Account.md §4）。
  *
@@ -61,23 +67,12 @@ export class QQNicknameService {
    */
   async status(): Promise<QQLookupStatus> {
     const checkedAt = new Date(this.now()).toISOString();
+    let info: { uin: string; nickname: string } | null;
     try {
-      const info = await this.options.client.loginInfo();
-      return info
-        ? { state: "active", uin: info.uin, nickname: info.nickname, checkedAt, error: null }
-        : {
-            state: "unavailable",
-            uin: null,
-            nickname: null,
-            checkedAt,
-            error: "NapCat 当前没有登录任何 QQ 号",
-          };
+      info = await this.options.client.loginInfo();
     } catch (error) {
-      const kind =
-        error instanceof AppError
-          ? (error.details as { kind?: string } | undefined)?.kind
-          : undefined;
-      this.options.logger.warn("QQ 昵称服务不可用", { kind, error: String(error) });
+      const kind = failureOf(error).kind;
+      this.options.logger.warn("QQ 昵称服务不可用", { ...failureOf(error), error: String(error) });
       return {
         state: "unavailable",
         uin: null,
@@ -86,6 +81,33 @@ export class QQNicknameService {
         error: statusMessage(kind),
       };
     }
+    if (!info)
+      return {
+        state: "unavailable",
+        uin: null,
+        nickname: null,
+        checkedAt,
+        error: "NapCat 当前没有登录任何 QQ 号",
+      };
+    // 登录正常不等于能查昵称：注册走的是 `get_stranger_info`（要打 QQ 侧资料卡接口），
+    // 它可能单独卡死或被风控拒绝，而 `get_login_info` 只读 NapCat 本地状态照样成功。
+    // 只看登录态会出现「后台显示正常、新号却全部注册失败」，所以这里拿登录号自身真查一次。
+    try {
+      await this.options.client.nicknames([info.uin]);
+    } catch (error) {
+      this.options.logger.warn("QQ 昵称查询探测失败", {
+        ...failureOf(error),
+        error: String(error),
+      });
+      return {
+        state: "unavailable",
+        uin: info.uin,
+        nickname: info.nickname,
+        checkedAt,
+        error: `已登录，但查不到 QQ 资料，新号注册不可用：${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    return { state: "active", uin: info.uin, nickname: info.nickname, checkedAt, error: null };
   }
 
   /**
@@ -104,7 +126,7 @@ export class QQNicknameService {
       for (const [uin, name] of normalized) this.recent.set(uin, name);
       return normalized;
     } catch (error) {
-      this.options.logger.warn("QQ 昵称查询失败", { error: String(error) });
+      this.options.logger.warn("QQ 昵称查询失败", { ...failureOf(error), error: String(error) });
       return null;
     }
   }

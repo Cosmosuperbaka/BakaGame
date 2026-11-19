@@ -80,12 +80,29 @@ export class QQNapCatClient {
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (error) {
-      throw this.fail("无法连接 QQ 昵称服务", "network", { cause: String(error) });
+      // 超时与连不上分开报：前者是 NapCat 在、但查 QQ 资料卡卡住了，后者才是链路断了。
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
+      throw this.fail(
+        timedOut ? `QQ 昵称服务响应超时（${action}）` : "无法连接 QQ 昵称服务",
+        "network",
+        { cause: String(error), action }
+      );
     }
   }
 
   /** 调用一个动作；`null` 表示这一条查不到（而不是整条链路不可用）。 */
   private async call<T>(action: string, payload: Record<string, unknown>): Promise<T | null> {
+    return (await this.callDetailed<T>(action, payload)).data;
+  }
+
+  /**
+   * 同 `call`，但查不到时带回 NapCat 的失败说明（`retcode` 与 `wording`/`message`）。
+   * 「登录正常但查不到资料」时，这是唯一能说明原因的线索，不能在客户端里丢掉。
+   */
+  private async callDetailed<T>(
+    action: string,
+    payload: Record<string, unknown>
+  ): Promise<{ data: T | null; failure: string | null }> {
     const response = await this.request(action, payload);
     // 先取文本再自行解析，而不是直接 `response.json()`：反向代理挡住请求时回的是 HTML
     // 错误页，先解析会让「403 被拒」表现成「返回格式异常」，只能翻访问日志才知道真相。
@@ -111,11 +128,13 @@ export class QQNapCatClient {
         status: response.status,
       });
     }
-    if (body.status === "ok" && body.retcode === 0 && body.data) return body.data;
+    if (body.status === "ok" && body.retcode === 0 && body.data)
+      return { data: body.data, failure: null };
     if (response.status >= 500) {
       throw this.fail("QQ 昵称服务暂时不可用", "protocol", { status: response.status });
     }
-    return null;
+    const reason = (body.wording || body.message || "").trim().slice(0, 120);
+    return { data: null, failure: `retcode=${body.retcode ?? "?"}${reason ? ` ${reason}` : ""}` };
   }
 
   /**
@@ -169,18 +188,26 @@ export class QQNapCatClient {
     ];
     if (!targets.length) return result;
     let answered = 0;
+    let lastFailure: string | null = null;
     await this.eachLimited(targets, async (uin) => {
-      const data = await this.call<{ nickname?: string }>("get_stranger_info", {
-        user_id: Number(uin),
-        no_cache: false,
-      });
-      if (!data) return;
+      const { data, failure } = await this.callDetailed<{ nickname?: string }>(
+        "get_stranger_info",
+        { user_id: Number(uin), no_cache: false }
+      );
+      if (!data) {
+        lastFailure = failure;
+        return;
+      }
       answered += 1;
       const name = normalizeAccountName(typeof data.nickname === "string" ? data.nickname : "");
       if (name) result.set(uin, name);
     });
     if (answered === 0)
-      throw this.fail("QQ 昵称服务没有返回任何结果", "empty", { count: targets.length });
+      throw this.fail(
+        `QQ 昵称服务没有返回任何结果${lastFailure ? `（${lastFailure}）` : ""}`,
+        "empty",
+        { count: targets.length, reason: lastFailure }
+      );
     return result;
   }
 }
