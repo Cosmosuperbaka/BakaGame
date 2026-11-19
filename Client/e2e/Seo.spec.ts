@@ -13,9 +13,9 @@ const ABOUTS_TAB_PAGES = [
 // 写入当前路由的 title/description/canonical/robots，真实浏览器同时验证没有重复标签。
 // 页面标题写页面是什么，不堆搜索词；toHaveTitle 用严格相等断言，防止被悄悄加长。
 test.describe("页面 SEO 元信息", () => {
-  test("首页标题带标语，注入描述与 canonical", async ({ page }) => {
+  test("首页标题就是站名，注入描述与 canonical", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle("BakaGame - 1000万以内最好玩的小游戏网站");
+    await expect(page).toHaveTitle("BakaGame");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /BakaGame/);
@@ -26,7 +26,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("谁是卧底大厅有独立标题、描述与 canonical", async ({ page }) => {
     await page.goto("/whoisfaker");
-    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+    await expect(page).toHaveTitle("Who is Faker - BakaGame");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /谁是卧底/);
@@ -48,7 +48,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
     await page.goto("/cee");
-    await expect(page).toHaveTitle("猜动漫角色 CEE（猜猜呗增强版） - BakaGame");
+    await expect(page).toHaveTitle("CEE - BakaGame");
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /猜动漫角色/);
     await expect(page.locator('head meta[property="og:description"]')).toHaveAttribute(
@@ -193,7 +193,7 @@ test.describe("页面 SEO 元信息", () => {
 
     await page.goto("/whoisfaker");
     await expect(page.getByRole("button", { name: "玩法说明" })).toBeVisible();
-    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+    await expect(page).toHaveTitle("Who is Faker - BakaGame");
 
     const samples = await page.evaluate(
       () =>
@@ -211,7 +211,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(entry).toHaveAttribute("href", "/whoisfaker");
     await entry.click();
     await expect(page).toHaveURL(/\/whoisfaker$/);
-    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
+    await expect(page).toHaveTitle("Who is Faker - BakaGame");
   });
 
   test("未知路径显示页面不存在并标记 noindex，地址不变", async ({ page }) => {
@@ -227,9 +227,9 @@ test.describe("页面 SEO 元信息", () => {
 
   // 托管平台按前缀把运行时地址改写到这些文件后，不执行脚本的抓取器与链接预览读到的就是它们。
   for (const [file, title] of [
-    ["/whoisfaker/room.html", "Who is Faker 房间邀请 - BakaGame"],
-    ["/songuessr/room.html", "Songuessr 房间邀请 - BakaGame"],
-    ["/cee/room.html", "CEE 房间邀请 - BakaGame"],
+    ["/whoisfaker/room.html", "Who is Faker - BakaGame"],
+    ["/songuessr/room.html", "Songuessr - BakaGame"],
+    ["/cee/room.html", "CEE - BakaGame"],
     ["/runtime.html", "BakaGame"],
     ["/404.html", "页面不存在 - BakaGame"],
   ]) {
@@ -301,7 +301,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(page).toHaveTitle("用户条款 - BakaGame");
     await page.getByRole("tab", { name: "开源致谢" }).click();
     await expect(page).toHaveURL(/\/abouts$/);
-    await expect(page).toHaveTitle("关于 BakaGame：更新日志、开源致谢与隐私条款");
+    await expect(page).toHaveTitle("关于 - BakaGame");
     await page.waitForLoadState("networkidle");
   });
 
