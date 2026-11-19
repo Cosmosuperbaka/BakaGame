@@ -321,6 +321,8 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
   const aggregator = deps.aggregator ?? createStatusAggregator(deps);
   const environment = deps.environment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
   const { history, samples, events, onError } = deps;
+  // 「近一个月」的窗口跟注入的时钟走，测试与聚合器用同一个时刻，不随真实日期漂移
+  const clock = deps.now ?? Date.now;
   const routes = new Elysia({ name: "public-status", normalize: false }).get(
     "/api/status",
     async ({ set }) => {
@@ -387,9 +389,9 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
     "/api/status/events",
     async ({ set }) => {
       set.headers["cache-control"] = "no-store";
-      return readPublicEvents(events, environment, Date.now()).catch((error: unknown) => {
+      return readPublicEvents(events, environment, clock()).catch((error: unknown) => {
         onError?.("status-events", error);
-        return { generatedAt: Date.now(), events: [] };
+        return { generatedAt: clock(), events: [] };
       });
     },
     {

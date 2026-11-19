@@ -485,7 +485,13 @@ describe("公开状态事件接口", () => {
     });
     await events.create("development", { ...base, startedAt: now - 1_000 });
 
-    const app = statusRoutes({ environment: "production", history, samples, events });
+    const app = statusRoutes({
+      environment: "production",
+      history,
+      samples,
+      events,
+      now: () => now,
+    });
     const response = await app.handle(new Request("http://localhost/api/status/events"));
     expect(response.status).toBe(200);
     const body = (await response.json()) as { events: PublicStatusEvent[] };
