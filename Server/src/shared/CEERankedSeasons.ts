@@ -11,7 +11,7 @@ export interface CEERankedSeason {
 }
 
 export const CEE_RANKED_SEASONS: readonly CEERankedSeason[] = [
-  // S1 的开始时刻先按拟定上线日写，发布时校正为实际上线日。
+  // S1 从 2.0.0 上线当天开始，到北京时间 2026-12-31 结束（含当天）。
   { id: "S1", startsAt: "2026-11-19T00:00:00+08:00", endsAt: "2027-01-01T00:00:00+08:00" },
 ];
 
