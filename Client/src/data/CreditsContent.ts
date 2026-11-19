@@ -266,6 +266,12 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         logo: "qwen",
         url: "https://qwen.ai/blog?id=qwen3.8",
       },
+      // 预览版没有官方发布页，按规则省略链接。
+      {
+        name: "Qwen 4 Max Preview",
+        releasedAt: "2026-11-11",
+        logo: "qwen",
+      },
     ],
   },
 ];
