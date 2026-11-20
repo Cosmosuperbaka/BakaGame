@@ -314,7 +314,7 @@ const GENERIC_THANKS_ICONS = {
  *   本站不设广告、付费与捐赠，按非商业使用；接入其中任何一项之前，先把这张图换成通用图标。
  */
 const RASTER_THANKS_ICONS: Partial<Record<SpecialThanksIcon, string>> = {
-  cee: "/assets/CEE.jpg",
+  cee: "/assets/CEE.png",
   moegirl: "/assets/brands/moegirl.jpg",
 };
 

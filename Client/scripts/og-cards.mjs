@@ -75,7 +75,7 @@ const CARDS = [
     title: "Songuessr",
     zh: "猜歌",
   },
-  { file: "og-cee.png", path: "/cee", icon: "CEE.jpg", title: "CEE", zh: "猜动漫角色" },
+  { file: "og-cee.png", path: "/cee", icon: "CEE.png", title: "那个游戏", zh: "" },
 ];
 
 const pageStyle = () => `
@@ -129,7 +129,7 @@ function gameCard({ title, zh, line, icon, path: route }) {
     <img src="${icon}" alt="" style="width:264px;height:264px;object-fit:cover;border-radius:10px;border:2px solid var(--border);flex:none;" />
     <div style="min-width:0;">
       <div class="serif" style="font-size:84px;font-weight:700;line-height:1.1;">${title}</div>
-      <div class="zh" style="font-size:46px;font-weight:600;margin-top:22px;">${zh}</div>
+      ${zh ? `<div class="zh" style="font-size:46px;font-weight:600;margin-top:22px;">${zh}</div>` : ""}
       <div class="muted" style="font-size:32px;margin-top:26px;">${line}</div>
     </div>
   </div>

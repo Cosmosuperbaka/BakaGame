@@ -87,8 +87,8 @@ const GAMES: GameEntry[] = [
     id: "animecharguessr",
     path: GAME_ROUTES.cee.base,
     lobbyPath: GAME_ROUTES.cee.base,
-    icon: "/assets/CEE.jpg",
-    title: "CEE",
+    icon: "/assets/CEE.png",
+    title: "那个游戏",
     available: true,
     subModes: [
       {

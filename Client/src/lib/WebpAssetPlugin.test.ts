@@ -147,7 +147,7 @@ describe("preparePublicWebp", () => {
       const { publicDir, assetMap } = await preparePublicWebp();
       expect(publicDir).toContain(".generated-public");
       expect(assetMap["/assets/Faker.png"]).toBe("/assets/Faker.webp");
-      expect(assetMap["/assets/CEE.jpg"]).toBe("/assets/CEE.webp");
+      expect(assetMap["/assets/CEE.png"]).toBe("/assets/CEE.webp");
       expect(assetMap["/assets/SongGuessr.gif"]).toBe("/assets/SongGuessr.webp");
       expect(assetMap["/assets/favicon.png"]).toBe("/assets/favicon.webp");
       expect(assetMap["/assets/logo.gif"]).toBe("/assets/logo.webp");

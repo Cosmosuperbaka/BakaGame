@@ -390,7 +390,7 @@ describe("LandingPage", () => {
     for (const id of ["whoisfaker", "songuessr", "animecharguessr"])
       expect(screen.getByTestId(`game-entry-${id}`).querySelector("p")).toBeNull();
     expect(
-      within(screen.getByTestId("game-entry-animecharguessr")).getByText("CEE")
+      within(screen.getByTestId("game-entry-animecharguessr")).getByText("那个游戏")
     ).toBeInTheDocument();
   });
 
