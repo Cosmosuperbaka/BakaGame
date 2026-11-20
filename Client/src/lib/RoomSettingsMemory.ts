@@ -1,5 +1,6 @@
 import type { GameId } from "@bakagame/shared";
 import { notifyPreferencesChanged } from "@/lib/PreferenceBus";
+import { loadChunk } from "@/lib/ChunkRecovery";
 import { localStore } from "@/lib/SafeStorage";
 import type {
   AnimeAutoFilters,
@@ -157,8 +158,8 @@ type MemoryValidator = (value: unknown) => boolean;
  */
 const loadValidators = async (): Promise<Record<RoomGame, MemoryValidator>> => {
   const [{ Value }, shared] = await Promise.all([
-    import("@sinclair/typebox/value"),
-    import("@bakagame/shared"),
+    loadChunk(() => import("@sinclair/typebox/value")),
+    loadChunk(() => import("@bakagame/shared")),
   ]);
   /** 一段记忆按载荷 schema 校验：键只能来自 `allowed`（口令等不该落盘的字段因此被拒），`required` 必须存在。 */
   const matchesPayload = (

@@ -5,6 +5,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
 import { songPickFields } from "@/components/songuessr/SongSubmission";
+import { loadChunk } from "@/lib/ChunkRecovery";
 import { SONGUESSR_COMMAND_POLICY } from "@/lib/SonGuessrWs";
 import { phaseSwap } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
@@ -13,7 +14,7 @@ import type { SongClipPreview, SongSearchResult } from "@bakagame/shared";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 
 const SongClipEditor = lazy(async () => ({
-  default: (await import("@/components/songuessr/SongClipEditor")).SongClipEditor,
+  default: (await loadChunk(() => import("@/components/songuessr/SongClipEditor"))).SongClipEditor,
 }));
 
 const submitPrompt = (anime: boolean, customClip: boolean) => {

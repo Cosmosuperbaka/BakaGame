@@ -15,6 +15,7 @@ import { CEEQuestionPanel } from "./CEEQuestionPanel";
 import { SETTINGS_FILE_LIMIT } from "./CEESettingOptions";
 import { settingsValidationMessage, summaries } from "./CEESettingsRules";
 import { useSettingsDraft } from "@/hooks/UseSettingsDraft";
+import { loadChunk } from "@/lib/ChunkRecovery";
 import { useCEESubjectNames } from "./UseCEESubjectNames";
 
 /**
@@ -119,7 +120,7 @@ export function CEEGameSettings({
     try {
       if (file.size > SETTINGS_FILE_LIMIT) throw new Error("配置文件过大");
       // 设置文件按 schema 校验，校验库只在真正导入文件时才加载，不进首屏包。
-      const { parseCEESettings } = await import("@bakagame/shared");
+      const { parseCEESettings } = await loadChunk(() => import("@bakagame/shared"));
       setDraft(parseCEESettings(JSON.parse(await file.text()) as unknown));
       setPresetName("");
       setFileError("");

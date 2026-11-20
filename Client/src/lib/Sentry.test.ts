@@ -16,6 +16,7 @@ import {
   type SentrySdkDriver,
 } from "./Sentry";
 import type { BakaChannelIdentity } from "./BakaChannel";
+import { installChunkLoadRecovery, resetChunkRecoveryForTest } from "./ChunkRecovery";
 
 /** 覆盖全部 SDK 出口的假 driver：夹具绝不触达真实 Sentry 模块，天然零外发。 */
 const createMockDriver = () => {
@@ -367,5 +368,35 @@ describe("isInjectedBrowserAdRejection", () => {
     expect(isInjectedBrowserAdRejection({ code: 500, message: "房间不存在" })).toBe(false);
     expect(isInjectedBrowserAdRejection(new Error("Ad loaded"))).toBe(false);
     expect(isInjectedBrowserAdRejection(null)).toBe(false);
+  });
+});
+
+describe("分块自愈重载期间的上报", () => {
+  afterEach(() => {
+    resetChunkRecoveryForTest();
+    vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+  });
+
+  it("重载发起前照常上报，发起后的事件一律丢弃（只是被取消的分块导入带出的连带错误）", () => {
+    resetClientSentryForTest();
+    window.sessionStorage.clear();
+    const mockDriver = createMockDriver();
+    initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
+    const { beforeSend } = capturedOptions(mockDriver.init);
+    const failure = {
+      exception: {
+        values: [
+          { type: "TypeError", value: "Cannot read properties of undefined (reading 'default')" },
+        ],
+      },
+    };
+    expect(beforeSend(failure)).toBe(failure);
+
+    vi.stubGlobal("location", { ...window.location, reload: vi.fn() });
+    const uninstall = installChunkLoadRecovery();
+    window.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
+    uninstall();
+    expect(beforeSend(failure)).toBeNull();
   });
 });

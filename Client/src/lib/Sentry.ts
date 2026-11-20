@@ -4,6 +4,7 @@ import { currentCommit } from "virtual:build-info";
 // 展示版本号构建期从 changelog.json 解析，遥测初始化不背整份日志。
 import appVersion from "virtual:app-version";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
+import { isChunkRecoveryReloading, loadChunk } from "@/lib/ChunkRecovery";
 import { bakaChannel, bakaClientType } from "@/lib/BakaChannel";
 import { formatReleaseName } from "@/lib/ReleaseName";
 
@@ -89,7 +90,7 @@ export const wrapTelemetryTransport = (
 
 /** 加载默认 driver（真实 SDK）；失败时由调用方降级，不在这里重试。 */
 const loadDefaultDriver = (): Promise<SentrySdkDriver> =>
-  import("./SentryRuntime").then((runtime) => runtime.createSentryDriver());
+  loadChunk(() => import("./SentryRuntime")).then((runtime) => runtime.createSentryDriver());
 
 type SentryState = "off" | "loading" | "ready" | "failed";
 let state: SentryState = "off";
@@ -225,7 +226,8 @@ const buildInitOptions = (
       "The play() request was interrupted by a new load request.",
       "The play() request was interrupted by a call to pause().",
       // 分块加载失败不在名单里：能自愈的（会话首次）由 `ChunkRecovery` 取消预加载失败事件后
-      // 重载，错误根本不会抛出；自愈之后仍失败的是玩家真正看得见的故障，必须照报。
+      // 重载，错误根本不会抛出，被取消的导入经 `loadChunk` 挂起等重载；自愈之后仍失败的是
+      // 玩家真正看得见的故障，必须照报。
       // Firefox/Safari 的通用网络失败文案（"NetworkError when attempting to fetch
       // resource." / "Load failed"）同样不收进名单：它们也由普通 API fetch 失败抛出，
       // 入名单会让弱网、CORS 与边缘故障在这两个引擎整体失明。
@@ -238,6 +240,9 @@ const buildInitOptions = (
       /Transition was skipped/i,
     ],
     beforeSend: (event, hint) => {
+      // 分块自愈重载已发起：页面马上重新加载，期间的异常是被取消的分块导入带出的连带错误
+      // （第三方依赖内部的动态导入不经过 `loadChunk`），不是真实故障。
+      if (isChunkRecoveryReloading()) return null;
       if (isModuleScriptParseFailure(event)) return null;
       if (isInjectedBrowserAdRejection(hint?.originalException)) return null;
       return event;

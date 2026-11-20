@@ -98,6 +98,23 @@ export default defineConfig([
     rules: TYPE_AWARE_RULES,
   },
   {
+    // 动态导入一律写成加载函数 `() => import("…")` 交给 `loadChunk`（lib/ChunkRecovery）或
+    // `lazyPage`：分块自愈重载时被取消的导入会解析成 undefined，直接 `await import()` 取成员、
+    // `.then` 或解构都会抛连带错误、上报并闪出错误界面。测试文件不经构建产物的预加载助手，不受限。
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: ":not(ArrowFunctionExpression) > ImportExpression",
+          message:
+            "动态导入请写成 loadChunk(() => import(...))：自愈重载时被取消的导入会解析成 undefined。",
+        },
+      ],
+    },
+  },
+  {
     // 构建与门禁脚本（.mjs，由 Node 直接运行）也要有基础规则：未用变量、未声明引用这类
     // 低级错误在脚本里同样会让构建或门禁静默失效。不做类型感知，脚本不在任何 tsconfig 工程内。
     files: ["**/*.mjs"],

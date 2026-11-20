@@ -3,6 +3,7 @@ import type {
   CreditLicenseDocument,
   CreditLicenseLoaders,
 } from "@/lib/Credits";
+import { loadChunk } from "@/lib/ChunkRecovery";
 import { licenseBucket } from "@/lib/Credits";
 import { createPromiseCache } from "@/lib/PromiseCache";
 import licenseLoaders from "virtual:credits-licenses";
@@ -18,7 +19,7 @@ import licenseLoaders from "virtual:credits-licenses";
  */
 const buckets = createPromiseCache<string, CreditLicenseBucket>((bucket) => {
   const load = (licenseLoaders as CreditLicenseLoaders)[bucket];
-  return load ? load() : Promise.resolve<CreditLicenseBucket>({});
+  return load ? loadChunk(load) : Promise.resolve<CreditLicenseBucket>({});
 });
 
 const documents = createPromiseCache<string, CreditLicenseDocument | null>((packageName) =>

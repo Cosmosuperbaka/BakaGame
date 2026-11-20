@@ -1,6 +1,8 @@
 // 聊天表情包清单。内容由 vite.config.ts 的 sticker-manifest 插件扫描
 // Client/public/emojis/ 生成，这里只负责取回并做防御性校验，不写死任何包名或表情名。
 
+import { loadChunk } from "@/lib/ChunkRecovery";
+
 /** 贴纸消息前缀，用于识别聊天消息是贴纸而非普通文本 */
 export const STICKER_PREFIX = "@@sticker@@";
 
@@ -82,7 +84,7 @@ const readPack = (raw: unknown): StickerPack | null => {
  */
 export async function loadStickerPacks(): Promise<StickerPack[]> {
   try {
-    const { default: payload } = await import("virtual:sticker-manifest");
+    const { default: payload } = await loadChunk(() => import("virtual:sticker-manifest"));
     if (!isRecord(payload) || !Array.isArray(payload.packs)) return [];
 
     return payload.packs.map(readPack).filter((pack): pack is StickerPack => pack !== null);

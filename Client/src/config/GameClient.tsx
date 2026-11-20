@@ -1,17 +1,19 @@
 import type { ComponentType } from "react";
 import type { RouteObject } from "react-router";
 import type { GameId } from "@bakagame/shared";
+import { loadChunk } from "@/lib/ChunkRecovery";
 
 type PageLoader = () => Promise<{ default: ComponentType }>;
 
 /**
  * 路由级懒加载：数据路由先取到页面分块、再提交导航，
  * 跨页过渡因此总在新页可渲染之后才开始，不会把加载占位拍进快照。
+ * 分块经 `loadChunk` 取：自愈重载进行中导航停在原页（或首屏占位）上，不落到错误出口。
  */
 export const lazyPage =
   <P extends object = object>(load: () => Promise<{ default: ComponentType<P> }>, props?: P) =>
   async () => {
-    const Page = (await load()).default;
+    const Page = (await loadChunk(load)).default;
     // 要给页面传固定属性（如单人房）时只能走 element；其余一律交给路由库按 Component 渲染。
     return props ? { element: <Page {...props} /> } : { Component: Page as ComponentType };
   };

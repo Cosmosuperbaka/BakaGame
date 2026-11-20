@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { onPageCommand, reportPageResult } from "@/lib/SiteWs";
+import { loadChunk } from "@/lib/ChunkRecovery";
 import { clearAgentFocus, markAgentIdle, usePageControl } from "@/stores/UsePageControl";
 import { AgentTakeoverLayer } from "@/components/common/AgentTakeoverLayer";
 
@@ -22,7 +23,7 @@ export function PageControlHost() {
         running.current?.abort();
         const controller = new AbortController();
         running.current = controller;
-        void import("@/lib/PageActions")
+        void loadChunk(() => import("@/lib/PageActions"))
           .then(({ runPageCommand }) =>
             runPageCommand(command, {
               navigate: (path) => void navigate(path),
