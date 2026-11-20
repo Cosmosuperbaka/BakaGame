@@ -171,8 +171,8 @@ describe("正在开赛时的排队与取消", () => {
     expect(inSeries.code).toBe("RANKED_IN_SERIES");
   });
 
-  test("同一跳配出两对时，第二对玩家在第一对开赛挂起期间排队报忙、取消不推 idle", async () => {
-    // 只卡住 u-甲 的评级读取：第一对（甲乙）开赛挂起，第二对（丙丁）尚未轮到。
+  test("同一跳配出两对时，第一对开赛挂起不耽误第二对；挂起的两位排队报忙、取消不推 idle", async () => {
+    // 只卡住 u-甲 的评级读取：第一对（甲乙）开赛挂起，第二对（丙丁）并行组装照常开出。
     const store = new GatedUserRatingStore("u-甲");
     const harness = rankedHarness({ store });
     harness.seedRated("u-甲", { rating: 1500, rd: 100 });
@@ -189,12 +189,15 @@ describe("正在开赛时的排队与取消", () => {
 
     await harness.advance(1_000);
 
+    // 一场挂住不拖住同跳的另一场。
+    expect(harness.seriesView(third).opponent.isBot).toBe(false);
+    expect(harness.seriesView(fourth).opponent.isBot).toBe(false);
     // 配好的人在出队的同一刻就已处于开赛中：排队报忙，取消不生效也不多推 idle。
-    const busy = await appErrorOf(() => harness.send(third, "cee.ranked.queue", {}));
+    const busy = await appErrorOf(() => harness.send(second, "cee.ranked.queue", {}));
     expect(busy.code).toBe("RANKED_STARTING");
-    const framesBefore = harness.states(third).length;
-    expect(await harness.send(third, "cee.ranked.cancel", {})).toEqual({});
-    expect(harness.states(third).length).toBe(framesBefore);
+    const framesBefore = harness.states(second).length;
+    expect(await harness.send(second, "cee.ranked.cancel", {})).toEqual({});
+    expect(harness.states(second).length).toBe(framesBefore);
 
     store.release();
     await harness.advance(0);

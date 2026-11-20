@@ -55,8 +55,29 @@ export interface CEERankedMatchHost {
 
 /** 匹配跳周期：1 秒一跳，只在队列非空时运行。 */
 const MATCH_TICK_MS = 1_000;
+/**
+ * 开赛组装（读评级、取题库、解析昵称）的整体截止时间，是数据库语句截止时间之外的纵深防御。
+ * 正常组装几秒内完成；单条只读语句最坏是两次语句截止时间（超时 + 换连接重试），这里再留出
+ * 其余读取的余量。到点作废这次组装、玩家回空闲，题库计算照常在后台完成并进缓存，重排即可复用。
+ */
+export const CEE_RANKED_START_DEADLINE_MS = 30_000;
+const START_TIMEOUT_CODE = "RANKED_START_TIMEOUT";
 /** 缺省昵称解析失败时的显示名。 */
 const FALLBACK_NAME = "玩家";
+
+/**
+ * 一次开赛组装：同一场系列赛的一到两位玩家共用。截止时间到点即作废，此后这次组装的任何
+ * 迟到结果（开赛、置空闲、记人格）一律不生效——玩家此时可能已经重新排队。
+ */
+interface StartAttempt {
+  revoked: boolean;
+}
+
+/** 「开赛中」的占位：属于哪次组装，以及出队前的排队条目（开赛期间快照仍按排队态给出）。 */
+interface StartClaim {
+  readonly attempt: StartAttempt;
+  readonly entry: CEERankedQueueEntry;
+}
 
 export class CEERankedMatchmaker {
   private readonly ctx: CEERankedContext;
@@ -64,8 +85,11 @@ export class CEERankedMatchmaker {
   private readonly queue = new CEERankedQueue();
   /** 账号 → 最近一次推送的排队窗口：窗口没变就不重复推。 */
   private readonly pushedWindow = new Map<string, number>();
-  /** 正在开赛的账号：异步组装题库与昵称期间，`queue` 报忙、`cancel` 无效。 */
-  private readonly starting = new Set<string>();
+  /**
+   * 正在开赛的账号：异步组装题库与昵称期间，`queue` 报忙，`cancel` 与 `playBot` 无效但不报错，
+   * 快照按出队前的排队条目给排队态。释放按占位身份比对，只释放自己那次组装的占位。
+   */
+  private readonly starting = new Map<string, StartClaim>();
   private matchCancel: (() => void) | null = null;
   private closed = false;
 
@@ -93,10 +117,17 @@ export class CEERankedMatchmaker {
     if (this.queue.remove(userId)) this.pushedWindow.delete(userId);
   }
 
-  /** 该账号正在排队时的状态帧；不在队列里返回 null。 */
+  /**
+   * 该账号正在排队时的状态帧；正在开赛（已出队、系列赛还没开出来）也按排队态给，
+   * 刷新或重连的玩家看到的是「匹配中」，不会去点「开始匹配」撞上「正在为你开赛」。
+   * 既不排队也不在开赛返回 null。
+   */
   queuedSnapshot(userId: string): CEERankedState | null {
+    const now = this.ctx.now();
     const entry = this.queue.get(userId);
-    if (entry) return this.queuedState(entry, this.ctx.now());
+    if (entry) return this.queuedState(entry, now);
+    const claim = this.starting.get(userId);
+    if (claim) return queuedStateOf(claim.entry, now);
     return null;
   }
 
@@ -113,30 +144,33 @@ export class CEERankedMatchmaker {
       this.host.forgetSeries(current, userId);
       pushState(this.ctx, userId, idleState());
     }
-    // 在读评级之前就先占位：连点两次 `queue` 不会开出两场。
-    this.starting.add(userId);
+    // 在读评级之前就先占位：连点两次 `queue` 不会开出两场。评级还没读到，排队条目先按点下排队的时刻记。
+    const provisional: CEERankedQueueEntry = {
+      userId,
+      rating: 0,
+      queuedAt: this.ctx.now(),
+      lastOpponent: this.ctx.lastOpponent.get(userId) ?? null,
+    };
+    const attempt = this.claim([provisional]);
     try {
-      const prior = (await requireStore(this.ctx).getRating(userId)) ?? initialRatingRecord(userId);
-      const entry: CEERankedQueueEntry = {
-        userId,
-        rating: prior.rating,
-        queuedAt: this.ctx.now(),
-        lastOpponent: this.ctx.lastOpponent.get(userId) ?? null,
-      };
-      // 定级赛只打人机：不满 5 场不进真人队列，直接开一场，推给客户端的就是系列赛。
-      if (prior.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES) {
-        await this.startBotSeries(userId, "placement", entry);
-        return {};
-      }
-      this.queue.add(entry);
-      pushState(this.ctx, userId, this.queuedState(entry, this.ctx.now()));
-      if (!this.closed) this.scheduleMatchTick();
+      await this.runStart(attempt, [userId], async () => {
+        const prior =
+          (await requireStore(this.ctx).getRating(userId)) ?? initialRatingRecord(userId);
+        if (attempt.revoked) return;
+        const entry: CEERankedQueueEntry = { ...provisional, rating: prior.rating };
+        // 定级赛只打人机：不满 5 场不进真人队列，直接开一场，推给客户端的就是系列赛。
+        if (prior.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES) {
+          await this.startBotSeries(attempt, userId, "placement", entry);
+          return;
+        }
+        this.queue.add(entry);
+        pushState(this.ctx, userId, this.queuedState(entry, this.ctx.now()));
+        if (!this.closed) this.scheduleMatchTick();
+      });
       return {};
     } catch (error) {
       this.resetToIdle(userId);
       throw error;
-    } finally {
-      this.starting.delete(userId);
     }
   }
 
@@ -150,6 +184,8 @@ export class CEERankedMatchmaker {
   }
 
   async playBot(userId: string): Promise<Record<string, never>> {
+    // 正在开赛：那一场（人机或刚配上的真人局）已经在开，与 `cancel` 一样直接忽略，不报「不在排队中」。
+    if (this.starting.has(userId)) return {};
     this.requireOpenSeason();
     const entry = this.queue.get(userId);
     if (!entry) throw new AppError("INVALID_PHASE", "当前不在排队中");
@@ -157,8 +193,11 @@ export class CEERankedMatchmaker {
       throw new AppError("RANKED_BOT_NOT_READY", "再等一会儿才能选择人机");
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
+    const attempt = this.claim([entry]);
     try {
-      await this.guardedStart([userId], () => this.startBotSeries(userId, "manual", entry));
+      await this.runStart(attempt, [userId], () =>
+        this.startBotSeries(attempt, userId, "manual", entry)
+      );
     } catch (error) {
       this.resetToIdle(userId);
       throw error;
@@ -172,18 +211,62 @@ export class CEERankedMatchmaker {
     if (currentCEERankedSeason(now) === null) throw seasonClosedError(now);
   }
 
-  /** 开赛护栏：组装是异步的，这期间同一账号的 `queue` 报忙、`cancel` 无效。 */
-  private async guardedStart(userIds: readonly string[], open: () => Promise<void>): Promise<void> {
-    for (const userId of userIds) this.starting.add(userId);
-    await this.openClaimed(userIds, open);
+  /** 开赛护栏的占位半边：组装是异步的，必须在出队的同一个同步段里占好。 */
+  private claim(entries: readonly CEERankedQueueEntry[]): StartAttempt {
+    const attempt: StartAttempt = { revoked: false };
+    for (const entry of entries) this.starting.set(entry.userId, { attempt, entry });
+    return attempt;
   }
 
-  /** 开赛护栏的释放半边：账号已在同一同步段里占位，这里只在自己结束时释放自己的那几位。 */
-  private async openClaimed(userIds: readonly string[], open: () => Promise<void>): Promise<void> {
+  /**
+   * 开赛护栏的组装与释放半边：组装受整体截止时间约束，到点作废本次组装并以超时拒绝（记错误日志，
+   * 由调用方把玩家置回空闲）；无论成败，只释放属于本次组装的占位。
+   */
+  private async runStart(
+    attempt: StartAttempt,
+    userIds: readonly string[],
+    assemble: () => Promise<void>
+  ): Promise<void> {
+    let cancelDeadline: () => void = () => {};
+    const expired = new Promise<never>((_, reject) => {
+      cancelDeadline = this.ctx.setTimer(() => {
+        attempt.revoked = true;
+        this.ctx.logger?.error("排位开赛超时", {
+          userIds: [...userIds],
+          deadlineMs: CEE_RANKED_START_DEADLINE_MS,
+        });
+        reject(new AppError(START_TIMEOUT_CODE, "开赛超时，请重新开始匹配"));
+      }, CEE_RANKED_START_DEADLINE_MS);
+    });
+    const work = assemble();
+    // 作废之后组装仍可能迟到地失败：已经没人等它的结果，吞掉以免成为未处理的拒绝。
+    work.catch(() => {});
     try {
-      await open();
+      await Promise.race([work, expired]);
     } finally {
-      for (const userId of userIds) this.starting.delete(userId);
+      cancelDeadline();
+      for (const userId of userIds) {
+        if (this.starting.get(userId)?.attempt === attempt) this.starting.delete(userId);
+      }
+    }
+  }
+
+  /** 匹配跳里的一场开赛：失败只影响这一场的玩家，回空闲等下一次点排队。 */
+  private async startFromTick(
+    attempt: StartAttempt,
+    userIds: readonly string[],
+    assemble: () => Promise<void>
+  ): Promise<void> {
+    try {
+      await this.runStart(attempt, userIds, assemble);
+    } catch (error) {
+      // 超时已在截止处记过日志，不重复记。
+      if (!isStartTimeout(error))
+        this.ctx.logger?.error("排位开赛失败", {
+          userIds: [...userIds],
+          error: errorMessageOf(error),
+        });
+      for (const userId of userIds) this.resetToIdle(userId);
     }
   }
 
@@ -213,40 +296,27 @@ export class CEERankedMatchmaker {
       return;
     }
     const { pairs, fallbacks } = this.queue.tick(now);
-    // 出队与占位必须在同一个同步段：后面几对要等前面的 await，这期间不能让他们处于「既不在队列也不在开赛中」。
-    for (const [first, second] of pairs) {
-      this.starting.add(first.userId);
-      this.starting.add(second.userId);
-    }
-    for (const entry of fallbacks) this.starting.add(entry.userId);
-    // 一场开失败不能带走整跳：其余候选照常开赛，失败的两位回队列外等下一次点排队。
-    for (const [first, second] of pairs) {
-      try {
-        await this.openClaimed([first.userId, second.userId], () =>
-          this.startHumanSeries(first, second, now)
-        );
-      } catch (error) {
-        this.ctx.logger?.error("排位开赛失败", {
-          userIds: [first.userId, second.userId],
-          error: errorMessageOf(error),
-        });
-        this.resetToIdle(first.userId);
-        this.resetToIdle(second.userId);
-      }
-    }
-    for (const entry of fallbacks) {
-      try {
-        await this.openClaimed([entry.userId], () =>
-          this.startBotSeries(entry.userId, "auto", entry, now)
-        );
-      } catch (error) {
-        this.ctx.logger?.error("排位开赛失败", {
-          userIds: [entry.userId],
-          error: errorMessageOf(error),
-        });
-        this.resetToIdle(entry.userId);
-      }
-    }
+    // 出队与占位必须在同一个同步段：组装都要 await，这期间不能让他们处于「既不在队列也不在开赛中」。
+    const humanStarts = pairs.map(([first, second]) => ({
+      first,
+      second,
+      attempt: this.claim([first, second]),
+    }));
+    const botStarts = fallbacks.map((entry) => ({ entry, attempt: this.claim([entry]) }));
+    // 各场并行组装、各有截止时间：一场挂住不拖住同跳的其他人，也不拖住下一跳（下一跳要等这一跳结束才排）。
+    // 一场开失败不能带走整跳：其余候选照常开赛，失败的玩家回队列外等下一次点排队。
+    await Promise.all([
+      ...humanStarts.map(({ first, second, attempt }) =>
+        this.startFromTick(attempt, [first.userId, second.userId], () =>
+          this.startHumanSeries(attempt, first, second, now)
+        )
+      ),
+      ...botStarts.map(({ entry, attempt }) =>
+        this.startFromTick(attempt, [entry.userId], () =>
+          this.startBotSeries(attempt, entry.userId, "auto", entry, now)
+        )
+      ),
+    ]);
     // 仍在排队的人窗口可能又放宽了一档，只给变化的推一帧。
     for (const userId of this.ctx.attachment.keys()) {
       const entry = this.queue.get(userId);
@@ -258,6 +328,7 @@ export class CEERankedMatchmaker {
 
   /** 排位连接都在 `attachment` 里，排队中的账号必然有一条：据此推送，队列不必暴露迭代口。 */
   private async startHumanSeries(
+    attempt: StartAttempt,
     first: CEERankedQueueEntry,
     second: CEERankedQueueEntry,
     now: number
@@ -275,6 +346,7 @@ export class CEERankedMatchmaker {
       (conservativeCEERating(ratingA, now) + conservativeCEERating(ratingB, now)) / 2
     );
     const pool = await requirePool(this.ctx).getRankedPool(tier.id, now);
+    if (attempt.revoked) return;
     const answers = pickAnswers(pool.candidates, this.ctx.random);
     if (!answers) {
       this.ctx.logger?.error("排位题库不足三题", {
@@ -290,6 +362,7 @@ export class CEERankedMatchmaker {
       this.displayName(first.userId),
       this.displayName(second.userId),
     ]);
+    if (attempt.revoked) return;
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [
       this.humanSeat(first.userId, nameA, recordA, first, now),
       this.humanSeat(second.userId, nameB, recordB, second, now),
@@ -309,6 +382,7 @@ export class CEERankedMatchmaker {
   }
 
   private async startBotSeries(
+    attempt: StartAttempt,
     userId: string,
     botEntry: Exclude<CEERankedBotEntry, null>,
     entry: CEERankedQueueEntry,
@@ -318,6 +392,7 @@ export class CEERankedMatchmaker {
     const rating = toRating(prior);
     const tier = ceeRankedTierFor(conservativeCEERating(rating, now));
     const pool = await requirePool(this.ctx).getRankedPool(tier.id, now);
+    if (attempt.revoked) return;
     const answers = pickAnswers(pool.candidates, this.ctx.random);
     if (!answers) {
       this.ctx.logger?.error("排位题库不足三题", { userId, tier: tier.id });
@@ -335,6 +410,7 @@ export class CEERankedMatchmaker {
     const targetRating = persona.id === "aiga" ? nominal + bias : nominal;
     const rated = shouldRateBotSeries(prior, now);
     const name = await this.displayName(userId);
+    if (attempt.revoked) return;
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [
       this.humanSeat(userId, name, prior, entry, now),
       {
@@ -465,17 +541,31 @@ export class CEERankedMatchmaker {
     this.host.scheduleTimer(runtime);
   }
 
+  /** 要推送的排队态：顺带记下推过的窗口，窗口不变就不重复推。 */
   private queuedState(entry: CEERankedQueueEntry, now: number): CEERankedState {
-    const window = ceeRankedWindow(entry, now);
-    this.pushedWindow.set(entry.userId, window);
-    return {
-      status: "queued",
-      queuedAt: entry.queuedAt,
-      botAvailableAt: entry.queuedAt + CEE_RANKED_BOT_OPTION_MS,
-      botFallbackAt: entry.queuedAt + CEE_RANKED_BOT_FALLBACK_MS,
-      window,
-    };
+    const state = queuedStateOf(entry, now);
+    this.pushedWindow.set(entry.userId, state.window);
+    return state;
   }
+}
+
+/** 排队条目对应的排队态帧（纯函数）。 */
+function queuedStateOf(
+  entry: CEERankedQueueEntry,
+  now: number
+): Extract<CEERankedState, { status: "queued" }> {
+  return {
+    status: "queued",
+    queuedAt: entry.queuedAt,
+    botAvailableAt: entry.queuedAt + CEE_RANKED_BOT_OPTION_MS,
+    botFallbackAt: entry.queuedAt + CEE_RANKED_BOT_FALLBACK_MS,
+    window: ceeRankedWindow(entry, now),
+  };
+}
+
+/** 开赛组装超时：截止处已记过错误日志。 */
+function isStartTimeout(error: unknown): boolean {
+  return error instanceof AppError && error.code === START_TIMEOUT_CODE;
 }
 
 /** 按先验权重不放回地抽题：正赛 3 道加上加赛备用，题库不够上限时有多少抽多少，不足 3 道返回 null。 */
