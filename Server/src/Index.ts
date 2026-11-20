@@ -47,6 +47,11 @@ const database = env.databaseUrl
   ? createDatabase(env.databaseUrl, {
       onRetry: ({ attempt, error }) =>
         logger.warn("数据库连接重试", { attempt, ...describeError(error) }),
+      onStatementRetry: ({ error, statement }) =>
+        logger.warn("数据库只读语句连接失败，已换新连接重试", {
+          statement: statement.slice(0, 120),
+          ...describeError(error),
+        }),
     })
   : undefined;
 database?.ready.then(

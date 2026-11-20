@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
-import mysql from "mysql2/promise";
+import mysql, { type Pool } from "mysql2/promise";
 
 import { AppError } from "../../domain/Errors";
 import * as schema from "./Schema";
+import { guardPool, type ConnectionSource, type StatementGuardOptions } from "./StatementGuard";
 
 export type DatabaseClient = MySql2Database<typeof schema>;
 
@@ -51,6 +52,13 @@ export interface CreateDatabaseOptions {
   check?: () => Promise<void>;
   /** 每次重试前触发，用于落日志；不传则静默重试。 */
   onRetry?: (context: { attempt: number; error: unknown }) => void;
+  /**
+   * 单条语句的截止时间，缺省见 `STATEMENT_TIMEOUT_MS`；`null` 表示不限，只给一次性表结构脚本用。
+   * 语义见 `StatementGuard.ts`。
+   */
+  statementTimeoutMs?: StatementGuardOptions["timeoutMs"];
+  /** 只读语句因连接级失败在新连接上重试前触发，用于落日志。 */
+  onStatementRetry?: StatementGuardOptions["onRetry"];
 }
 
 /**
@@ -58,6 +66,7 @@ export interface CreateDatabaseOptions {
  *
  * 托管数据库强制 TLS；本项目只连托管库，连接一律校验证书，不提供明文开关。
  * 连接池上限按托管额度保守取值，空闲连接主动回收，避免被服务端掐断后复用死连接。
+ * drizzle 拿到的是套了语句守卫的连接池：每条语句有截止时间，非事务只读语句遇连接级失败重试一次。
  */
 export const createDatabase = (url: string, options: CreateDatabaseOptions = {}): Database => {
   let parsed: URL;
@@ -80,7 +89,12 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
     enableKeepAlive: true,
     connectTimeout: 10_000,
   });
-  const db = drizzle({ client: pool, schema, mode: "default" });
+  const guarded = guardPool(pool as ConnectionSource, {
+    timeoutMs: options.statementTimeoutMs,
+    onRetry: options.onStatementRetry,
+  });
+  // 守卫对象只实现 drizzle 会话实际取用的 query / execute / getConnection，类型上按连接池交给它。
+  const db = drizzle({ client: guarded as unknown as Pool, schema, mode: "default" });
   const attempts = Math.max(1, Math.floor(options.attempts ?? CONNECT_RETRY_ATTEMPTS));
   const cooldownMs = options.retryCooldownMs ?? CONNECT_RETRY_COOLDOWN_MS;
   const probe = options.check ?? (async () => void (await db.execute(sql`SELECT 1`)));

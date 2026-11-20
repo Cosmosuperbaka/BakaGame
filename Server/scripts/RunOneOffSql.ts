@@ -79,7 +79,8 @@ const main = async (): Promise<void> => {
   const url = Bun.env.DATABASE_URL;
   if (!url) throw new Error("请先设置 DATABASE_URL");
   await confirmTarget(args, describeTarget(url));
-  const database = createDatabase(url);
+  // 大表 DDL 可以合法地跑很久：表结构脚本不设语句截止时间，到点断开只会让脚本误报失败。
+  const database = createDatabase(url, { statementTimeoutMs: null });
   try {
     await database.ready;
     for (const [index, statement] of statements.entries()) {
