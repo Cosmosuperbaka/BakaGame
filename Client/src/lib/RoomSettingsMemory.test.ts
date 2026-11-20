@@ -178,7 +178,7 @@ describe("room settings memory", () => {
         });
         put("song", { question: validQuestion });
         expect(await readRoomSettingsMemory("song")).toEqual({ question: validQuestion });
-        // 猜歌与猜猜呗的旁观可见答案晚于记忆格式加入：旧记录没有它照常读出。
+        // 猜歌与那个游戏的旁观可见答案晚于记忆格式加入：旧记录没有它照常读出。
         const legacy = createDefaultCEESettings(2020);
         delete legacy.spectatorsSeeAnswers;
         put("cee", { settings: legacy });

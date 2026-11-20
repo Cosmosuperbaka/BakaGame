@@ -86,7 +86,7 @@ export function useCEERoomLifecycle() {
           source: "native",
           roomId: targetRoomId,
           // 房间名协议上限 32：用户名最多 32 字符，「的房间」后缀要留出空间。
-          name: targetRoomId === TEST_ROOM_ID ? "CEE 测试房" : `${userName.slice(0, 29)}的房间`,
+          name: targetRoomId === TEST_ROOM_ID ? "那个游戏测试房" : `${userName.slice(0, 29)}的房间`,
           userName,
           visibility: "public",
           allowSpectators: true,

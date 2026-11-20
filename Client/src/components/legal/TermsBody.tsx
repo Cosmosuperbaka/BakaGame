@@ -31,7 +31,7 @@ export function TermsBody() {
 
       <LegalSection title="一、服务说明">
         <ul className="list-disc space-y-2 pl-5">
-          <li>本站提供 Who is Faker、SongGuessr、CEE 等在线小游戏，按现状免费提供。</li>
+          <li>本站提供 Who is Faker、SongGuessr、那个游戏等在线小游戏，按现状免费提供。</li>
           <li>
             本站是爱好者作品，与游戏涉及作品的版权方以及网易云音乐、QQ 音乐、Bangumi
             等第三方平台没有隶属或代理关系，相关内容与服务的可用性由对应平台决定。

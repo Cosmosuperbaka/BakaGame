@@ -91,7 +91,7 @@ const objectSchema = (
 const gameProperty = {
   type: "string",
   enum: [...GAME_IDS],
-  description: "游戏：faker（谁是卧底）、song（猜歌）、cee（猜角色）",
+  description: "游戏：faker（谁是卧底）、song（猜歌）、cee（那个游戏）",
 };
 
 const policyNotice = `\n\n使用边界：${MCP_POLICY}`;

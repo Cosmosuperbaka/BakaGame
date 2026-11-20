@@ -170,7 +170,7 @@ export function RoomsPanel() {
         </div>
       </AdminToolbar>
       <p className="mb-3 text-xs text-muted-foreground">
-        CEE 只列出增强房；原版房在上游服务器，不在此管理。关房与移人都会写入审计。
+        那个游戏只列出增强房；原版房在上游服务器，不在此管理。关房与移人都会写入审计。
       </p>
       <QueryState
         loading={rooms.loading}

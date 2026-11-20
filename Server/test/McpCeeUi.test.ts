@@ -311,7 +311,7 @@ describe("猜角色界面：阶段与控件", () => {
   test("未知阶段只留聊天栏，标题退回游戏名", async () => {
     const { ui } = open("teleporting");
     const screen = await ui.screen("cee");
-    expect(screen.title).toBe("猜角色");
+    expect(screen.title).toBe("那个游戏");
     expect(idsOf(screen.controls)).toEqual(["chat.input", "chat.send"]);
   });
 

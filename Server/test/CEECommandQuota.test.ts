@@ -8,7 +8,7 @@ import {
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
 import { createTestConnection } from "./support/Connection";
 
-// 猜猜呗的每连接命令总额度与另外两款共用同一组常量：改一处，三款一起变。
+// 那个游戏的每连接命令总额度与另外两款共用同一组常量：改一处，三款一起变。
 
 const services: CEEService[] = [];
 afterEach(async () => {

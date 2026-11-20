@@ -81,7 +81,7 @@ const roomInvite = (
 export const NOT_FOUND_PAGE: RuntimePageMeta = {
   file: "404.html",
   title: `页面不存在 - ${SITE_NAME}`,
-  description: `这个地址在 ${SITE_NAME} 上没有对应的页面。谁是卧底、猜歌、猜动漫角色都从首页进。`,
+  description: `这个地址在 ${SITE_NAME} 上没有对应的页面。谁是卧底、猜歌、那个游戏都从首页进。`,
   image: DEFAULT_OG_IMAGE,
   imageAlt: DEFAULT_OG_IMAGE_ALT,
 };
@@ -102,17 +102,17 @@ export const RUNTIME_PAGES: RuntimePageMeta[] = [
     "Songuessr 分享卡片：游戏图标与猜歌字样"
   ),
   roomInvite(
-    "CEE",
-    "猜动漫角色",
+    "那个游戏",
+    "那个游戏",
     "cee/room.html",
     `${SITE_ORIGIN}/og/og-cee.jpg`,
-    "CEE 分享卡片：游戏图标与猜动漫角色字样"
+    "那个游戏 分享卡片：游戏图标与名称"
   ),
   // 状态、单人、排位与后台共用一份：它们没有可分享的固定内容，只需要不被当成首页。
   {
     file: "runtime.html",
     title: SITE_NAME,
-    description: `${SITE_NAME} 是开给二次元朋友的游戏室：谁是卧底、猜歌、猜动漫角色。`,
+    description: `${SITE_NAME} 是开给二次元朋友的游戏室：谁是卧底、猜歌、那个游戏。`,
     image: DEFAULT_OG_IMAGE,
     imageAlt: DEFAULT_OG_IMAGE_ALT,
   },

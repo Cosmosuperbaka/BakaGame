@@ -113,7 +113,7 @@ it("测试房直链房间不存在时自动用本地用户名按规范房号创�
     {
       source: "native",
       roomId: "Oblivionis",
-      name: "CEE 测试房",
+      name: "那个游戏测试房",
       userName: "测试房主",
       visibility: "public",
       allowSpectators: true,

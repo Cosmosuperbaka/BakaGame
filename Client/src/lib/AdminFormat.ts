@@ -5,7 +5,7 @@ import type { RecordedGameKind } from "@bakagame/shared";
 export const GAME_LABELS: Record<RecordedGameKind, string> = {
   faker: "谁是卧底",
   song: "猜歌",
-  cee: "CEE",
+  cee: "那个游戏",
 };
 
 export const GAME_OPTIONS: Array<{ value: RecordedGameKind; label: string }> = [

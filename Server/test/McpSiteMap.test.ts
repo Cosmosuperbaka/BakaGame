@@ -11,7 +11,7 @@ describe("Agent 地图与页面登记", () => {
   it("三个大厅的标题与页面短名同形", () => {
     expect(findSitePage(SITE_PAGE_ENTRIES.faker.path)?.title).toBe("Who is Faker 谁是卧底大厅");
     expect(findSitePage(SITE_PAGE_ENTRIES.song.path)?.title).toBe("Songuessr 猜歌大厅");
-    expect(findSitePage(SITE_PAGE_ENTRIES.cee.path)?.title).toBe("CEE 猜动漫角色大厅");
+    expect(findSitePage(SITE_PAGE_ENTRIES.cee.path)?.title).toBe("那个游戏大厅");
   });
 
   it("地图里的路径不重复", () => {

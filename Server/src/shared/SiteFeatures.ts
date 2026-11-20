@@ -31,8 +31,8 @@ export const SITE_FEATURE_LABELS: Record<SiteFeatureKey, string> = {
   fakerEntry: "谁是卧底",
   songSoloEntry: "Songuessr 单人模式",
   songMultiplayerEntry: "Songuessr 多人模式",
-  ceeMultiplayerEntry: "猜动漫角色多人模式",
-  ceeRankedEntry: "CEE 排位赛",
+  ceeMultiplayerEntry: "那个游戏多人模式",
+  ceeRankedEntry: "那个游戏排位赛",
 };
 
 /**

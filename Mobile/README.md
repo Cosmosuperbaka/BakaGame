@@ -1,6 +1,6 @@
 # BakaGame 移动端 Android 壳（Capacitor）
 
-CEE 反作弊计划 P3 的客户端部分：Capacitor 壳 + **内嵌** `Client/` 构建产物 + `BakaChannel` 原生插件。
+那个游戏反作弊计划 P3 的客户端部分：Capacitor 壳 + **内嵌** `Client/` 构建产物 + `BakaChannel` 原生插件。
 与桌面端（远程 URL）不同，移动端必须打包产物（商店审核 + 离线可用）。UI 全部复用 `Client/`，
 前端桥接只有 `bridge/baka-bridge.js` 一处，桥接本身不需要改 `Client/` 源码；通行密钥等能力走
 Client 自己的 WebAuthn 代码（见 §7.5）。本期不做 iOS；协议 `clientType: "mobile"` 不区分平台。

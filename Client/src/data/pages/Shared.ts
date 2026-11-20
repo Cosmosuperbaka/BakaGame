@@ -37,7 +37,7 @@ export const OG_IMAGE_HEIGHT = 630;
 
 /** 未登记页面（房间、运行时页）的分享图：站点卡片。 */
 export const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/og/og-home.jpg`;
-export const DEFAULT_OG_IMAGE_ALT = "BakaGame 分享卡片：站名与谁是卧底、猜歌、猜动漫角色三款游戏";
+export const DEFAULT_OG_IMAGE_ALT = "BakaGame 分享卡片：站名与谁是卧底、猜歌、那个游戏三款游戏";
 
 /**
  * 公开代码仓库。页脚外链、提交历史的取数接口与提交页跳转都从这里取，
@@ -114,13 +114,13 @@ export interface PageMeta {
  * 结构化数据必须和页面正文说同一件事，分开写迟早漂移。
  */
 export const HOME_SUMMARY =
-  "BakaGame 是一间开给二次元朋友的游戏室：Who is Faker 谁是卧底比谁会装，Songuessr 猜歌比谁耳朵灵，CEE 猜动漫角色比谁的番没白看。";
+  "BakaGame 是一间开给二次元朋友的游戏室：Who is Faker 谁是卧底比谁会装，Songuessr 猜歌比谁耳朵灵，那个游戏比谁的番没白看。";
 export const FAKER_SUMMARY =
   "Who is Faker 是出题人现场写词的谁是卧底：谁都不知道自己拿的是平民词还是卧底词，描述和投票之后还要入夜，平民动刀，倒下的是自己。";
 export const SONG_SUMMARY =
   "Songuessr 是给番剧党和歌单党准备的猜歌游戏：听一段音乐，猜歌名，或者猜这首 OP、ED 出自哪部番。";
 export const CEE_SUMMARY =
-  "CEE（二刺猿笑传之猜猜呗增强版）是多人猜动漫角色：全房猜同一个角色，从二十多万条 Bangumi 角色资料里，靠性别、登场年份、作品评分和标签一路排除。";
+  "那个游戏是多人猜动漫角色：全房猜同一个角色，从二十多万条 Bangumi 角色资料里，靠性别、登场年份、作品评分和标签一路排除。";
 export const ABOUTS_SUMMARY =
   "BakaGame 的开源致谢、玩家更新日志、提交历史、隐私说明与用户条款。开源致谢列出技术栈、参与开发的大模型和全部前端依赖的许可证。";
 

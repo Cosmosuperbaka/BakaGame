@@ -1488,7 +1488,7 @@
                       "type": "boolean"
                     },
                     "ceeMultiplayerEntry": {
-                      "description": "猜动漫角色多人模式是否开放",
+                      "description": "那个游戏多人模式是否开放",
                       "type": "boolean"
                     },
                     "ceeRankedEntry": {
@@ -6501,7 +6501,7 @@
         ],
         "operationId": "admin.rooms.list",
         "summary": "admin.rooms.list",
-        "description": "列出实时房间（进程内全量，不分页）；CEE 只含增强房。",
+        "description": "列出实时房间（进程内全量，不分页）；那个游戏只含增强房。",
         "security": [
           {
             "sessionCookie": []

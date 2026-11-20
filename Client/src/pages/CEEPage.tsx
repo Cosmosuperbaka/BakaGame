@@ -118,7 +118,7 @@ export default function CEEPage() {
       session={session}
       rooms={rooms}
       toRoomView={toRoomView}
-      header={{ path: "/cee", title: "CEE" }}
+      header={{ path: "/cee", title: "那个游戏" }}
       lobbyNameMaxLength={32}
       extraLoading={leaving}
       onBeforeOpenCreate={() => setRememberedCreate(readRoomCreateDefaults("cee"))}

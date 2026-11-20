@@ -13,9 +13,9 @@ import {
 export const HOME_PAGE_META: PageMeta = {
   ...SITE_PAGE_ENTRIES.home,
   title: SITE_NAME,
-  oneLiner: "谁是卧底、猜歌、猜动漫角色",
+  oneLiner: "谁是卧底、猜歌、那个游戏",
   lastmod: "2026-11-14",
-  description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、猜歌、猜动漫角色。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
+  description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、猜歌、那个游戏。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
   image: `${SITE_ORIGIN}/og/og-home.jpg`,
   imageAlt: DEFAULT_OG_IMAGE_ALT,
   keywords: [
@@ -26,14 +26,13 @@ export const HOME_PAGE_META: PageMeta = {
     "群友一起玩的游戏",
     "宿舍联机小游戏",
     "谁是卧底",
-    "猜动漫角色",
-    "二刺猿笑传之猜猜呗",
+    "那个游戏",
     "开源多人游戏",
   ],
   faq: [
     {
       q: "BakaGame 是什么网站？",
-      a: "BakaGame 是一个开源的二次元多人游戏站，提供谁是卧底（Who is Faker）、猜歌（Songuessr）和猜动漫角色（CEE）三款房间制游戏。朋友建一间房就能同桌开局，三款游戏考的分别是演技、耳朵和看番量。",
+      a: "BakaGame 是一个开源的二次元多人游戏站，提供谁是卧底（Who is Faker）、猜歌（Songuessr）和那个游戏三款房间制游戏。朋友建一间房就能同桌开局，三款游戏考的分别是演技、耳朵和看番量。",
     },
     {
       q: "怎么和朋友一起开房？",
@@ -41,7 +40,7 @@ export const HOME_PAGE_META: PageMeta = {
     },
     {
       q: "玩 BakaGame 要不要账号？",
-      a: "普通房间进门只要一个昵称，账号只在少数场景才用得上。Songuessr 开局时房间里至少要有一人扫码登录网易云音乐或 QQ 音乐；CEE 排位赛和开启 BakaAntiCheat 的房间要求登录并使用 BakaGame 客户端。",
+      a: "普通房间进门只要一个昵称，账号只在少数场景才用得上。Songuessr 开局时房间里至少要有一人扫码登录网易云音乐或 QQ 音乐；那个游戏的排位赛和开启 BakaAntiCheat 的房间要求登录并使用 BakaGame 客户端。",
     },
     {
       q: "手机能玩吗？",
@@ -64,7 +63,7 @@ export const HOME_PAGE_META: PageMeta = {
         paragraphs: [
           "Who is Faker（谁是卧底）：5 人起。出题人现场写词，玩家轮流描述、投票放逐，入夜后还能赌一把动刀。",
           "Songuessr（猜歌）：一个人也能练。听片段猜歌名或番剧，曲库来自网易云音乐和 QQ 音乐，开局前房间里要有一人登录音乐账号。",
-          "CEE（猜动漫角色）：2 人起。全房猜同一个角色，靠二十多万条 Bangumi 角色资料给出的线索一路排除，能组队、能 BP，也能进原版猜猜呗的房间。",
+          "那个游戏：2 人起。全房猜同一个角色，靠二十多万条 Bangumi 角色资料给出的线索一路排除，能组队、能 BP，也能进原版服务器的房间。",
         ],
       },
       {
@@ -84,7 +83,7 @@ export const HOME_PAGE_META: PageMeta = {
     links: [
       { href: "/whoisfaker", label: "Who is Faker 谁是卧底" },
       { href: "/songuessr", label: "Songuessr 猜歌" },
-      { href: "/cee", label: "CEE 猜动漫角色" },
+      { href: "/cee", label: "那个游戏" },
       { href: "/abouts", label: "关于项目" },
       { href: "/llms.txt", label: "站点说明 llms.txt（写给 AI 助手和爬虫）" },
     ],
@@ -102,7 +101,7 @@ export const HOME_PAGE_META: PageMeta = {
     hasPart: [
       { "@type": "VideoGame", name: "Who is Faker", url: `${SITE_ORIGIN}/whoisfaker` },
       { "@type": "VideoGame", name: "Songuessr", url: `${SITE_ORIGIN}/songuessr` },
-      { "@type": "VideoGame", name: "CEE", url: `${SITE_ORIGIN}/cee` },
+      { "@type": "VideoGame", name: "那个游戏", url: `${SITE_ORIGIN}/cee` },
     ],
     // 组织实体 + sameAs 指向源码仓库：帮 AI 搜索把「BakaGame」这个名字与站点、
     // 代码仓库收敛成同一个实体——实体锚点越明确，站外提及时越容易被正确指认。

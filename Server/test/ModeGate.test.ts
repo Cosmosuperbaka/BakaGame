@@ -74,7 +74,7 @@ describe("assertModeOpen", () => {
     ).not.toThrow();
     open = false;
     expect(() => assertModeOpen(GAME_PROTOCOLS.cee, { type: "cee.room.create" }, features)).toThrow(
-      "猜动漫角色多人模式暂时关闭"
+      "那个游戏多人模式暂时关闭"
     );
   });
 });

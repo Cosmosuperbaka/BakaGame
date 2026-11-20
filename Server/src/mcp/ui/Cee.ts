@@ -349,7 +349,7 @@ function buildCeeScreen(context: UiContext): UiScreen {
     context,
     {
       phase,
-      title: PHASE_TITLES[phase] ?? "猜角色",
+      title: PHASE_TITLES[phase] ?? "那个游戏",
       notice:
         phase === "answering" && context.privateState.canSetAnswer !== true
           ? `等待 ${playerName(context.snapshot, context.snapshot.setterPlayerId)} 出题`

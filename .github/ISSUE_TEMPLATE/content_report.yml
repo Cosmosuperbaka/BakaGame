@@ -12,7 +12,7 @@ body:
       options:
         - 猜歌的歌曲或歌词
         - 猜歌的番剧匹配
-        - CEE 的角色资料或标签
+        - 那个游戏的角色资料或标签
         - 其他
     validations:
       required: true

@@ -48,7 +48,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
     await page.goto("/cee");
-    await expect(page).toHaveTitle("CEE - BakaGame");
+    await expect(page).toHaveTitle("那个游戏 - BakaGame");
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /猜动漫角色/);
     await expect(page.locator('head meta[property="og:description"]')).toHaveAttribute(
@@ -68,14 +68,14 @@ test.describe("页面 SEO 元信息", () => {
     await expect(structuredData).toHaveCount(1);
     expect(JSON.parse((await structuredData.textContent())!)).toMatchObject({
       "@type": ["VideoGame", "WebApplication"],
-      name: "CEE（二刺猿笑传之猜猜呗增强版）",
+      name: "那个游戏",
       url: `${SITE_ORIGIN}/cee`,
     });
     const faqData = page.locator('head script[id="bakagame-faq-structured-data"]');
     await expect(faqData).toHaveCount(1);
     expect(JSON.parse((await faqData.textContent())!)).toMatchObject({
       "@type": "FAQPage",
-      mainEntity: expect.arrayContaining([expect.objectContaining({ name: "猜动漫角色怎么玩？" })]),
+      mainEntity: expect.arrayContaining([expect.objectContaining({ name: "那个游戏怎么玩？" })]),
     });
   });
 
@@ -229,7 +229,7 @@ test.describe("页面 SEO 元信息", () => {
   for (const [file, title] of [
     ["/whoisfaker/room.html", "Who is Faker - BakaGame"],
     ["/songuessr/room.html", "Songuessr - BakaGame"],
-    ["/cee/room.html", "CEE - BakaGame"],
+    ["/cee/room.html", "那个游戏 - BakaGame"],
     ["/runtime.html", "BakaGame"],
     ["/404.html", "页面不存在 - BakaGame"],
   ]) {

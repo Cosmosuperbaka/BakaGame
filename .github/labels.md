@@ -25,7 +25,7 @@
 |---|---|---|
 | `scope/Faker` | `Faker` | WhoIsFaker（谁是卧底） |
 | `scope/Song` | `Song` | Songuessr（猜歌） |
-| `scope/CEE` | `CEE` | CEE（二刺猿笑传之猜猜呗增强版） |
+| `scope/CEE` | `CEE` | 那个游戏 |
 | `scope/Core` | `Core` | 公共能力、基础设施、主页 |
 
 一次变更影响多个游戏时，只打主要受影响者的标签，与"一次提交影响多个游戏时以主要受影响的游戏为准"的提交规则一致。

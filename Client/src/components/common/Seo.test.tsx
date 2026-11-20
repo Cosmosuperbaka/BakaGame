@@ -26,8 +26,8 @@ describe("Seo", () => {
   });
 
   it("未登记的页面用显式标题", async () => {
-    renderSeo({ description: "房间", path: "/cee/room/1234", title: "猜动漫角色房间" });
-    await waitFor(() => expect(document.title).toBe("猜动漫角色房间"));
+    renderSeo({ description: "房间", path: "/cee/room/1234", title: "那个游戏房间" });
+    await waitFor(() => expect(document.title).toBe("那个游戏房间"));
   });
 
   it("未登记且没传标题时退回站名", async () => {

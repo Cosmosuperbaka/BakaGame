@@ -36,7 +36,7 @@ export const siteConfigRoutes = ({ features }: SiteConfigRoutesDependencies = {}
           fakerEntry: flag("谁是卧底是否开放"),
           songSoloEntry: flag("Songuessr 单人模式是否开放"),
           songMultiplayerEntry: flag("Songuessr 多人模式是否开放"),
-          ceeMultiplayerEntry: flag("猜动漫角色多人模式是否开放"),
+          ceeMultiplayerEntry: flag("那个游戏多人模式是否开放"),
           ceeRankedEntry: flag("排位赛入口是否可用（旋钮开启且有进行中的赛季）"),
         }),
       },

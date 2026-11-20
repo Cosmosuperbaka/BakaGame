@@ -150,8 +150,8 @@ export default function CEERankedPage() {
     <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto">
       <Seo
         path="/cee/ranked"
-        title="CEE - BakaGame"
-        description="二刺猿笑传之猜猜呗排位赛：三局两胜同题竞速，按分数匹配对手与题库难度。"
+        title="那个游戏 - BakaGame"
+        description="那个游戏排位赛：三局两胜同题竞速，按分数匹配对手与题库难度。"
         indexable={false}
       />
       <header className="border-b border-border">
@@ -166,7 +166,7 @@ export default function CEERankedPage() {
               </Badge>
             ) : null}
             <span className="hidden shrink-0 self-end pb-0.5 text-xs font-medium text-muted-foreground sm:inline sm:pb-1 sm:text-sm">
-              二刺猿笑传之猜猜呗
+              那个游戏
             </span>
           </h1>
           <div className="ml-auto flex shrink-0 items-center">

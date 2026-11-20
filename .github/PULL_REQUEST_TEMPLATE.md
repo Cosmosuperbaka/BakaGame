@@ -26,7 +26,7 @@
 
 - [ ] Faker（WhoIsFaker）
 - [ ] Song（SonGuessr）
-- [ ] CEE（二刺猿笑传之猜猜呗增强版）
+- [ ] 那个游戏
 - [ ] Core（公共能力、基础设施、主页）
 
 ## 验证

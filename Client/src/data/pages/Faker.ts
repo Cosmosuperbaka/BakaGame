@@ -89,7 +89,7 @@ export const FAKER_PAGE_META: PageMeta = {
     links: [
       { href: "/", label: "BakaGame 首页" },
       { href: "/songuessr", label: "Songuessr 猜歌" },
-      { href: "/cee", label: "CEE 猜动漫角色" },
+      { href: "/cee", label: "那个游戏" },
     ],
   },
   structuredData: {

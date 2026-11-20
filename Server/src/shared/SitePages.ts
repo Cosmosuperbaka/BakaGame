@@ -17,7 +17,7 @@ export const SITE_PAGE_ENTRIES = {
   home: { path: "/", shortTitle: SITE_NAME },
   faker: { path: "/whoisfaker", shortTitle: "谁是卧底 Who is Faker" },
   song: { path: "/songuessr", shortTitle: "猜歌 Songuessr" },
-  cee: { path: "/cee", shortTitle: "猜动漫角色 CEE" },
+  cee: { path: "/cee", shortTitle: "那个游戏" },
   abouts: { path: "/abouts", shortTitle: `关于 ${SITE_NAME}` },
   // 关于页里各有独立地址的三个标签：正文仍是关于页的那一份，地址让它们能被单独收录与分享。
   changelog: { path: "/abouts/changelog", shortTitle: "更新日志" },
@@ -25,8 +25,11 @@ export const SITE_PAGE_ENTRIES = {
   terms: { path: "/abouts/terms", shortTitle: "用户条款" },
 } as const satisfies Record<string, SitePageEntry>;
 
-/** 「中文名 英文名」形的短标题换成「英文名 中文名」，Agent 地图的大厅标题用它。 */
+/**
+ * 「中文名 英文名」形的短标题换成「英文名 中文名」，Agent 地图的大厅标题用它；
+ * 只有一个名字的短标题直接接「大厅」。
+ */
 export const lobbyTitleOf = (shortTitle: string): string => {
   const [chinese = "", ...rest] = shortTitle.split(" ");
-  return `${rest.join(" ")} ${chinese}大厅`;
+  return rest.length > 0 ? `${rest.join(" ")} ${chinese}大厅` : `${chinese}大厅`;
 };

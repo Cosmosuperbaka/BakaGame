@@ -45,8 +45,8 @@ export default function CEERoomPage() {
   const seo = (
     <Seo
       path={lifecycle.roomId ? ceeRoomPath(lifecycle.roomId) : "/cee"}
-      title="CEE - BakaGame"
-      description="这间 CEE 正在猜动漫角色，进房看看谁的番没白看。"
+      title="那个游戏 - BakaGame"
+      description="这间那个游戏正在开局，进房看看谁的番没白看。"
       indexable={false}
     />
   );
@@ -117,7 +117,7 @@ export default function CEERoomPage() {
       {seo}
       <RoomShell
         onLeave={() => void lifecycle.leave()}
-        title={snapshot.name || "猜猜呗"}
+        title={snapshot.name || "那个游戏"}
         roomId={lifecycle.roomId}
         // 与大厅卡片同口径：增强房是默认，只给原版房挂来源标签；放在房号旁，中栏留给局数与视角。
         roomTag={snapshot.source === "original" ? CEE_SOURCE_LABELS.original : undefined}

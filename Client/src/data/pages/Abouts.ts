@@ -52,7 +52,7 @@ export const ABOUTS_PAGE_META: PageMeta = {
       { href: "/", label: "BakaGame 首页" },
       { href: "/whoisfaker", label: "Who is Faker 谁是卧底" },
       { href: "/songuessr", label: "Songuessr 猜歌" },
-      { href: "/cee", label: "CEE 猜动漫角色" },
+      { href: "/cee", label: "那个游戏" },
       { href: SITE_PAGE_ENTRIES.changelog.path, label: "更新日志" },
       { href: SITE_PAGE_ENTRIES.privacy.path, label: "隐私说明" },
       { href: SITE_PAGE_ENTRIES.terms.path, label: "用户条款" },

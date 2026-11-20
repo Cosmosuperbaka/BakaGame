@@ -132,7 +132,7 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
   enableCeeMultiplayerEntry: {
     key: "enableCeeMultiplayerEntry",
     envVar: null,
-    title: "猜动漫角色多人模式",
+    title: "那个游戏多人模式",
     note: "临时关闭后首页的多人入口置灰并标注「暂时关闭」，增强房和原版房都不能新开；已开的房间、凭链接加入和进行中的对局不受影响。",
     schema: booleanText,
     defaultValue: () => "true",
@@ -141,7 +141,7 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
   enableCeeRankedEntry: {
     key: "enableCeeRankedEntry",
     envVar: "ENABLE_CEE_RANKED_ENTRY",
-    title: "CEE 排位赛入口",
+    title: "那个游戏排位赛入口",
     note: "关闭后主页上的排位入口置灰并标注「暂时关闭」，不可进入，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。入口生效还要求当前有进行中的排位赛季，赛季之外同样置灰。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableCeeRankedEntry === false ? "false" : "true"),

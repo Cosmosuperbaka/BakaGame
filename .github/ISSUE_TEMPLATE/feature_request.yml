@@ -9,7 +9,7 @@ body:
       options:
         - Who is Faker（谁是卧底）
         - Songuessr（猜歌）
-        - CEE（猜动漫角色）
+        - 那个游戏
         - 全站或其他
     validations:
       required: true

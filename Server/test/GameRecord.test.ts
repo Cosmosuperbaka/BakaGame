@@ -291,7 +291,7 @@ describe("各游戏结算写入对局记录", () => {
     expect(finishes[0]!.endedAt).toBeGreaterThanOrEqual(record!.endedAt);
   });
 
-  test("猜猜呗增强房：结算后多次发布只记一个回合，记录登录玩家账号", async () => {
+  test("那个游戏增强房：结算后多次发布只记一个回合，记录登录玩家账号", async () => {
     const { records, recorder } = capture();
     const h = ceeTestHarness({}, undefined, { gameRecorder: recorder });
     const host = await h.create();
@@ -455,7 +455,7 @@ describe("测试房不写对局记录", () => {
     expect(test.finishes).toHaveLength(0);
   });
 
-  test("猜猜呗增强房：测试房结算与关房后记录器没有被调用", async () => {
+  test("那个游戏增强房：测试房结算与关房后记录器没有被调用", async () => {
     const { records, finishes, recorder } = capture();
     const h = ceeTestHarness({}, undefined, {
       roomId: ROOM_ID_TEST_MODE,

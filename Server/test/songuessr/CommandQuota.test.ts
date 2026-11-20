@@ -15,7 +15,7 @@ import {
   type TestConnection,
 } from "./Fixtures";
 
-// 猜歌的每连接命令总额度：与卧底、猜猜呗同一个窗口与额度，任何命令先扣它。
+// 猜歌的每连接命令总额度：与卧底、那个游戏同一个窗口与额度，任何命令先扣它。
 
 const setup = async () => {
   let clock = 1_000_000;

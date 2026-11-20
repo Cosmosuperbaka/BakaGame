@@ -166,7 +166,7 @@ describe("运行时页与 404 的静态外壳", () => {
       expect(html).not.toMatch(/roomId|roomName|房号：|\{\{|:roomId/);
       expect(page.description).not.toMatch(/\d{4}/);
       // 标题只写游戏名，与房间页运行时的标题一致：「Songuessr - BakaGame」这类。
-      expect(page.title).toMatch(/^(Who is Faker|Songuessr|CEE) - BakaGame$/);
+      expect(page.title).toMatch(/^(Who is Faker|Songuessr|那个游戏) - BakaGame$/);
     }
   });
 });

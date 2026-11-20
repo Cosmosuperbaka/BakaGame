@@ -592,7 +592,7 @@ const adminContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   rooms: {
-    list: op("列出实时房间（进程内全量，不分页）；CEE 只含增强房。", "admin")
+    list: op("列出实时房间（进程内全量，不分页）；那个游戏只含增强房。", "admin")
       .input(z.object({ game: recordedGameSchema.optional() }))
       .output(z.array(adminRoomSchema)),
     close: op("关闭指定房间，房内玩家收到关闭原因。", "admin")
