@@ -10,21 +10,8 @@ import { createDrizzleStub, rowOf, schema, stamp, tupleOf } from "./DrizzleStub"
 const T0 = Date.parse("2026-01-02T03:04:05.678Z");
 const T1 = T0 + 60_000;
 
-const ratingRow = (overrides: Record<string, unknown> = {}) =>
-  rowOf(schema.ceeRankedRating, {
-    userId: "u1",
-    rating: 1215.5,
-    rd: 240,
-    seriesPlayed: 3,
-    wins: 2,
-    losses: 1,
-    draws: 0,
-    botRatedDay: "2026-01-02",
-    botRatedCount: 1,
-    lastPlayedAt: stamp(T0),
-    updatedAt: stamp(T1),
-    ...overrides,
-  });
+/** 评级读取按显式列序给行：不读停用的人机额度两列，也不读 `updated_at`。 */
+const ratingRow = () => tupleOf("u1", 1215.5, 240, 3, 2, 1, 0, stamp(T0));
 
 const guessOf = (gameNumber: number, seat: 0 | 1, attempt: number): CEERankedGuessRecord => ({
   gameNumber,
@@ -49,8 +36,8 @@ const botSettlement = (): CEERankedSettlementRecord => ({
     startedAt: T0,
     endedAt: T1,
     endReason: "completed",
-    rated: false,
-    unratedReason: "bot_daily_limit",
+    rated: true,
+    unratedReason: null,
     bot: true,
     botEntry: "auto",
   },
@@ -126,8 +113,6 @@ const botSettlement = (): CEERankedSettlementRecord => ({
       wins: 2,
       losses: 1,
       draws: 1,
-      botRatedDay: "2026-01-02",
-      botRatedCount: 2,
       lastPlayedAt: T1,
     },
   ],
@@ -147,12 +132,12 @@ describe("排位审计仓储（连接桩）", () => {
       wins: 2,
       losses: 1,
       draws: 0,
-      botRatedDay: "2026-01-02",
-      botRatedCount: 1,
       lastPlayedAt: T0,
     });
     const query = stub.queryAt(0);
     expect(query.statement).toContain("from `cee_ranked_rating`");
+    // 停用的人机额度两列不再读取：日后删列时旧代码也不会因 SELECT 不存在的列而报错。
+    expect(query.statement).not.toContain("bot_rated");
     expect(query.statement).toContain("where `cee_ranked_rating`.`user_id` = ?");
     expect(query.params).toEqual(["u1", 1]);
 
@@ -185,8 +170,8 @@ describe("排位审计仓储（连接桩）", () => {
       stamp(T0),
       stamp(T1),
       "completed",
-      false,
-      "bot_daily_limit",
+      true,
+      null,
       true,
       "auto",
     ]);
@@ -241,7 +226,7 @@ describe("排位审计仓储（连接桩）", () => {
     const upsert = stub.queryAt(5);
     expect(upsert.statement.split("on duplicate key update")[1]).toBe(
       " `rating` = ?, `rd` = ?, `series_played` = ?, `wins` = ?, `losses` = ?, `draws` = ?, " +
-        "`bot_rated_day` = ?, `bot_rated_count` = ?, `last_played_at` = ?, `updated_at` = ?"
+        "`last_played_at` = ?, `updated_at` = ?"
     );
     // 主键 userId 只在插入侧出现一次，业务列在覆盖侧原样再来一遍；
     // 两处 `updated_at` 由列定义的 `$onUpdateFn` 补上，端口不必传，取写入时刻。
@@ -253,8 +238,6 @@ describe("排位审计仓储（连接桩）", () => {
       2,
       1,
       1,
-      "2026-01-02",
-      2,
       stamp(T1),
       expect.any(String),
       1200,
@@ -263,8 +246,6 @@ describe("排位审计仓储（连接桩）", () => {
       2,
       1,
       1,
-      "2026-01-02",
-      2,
       stamp(T1),
       expect.any(String),
     ]);

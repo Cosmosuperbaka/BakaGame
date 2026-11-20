@@ -349,7 +349,7 @@ export const ceeAntiCheatReview = mysqlTable(
  * 一场系列赛的结算（`cee_ranked_series` 及席位、单局、猜测三张子表 + 评级 upsert）在同一事务里落库。
  */
 
-/** 一行一个账号的排位评级与累计战绩；`bot_rated_day` 是人机计分所在的北京自然日。 */
+/** 一行一个账号的排位评级与累计战绩。 */
 export const ceeRankedRating = mysqlTable(
   "cee_ranked_rating",
   {
@@ -362,6 +362,8 @@ export const ceeRankedRating = mysqlTable(
     wins: int("wins").notNull().default(0),
     losses: int("losses").notNull().default(0),
     draws: int("draws").notNull().default(0),
+    // 已停用：人机每日计分额度取消后代码不再读写这两列（新行取库端缺省）。声明保留到删列为止，
+    // 与一次性建表脚本逐列一致；删列按「先停读写、确认无旧版本运行、再删」的顺序另行处理。
     botRatedDay: varchar("bot_rated_day", { length: 10 }),
     botRatedCount: int("bot_rated_count").notNull().default(0),
     lastPlayedAt: datetime("last_played_at", { mode: "date", fsp: 3 }),
@@ -382,7 +384,7 @@ export const ceeRankedSeries = mysqlTable(
     endedAt: datetime("ended_at", { mode: "date", fsp: 3 }).notNull(),
     endReason: varchar("end_reason", { length: 16 }).notNull(),
     rated: boolean("rated").notNull(),
-    /** 不计分的原因，例如 `bot_daily_limit`；计分为空。 */
+    /** 不计分的原因；计分为空。现行规则下排位一律计分，历史行里可能留有旧原因（如 `bot_daily_limit`）。 */
     unratedReason: varchar("unrated_reason", { length: 32 }),
     bot: boolean("bot").notNull(),
     botEntry: varchar("bot_entry", { length: 16 }),

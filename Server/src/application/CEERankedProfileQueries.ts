@@ -8,9 +8,8 @@ import type {
   CEERankedProfile,
   CEERankedTierId,
 } from "../shared/CEERanked";
-import { CEE_RANKED_BOT_DAILY_RATED, CEE_RANKED_PLACEMENT_SERIES } from "../shared/CEERanked";
+import { CEE_RANKED_PLACEMENT_SERIES } from "../shared/CEERanked";
 import { currentCEERankedSeason, nextCEERankedSeason } from "../shared/CEERankedSeasons";
-import { beijingDay } from "../domain/BeijingDay";
 import { displayCEERating } from "../domain/CEERankedRating";
 import { requireStore, type CEERankedContext } from "./CEERankedRuntime";
 import { initialRatingRecord } from "./CEERankedSettlement";
@@ -46,7 +45,6 @@ export class CEERankedProfileQueries {
     const page = await this.history(userId);
     const placed = record.seriesPlayed >= CEE_RANKED_PLACEMENT_SERIES;
     const now = this.ctx.now();
-    const today = beijingDay(now);
     return {
       rating: placed ? displayCEERating(record) : null,
       placementPlayed: Math.min(record.seriesPlayed, CEE_RANKED_PLACEMENT_SERIES),
@@ -55,8 +53,6 @@ export class CEERankedProfileQueries {
       wins: record.wins,
       losses: record.losses,
       draws: record.draws,
-      botRatedToday: record.botRatedDay === today ? record.botRatedCount : 0,
-      botRatedLimit: CEE_RANKED_BOT_DAILY_RATED,
       recent: page.entries,
       recentHasMore: page.hasMore,
       season: currentCEERankedSeason(now),

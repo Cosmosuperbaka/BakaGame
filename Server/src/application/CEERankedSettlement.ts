@@ -1,11 +1,6 @@
 // ==================== 排位结算的纯计算 ====================
 // 从系列赛运行时算出新评级、审计记录与结果页元数据：只读运行时、不持有状态、不碰时钟。
-import {
-  CEE_RANKED_BOT_DAILY_RATED,
-  CEE_RANKED_PLACEMENT_SERIES,
-  CEE_RANKED_RULESET,
-} from "../shared/CEERanked";
-import { beijingDay } from "../domain/BeijingDay";
+import { CEE_RANKED_PLACEMENT_SERIES, CEE_RANKED_RULESET } from "../shared/CEERanked";
 import type { CEERankedSeatIndex } from "../domain/CEERankedGame";
 import {
   createCEERating,
@@ -45,17 +40,8 @@ export function initialRatingRecord(userId: string): CEERankedRatingRecord {
     wins: 0,
     losses: 0,
     draws: 0,
-    botRatedDay: null,
-    botRatedCount: 0,
     lastPlayedAt: base.lastPlayedAt,
   };
-}
-
-/** 人机系列赛是否计分：定级中恒计分，已定级看当日额度。 */
-export function shouldRateBotSeries(record: CEERankedRatingRecord, now: number): boolean {
-  if (record.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES) return true;
-  if (record.botRatedDay !== beijingDay(now)) return true;
-  return record.botRatedCount < CEE_RANKED_BOT_DAILY_RATED;
 }
 
 /** 结算后的评级行：计分才换 μ/φ，场数与胜平负无论计分与否都进账。 */
@@ -63,12 +49,9 @@ export function nextRatingRecord(
   prior: CEERankedRatingRecord,
   after: CEERating,
   score: 0 | 0.5 | 1,
-  runtime: CEERankedSeriesRuntime,
-  endedAt: number
+  runtime: CEERankedSeriesRuntime
 ): CEERankedRatingRecord {
   const rated = runtime.rated;
-  const today = beijingDay(endedAt);
-  const usesDailyQuota = runtime.bot && rated && prior.seriesPlayed >= CEE_RANKED_PLACEMENT_SERIES;
   return {
     userId: prior.userId,
     rating: rated ? after.rating : prior.rating,
@@ -77,12 +60,6 @@ export function nextRatingRecord(
     wins: prior.wins + (score === 1 ? 1 : 0),
     losses: prior.losses + (score === 0 ? 1 : 0),
     draws: prior.draws + (score === 0.5 ? 1 : 0),
-    botRatedDay: usesDailyQuota ? today : prior.botRatedDay,
-    botRatedCount: usesDailyQuota
-      ? prior.botRatedDay === today
-        ? prior.botRatedCount + 1
-        : 1
-      : prior.botRatedCount,
     lastPlayedAt: rated ? after.lastPlayedAt : prior.lastPlayedAt,
   };
 }
@@ -115,14 +92,13 @@ export function resolveRatings(
 export function seatRatingRecords(
   runtime: CEERankedSeriesRuntime,
   after: [CEERating, CEERating],
-  scores: [0 | 0.5 | 1, 0 | 0.5 | 1],
-  endedAt: number
+  scores: [0 | 0.5 | 1, 0 | 0.5 | 1]
 ): CEERankedRatingRecord[] {
   const rows: CEERankedRatingRecord[] = [];
   for (const index of [0, 1] as const) {
     const prior = runtime.seats[index].prior;
     if (prior === null) continue;
-    rows.push(nextRatingRecord(prior, after[index], scores[index], runtime, endedAt));
+    rows.push(nextRatingRecord(prior, after[index], scores[index], runtime));
   }
   return rows;
 }

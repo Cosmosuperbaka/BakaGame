@@ -106,7 +106,31 @@ const toGuess = (row: typeof ceeRankedGuess.$inferSelect): CEERankedGuessRecord 
   searchMatched: row.searchMatched,
 });
 
-const toRating = (row: typeof ceeRankedRating.$inferSelect): CEERankedRatingRecord => ({
+/**
+ * 评级读取的列：显式列出，不用 `select()` 全列。停用的人机额度两列因此不再被读到，
+ * 日后删列时「旧代码 + 新表」也不会因为 SELECT 了不存在的列而报错。
+ */
+const RATING_COLUMNS = {
+  userId: ceeRankedRating.userId,
+  rating: ceeRankedRating.rating,
+  rd: ceeRankedRating.rd,
+  seriesPlayed: ceeRankedRating.seriesPlayed,
+  wins: ceeRankedRating.wins,
+  losses: ceeRankedRating.losses,
+  draws: ceeRankedRating.draws,
+  lastPlayedAt: ceeRankedRating.lastPlayedAt,
+};
+
+const toRating = (row: {
+  userId: string;
+  rating: number;
+  rd: number;
+  seriesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  lastPlayedAt: Date | null;
+}): CEERankedRatingRecord => ({
   userId: row.userId,
   rating: row.rating,
   rd: row.rd,
@@ -114,8 +138,6 @@ const toRating = (row: typeof ceeRankedRating.$inferSelect): CEERankedRatingReco
   wins: row.wins,
   losses: row.losses,
   draws: row.draws,
-  botRatedDay: row.botRatedDay,
-  botRatedCount: row.botRatedCount,
   lastPlayedAt: msOf(row.lastPlayedAt),
 });
 
@@ -136,7 +158,7 @@ export class CEERankedRepository implements CEERankedStore {
   async getRating(userId: string): Promise<CEERankedRatingRecord | null> {
     const db = await this.database.client();
     const [row] = await db
-      .select()
+      .select(RATING_COLUMNS)
       .from(ceeRankedRating)
       .where(eq(ceeRankedRating.userId, userId))
       .limit(1);
@@ -201,8 +223,6 @@ export class CEERankedRepository implements CEERankedStore {
               wins: rating.wins,
               losses: rating.losses,
               draws: rating.draws,
-              botRatedDay: rating.botRatedDay,
-              botRatedCount: rating.botRatedCount,
               lastPlayedAt: dateOf(rating.lastPlayedAt),
             },
           });

@@ -10,10 +10,8 @@ import {
 } from "../src/application/CEERankedHandicap";
 import { InMemoryCEERankedStore } from "../src/application/CEERankedStore";
 import { AppError } from "../src/domain/Errors";
-import { beijingDay } from "../src/domain/BeijingDay";
 import { createCEERating, rateCEEBotSeries } from "../src/domain/CEERankedRating";
-import { CEE_RANKED_BOT_DAILY_RATED } from "../src/shared/Index";
-import { RANKED_START_MS, exitAndAudit, rankedHarness, startBotSeries } from "./CEERankedFixtures";
+import { exitAndAudit, rankedHarness, startBotSeries } from "./CEERankedFixtures";
 
 /** 让出事件循环：启动种子是异步读的，播好种之前不排队。 */
 const flushSeed = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -184,35 +182,6 @@ describe("排位人机校准接线", () => {
       throw new Error("第二场的人机席位缺目标分");
     // 第一场结算写进第 30 条样本，这一场起才按 225 回退。
     expect(after.botTargetRating - after.botStrengthRating).toBeCloseTo(225, 6);
-  });
-
-  test("不计分的人机局不进样本窗口：次日恢复计分后偏差仍是 0", async () => {
-    const harness = rankedHarness({
-      store: new SampleStore(samplesOf("regular", 29)),
-      randomValue: 0.5,
-    });
-    harness.seedRated("u-甲", {
-      botRatedDay: beijingDay(RANKED_START_MS),
-      botRatedCount: CEE_RANKED_BOT_DAILY_RATED,
-    });
-    await flushSeed();
-    const client = harness.connect("甲");
-
-    await startBotSeries(harness, client);
-    const audit = await exitAndAudit(harness, client);
-    expect(audit.series.rated).toBe(false);
-    const skipped = audit.players[1];
-    if (!skipped || skipped.botTargetRating === null) throw new Error("人机席位缺目标分");
-    expect(skipped.botStrengthRating).toBe(skipped.botTargetRating);
-
-    // 换到第二天：这一场计分，但上一场没进窗口，样本还是 29 条，偏差不该冒出来。
-    await harness.advance(86_400_000);
-    await startBotSeries(harness, client);
-    const next = await exitAndAudit(harness, client);
-    expect(next.series.rated).toBe(true);
-    const bot = next.players[1];
-    if (!bot || bot.botTargetRating === null) throw new Error("人机席位缺目标分");
-    expect(bot.botStrengthRating).toBe(bot.botTargetRating);
   });
 
   test("种子读取失败只记一条 warn：偏差保持先验且照常开赛", async () => {

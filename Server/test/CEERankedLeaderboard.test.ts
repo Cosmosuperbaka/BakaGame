@@ -16,8 +16,6 @@ const rating = (userId: string, value: number, seriesPlayed: number): CEERankedR
   wins: Math.ceil(seriesPlayed / 2),
   losses: Math.floor(seriesPlayed / 2),
   draws: 0,
-  botRatedDay: null,
-  botRatedCount: 0,
   lastPlayedAt: RANKED_START_MS - 1_000,
 });
 

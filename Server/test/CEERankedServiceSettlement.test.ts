@@ -20,7 +20,6 @@ import { AppError } from "../src/domain/Errors";
 import { beijingDay } from "../src/domain/BeijingDay";
 import { createCEERating, displayCEERating, rateCEEBotSeries } from "../src/domain/CEERankedRating";
 import {
-  CEE_RANKED_BOT_DAILY_RATED,
   CEE_RANKED_COUNTDOWN_MS,
   CEE_RANKED_INTERMISSION_MS,
   CEE_RANKED_PLACEMENT_SERIES,
@@ -264,8 +263,6 @@ describe("人机系列赛结算", () => {
       wins: rating.wins,
       losses: rating.losses,
       draws: rating.draws,
-      botRatedDay: rating.botRatedDay,
-      botRatedCount: rating.botRatedCount,
       lastPlayedAt: rating.lastPlayedAt,
     }).toEqual({
       userId: "u-甲",
@@ -273,8 +270,6 @@ describe("人机系列赛结算", () => {
       wins: 1,
       losses: 0,
       draws: 0,
-      botRatedDay: null,
-      botRatedCount: 0,
       lastPlayedAt: endedAt,
     });
   });
@@ -297,8 +292,6 @@ describe("人机系列赛结算", () => {
       seriesPlayed: profile.seriesPlayed,
       wins: profile.wins,
       losses: profile.losses,
-      botRatedToday: profile.botRatedToday,
-      botRatedLimit: profile.botRatedLimit,
     }).toEqual({
       // 定级中：档案里的展示分仍是 null，进度封顶在 5。
       rating: null,
@@ -307,9 +300,10 @@ describe("人机系列赛结算", () => {
       seriesPlayed: 1,
       wins: 1,
       losses: 0,
-      botRatedToday: 0,
-      botRatedLimit: CEE_RANKED_BOT_DAILY_RATED,
     });
+    // 人机每日计分额度已取消：资料里不再有额度字段。
+    expect(profile).not.toHaveProperty("botRatedToday");
+    expect(profile).not.toHaveProperty("botRatedLimit");
     expect(profile.recent.length).toBe(1);
     expect(profile.recent[0]).toMatchObject({
       outcome: "won",
@@ -345,8 +339,6 @@ describe("定级五场", () => {
       } else {
         expect(typeof view.result?.ratingAfter).toBe("number");
       }
-      // 定级中的人机局不占当日额度：额度只从第 6 场开始计。
-      expect(profile.botRatedToday).toBe(0);
       const audit = await readAudit(harness, seriesId);
       expect(audit.series.rated).toBe(true);
       expect(audit.players[0]?.placement).toBe(true);
@@ -356,17 +348,13 @@ describe("定级五场", () => {
     const profile = await harness.send(client, "cee.ranked.profile", {});
     expect(profile.rating).toBe(displayCEERating(rating));
     expect(profile.placementPlayed).toBe(CEE_RANKED_PLACEMENT_SERIES);
-    expect({
-      seriesPlayed: rating.seriesPlayed,
-      botRatedDay: rating.botRatedDay,
-      botRatedCount: rating.botRatedCount,
-    }).toEqual({ seriesPlayed: CEE_RANKED_PLACEMENT_SERIES, botRatedDay: null, botRatedCount: 0 });
+    expect(rating.seriesPlayed).toBe(CEE_RANKED_PLACEMENT_SERIES);
   });
 });
 
-describe("人机每日计分额度", () => {
-  /** 已定级且当天五场计分人机都打满：第 6 场起人机局不计分。 */
-  const seededAtLimit = (): CEERankedRatingRecord => ({
+describe("定级后的人机局一律计分", () => {
+  /** 已定级的账号：人机局没有每日计分上限，同一北京日打多少场都计分。 */
+  const seededPlaced = (): CEERankedRatingRecord => ({
     userId: "u-甲",
     rating: 1500,
     rd: 200,
@@ -374,73 +362,35 @@ describe("人机每日计分额度", () => {
     wins: 3,
     losses: 2,
     draws: 0,
-    botRatedDay: beijingDay(RANKED_START_MS),
-    botRatedCount: CEE_RANKED_BOT_DAILY_RATED,
     lastPlayedAt: RANKED_START_MS - 3_600_000,
   });
 
-  test("额度用尽后的人机局不计分：评级原样、场数照进", async () => {
-    const seeded = seededAtLimit();
-    const harness = rankedHarness({ store: new SeededStore(seeded) });
+  test("同一北京日连打多场人机：开打即标计分，每场都改分并写明计分", async () => {
+    const harness = rankedHarness({ store: new SeededStore(seededPlaced()) });
     const client = harness.connect("甲", { account: { userId: "u-甲", image: null } });
-    const seriesId = await settleOneBotSeries(harness, client);
-
-    const view = harness.seriesView(client);
-    expect(view.rated).toBe(false);
-    expect(view.result).toEqual({
-      outcome: "lost",
-      reason: "exit",
-      settlement: "unrated",
-      // 不计分时前后都不出展示分，定级早已完成也就没有进度。
-      ratingBefore: null,
-      ratingAfter: null,
-      placementPlayed: null,
-    });
-
-    const audit = await readAudit(harness, seriesId);
-    expect(audit.series.rated).toBe(false);
-    expect(audit.series.unratedReason).toBe("bot_daily_limit");
-    expect(audit.players[0]?.ratingBefore).toBe(1500);
-    expect(audit.players[0]?.ratingAfter).toBe(1500);
-    expect(audit.players[0]?.rdAfter).toBe(200);
-
+    let previous = 1500;
+    // 取消前的额度是每日 5 场：多打几场，越过旧上限仍要计分。
+    for (let round = 1; round <= 7; round += 1) {
+      const seriesId = await settleOneBotSeries(harness, client);
+      const view = harness.seriesView(client);
+      expect({ round, rated: view.rated, settlement: view.result?.settlement }).toEqual({
+        round,
+        rated: true,
+        settlement: "rated",
+      });
+      const audit = await readAudit(harness, seriesId);
+      expect({ rated: audit.series.rated, reason: audit.series.unratedReason }).toEqual({
+        rated: true,
+        reason: null,
+      });
+      // 离场判负：计分就会把分往下带，逐场严格下降。
+      const rating = await readRating(harness, client.userId);
+      expect(rating.rating).toBeLessThan(previous);
+      previous = rating.rating;
+    }
+    expect(beijingDay(harness.clock())).toBe(beijingDay(RANKED_START_MS));
     const rating = await readRating(harness, client.userId);
-    expect(rating).toEqual({
-      ...seeded,
-      seriesPlayed: CEE_RANKED_PLACEMENT_SERIES + 1,
-      losses: 3,
-    });
-    const profile = await harness.send(client, "cee.ranked.profile", {});
-    expect(profile.rating).toBe(1500);
-    expect(profile.botRatedToday).toBe(CEE_RANKED_BOT_DAILY_RATED);
-  });
-
-  test("换到北京日的下一天后人机局恢复计分", async () => {
-    const seeded = seededAtLimit();
-    const harness = rankedHarness({ store: new SeededStore(seeded) });
-    const client = harness.connect("甲", { account: { userId: "u-甲", image: null } });
-    await settleOneBotSeries(harness, client);
-
-    await harness.advance(86_400_000);
-    const seriesId = await settleOneBotSeries(harness, client);
-    const audit = await readAudit(harness, seriesId);
-    expect(audit.series.rated).toBe(true);
-    expect(audit.series.unratedReason).toBeNull();
-    expect(harness.seriesView(client).result?.settlement).toBe("rated");
-
-    const rating = await readRating(harness, client.userId);
-    expect({
-      seriesPlayed: rating.seriesPlayed,
-      botRatedDay: rating.botRatedDay,
-      botRatedCount: rating.botRatedCount,
-    }).toEqual({
-      seriesPlayed: CEE_RANKED_PLACEMENT_SERIES + 2,
-      botRatedDay: beijingDay(RANKED_START_MS + 86_400_000),
-      botRatedCount: 1,
-    });
-    // 恢复计分后这一场按人机目标分结算：输了就把分往下带。
-    expect(rating.rating).toBeLessThan(1500);
-    expect(rating.lastPlayedAt).toBeGreaterThan(RANKED_START_MS + 86_400_000);
+    expect(rating.seriesPlayed).toBe(CEE_RANKED_PLACEMENT_SERIES + 7);
   });
 });
 

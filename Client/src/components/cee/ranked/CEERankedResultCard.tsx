@@ -118,7 +118,7 @@ function PlacementPips({ played, total }: { played: number; total: number }) {
   );
 }
 
-/** 分数变化区：只陈述服务端给出的结果，写库未落定、未计分、写库失败各有一句真实说明。 */
+/** 分数变化区：只陈述服务端给出的结果，写库未落定与写库失败各有一句真实说明。 */
 function RatingBlock({
   result,
   placementTotal,
@@ -137,12 +137,6 @@ function RatingBlock({
     return (
       <p className="text-sm text-muted-foreground" role="status">
         结算没能保存，本场不计分
-      </p>
-    );
-  if (result.settlement === "unrated")
-    return (
-      <p className="text-sm text-muted-foreground" role="status">
-        今日人机计分局已用完，本场不计分
       </p>
     );
   if (result.placementPlayed !== null && result.ratingAfter === null)

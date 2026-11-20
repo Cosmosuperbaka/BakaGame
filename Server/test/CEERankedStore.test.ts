@@ -23,8 +23,6 @@ const ratingOf = (
   wins: 1,
   losses: 0,
   draws: 0,
-  botRatedDay: null,
-  botRatedCount: 0,
   lastPlayedAt: T0,
   ...overrides,
 });
@@ -151,7 +149,7 @@ describe("排位审计内存实现", () => {
           playerOf(0, { points: 2, score: 0.5, ratingAfter: null, rdAfter: null }),
           playerOf(1, { userId: null, name: "快枪手", botPersona: "rush", points: 2, score: 0.5 }),
         ],
-        ratings: [ratingOf("u1", { botRatedDay: "2026-01-02", botRatedCount: 1 })],
+        ratings: [ratingOf("u1", { seriesPlayed: 1 })],
       })
     );
 
@@ -253,7 +251,7 @@ describe("排位审计内存实现", () => {
 
     // 真人局：没有「强度 vs 战绩」这回事。
     await store.saveSettlement(settlementOf("s-human", T0));
-    // 人机但不计分：这一场的人机没有按真实水平出手，不代表任何强度。
+    // 人机但不计分（人机每日计分额度取消前留下的历史记录）：不进校准样本。
     await store.saveSettlement(
       settlementOf("s-unrated", T0 + 1000, {
         series: seriesOf("s-unrated", T0 + 1000, {

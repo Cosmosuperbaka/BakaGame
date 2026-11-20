@@ -36,10 +36,6 @@ export const PlacementDone: Story = {
   name: "定级完成",
   args: { series: rankedSeries("placementDone") },
 };
-export const Unrated: Story = {
-  name: "人机额度用完不计分",
-  args: { series: rankedSeries("unrated") },
-};
 export const Failed: Story = { name: "写库失败不计分", args: { series: rankedSeries("failed") } };
 export const OpponentExited: Story = {
   name: "对手退出",

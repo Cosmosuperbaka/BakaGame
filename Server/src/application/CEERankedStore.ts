@@ -16,9 +16,6 @@ export interface CEERankedRatingRecord {
   wins: number;
   losses: number;
   draws: number;
-  /** 人机计分所在的北京自然日，`YYYY-MM-DD`；当天没打过人机为空。 */
-  botRatedDay: string | null;
-  botRatedCount: number;
   lastPlayedAt: number | null;
 }
 
@@ -34,7 +31,7 @@ export interface CEERankedSeriesRecord {
   endedAt: number;
   endReason: CEERankedSeriesEndReasonRecord;
   rated: boolean;
-  /** 不计分的原因，例如 "bot_daily_limit"；计分为 null。 */
+  /** 不计分的原因；计分为 null。现行规则下排位一律计分，历史记录里可能留有旧原因。 */
   unratedReason: string | null;
   bot: boolean;
   /** placement：定级期直开的人机；manual/auto：排队后主动或兜底进人机。 */

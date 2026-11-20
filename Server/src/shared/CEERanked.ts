@@ -21,7 +21,10 @@ export type CEERankedGameEndReason = "solved" | "surrender" | "draw";
 /** completed：正常打完；exit：一方主动退出；offline：一方连续离线超时。 */
 export type CEERankedSeriesEndReason = "completed" | "exit" | "offline";
 export type CEERankedOutcome = "won" | "lost" | "drawn";
-/** pending：结算写库未完成；rated：已计分；unrated：本场本就不计分（如人机额度用完）；failed：写库失败未计分。 */
+/**
+ * pending：结算写库未完成；rated：已计分；unrated：本场本就不计分（现行规则下排位一律计分，不再产生，
+ * 取值保留给旧审计口径）；failed：写库失败未计分。
+ */
 export type CEERankedSettlement = "pending" | "rated" | "unrated" | "failed";
 
 /** 对手某次猜测的脱敏反馈：只有比较符号与计数，不含数值、角色名、作品名或标签文字。 */
@@ -98,6 +101,7 @@ export interface CEERankedSeriesView {
   seriesId: string;
   tier: { id: CEERankedTierId; name: string };
   phase: CEERankedSeriesPhase;
+  /** 现行规则下恒为 true（人机局也计分）。字段不能删：旧客户端缺字段会把每场都标成「不计分」。 */
   rated: boolean;
   self: CEERankedSeatView;
   opponent: CEERankedSeatView;
@@ -143,8 +147,6 @@ export interface CEERankedProfile {
   wins: number;
   losses: number;
   draws: number;
-  botRatedToday: number;
-  botRatedLimit: number;
   /** 战绩第一页（最新在前）；更早的经 `cee.ranked.history` 按页往前翻。 */
   recent: CEERankedHistoryEntry[];
   /** recent 之后是否还有更早的战绩。 */

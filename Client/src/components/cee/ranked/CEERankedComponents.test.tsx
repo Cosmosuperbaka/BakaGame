@@ -353,24 +353,6 @@ describe("CEERankedHome", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("今日人机计分局用完时，排队就说明人机局不再计分", () => {
-    const rated = rankedProfile("rated");
-    const { unmount } = withProviders(
-      <CEERankedHome {...props} profile={rated} state={rankedQueuedState(12_000)} />
-    );
-    expect(screen.queryByText(/今日人机局已不计分/)).not.toBeInTheDocument();
-    unmount();
-
-    withProviders(
-      <CEERankedHome
-        {...props}
-        profile={{ ...rated, botRatedToday: rated.botRatedLimit }}
-        state={rankedQueuedState(12_000)}
-      />
-    );
-    expect(screen.getByText(/今日人机局已不计分/)).toBeInTheDocument();
-  });
-
   it("有进行中的赛季时写出赛季截止日期，匹配可点", () => {
     withProviders(
       <CEERankedHome {...props} profile={rankedProfile("rated")} state={RANKED_IDLE_STATE} />
@@ -462,11 +444,6 @@ describe("CEERankedScoreboard", () => {
     expect(screen.queryByLabelText(/第 5 局/)).not.toBeInTheDocument();
     expect(screen.getByText("第 4 局")).toBeInTheDocument();
     expect(screen.getByText("加赛")).toBeInTheDocument();
-  });
-
-  it("不计分的场次在对局中就标出来", () => {
-    withProviders(<CEERankedScoreboard series={{ ...rankedSeries("playing"), rated: false }} />);
-    expect(screen.getByText("不计分")).toBeInTheDocument();
   });
 
   it("读秒阶段与局间用秒数表达", () => {
@@ -660,15 +637,9 @@ describe("CEERankedResultCard", () => {
     expect(screen.getByRole("button", { name: "再来一场" })).toBeDisabled();
   });
 
-  it("不计分与结算失败各有一句说明", () => {
-    const { unmount } = withProviders(
-      <CEERankedResultCard {...props} series={rankedSeries("failed")} />
-    );
+  it("结算失败有一句说明", () => {
+    withProviders(<CEERankedResultCard {...props} series={rankedSeries("failed")} />);
     expect(screen.getByText("结算没能保存，本场不计分")).toBeInTheDocument();
-    unmount();
-
-    withProviders(<CEERankedResultCard {...props} series={rankedSeries("unrated")} />);
-    expect(screen.getByText("今日人机计分局已用完，本场不计分")).toBeInTheDocument();
   });
 
   it("定级过程只给进度，定级完成亮出分数", () => {

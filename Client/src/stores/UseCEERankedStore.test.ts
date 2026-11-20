@@ -167,8 +167,6 @@ const profileFixture: CEERankedProfile = {
   wins: 7,
   losses: 4,
   draws: 1,
-  botRatedToday: 2,
-  botRatedLimit: 5,
   recent: [],
   recentHasMore: false,
   season: null,

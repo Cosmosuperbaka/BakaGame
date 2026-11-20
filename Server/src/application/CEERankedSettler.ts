@@ -104,7 +104,7 @@ export class CEERankedSettler {
       ],
       games: gameRecords(runtime, endedAt),
       guesses: guessRecords(runtime),
-      ratings: seatRatingRecords(runtime, rating.after, scores, endedAt),
+      ratings: seatRatingRecords(runtime, rating.after, scores),
     };
     const written = await this.saveWithRetry(record, runtime.series.id);
     if (!written) return { written: false, results: [null, null] };

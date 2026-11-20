@@ -34,7 +34,7 @@ import type { CEERankedRatingRecord, CEERankedStore } from "./CEERankedStore";
 
 /** 进入人机局的来路：定级期直接开、排队后主动选、排队超时兜底；真人局为空。 */
 export type CEERankedBotEntry = "manual" | "auto" | "placement" | null;
-/** 席位运行时：赛前的评级记录整条留着，结算时的胜平负与当日额度都在它基础上加。 */
+/** 席位运行时：赛前的评级记录整条留着，结算时的场数与胜平负都在它基础上加。 */
 export interface CEERankedSeatRuntime {
   userId: string | null;
   isBot: boolean;

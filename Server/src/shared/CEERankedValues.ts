@@ -35,8 +35,6 @@ export const CEE_RANKED_PLACEMENT_SERIES = 5;
 export const CEE_RANKED_BOT_OPTION_MS = 10_000;
 /** 排队满该时长仍未匹配到真人，自动进人机局。 */
 export const CEE_RANKED_BOT_FALLBACK_MS = 30_000;
-/** 定级结束后每个北京日计分的人机系列赛场数。 */
-export const CEE_RANKED_BOT_DAILY_RATED = 5;
 
 export type CEERankedTierId = "d1" | "d2" | "d3" | "d4" | "d5";
 export interface CEERankedTier {

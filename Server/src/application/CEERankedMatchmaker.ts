@@ -43,7 +43,7 @@ import {
   type CEERankedSeatRuntime,
   type CEERankedSeriesRuntime,
 } from "./CEERankedRuntime";
-import { initialRatingRecord, shouldRateBotSeries, toRating } from "./CEERankedSettlement";
+import { initialRatingRecord, toRating } from "./CEERankedSettlement";
 import type { CEERankedRatingRecord } from "./CEERankedStore";
 
 /** 撮合向门面要的三件事：账号是否还在结算、替玩家离开结果页、开出系列赛后重排计时器。 */
@@ -373,8 +373,6 @@ export class CEERankedMatchmaker {
       answers,
       seats,
       now,
-      rated: true,
-      unratedReason: null,
       bot: false,
       botEntry: null,
       botSpec: null,
@@ -408,7 +406,6 @@ export class CEERankedMatchmaker {
     // 爱噶：她有意比同分人机强，强度只跟玩家分数走；偏差加到计分用的分数上，赢她多涨、输给她少掉。
     const strengthRating = persona.id === "aiga" ? nominal : nominal - bias;
     const targetRating = persona.id === "aiga" ? nominal + bias : nominal;
-    const rated = shouldRateBotSeries(prior, now);
     const name = await this.displayName(userId);
     if (attempt.revoked) return;
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [
@@ -429,8 +426,6 @@ export class CEERankedMatchmaker {
       answers,
       seats,
       now,
-      rated,
-      unratedReason: rated ? null : "bot_daily_limit",
       bot: true,
       botEntry,
       botSpec: {
@@ -482,8 +477,6 @@ export class CEERankedMatchmaker {
     answers: CEECharacterView[];
     seats: [CEERankedSeatRuntime, CEERankedSeatRuntime];
     now: number;
-    rated: boolean;
-    unratedReason: string | null;
     bot: boolean;
     botEntry: CEERankedBotEntry;
     botSpec: CEERankedBotSpec | null;
@@ -511,8 +504,9 @@ export class CEERankedMatchmaker {
     const runtime: CEERankedSeriesRuntime = {
       series,
       tier: input.tier,
-      rated: input.rated,
-      unratedReason: input.unratedReason,
+      // 排位系列赛一律计分：人机等同真人对手，只靠按最大偏差参与计算来打折。
+      rated: true,
+      unratedReason: null,
       bot: input.bot,
       botEntry: input.botEntry,
       seats: input.seats,

@@ -147,8 +147,6 @@ export const ratedSeedOf = (
   wins: 0,
   losses: 0,
   draws: 0,
-  botRatedDay: null,
-  botRatedCount: 0,
   lastPlayedAt: null,
   ...overrides,
 });

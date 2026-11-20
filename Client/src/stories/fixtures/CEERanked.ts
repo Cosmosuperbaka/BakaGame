@@ -122,7 +122,6 @@ export type RankedSeriesStage =
   | "pending"
   | "placementDone"
   | "placementProgress"
-  | "unrated"
   | "failed";
 
 const result = (patch: Partial<CEERankedSeriesResult>): CEERankedSeriesResult => ({
@@ -242,12 +241,6 @@ export function rankedSeries(stage: RankedSeriesStage): CEERankedSeriesView {
         self: seat({ points: 2, rating: null, placementPlayed: 2 }),
         result: result({ ratingBefore: null, ratingAfter: null, placementPlayed: 3 }),
       };
-    case "unrated":
-      return {
-        ...rankedSeries("won"),
-        rated: false,
-        result: result({ settlement: "unrated", ratingBefore: null, ratingAfter: null }),
-      };
     case "failed":
       return {
         ...rankedSeries("won"),
@@ -283,8 +276,6 @@ export function rankedProfile(kind: "placement" | "rated" | "empty"): CEERankedP
       wins: 0,
       losses: 0,
       draws: 0,
-      botRatedToday: 0,
-      botRatedLimit: 5,
       recent: [],
       recentHasMore: false,
       season: CEE_RANKED_SEASONS[0] ?? null,
@@ -332,8 +323,6 @@ export function rankedProfile(kind: "placement" | "rated" | "empty"): CEERankedP
     wins: 13,
     losses: 9,
     draws: 1,
-    botRatedToday: 3,
-    botRatedLimit: 5,
     season: CEE_RANKED_SEASONS[0] ?? null,
     nextSeason: null,
     recent: [

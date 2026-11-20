@@ -197,12 +197,6 @@ export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView })
           <Badge variant="outline" size="xs">
             {series.tier.name}
           </Badge>
-          {/* 不计分要在开打时就看得到，而不是打完才在结果页得知。 */}
-          {series.rated ? null : (
-            <Badge variant="restricted" size="xs">
-              不计分
-            </Badge>
-          )}
         </div>
         <SeriesClock series={series} />
       </div>
