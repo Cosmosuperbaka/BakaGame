@@ -8,7 +8,7 @@
 //! ```text
 //! window.__BAKA_CHANNEL__ = {
 //!   clientType: "desktop",
-//!   platform: "windows",
+//!   platform: "windows" | "macos",            // 取自 `device::PLATFORM`，按编译目标定
 //!   clientVersion: string,
 //!   channelTicket: string,                    // 壳签好的一次性票据；无票时为空串
 //!   selfCheck(): Promise<SelfCheckReport>,        // { hardFail, softFail, keyProtection }
@@ -116,7 +116,7 @@ const BRIDGE_JS: &str = r#"(function () {
 
   var channel = {
     clientType: "desktop",
-    platform: "windows",
+    platform: "__BAKA_PLATFORM__",
     clientVersion: "__BAKA_CLIENT_VERSION__",
     selfCheck: function () {
       var invoke = resolveInvoke();
@@ -170,13 +170,20 @@ const BRIDGE_JS: &str = r#"(function () {
 })();
 "#;
 
-/// 生成注入用的脚本原文：把版本占位符换成经过滤的版本串。
+/// 版本与平台在脚本原文里的占位符
+const VERSION_TOKEN: &str = "__BAKA_CLIENT_VERSION__";
+const PLATFORM_TOKEN: &str = "__BAKA_PLATFORM__";
+
+/// 生成注入用的脚本原文：版本占位符换成经过滤的版本串，平台占位符换成注册时上报的
+/// 同一个常量（`device::PLATFORM`）——页面看到的平台与服务端登记的平台不会各说各话。
 pub fn build() -> String {
     let safe_version: String = crate::config::client_version()
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
         .collect();
-    BRIDGE_JS.replace("__BAKA_CLIENT_VERSION__", &safe_version)
+    BRIDGE_JS
+        .replace(VERSION_TOKEN, &safe_version)
+        .replace(PLATFORM_TOKEN, crate::device::PLATFORM)
 }
 
 #[cfg(test)]
@@ -204,6 +211,20 @@ mod tests {
         assert!(BRIDGE_JS.contains("ttlMs"));
         assert!(!BRIDGE_JS.contains("expiresAt"));
         assert!(BRIDGE_JS.contains("performance.now"));
+    }
+
+    /// 平台占位符换成注册时上报的同一个常量，脚本里不再留占位符
+    #[test]
+    fn platform_token_replaced_with_registered_platform() {
+        assert!(BRIDGE_JS.contains(PLATFORM_TOKEN));
+        let rendered = build();
+        assert!(!rendered.contains(PLATFORM_TOKEN));
+        let expected = format!("platform: \"{}\",", crate::device::PLATFORM);
+        assert!(
+            rendered.lines().any(|line| line.trim() == expected),
+            "桥接脚本的 platform 应为 {}",
+            crate::device::PLATFORM
+        );
     }
 
     /// 版本串注入后必须仍是安全的字符串字面量内容（不带引号与反斜杠）

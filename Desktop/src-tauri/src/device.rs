@@ -5,6 +5,7 @@
 //!
 //! DPAPI 不可用时**降级为软件保护并不拒绝启动**（计划里这是环境降级，不计分）：
 //! 降级态只把种子按原样存进本地文件，仅依赖文件系统权限，不再叠任何假加密。
+//! macOS 没有 DPAPI，私钥一律是软件保护并如实上报 `software`；接 Keychain 是后续工作。
 //!
 //! 强度声明（与计划一致）：这是**门槛**，不是**证明**。私钥在用户自己的机器上，
 //! 肯逆向就能提取；作用是让自写客户端必须先做一次逆向，而不是直接 `new WebSocket()`。
@@ -22,6 +23,12 @@ use crate::secret::{wipe, Secret};
 use crate::selfcheck::{KeyProtection, SelfCheckReport};
 
 pub const CLIENT_TYPE: &str = "desktop";
+/// 按编译目标给出的平台标识：注册体与桥接脚本（`bridge::build`）都取这一个常量，
+/// 不在别处另写字面量。服务端按它区分设备平台，制品与更新提醒按它挑安装包。
+/// 每个分支的字面量都由服务端的壳契约对账测试读源码核对长度限制。
+#[cfg(target_os = "macos")]
+pub const PLATFORM: &str = "macos";
+#[cfg(not(target_os = "macos"))]
 pub const PLATFORM: &str = "windows";
 /// §3 的算法词表取值：服务端按它选验签分支（ed25519 = 64 字节裸签名）
 pub const KEY_ALGORITHM: &str = "ed25519";
@@ -113,22 +120,39 @@ impl Device {
     }
 }
 
-/// 密钥与 `clientId` 的目录：`%APPDATA%\BakaGame\client`，取不到 APPDATA 时退回
-/// `%USERPROFILE%\.bakagame\client`。
+/// 密钥、`clientId` 与单实例锁文件的目录（壳的数据目录）。
+///
+/// - Windows：`%APPDATA%\BakaGame\client`，取不到 APPDATA 时退回 `%USERPROFILE%\.bakagame\client`；
+/// - macOS：`~/Library/Application Support/BakaGame/client`，只认带根的 `HOME`。
+///
+/// 取不到就返回 `None`（调用方不启用桌面通道），绝不退回相对路径：相对路径跟着启动目录走，
+/// 换个方式启动就换了一份设备身份。
 pub fn storage_dir() -> Option<PathBuf> {
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        if !appdata.trim().is_empty() {
-            return Some(Path::new(&appdata).join("BakaGame").join("client"));
-        }
+    storage_dir_with(cfg!(target_os = "macos"), |key| std::env::var(key).ok())
+}
+
+/// `storage_dir` 的判定本体：平台与环境变量都由参数给出，两个平台的分支在任一平台上都能单测。
+fn storage_dir_with(macos: bool, var: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let present = |key: &str| var(key).filter(|value| !value.trim().is_empty());
+    if macos {
+        // macOS 的应用数据按惯例放 `~/Library/Application Support`；不读 APPDATA 之类别的平台的变量
+        return present("HOME")
+            .filter(|home| Path::new(home).has_root())
+            .map(|home| {
+                Path::new(&home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("BakaGame")
+                    .join("client")
+            });
     }
-    for key in ["USERPROFILE", "HOME"] {
-        if let Ok(root) = std::env::var(key) {
-            if !root.trim().is_empty() {
-                return Some(Path::new(&root).join(".bakagame").join("client"));
-            }
-        }
+    if let Some(appdata) = present("APPDATA") {
+        return Some(Path::new(&appdata).join("BakaGame").join("client"));
     }
-    None
+    ["USERPROFILE", "HOME"]
+        .into_iter()
+        .find_map(|key| present(key))
+        .map(|root| Path::new(&root).join(".bakagame").join("client"))
 }
 
 /// DPAPI 包装：非 Windows 一律返回 `None`（等价于「DPAPI 不可用」→ 软件保护档位）。
@@ -473,6 +497,92 @@ mod tests {
         .unwrap()
     }
 
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |key| {
+            pairs
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| value.to_string())
+        }
+    }
+
+    /// Windows 口径不变：APPDATA 优先，取不到退回用户目录下的隐藏目录，空白值当没设
+    #[test]
+    fn windows_storage_dir_prefers_appdata() {
+        let dir = storage_dir_with(
+            false,
+            env_of(&[
+                ("APPDATA", r"C:\Users\a\AppData\Roaming"),
+                ("USERPROFILE", r"C:\Users\a"),
+            ]),
+        );
+        assert_eq!(
+            dir,
+            Some(
+                Path::new(r"C:\Users\a\AppData\Roaming")
+                    .join("BakaGame")
+                    .join("client")
+            )
+        );
+        let fallback = storage_dir_with(
+            false,
+            env_of(&[("APPDATA", "  "), ("USERPROFILE", r"C:\Users\a")]),
+        );
+        assert_eq!(
+            fallback,
+            Some(Path::new(r"C:\Users\a").join(".bakagame").join("client"))
+        );
+        assert_eq!(storage_dir_with(false, env_of(&[])), None);
+    }
+
+    /// macOS 落在 `~/Library/Application Support` 下；不读 Windows 的变量，HOME 缺失、空白或
+    /// 是相对路径都不给目录（相对路径会让设备身份跟着启动目录变）
+    #[test]
+    fn macos_storage_dir_lives_in_application_support() {
+        let dir = storage_dir_with(true, env_of(&[("HOME", "/Users/a"), ("APPDATA", r"C:\x")]));
+        assert_eq!(
+            dir,
+            Some(
+                Path::new("/Users/a")
+                    .join("Library")
+                    .join("Application Support")
+                    .join("BakaGame")
+                    .join("client")
+            )
+        );
+        assert_eq!(
+            storage_dir_with(true, env_of(&[("APPDATA", r"C:\x")])),
+            None
+        );
+        assert_eq!(storage_dir_with(true, env_of(&[("HOME", " ")])), None);
+        assert_eq!(
+            storage_dir_with(true, env_of(&[("HOME", "relative/home")])),
+            None
+        );
+    }
+
+    /// 本平台的取值：macOS 上报 `macos`，其余（Windows）保持 `windows`
+    #[test]
+    fn platform_follows_compile_target() {
+        let expected = if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "windows"
+        };
+        assert_eq!(PLATFORM, expected);
+    }
+
+    /// 没有 DPAPI 的平台（macOS）生成的密钥如实记为软件保护，上报 `software`
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn non_windows_keys_are_software_protected() {
+        let dir = TempDir::new("software-only");
+        let device = load_or_create(dir.path()).expect("应生成密钥");
+        assert_eq!(device.protection(), KeyProtection::Software);
+        let stored = std::fs::read_to_string(key_path(&dir)).unwrap();
+        assert!(stored.contains("\"software\""), "{stored}");
+    }
+
     /// 注册响应只认 clientId，其余字段缺省或多出来都不影响解析：服务端加字段不能让旧壳注册失败
     #[test]
     fn register_response_tolerates_missing_and_extra_fields() {
@@ -542,7 +652,9 @@ mod tests {
         assert!(quarantine_path(&dir).exists());
     }
 
-    /// DPAPI 可用的前提下解不开的密文（换用户或换机留下的）：确实解不开，重建
+    /// DPAPI 可用的前提下解不开的密文（换用户或换机留下的）：确实解不开，重建。
+    /// 依赖真实 DPAPI 的「可用」探测，只在 Windows 上成立
+    #[cfg(target_os = "windows")]
     #[test]
     fn undecryptable_dpapi_blob_is_replaced() {
         let dir = TempDir::new("dpapi-garbage");

@@ -51,6 +51,16 @@ const rustString = (source: string, name: string): string => {
   if (!match) throw new Error(`Rust 源码里没有字符串常量 ${name}`);
   return match[1];
 };
+/** 按编译目标分支（`#[cfg(...)]`）各写一份的字符串常量：取出全部分支的字面量。 */
+const rustCfgStrings = (source: string, name: string): string[] => {
+  const found = [
+    ...source.matchAll(
+      new RegExp(`#\\[cfg\\([^\\n]*\\)\\]\\npub const ${name}: &str = "([^"]*)";`, "g")
+    ),
+  ].map((match) => match[1]);
+  if (found.length === 0) throw new Error(`Rust 源码里没有按 cfg 分支的字符串常量 ${name}`);
+  return found;
+};
 const rustNumber = (source: string, name: string): number => {
   const match = new RegExp(`const ${name}: u64 = ([\\d_]+);`).exec(source);
   if (!match) throw new Error(`Rust 源码里没有数值常量 ${name}`);
@@ -272,16 +282,20 @@ describe("取值与词表", () => {
     expect(keyAlgorithms).toContain(rustString(rust.device, "KEY_ALGORITHM"));
     expect(keyAlgorithms).toContain(jsObjectValue(mobileBridge, mobileRegister, "keyAlgorithm"));
     const platformLimit = (registerBody.properties?.platform as Schema).maxLength ?? 0;
-    for (const platform of [rustString(rust.device, "PLATFORM"), mobilePlatforms[0]]) {
+    // 桌面平台按编译目标取值（Windows / macOS 各一个 cfg 分支），每个分支都要在长度限制内
+    const desktopPlatforms = rustCfgStrings(rust.device, "PLATFORM");
+    expect(sorted(desktopPlatforms)).toEqual(["macos", "windows"]);
+    for (const platform of [...desktopPlatforms, mobilePlatforms[0]]) {
       expect(platform.length).toBeGreaterThan(0);
       expect(platform.length).toBeLessThanOrEqual(platformLimit);
     }
     // 桌面注入脚本对页面声明的身份与注册时上报的是同一个值（取脚本里 channel 对象的代码取值）
     const desktopChannel = /var channel = \{/;
     expect(jsObjectValue(desktopScript, desktopChannel, "clientType")).toBe(desktopType);
-    expect(jsObjectValue(desktopScript, desktopChannel, "platform")).toBe(
-      rustString(rust.device, "PLATFORM")
-    );
+    // 平台在脚本里是占位符，由 `bridge::build` 换成注册时上报的同一个常量
+    const platformToken = rustString(rust.bridge, "PLATFORM_TOKEN");
+    expect(jsObjectValue(desktopScript, desktopChannel, "platform")).toBe(platformToken);
+    expect(rust.bridge).toContain(".replace(PLATFORM_TOKEN, crate::device::PLATFORM)");
   });
   test("移动壳认的证明档位词表与服务端一致", () => {
     const levels = enumOf(selfCheckSchema.properties?.attestationLevel as Schema);

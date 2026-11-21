@@ -5,8 +5,11 @@
 //! 本模块的 `verdict_of` 只是壳侧日志用的同口径复核，不是权威。
 //!
 //! 「无法执行」与「未命中」是两件事：拿不到句柄、解析不到函数、结构体不匹配时，
-//! 一律记成明确的 `*_enumeration_failed` 标记而不是假装干净；非 Windows / 非 x64 直接
-//! 记 `platform_unsupported` 进硬失败清单，避免「没实现」被当成「已通过」。
+//! 一律记成明确的 `*_enumeration_failed` 标记而不是假装干净；非 Windows 平台（含 macOS）
+//! 不跑任何检测，只上报一条 `platform_unsupported`，避免「没实现」被当成「已通过」。
+//! 它写在 `hardFail` 格里，但服务端按权重表判定、不看壳填进了哪一格：权重表把它归为
+//! `mark`（放行并标记 suspect），以服务端为准。壳侧 `verdict()` 只按格子数数，这一项在
+//! 日志里会显示成 Untrusted，与服务端结论不同，不要据此排查准入。
 
 use serde::Serialize;
 
@@ -229,6 +232,7 @@ pub fn run(key_protection: KeyProtection) -> SelfCheckReport {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // 服务端权重表把这一项判为 mark（放行并标记可疑），格子不影响判定，见文件头说明
         diag::hard(
             CHECK_PLATFORM_UNSUPPORTED,
             "自检只在 Windows x64 上有意义，其它平台不得当作通过",
@@ -487,6 +491,8 @@ fn webview_data_dirs() -> Vec<std::path::PathBuf> {
 
 /// 可选诊断日志：只在 `BAKA_DESKTOP_LOG=1` 时写 `%LOCALAPPDATA%\BakaGame\client\selfcheck.log`，
 /// 默认不落盘（不记录任何玩家身份或房间信息，只记录本次命中的检测项）。
+/// 非 Windows 平台（macOS）一律不写：那里只有一条固定的 `platform_unsupported`，没有可排查的内容，
+/// 也就不必为它找一个平台口径的日志目录。
 mod diag {
     #[cfg(target_os = "windows")]
     fn enabled() -> bool {
@@ -567,6 +573,20 @@ mod verdict_tests {
             soft_fail: soft.iter().map(|id| id.to_string()).collect(),
             key_protection: KeyProtection::Software,
         }
+    }
+
+    /// 非 Windows 平台（macOS）不跑任何检测：只报一条 `platform_unsupported`，
+    /// 软失败为空，私钥保护档位原样带出（macOS 没有 DPAPI，是 `software`）
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn non_windows_reports_only_platform_unsupported() {
+        let report = run(KeyProtection::Software);
+        assert_eq!(
+            report.hard_fail,
+            vec![CHECK_PLATFORM_UNSUPPORTED.to_string()]
+        );
+        assert!(report.soft_fail.is_empty());
+        assert_eq!(report.key_protection, KeyProtection::Software);
     }
 
     #[test]

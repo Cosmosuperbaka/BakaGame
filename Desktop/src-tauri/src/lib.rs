@@ -363,7 +363,8 @@ fn opens_externally(url: &tauri::Url) -> bool {
     matches!(url.scheme(), "http" | "https") && url.host_str().is_some_and(|host| !host.is_empty())
 }
 
-/// 用系统默认浏览器打开地址；失败只记日志，不影响壳本身
+/// 用系统默认浏览器打开地址；失败只记日志，不影响壳本身。
+/// 调用方已用 `opens_externally` 把地址限定为带主机的 http(s)。
 fn open_in_system_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
@@ -386,7 +387,25 @@ fn open_in_system_browser(url: &str) {
             eprintln!("系统浏览器打开外链失败：code={}", result as isize);
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        // 交给系统自带的 `open` 按协议找默认浏览器（写绝对路径，不受 PATH 影响）。
+        // 地址只作为一个独立参数传入、不经过 shell；它以 `http` 开头，不会被当成选项解析。
+        // 到后台线程里等它退出，既不卡住新窗口回调，也把子进程回收掉、不留僵尸进程。
+        if url.starts_with('-') {
+            eprintln!("外链地址不能以 - 开头，未打开");
+            return;
+        }
+        let target = url.to_string();
+        std::thread::spawn(move || {
+            match std::process::Command::new("/usr/bin/open").arg(&target).status() {
+                Ok(status) if status.success() => {}
+                Ok(status) => eprintln!("系统浏览器打开外链失败：{status}"),
+                Err(err) => eprintln!("无法调用 open 打开外链：{err}"),
+            }
+        });
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     eprintln!("当前平台不支持打开外链：{url}");
 }
 
@@ -417,6 +436,8 @@ fn within_site(url: &str, base: &str) -> bool {
 
 /// 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
 /// 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
+/// macOS 上 `httpdns::shared` 恒为空（WebView 改走代理要 `macos-proxy` 特性且只支持 14+），
+/// 所以这里不起隧道，页面与壳内请求都走系统 DNS。
 ///
 /// 应在设备引导线程启动之前调用：隧道直连目标、不读任何代理设置，启用后壳自己发的
 /// 注册、领挑战与换票请求也要直连（见 `http::mark_webview_tunnel_active`），
@@ -507,17 +528,15 @@ pub fn run() {
     notice::log_identity();
 
     // 单实例保护只在发布构建启用：开发时需要同时开多个壳（不同账号联调）。
-    // 已有实例在跑就把它的窗口拉到前台并退出，不去碰同一份设备密钥文件、不再起第二套隧道。
+    // 已有实例在跑就让位并退出（Windows 先把它的窗口拉到前台），不去碰同一份设备密钥文件、
+    // 不再起第二套隧道。
     let _single_instance = if cfg!(debug_assertions) {
         None
     } else {
-        match single_instance::acquire(single_instance::MUTEX_NAME) {
+        match single_instance::acquire_for_app() {
             single_instance::Instance::First(guard) => Some(guard),
             single_instance::Instance::AlreadyRunning => {
-                eprintln!("已有一个 BakaGame 桌面客户端在运行，聚焦它的窗口后退出");
-                if !single_instance::focus_existing_window(config::WINDOW_TITLE) {
-                    eprintln!("没有找到已有实例的窗口，可能它正在启动或退出，本次直接退出");
-                }
+                single_instance::yield_to_existing(config::WINDOW_TITLE);
                 return;
             }
         }
@@ -538,7 +557,7 @@ pub fn run() {
             match dir {
                 Some(_) => spawn_device_bootstrap(handle.clone()),
                 None => eprintln!(
-                    "无法确定密钥存储目录（APPDATA / USERPROFILE 都取不到），桌面通道未启用"
+                    "无法确定密钥存储目录（Windows 取 APPDATA / USERPROFILE，macOS 取 HOME），桌面通道未启用"
                 ),
             }
             create_main_window(app, tunnel)?;
