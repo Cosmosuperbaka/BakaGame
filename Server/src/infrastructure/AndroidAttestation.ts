@@ -16,9 +16,9 @@ import { isRecord } from "../shared/Json";
  *
  * 分档口径来自计划的失败矩阵，分界线是「设备完整性是否被破坏」而不是「证明强度够不够」：
  * - `trusted`：链可信 + 未吊销 + `verifiedBootState = Verified` + TEE/StrongBox；
- * - `degraded`：链可信但证明强度不足——Software 级、证书已过 X.509 有效期、CRL 暂不可用；
- * - `rejected`：验签或链名不符、根不受信、被吊销、boot 状态非 Verified、bootloader 解锁、
- *   包名或签名摘要对不上。
+ * - `degraded`：链可信但证明强度不足——Software 级（硬件根签名）、证书已过 X.509 有效期、CRL 暂不可用；
+ * - `rejected`：验签或链名不符、根不受信、**锚到软件根**（私钥公开，任何人都能签出来）、被吊销、
+ *   boot 状态非 Verified、bootloader 解锁、包名或签名摘要对不上。
  *
  * 三处刻意的选择，改动前先读：
  * 1. **不按 X.509 有效期拒绝**。工厂预置证书可能永久过期但仍可信（密钥无法轮换），
@@ -755,9 +755,13 @@ const applyStrengthMarkers = (
 };
 
 const verifyRootOfTrust = (chain: VerifiedChain): string | null => {
-  // 链锚到软件根却上报硬件强度：这是伪造硬件证明，直接拒。
+  // 链锚到软件根却上报硬件强度：这是伪造硬件证明，原因码单列，便于日志区分伪造手法。
   if (chain.rootKind === "software" && chain.description.securityLevel !== "software")
     return "security_level_root_mismatch";
+  // 软件证明根的私钥是公开的，任何人都能签出一条「软件根」链并随意填包名与签名摘要，
+  // 所以软件根链不可信，不论它自报什么强度。真机上的软件级证明（硬件根签名、
+  // securityLevel 为 software）签名伪造不了，仍只降级，不在这里拒。
+  if (chain.rootKind === "software") return "software_attestation_root";
   const trust = chain.description.rootOfTrust;
   if (!trust) return "missing_root_of_trust";
   if (!trust.deviceLocked) return "bootloader_unlocked";

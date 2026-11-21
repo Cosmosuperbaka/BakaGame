@@ -424,10 +424,17 @@ describe("Android Key Attestation 链验证", () => {
     expect(verdict.level).toBe("trusted");
   });
 
-  test("SecurityLevel = Software（锚到软件根）→ degraded", async () => {
-    const verdict = await verify(buildChain({ rootKind: "software", securityLevel: 0 }));
+  test("SecurityLevel = Software 但锚在硬件根 → degraded：硬件根签名伪造不了，只算强度不足", async () => {
+    const verdict = await verify(buildChain({ rootKind: "hardware", securityLevel: 0 }));
     expect(verdict.level).toBe("degraded");
     expect(verdict.reasons).toContain("software_security_level");
+    expect(verdict.rootKind).toBe("hardware");
+  });
+
+  test("锚到软件根 → rejected：软件根私钥公开，签得出来的链不可信，哪怕包名与摘要全对", async () => {
+    const verdict = await verify(buildChain({ rootKind: "software", securityLevel: 0 }));
+    expect(verdict.level).toBe("rejected");
+    expect(verdict.reasons).toEqual(["software_attestation_root"]);
     expect(verdict.rootKind).toBe("software");
   });
 
