@@ -36,3 +36,4 @@ export type {
   QQLookupStatus,
 } from "./ApiContract";
 export * from "./TextUnits";
+export * from "./ClientUserAgent";
