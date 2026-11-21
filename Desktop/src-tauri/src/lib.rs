@@ -14,6 +14,7 @@ mod dnsproxy;
 mod http;
 mod httpdns;
 mod notice;
+mod page_guard;
 mod peb;
 mod secret;
 mod self_update;
@@ -522,6 +523,10 @@ fn create_main_window(
         // 初始化脚本在页面脚本之前执行，桥接必须在这个时机注入
         .initialization_script(bridge::build())
         .initialization_script(splash::init_script(&site))
+        // 拦掉浏览器自带的右键菜单与打印等快捷键（可编辑元素与选中文字放行），见 `page_guard`
+        .initialization_script(page_guard::script())
+        // 打开页面缩放快捷键（Ctrl/⌘ 加减号、滚轮），小屏与高缩放比下玩家能自己调
+        .zoom_hotkeys_enabled(true)
         .on_navigation(move |url| {
             let allowed = navigation_allowed(url.as_str(), &nav_site);
             // 本地启动页拿不到票，也不需要为它备票
