@@ -130,6 +130,11 @@ describe("Client Sentry 客户端接入与异常转发", () => {
       )
     ).toBe(true);
     expect(
+      isFiltered(
+        "NotFoundError: Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node."
+      )
+    ).toBe(true);
+    expect(
       isFiltered("Error: InvalidStateError: Transition was aborted because of invalid state")
     ).toBe(true);
     expect(isFiltered("AbortError: Transition was skipped")).toBe(true);

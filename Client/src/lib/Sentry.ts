@@ -146,7 +146,7 @@ export function isInjectedBrowserAdRejection(reason: unknown): boolean {
 
 /** 与事件侧 ignoreErrors 同类的良性文案；日志通道按同一边界过滤，避免比事件侧更吵或更钝。 */
 const BENIGN_CLIENT_NOISE_TEXT =
-  /(ResizeObserver loop|removeChild' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
+  /(ResizeObserver loop|(?:removeChild|insertBefore)' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
 
 /**
  * 把 window 级未捕获错误与未处理拒绝先缓存起来：SDK 的全局处理器要等它加载完才装上，
@@ -232,8 +232,9 @@ const buildInitOptions = (
       // resource." / "Load failed"）同样不收进名单：它们也由普通 API fetch 失败抛出，
       // 入名单会让弱网、CORS 与边缘故障在这两个引擎整体失明。
       // 浏览器翻译插件等第三方扩展会直接改写 DOM，破坏 React 的父子节点不变量。
-      // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。
-      /Failed to execute 'removeChild' on 'Node'/i,
+      // 该异常完全由外部注入引起，重载即恢复，与应用代码无关。removeChild 与 insertBefore
+      // 是同一次破坏的两个抛出点，口径与 `DomRecovery` 一致；发生频率由它的指标观测。
+      /Failed to execute '(?:removeChild|insertBefore)' on 'Node'/i,
       // Chromium 在标签页隐藏、导航打断或新旧过渡交叠时会中止 View Transition。
       // 导航本身照常完成，属浏览器级良性中断，不是页面缺陷。
       "Transition was aborted because of invalid state",
