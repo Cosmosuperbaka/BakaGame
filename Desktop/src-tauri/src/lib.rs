@@ -499,9 +499,13 @@ fn create_main_window(
     let mut builder =
         WebviewWindowBuilder::new(app, config::WINDOW_LABEL, WebviewUrl::External(parsed))
         .title(config::WINDOW_TITLE)
-        // 常规窗口项：可缩放、有系统边框、初始尺寸与下限、居中、拿焦点
+        // 常规窗口项：可缩放、有系统边框、初始尺寸与下限、居中、拿焦点。
+        // 初始尺寸按宽屏给，建窗时再按显示器工作区（扣掉任务栏）收窄：1080p 开 150% 缩放、
+        // 1366×768 这类屏幕上 1280×800 会比工作区高，标题栏会被推到屏幕外、窗口拖不动。
+        // 最小高度取页面仍可用的下限：首页刚好放下，房间页的面板在这个高度内各自滚动。
         .inner_size(1280.0, 800.0)
-        .min_inner_size(960.0, 600.0)
+        .min_inner_size(960.0, 540.0)
+        .prevent_overflow()
         .resizable(true)
         .maximizable(true)
         .minimizable(true)
