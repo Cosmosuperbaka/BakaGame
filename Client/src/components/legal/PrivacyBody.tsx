@@ -1,7 +1,7 @@
 import { LegalSection } from "@/components/common/LegalSection";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
-export const PRIVACY_UPDATED_AT = "2026-11-15";
+export const PRIVACY_UPDATED_AT = "2026-11-22";
 
 /**
  * 一条信息项：来源、用途、保留（与可选的说明）固定样板，标签与样式只在这里写一份。
@@ -55,7 +55,7 @@ export function PrivacyBody() {
         <dl className="space-y-4">
           <DataItem
             title="账号资料：QQ 号、昵称与头像（仅在使用账号功能时）"
-            source="登录时你输入的 QQ 号，账号以对应的 QQ 邮箱登录，验证码发到这个邮箱；账号昵称取自你的 QQ 昵称，由运营方自建的 QQ 昵称查询服务读取；头像经站内代理从 QQ 头像服务获取。登录时输入 QQ 号后显示的预览头像例外，由你的浏览器直接向 QQ 头像服务请求。"
+            source="登录时你输入的 QQ 号，账号以对应的 QQ 邮箱登录，验证码发到这个邮箱；账号昵称由你注册时自行填写，之后可在账号资料里修改；头像经站内代理从 QQ 头像服务获取。登录时输入 QQ 号后显示的预览头像例外，由你的浏览器直接向 QQ 头像服务请求。"
             purpose="创建与识别账号、登录验证、展示昵称与头像。QQ 号默认不公开，只有你本人在资料设置中开启后，其他玩家才能通过资料卡看到。"
             retention="账号存续期间一直保留。验证码只保存摘要，过期作废；头像图片只在服务器内存里短时缓存，数据库只记录头像的摘要。"
           />
@@ -155,8 +155,8 @@ export function PrivacyBody() {
         <ul className="list-disc space-y-2 pl-5">
           <li>
             <span className="font-semibold">腾讯 QQ：</span>
-            QQ 头像由站内代理获取，登录时的预览头像由你的浏览器直接请求；QQ 昵称查询服务通过 QQ
-            读取昵称，查询时会把 QQ 号发给腾讯；登录验证码经邮件服务投递到你的 QQ 邮箱。
+            QQ 头像由站内代理获取，登录时的预览头像由你的浏览器直接请求；本站不读取你的 QQ
+            昵称；登录验证码经邮件服务投递到你的 QQ 邮箱。
           </li>
           <li>
             <span className="font-semibold">Bangumi：</span>

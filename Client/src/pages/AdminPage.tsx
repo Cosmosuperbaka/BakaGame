@@ -14,7 +14,6 @@ import { BangumiMirrorPanel } from "@/components/admin/BangumiMirrorPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { GamesPanel } from "@/components/admin/GamesPanel";
 import { OverviewPanel } from "@/components/admin/OverviewPanel";
-import { QQLookupPanel } from "@/components/admin/QQLookupPanel";
 import { RoomsPanel } from "@/components/admin/RoomsPanel";
 import { RuntimeSettingsPanel } from "@/components/admin/RuntimeSettingsPanel";
 import { StatusEventsPanel } from "@/components/admin/StatusEventsPanel";
@@ -31,7 +30,6 @@ const TABS = [
   { value: "anticheat", label: "反作弊复核", panel: AntiCheatPanel },
   { value: "games", label: "对局", panel: GamesPanel },
   { value: "audit", label: "审计", panel: AuditPanel },
-  { value: "qq", label: "QQ 查询号", panel: QQLookupPanel },
   { value: "runtime", label: "运行期旋钮", panel: RuntimeSettingsPanel },
   { value: "bangumi", label: "Bangumi 镜像", panel: BangumiMirrorPanel },
 ] as const;

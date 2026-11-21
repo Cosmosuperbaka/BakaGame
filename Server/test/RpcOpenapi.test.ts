@@ -24,7 +24,6 @@ type Json = Record<string, unknown>;
 const EXPECTED_OPERATIONS = [
   "site.visit",
   "account.requestLoginCode",
-  "account.qqName",
   "account.me",
   "account.updateProfile",
   "account.equipBadge",
@@ -63,8 +62,6 @@ const EXPECTED_OPERATIONS = [
   "admin.games.list",
   "admin.games.get",
   "admin.audit.list",
-  "admin.qq.status",
-  "admin.qq.refreshNames",
   "admin.stats.overview",
   "admin.stats.sentry",
 ];

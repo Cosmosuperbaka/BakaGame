@@ -114,7 +114,6 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         <Field label="账号">
           <UserCell user={user} />
         </Field>
-        <Field label="QQ 昵称">{user.qqName ?? "未查到"}</Field>
         <Field label="角色">{ROLE_LABELS[user.role]}</Field>
         <Field label="状态">{banStatusText(user)}</Field>
         <Field label="公开 QQ">{user.showQq ? "已公开" : "不公开"}</Field>
@@ -275,7 +274,7 @@ export function UserDetailDialog({
       open={userId !== null}
       onClose={() => onOpenChange(false)}
       title="用户详情"
-      description="封禁、改角色、徽章与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。"
+      description="封禁、改角色、徽章与强制下线都会写入审计。账号昵称由玩家自填，核对身份以 QQ 号为准。"
       contentClassName="sm:max-w-xl"
     >
       {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}

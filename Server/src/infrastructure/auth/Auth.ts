@@ -10,6 +10,7 @@ import {
   LOGIN_CODE_TTL_SECONDS,
   qqNumberOfEmail,
 } from "../../shared/Account";
+import { checkAccountName } from "./AccountName";
 import type { Mailer } from "./Mailer";
 
 export interface AuthOptions {
@@ -32,11 +33,6 @@ export interface AuthOptions {
    * 已有密钥后不可更改：域名写进凭据，改了等于旧密钥全部失效。
    */
   passkeyRpId: string;
-  /**
-   * 建号时解析账号昵称（即该 QQ 号的 QQ 昵称）；返回 `null` 时拒绝建号。
-   * 昵称查询接口不可用时停用注册（见 Server/docs/Account.md §4）。
-   */
-  resolveNickname: (qqNumber: string) => Promise<string | null>;
   /** 建号完成后的自动授予（先行者、主理人）；失败不影响建号结果。 */
   onUserCreated?: (user: { id: string; qqNumber?: string | null }) => Promise<void>;
 }
@@ -49,8 +45,8 @@ export interface AuthOptions {
  *   Better Auth 自带的发码端点把投递异常吞进后台日志，不对外暴露）与通行密钥（WebAuthn，
  *   密钥只能由已登录账号添加，因此它永远只是验证码登录之后的加成，不能凭空造出账号）。
  *   两者都经过 `AUTH_HTTP_PATHS` 白名单，其余 Better Auth 端点一律 404。
- * - 账号昵称强制使用 QQ 昵称（建号钩子经 `resolveNickname` 解析，客户端无法自报，查询不可用时拒绝建号）；
- *   头像由服务端从 qlogo 同步；其余资料与管理操作都走服务端 API，HTTP 侧不开放 `update-user` 与 admin 端点。
+ * - 账号昵称由玩家注册时自填（随验证码登录请求的 `name` 提交），清洗与敏感词检测在消耗验证码之前完成，
+ *   建号钩子再按同一口径校验一次；头像由服务端从 qlogo 同步；其余资料与管理操作都走服务端 API，HTTP 侧不开放 `update-user` 与 admin 端点。
  */
 export const createAuth = (options: AuthOptions) => {
   const admins = new Set(options.adminQqNumbers);
@@ -70,8 +66,7 @@ export const createAuth = (options: AuthOptions) => {
         showQq: { type: "boolean", required: false, defaultValue: false, input: false },
         avatarHash: { type: "string", required: false, input: false, returned: false },
         avatarCheckedAt: { type: "date", required: false, input: false, returned: false },
-        qqName: { type: "string", required: false, input: false, returned: false },
-        qqNameCheckedAt: { type: "date", required: false, input: false, returned: false },
+        nameChangedAt: { type: "date", required: false, input: false, returned: false },
         equippedBadge: { type: "string", required: false, input: false, returned: false },
       },
     },
@@ -111,19 +106,17 @@ export const createAuth = (options: AuthOptions) => {
                 code: "INVALID_QQ_EMAIL",
                 message: "只支持 QQ 邮箱登录",
               });
-            // 账号昵称强制取自 QQ 昵称，客户端自报的 name 一律忽略；查询不到时拒绝建号。
-            const name = await options.resolveNickname(qqNumber);
-            if (!name) {
-              throw APIError.from("SERVICE_UNAVAILABLE", {
-                code: "QQ_NICKNAME_UNAVAILABLE",
-                message: "暂时无法获取你的 QQ 昵称，请重新获取验证码后再试",
-              });
-            }
+            // 昵称由玩家自填：前置钩子已在消耗验证码前校验过，这里按同一口径再收口一次，
+            // 落库的永远是清洗后的值。注册时刻计作一次改名，改名冷却从注册起算。
+            const checked = checkAccountName(user.name);
+            if (!checked.ok)
+              throw APIError.from("BAD_REQUEST", { code: checked.code, message: checked.message });
             // 头像只由服务端从 qlogo 抓取后写入站内代理地址，不接受客户端提供的 URL。
             return {
               data: {
                 ...user,
-                name,
+                name: checked.name,
+                nameChangedAt: new Date(),
                 image: null,
                 qqNumber,
                 showQq: false,
@@ -140,7 +133,7 @@ export const createAuth = (options: AuthOptions) => {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/sign-in/email-otp") return;
-        const body = (ctx.body ?? {}) as { email?: unknown; image?: unknown };
+        const body = (ctx.body ?? {}) as { email?: unknown; image?: unknown; name?: unknown };
         if (typeof body.email !== "string" || !qqNumberOfEmail(body.email)) {
           throw APIError.from("BAD_REQUEST", {
             code: "INVALID_QQ_EMAIL",
@@ -152,6 +145,16 @@ export const createAuth = (options: AuthOptions) => {
             code: "FIELD_NOT_ALLOWED",
             message: "头像由 QQ 自动同步",
           });
+        // 新号必须带合法昵称，且要在消耗验证码之前判定：否则填错昵称就白白作废一枚验证码。
+        // 老号登录不看 `name`（Better Auth 只在建号时用它）。
+        const existing = await ctx.context.internalAdapter.findUserByEmail(
+          body.email.toLowerCase()
+        );
+        if (!existing) {
+          const checked = checkAccountName(body.name);
+          if (!checked.ok)
+            throw APIError.from("BAD_REQUEST", { code: checked.code, message: checked.message });
+        }
       }),
     },
     plugins: [

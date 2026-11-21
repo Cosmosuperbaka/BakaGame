@@ -22,7 +22,6 @@ const alice: AdminUser = {
   banReason: null,
   banExpires: null,
   showQq: false,
-  qqName: null,
   badges: [],
   equippedBadge: null,
   createdAt: "2026-10-02T00:00:00.000Z",

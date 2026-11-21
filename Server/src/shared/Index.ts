@@ -33,7 +33,6 @@ export type {
   AdminRoom,
   AdminOverview,
   SentryOverview,
-  QQLookupStatus,
 } from "./ApiContract";
 export * from "./TextUnits";
 export * from "./ClientUserAgent";

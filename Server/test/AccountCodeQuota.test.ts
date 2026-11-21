@@ -6,10 +6,9 @@ const START = Date.UTC(2026, 9, 20);
 const qqOf = (index: number): string => String(100_000 + index);
 
 /** 固定时钟：配额窗口不滑动，用例断言的是「谁被拒、谁没被牵连」。 */
-const setup = async (numbers: number) => {
+const setup = () => {
   let current = START;
   const ctx = createAccountTestApp({ now: () => current });
-  for (let index = 0; index < numbers; index += 1) await ctx.prepareSignup(qqOf(index));
   const send = (index: number, ip: string) =>
     ctx.rpc("account/requestLoginCode", { qqNumber: qqOf(index) }, undefined, {
       "x-real-ip": ip,
@@ -19,7 +18,7 @@ const setup = async (numbers: number) => {
 
 describe("发码按来源地址限额", () => {
   test("一个来源换着号码打满自己的额度后被拒，别的来源仍能发码", async () => {
-    const { send } = await setup(40);
+    const { send } = setup();
 
     let accepted = 0;
     let firstRejected: Awaited<ReturnType<typeof send>> | null = null;
@@ -39,7 +38,7 @@ describe("发码按来源地址限额", () => {
   });
 
   test("被来源额度拒绝的请求不消耗全站额度：攻击者之外的人仍用得满全站份额", async () => {
-    const { send } = await setup(80);
+    const { send } = setup();
     let attackerAccepted = 0;
     for (let index = 0; index < 60; index += 1) {
       if ((await send(index, "198.51.100.1")).status === 200) attackerAccepted += 1;
@@ -55,7 +54,7 @@ describe("发码按来源地址限额", () => {
   });
 
   test("同邮箱冷却内的重复请求不消耗来源额度与全站额度", async () => {
-    const { send } = await setup(40);
+    const { send } = setup();
     expect((await send(0, "203.0.113.9")).status).toBe(200);
     for (let repeat = 0; repeat < 50; repeat += 1) {
       expect((await send(0, "203.0.113.9")).status).toBe(429);
@@ -70,7 +69,7 @@ describe("发码按来源地址限额", () => {
   });
 
   test("窗口过去后来源额度恢复", async () => {
-    const { send, advance } = await setup(40);
+    const { send, advance } = setup();
     let rejectedAt = -1;
     for (let index = 0; index < 30 && rejectedAt < 0; index += 1) {
       if ((await send(index, "203.0.113.20")).status === 429) rejectedAt = index;

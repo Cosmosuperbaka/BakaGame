@@ -28,6 +28,7 @@ const ownProfile: AccountProfile = {
     { kind: "pioneer", serial: 7 },
   ],
   equippedBadge: "pioneer",
+  nameChangedAt: null,
 };
 
 afterEach(() => {

@@ -15,6 +15,11 @@ export const EXEMPTIONS = [
   { id: "账号-logindialog--code-step", fragment: "net::ERR_FAILED", reason: QQ_AVATAR_BLOCKED },
   { id: "账号-logindialog--register", fragment: "net::ERR_FAILED", reason: QQ_AVATAR_BLOCKED },
   {
+    id: "账号-logindialog--register-empty",
+    fragment: "net::ERR_FAILED",
+    reason: QQ_AVATAR_BLOCKED,
+  },
+  {
     id: "页面-主页--default",
     fragment: "404 (Not Found)",
     reason:

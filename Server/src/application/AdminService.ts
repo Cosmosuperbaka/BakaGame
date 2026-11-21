@@ -8,7 +8,6 @@ import { RECORDED_GAMES } from "../domain/GameRecord";
 import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";
 import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
 import type { AccountBadge, BadgeKind } from "../shared/Badges";
-import type { QQNicknameService } from "./QQNicknameService";
 import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
@@ -55,7 +54,6 @@ import type {
   FeedbackStatus,
   GameRecordDetail,
   GameRecordItem,
-  QQLookupStatus,
   SentryOverview,
 } from "../shared/ApiContract";
 
@@ -70,7 +68,6 @@ interface UserRow {
   banExpires?: Date | null;
   qqNumber: string;
   showQq?: boolean | null;
-  qqName?: string | null;
   equippedBadge?: string | null;
 }
 
@@ -92,8 +89,6 @@ export interface AdminServiceOptions {
   settings: AppSettings;
   /** 未配置 `SENTRY_API_TOKEN` 时为 null，概览展示未配置。 */
   sentry: SentryApiClient | null;
-  /** QQ 昵称查询号；缺省时 `admin.qq.*` 回 503。 */
-  qq?: QQNicknameService | null;
   /** Bangumi 镜像状态的来源；未装配时接口报不可用。 */
   bangumiMirror?: { status(): Promise<AdminBangumiMirrorStatus> } | null;
   /** 状态页事件仓储；缺省时 `admin.statusEvents.*` 回 503（未配置数据库的实例）。 */
@@ -115,7 +110,6 @@ const toAdminUser = (row: UserRow, badges: readonly AccountBadge[]): AdminUser =
   banReason: row.banned ? (row.banReason ?? null) : null,
   banExpires: row.banned && row.banExpires ? new Date(row.banExpires).toISOString() : null,
   showQq: Boolean(row.showQq),
-  qqName: row.qqName ?? null,
   badges: [...badges],
   equippedBadge: badges.some((badge) => badge.kind === row.equippedBadge)
     ? (row.equippedBadge as BadgeKind)
@@ -727,25 +721,6 @@ export class AdminService {
   }
 
   // ==================== 站点概览 ====================
-
-  // ==================== QQ 昵称查询号 ====================
-
-  private requireQq(): QQNicknameService {
-    if (!this.options.qq) throw new AppError("QQ_LOOKUP_DISABLED", "QQ 昵称查询未启用");
-    return this.options.qq;
-  }
-
-  qqStatus(): Promise<QQLookupStatus> {
-    return this.requireQq().status();
-  }
-
-  async qqRefreshNames(
-    actorId: string
-  ): Promise<{ checked: number; updated: number; remaining: number }> {
-    const qq = this.requireQq();
-    await this.audit(actorId, "qq.refreshNames", "site", "qq.lookup");
-    return qq.refreshAll();
-  }
 
   async overview(days: number): Promise<AdminOverview> {
     const now = this.now();

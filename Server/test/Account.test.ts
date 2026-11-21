@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
-import { AccountService } from "../src/application/AccountService";
 import type { AppEnv } from "../src/config/Env";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import {
-  createAccountTestApp,
-  MemoryBadgeRepository,
-  MemoryRegistrationRepository,
-} from "./AccountFixtures";
+  SensitiveTextFilter,
+  setSensitiveTextFilterForTest,
+} from "../src/infrastructure/SensitiveText";
+import { ACCOUNT_NAME_CHANGE_COOLDOWN_MS } from "../src/shared/Account";
+import { createAccountTestApp } from "./AccountFixtures";
 import { createTestApp } from "./AppFixtures";
 import { until } from "./support/Until";
 
@@ -118,26 +118,20 @@ describe("账号路由限流", () => {
 });
 
 describe("验证码登录", () => {
-  test("注册昵称强制取自 QQ 昵称（客户端自报被忽略）；成功后派生 QQ 号与站内头像", async () => {
-    const { app, rpc, mailer, avatarFetcher, prepareSignup } = createAccountTestApp();
-    await prepareSignup(QQ, "  笨蛋 玩家  ");
+  test("新号以自填昵称注册（经统一清洗）；成功后派生 QQ 号与站内头像", async () => {
+    const { app, rpc, mailer, avatarFetcher } = createAccountTestApp();
     const sent = await rpc("account/requestLoginCode", { qqNumber: QQ });
-    expect(sent).toEqual({
-      status: 200,
-      body: { registered: false, resendAfterSeconds: 60, qqName: "笨蛋 玩家" },
-    });
+    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60 } });
     const code = mailer.lastCodeFor(EMAIL);
     expect(code).toMatch(/^\d{6}$/);
 
-    const signIn = (body: Record<string, unknown>) =>
-      app.handle(
-        new Request("http://localhost/api/auth/sign-in/email-otp", {
-          method: "POST",
-          headers: { "content-type": "application/json", origin: "http://localhost:5173" },
-          body: JSON.stringify({ email: EMAIL, otp: code, ...body }),
-        })
-      );
-    const ok = await signIn({ name: "客户端自报的昵称" });
+    const ok = await app.handle(
+      new Request("http://localhost/api/auth/sign-in/email-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+        body: JSON.stringify({ email: EMAIL, otp: code, name: "  笨蛋\u200b   玩家  " }),
+      })
+    );
     expect(ok.status).toBe(200);
     const cookie = ok.headers
       .getSetCookie()
@@ -148,9 +142,71 @@ describe("验证码登录", () => {
     const me = await rpc("account/me", undefined, cookie);
     expect(me.status).toBe(200);
     expect(me.body).toMatchObject({ name: "笨蛋 玩家", qqNumber: QQ, showQq: false, role: "user" });
+    // 注册时刻计作一次改名：改名冷却从注册起算。
+    expect(typeof me.body.nameChangedAt).toBe("string");
     expect(String(me.body.image)).toMatch(/^\/api\/account\/avatar\/[^?]+\?v=[0-9a-f]{16}$/);
     expect(String(me.body.image)).not.toContain(QQ);
     expect(avatarFetcher.calls).toHaveLength(1);
+  });
+
+  test("新号缺昵称或昵称含敏感词时在消耗验证码之前拒绝，改正后同一枚验证码仍可注册", async () => {
+    setSensitiveTextFilterForTest(new SensitiveTextFilter(["占位违禁词"]));
+    try {
+      const { app, rpc, mailer } = createAccountTestApp();
+      await rpc("account/requestLoginCode", { qqNumber: QQ });
+      const code = mailer.lastCodeFor(EMAIL);
+      const signIn = (body: Record<string, unknown>) =>
+        app.handle(
+          new Request("http://localhost/api/auth/sign-in/email-otp", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+            body: JSON.stringify({ email: EMAIL, otp: code, ...body }),
+          })
+        );
+      for (const body of [{}, { name: "  \u200b  " }]) {
+        const missing = await signIn(body);
+        expect(missing.status).toBe(400);
+        expect(await missing.json()).toMatchObject({
+          code: "ACCOUNT_NAME_REQUIRED",
+          message: "请填写账号昵称",
+        });
+      }
+      const sensitive = await signIn({ name: "我是占位 违禁词" });
+      expect(sensitive.status).toBe(400);
+      expect(await sensitive.json()).toMatchObject({
+        code: "TEXT_SENSITIVE",
+        message: "内容包含不允许的词语，请修改",
+      });
+      // 验证码只允许尝试三次：上面三次被拒若消耗了尝试次数，这一次必然失败。
+      const ok = await signIn({ name: "正经玩家" });
+      expect(ok.status).toBe(200);
+    } finally {
+      setSensitiveTextFilterForTest(undefined);
+    }
+  });
+
+  test("老号登录不需要也不采用昵称", async () => {
+    const time = clock();
+    const { app, rpc, mailer, signIn } = createAccountTestApp({ now: time.now });
+    await signIn(QQ, "老玩家");
+    time.advance(61_000);
+    expect(await rpc("account/requestLoginCode", { qqNumber: QQ })).toMatchObject({
+      status: 200,
+      body: { registered: true },
+    });
+    const response = await app.handle(
+      new Request("http://localhost/api/auth/sign-in/email-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+        body: JSON.stringify({ email: EMAIL, otp: mailer.lastCodeFor(EMAIL) }),
+      })
+    );
+    expect(response.status).toBe(200);
+    const cookie = response.headers
+      .getSetCookie()
+      .map((item) => item.split(";")[0])
+      .join("; ");
+    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({ name: "老玩家" });
   });
 
   test("非 QQ 邮箱、客户端自带头像与非白名单端点均被拒绝", async () => {
@@ -204,8 +260,7 @@ describe("验证码登录", () => {
   });
 
   test("邮件投递失败明确返回 503 MAIL_UNAVAILABLE", async () => {
-    const { rpc, mailer, prepareSignup } = createAccountTestApp();
-    await prepareSignup(QQ, "玩家");
+    const { rpc, mailer } = createAccountTestApp();
     mailer.failNext = true;
     const response = await rpc("account/requestLoginCode", { qqNumber: QQ });
     expect(response.status).toBe(503);
@@ -228,71 +283,6 @@ describe("验证码登录", () => {
     expect((await second.rpc("account/me", undefined, existing.cookie)).body).toMatchObject({
       role: "admin",
     });
-  });
-});
-
-describe("登录弹窗的昵称回显", () => {
-  test("已注册只回库里最近同步的昵称且不打查询号；未注册现查一次，查不到回 null", async () => {
-    const { rpc, signIn, napcat, prepareSignup } = createAccountTestApp();
-    const nameOf = (qq: string) => rpc<string | null>("account/qqName", { qqNumber: qq });
-    await signIn(QQ, "老玩家");
-    const calls = napcat.state.calls.length;
-    expect(await nameOf(QQ)).toEqual({ status: 200, body: "老玩家" });
-    // 库里已有昵称：一个输入框的回显不该去打查询号
-    expect(napcat.state.calls).toHaveLength(calls);
-
-    await prepareSignup("55566677", "新玩家");
-    expect(await nameOf("55566677")).toEqual({ status: 200, body: "新玩家" });
-    expect(napcat.state.calls[napcat.state.calls.length - 1]).toEqual(["55566677"]);
-    // 查不到只回 null，不报错误码：昵称空着不该挡住发码
-    expect(await nameOf("77778888")).toEqual({ status: 200, body: null });
-  });
-
-  /**
-   * 查询号没配时，`account/qqName` 必须整体沉默。
-   *
-   * 曾经它仍先查库再返回：新号一律注册不了，于是「非空 / null」的差别直接读成
-   * 「这个号在本站注册过」——一个不用发信、可批量调的注册状态答案。这里同时钉住
-   * 配置了查询号才保留那次库查询，防止修成把接口做哑。
-   */
-  test("查询号未配置时不查库，注册状态不可批量枚举", async () => {
-    const lookups: string[] = [];
-    const internalAdapter = {
-      findUserByEmail: async (email: string) => {
-        lookups.push(email);
-        return null;
-      },
-    };
-    const serviceOf = (nicknames: unknown) =>
-      new AccountService({
-        auth: { $context: Promise.resolve({ internalAdapter }) } as never,
-        mailer: {} as never,
-        avatars: {} as never,
-        badges: new MemoryBadgeRepository({}, new MemoryRegistrationRepository()),
-        registrations: new MemoryRegistrationRepository(),
-        nicknames: nicknames as never,
-        logger: new EventLogger(() => {}),
-      });
-
-    expect(await serviceOf(null).qqNickname(QQ, "1.1.1.1")).toBeNull();
-    expect(lookups).toEqual([]);
-
-    // 配了查询号：这才是「输入框身份回显」的正途，未注册的号才需要现查一次昵称。
-    const unresolved = { resolveNickname: async () => null, nicknameOf: async () => null };
-    expect(await serviceOf(unresolved).qqNickname(QQ, "1.1.1.1")).toBeNull();
-    expect(lookups).toEqual([EMAIL]);
-  });
-
-  test("按客户端地址限流：同一地址超量后 429，换地址照常", async () => {
-    const { rpc, prepareSignup } = createAccountTestApp();
-    await prepareSignup(QQ, "玩家");
-    const from = (ip: string) =>
-      rpc("account/qqName", { qqNumber: QQ }, undefined, { "x-real-ip": ip });
-    for (let i = 0; i < 12; i += 1) expect((await from("1.1.1.1")).status).toBe(200);
-    const limited = await from("1.1.1.1");
-    expect(limited.status).toBe(429);
-    expect(limited.body).toMatchObject({ code: "RATE_LIMITED" });
-    expect((await from("2.2.2.2")).status).toBe(200);
   });
 });
 
@@ -401,7 +391,7 @@ describe("通行密钥端点", () => {
 });
 
 describe("资料与头像", () => {
-  test("QQ 号默认隐藏，本人公开后资料卡才显示；昵称不可改，未登录不能改资料", async () => {
+  test("QQ 号默认隐藏，本人公开后资料卡才显示；未登录不能改资料", async () => {
     const { rpc, signIn } = createAccountTestApp();
     const { cookie } = await signIn(QQ, "玩家");
     const me = await rpc("account/me", undefined, cookie);
@@ -412,14 +402,85 @@ describe("资料与头像", () => {
     });
 
     expect((await rpc("account/updateProfile", { showQq: true })).status).toBe(401);
-    // 账号昵称不可修改：请求里带 name 也会被契约丢弃，改不动。
-    const updated = await rpc("account/updateProfile", { showQq: true, name: "新昵称" }, cookie);
+    const updated = await rpc("account/updateProfile", { showQq: true }, cookie);
     expect(updated.body).toMatchObject({ showQq: true, name: "玩家" });
     expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({
       name: "玩家",
       qqNumber: QQ,
     });
     expect((await rpc("account/publicProfile", { userId: "missing" })).status).toBe(404);
+  });
+
+  test("改名 7 天一次：冷却从注册起算，同名不消耗冷却，冷却中回带时间的业务错误", async () => {
+    const time = clock(Date.UTC(2026, 10, 20, 4, 0));
+    const { rpc, signIn, db } = createAccountTestApp({ now: time.now });
+    const { cookie } = await signIn(QQ, "玩家");
+    // 建号钩子用真实时钟记注册时刻：钉成夹具时钟的当前时刻，冷却终点才可断言。
+    for (const row of db.user as Array<{ nameChangedAt?: Date | null }>)
+      row.nameChangedAt = new Date(time.now());
+    const rename = (name: string, extra: Record<string, unknown> = {}) =>
+      rpc("account/updateProfile", { name, ...extra }, cookie);
+
+    // 注册即计一次改名：冷却内改名被拒，文案给出北京时间的可改时刻，公开开关也不生效。
+    const early = await rename("新名字", { showQq: true });
+    expect(early.status).toBe(409);
+    expect(early.body).toMatchObject({
+      code: "NAME_CHANGE_COOLDOWN",
+      message: "账号昵称每 7 天只能修改一次，11月27日 12:00 后可再次修改",
+    });
+    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({
+      name: "玩家",
+      showQq: false,
+    });
+    // 清洗后与当前昵称相同视为未修改：冷却内也不报错，其余字段照常保存。
+    expect(await rename("  玩家 ", { showQq: true })).toMatchObject({
+      status: 200,
+      body: { name: "玩家", showQq: true },
+    });
+
+    time.advance(ACCOUNT_NAME_CHANGE_COOLDOWN_MS - 1);
+    expect((await rename("新名字")).body).toMatchObject({ code: "NAME_CHANGE_COOLDOWN" });
+    time.advance(1);
+    const renamed = await rename("  新\u200b 名字  ");
+    expect(renamed).toMatchObject({ status: 200, body: { name: "新 名字" } });
+    expect(renamed.body.nameChangedAt).toBe(new Date(time.now()).toISOString());
+    expect((await rename("再改一次")).body).toMatchObject({ code: "NAME_CHANGE_COOLDOWN" });
+    expect((await rename("   ")).body).toMatchObject({ code: "ACCOUNT_NAME_REQUIRED" });
+  });
+
+  test("从未改过名的老账号第一次改名不受冷却限制", async () => {
+    const { rpc, signIn, db } = createAccountTestApp();
+    const { cookie } = await signIn(QQ, "老玩家");
+    // 改名功能上线前注册的账号没有改名时刻。
+    for (const row of db.user as Array<{ nameChangedAt?: Date | null }>) row.nameChangedAt = null;
+    expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({
+      nameChangedAt: null,
+    });
+    expect(await rpc("account/updateProfile", { name: "自己取的名" }, cookie)).toMatchObject({
+      status: 200,
+      body: { name: "自己取的名" },
+    });
+    expect((await rpc("account/updateProfile", { name: "又想改" }, cookie)).body).toMatchObject({
+      code: "NAME_CHANGE_COOLDOWN",
+    });
+  });
+
+  test("改名过敏感词检测，命中即拒绝且不写入", async () => {
+    setSensitiveTextFilterForTest(new SensitiveTextFilter(["占位违禁词"]));
+    try {
+      const { rpc, signIn, db } = createAccountTestApp();
+      const { cookie } = await signIn(QQ, "玩家");
+      for (const row of db.user as Array<{ nameChangedAt?: Date | null }>) row.nameChangedAt = null;
+      const rejected = await rpc("account/updateProfile", { name: "占位违禁词" }, cookie);
+      expect(rejected.status).toBe(400);
+      expect(rejected.body).toMatchObject({ code: "TEXT_SENSITIVE" });
+      expect((await rpc("account/me", undefined, cookie)).body).toMatchObject({
+        name: "玩家",
+        nameChangedAt: null,
+      });
+    } finally {
+      setSensitiveTextFilterForTest(undefined);
+    }
   });
 
   test("跨站表单与无类型请求体不能带着 Cookie 调写过程（CSRF）", async () => {

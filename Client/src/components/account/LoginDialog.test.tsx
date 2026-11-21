@@ -9,16 +9,13 @@ import { LoginDialog } from "./LoginDialog";
 
 const requestLoginCode = vi.hoisted(() =>
   vi.fn<
-    (input: {
-      qqNumber: string;
-    }) => Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }>
+    (input: { qqNumber: string }) => Promise<{ registered: boolean; resendAfterSeconds: number }>
   >()
 );
-const qqName = vi.hoisted(() => vi.fn<(input: { qqNumber: string }) => Promise<string | null>>());
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/Api")>()),
-  api: { account: { requestLoginCode, qqName } },
+  api: { account: { requestLoginCode } },
 }));
 
 const passkeySupported = vi.hoisted(() => vi.fn<() => boolean>());
@@ -32,21 +29,18 @@ vi.mock("@/lib/Passkey", () => ({
     error instanceof Error ? error.message : fallback,
 }));
 
-const signIn = vi.fn<(input: { email: string; otp: string }) => Promise<void>>();
+const signIn = vi.fn<(input: { email: string; otp: string; name?: string }) => Promise<void>>();
 const originalSignIn = useAccountStore.getState().signIn;
 const originalPasskeySignIn = useAccountStore.getState().signInWithPasskey;
 
 beforeEach(() => {
   useAccountStore.setState({ signIn, signInWithPasskey: passkeySignIn });
   passkeySupported.mockReturnValue(true);
-  // 回显昵称默认查不到：只有断言回显的用例改成 resolved，其余用例的昵称一律来自发码返回值。
-  qqName.mockResolvedValue(null);
 });
 
 afterEach(() => {
   useAccountStore.setState({ signIn: originalSignIn, signInWithPasskey: originalPasskeySignIn });
   requestLoginCode.mockReset();
-  qqName.mockReset();
   signIn.mockReset();
   passkeySignIn.mockReset();
 });
@@ -110,7 +104,7 @@ describe("登录弹窗", () => {
   });
 
   it("验证码登录在途时再次提交（回车）不会重复登录", async () => {
-    requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60, qqName: null });
+    requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60 });
     signIn.mockReturnValue(new Promise<void>(() => {}));
     const { user } = renderDialog();
     await user.type(screen.getByLabelText("QQ 号"), "12345");
@@ -135,41 +129,8 @@ describe("登录弹窗", () => {
     expect(requestLoginCode).toHaveBeenCalledTimes(1);
   });
 
-  it("输完 QQ 号即回显昵称，不等发码", async () => {
-    qqName.mockResolvedValue("阿狸");
-    const { user } = renderDialog();
-    const input = screen.getByLabelText("QQ 号");
-
-    await user.type(input, "12345");
-    expect(await screen.findByText("阿狸")).toBeInTheDocument();
-    expect(qqName).toHaveBeenCalledWith({ qqNumber: "12345" });
-    // 回显只是把「这个号是谁」提前说出来，第一步的操作不变
-    expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
-  });
-
-  it("回显查不到时不给报错，也不挡住发码", async () => {
-    qqName.mockRejectedValue(
-      new ORPCError("TOO_MANY_REQUESTS", { message: "昵称查询过于频繁，请稍后再试" })
-    );
-    requestLoginCode.mockResolvedValue({
-      registered: true,
-      resendAfterSeconds: 60,
-      qqName: "老玩家",
-    });
-    const { user } = renderDialog();
-
-    await user.type(screen.getByLabelText("QQ 号"), "12345");
-    await user.click(screen.getByRole("button", { name: "发送验证码" }));
-    expect(await screen.findByText("老玩家")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("新账号：发码后在头像下展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {
-    requestLoginCode.mockResolvedValue({
-      registered: false,
-      resendAfterSeconds: 60,
-      qqName: "阿狸",
-    });
+  it("新账号：发码后要求自填账号昵称，边填边在头像下回显，登录参数带清洗后的昵称", async () => {
+    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60 });
     signIn.mockResolvedValue();
     const { user, onOpenChange } = renderDialog();
 
@@ -180,51 +141,65 @@ describe("登录弹窗", () => {
     expect(await screen.findByRole("button", { name: "60 秒后重发" })).toBeDisabled();
     // 收信地址与有效期挂在验证码字段的说明上，不再另起一段描述
     expect(screen.getByText("已发送至 12345@qq.com，5 分钟内有效")).toBeInTheDocument();
-    // 昵称强制取自 QQ、不可修改：只有头像下的只读展示，没有昵称输入框
-    expect(screen.getByText("阿狸")).toBeInTheDocument();
-    expect(screen.queryByLabelText("账号昵称")).not.toBeInTheDocument();
+    const nameInput = screen.getByLabelText("账号昵称");
+    expect(nameInput).toHaveFocus();
+    expect(screen.getByText("注册后可在账号资料里修改，每 7 天一次")).toBeInTheDocument();
 
     const submit = screen.getByRole("button", { name: "注册并登录" });
     await user.type(screen.getByLabelText("验证码"), "123456");
+    // 没填昵称（或只有空白）时不能提交：提交了也只会被服务端拒绝
+    expect(submit).toBeDisabled();
+    await user.type(nameInput, "   ");
+    expect(submit).toBeDisabled();
+
+    await user.type(nameInput, "阿狸  酱 ");
+    expect(screen.getByText("阿狸 酱")).toBeInTheDocument();
     await user.click(submit);
 
-    expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "123456" });
+    expect(signIn).toHaveBeenCalledWith({ email: "12345@qq.com", otp: "123456", name: "阿狸 酱" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("昵称服务不可用时发码被拒，就地提示原因并留在原步骤", async () => {
-    requestLoginCode.mockRejectedValueOnce(
-      new ORPCError("QQ_NICKNAME_UNAVAILABLE", {
-        status: 503,
-        message: "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试",
-      })
+  it("昵称被服务端拒绝时提示落在昵称字段，验证码保留可改名重试", async () => {
+    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60 });
+    signIn.mockRejectedValueOnce(
+      new AuthRequestError("TEXT_SENSITIVE", "内容包含不允许的词语，请修改", 400)
     );
-    const { user } = renderDialog();
+    signIn.mockResolvedValueOnce();
+    const { user, onOpenChange } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
     await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    await user.type(await screen.findByLabelText("账号昵称"), "不行的名字");
+    await user.type(screen.getByLabelText("验证码"), "123456");
+    await user.click(screen.getByRole("button", { name: "注册并登录" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试"
-    );
-    expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
-    expect(signIn).not.toHaveBeenCalled();
+    const nameInput = screen.getByLabelText("账号昵称");
+    expect(await screen.findByRole("alert")).toHaveTextContent("内容包含不允许的词语，请修改");
+    expect(nameInput).toHaveAttribute("aria-invalid", "true");
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "正经名字");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "注册并登录" }));
+    expect(signIn).toHaveBeenLastCalledWith({
+      email: "12345@qq.com",
+      otp: "123456",
+      name: "正经名字",
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("老账号展示服务端回传的昵称；验证码错误就地提示并保留弹窗", async () => {
-    requestLoginCode.mockResolvedValue({
-      registered: true,
-      resendAfterSeconds: 60,
-      qqName: "老玩家",
-    });
+  it("老账号不需要填昵称；验证码错误就地提示并保留弹窗", async () => {
+    requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60 });
     signIn.mockRejectedValue(new AuthRequestError("INVALID_OTP", "验证码不正确", 400));
     const { user, onOpenChange } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
     await user.click(screen.getByRole("button", { name: "发送验证码" }));
     await user.type(await screen.findByLabelText("验证码"), "000000");
-    // 老号的昵称由服务端回传库中最近同步值，头像下同样展示
-    expect(screen.getByText("老玩家")).toBeInTheDocument();
+    expect(screen.queryByLabelText("账号昵称")).not.toBeInTheDocument();
     expect(screen.getByText("QQ 12345")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "登录" }));
 
@@ -240,7 +215,6 @@ describe("登录弹窗", () => {
     requestLoginCode.mockResolvedValueOnce({
       registered: true,
       resendAfterSeconds: 60,
-      qqName: null,
     });
     const { user } = renderDialog();
 
@@ -284,7 +258,6 @@ describe("登录弹窗", () => {
     requestLoginCode.mockResolvedValue({
       registered: true,
       resendAfterSeconds: 60,
-      qqName: null,
     });
     passkeySignIn.mockRejectedValue(new Error("本机没有可用的通行密钥"));
     const { user, onOpenChange } = renderDialog();

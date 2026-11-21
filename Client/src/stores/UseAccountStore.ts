@@ -23,7 +23,7 @@ interface AccountState {
   /** 未读的反馈回复数；由反馈弹窗与登录后的首次拉取维护。 */
   unreadFeedback: number;
   load: () => Promise<void>;
-  signIn: (input: { email: string; otp: string }) => Promise<void>;
+  signIn: (input: { email: string; otp: string; name?: string }) => Promise<void>;
   /** 通行密钥登录：不带任何输入凭据，成功与否由服务端验签决定。 */
   signInWithPasskey: () => Promise<void>;
   signOut: () => Promise<void>;

@@ -209,14 +209,6 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["发件人显示，如 Example <noreply@example.com>；缺省为 SMTP_USER。"],
   },
   {
-    name: "QQ_NAPCAT_API_URL",
-    layer: "T1",
-    documented: true,
-    sample: "",
-    note: ["QQ 昵称来源（OneBot 11 HTTP）；与访问令牌成套，不配则昵称查询整体停用。"],
-  },
-  { name: "QQ_NAPCAT_ACCESS_TOKEN", layer: "T1", secret: true },
-  {
     name: "MAINTENANCE_TOKEN",
     layer: "T1",
     documented: true,

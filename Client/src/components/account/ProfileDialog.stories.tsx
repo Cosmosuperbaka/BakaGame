@@ -103,6 +103,30 @@ export const Renaming: Story = {
   },
 };
 
+/** 改账号昵称：从未改过名的账号随时可改，改动后「保存」亮起。 */
+export const EditingName: Story = {
+  name: "修改账号昵称",
+  beforeEach: () => setup({}),
+  play: async ({ userEvent }) => {
+    const scope = within(await screen.findByRole("dialog"));
+    await scope.findByText("Bitwarden");
+    const input = scope.getByLabelText("账号昵称");
+    await userEvent.clear(input);
+    await userEvent.type(input, "改了个新名字");
+    dropFocus();
+  },
+};
+
+/** 改名冷却中：昵称框禁用，说明给出下次可改的时刻与剩余天数。 */
+export const NameCooldown: Story = {
+  name: "改名冷却中",
+  beforeEach: () =>
+    setup({ nameChangedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() }),
+  play: async () => {
+    await within(await screen.findByRole("dialog")).findByText(/后可再次修改/);
+  },
+};
+
 /** 打开「资料卡显示 QQ 号」后保存：保存中按钮转圈。 */
 export const Saving: Story = {
   name: "保存中",

@@ -24,7 +24,7 @@ async function readInput(input: RequestInfo | URL, init?: RequestInit): Promise<
 }
 
 /**
- * 桩住一批接口。键是 oRPC 路径（如 `account/qqName`、`admin/users/list`）或以 `auth:` 开头的
+ * 桩住一批接口。键是 oRPC 路径（如 `account/requestLoginCode`、`admin/users/list`）或以 `auth:` 开头的
  * Better Auth 路径（如 `auth:/passkey/list-user-passkeys`）。未列出的请求照常放行。返回还原函数。
  */
 export function stubApi(routes: Record<string, StubReply>): () => void {
@@ -66,6 +66,7 @@ export const STORY_PROFILE: AccountProfile = {
   role: "user",
   badges: [{ kind: "pioneer", serial: 42 }],
   equippedBadge: "pioneer",
+  nameChangedAt: null,
   createdAt: "2026-09-01T08:00:00.000Z",
 };
 

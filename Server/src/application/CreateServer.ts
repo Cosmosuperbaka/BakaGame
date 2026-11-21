@@ -30,8 +30,6 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuth } from "../infrastructure/auth/Auth";
 import { createMailer } from "../infrastructure/auth/Mailer";
 import { QQAvatarService } from "../infrastructure/auth/QQAvatar";
-import { QQNapCatClient } from "../infrastructure/auth/QQNapCatClient";
-import { QQNicknameService } from "./QQNicknameService";
 import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
@@ -329,8 +327,7 @@ const createAccount = (wiring: AccountWiring) => {
   } = wiring;
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
-  // 建号钩子要解析 QQ 昵称、补系统徽章，而两个服务都在 auth 之后创建：用闭包延迟绑定。
-  let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
+  // 建号钩子要补系统徽章，而账号服务在 auth 之后创建：用闭包延迟绑定。
   let accountCreated: ((user: { id: string; qqNumber?: string | null }) => Promise<void>) | null =
     null;
   const auth = createAuth({
@@ -351,8 +348,6 @@ const createAccount = (wiring: AccountWiring) => {
     adminQqNumbers: env.account.adminQqNumbers,
     passkeyRpId: env.account.passkeyRpId,
     mailer,
-    resolveNickname: (qqNumber) =>
-      resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
     onUserCreated: async (user) => {
       try {
         await accountCreated?.(user);
@@ -361,13 +356,6 @@ const createAccount = (wiring: AccountWiring) => {
       }
     },
   });
-  // 昵称来源是管理员自建的 NapCat（OneBot 11）：没配实例就不装配昵称服务，
-  // 新号发码与建号会因取不到昵称而拒绝（老号不受影响），后台 `admin.qq.*` 回 503。
-  const nicknames = env.napcat
-    ? new QQNicknameService({ auth, client: new QQNapCatClient(env.napcat), logger })
-    : null;
-  resolveNickname = (qqNumber) =>
-    nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null);
   const badges = new DatabaseBadgeRepository(database);
   const registrations = new DatabaseRegistrationRepository(database, logger);
   const service = new AccountService({
@@ -377,7 +365,6 @@ const createAccount = (wiring: AccountWiring) => {
     badges,
     registrations,
     ownerQqNumber: env.account.ownerQqNumber,
-    nicknames,
     logger,
   });
   accountCreated = (user) => service.afterRegistration(user);
@@ -420,7 +407,6 @@ const createAccount = (wiring: AccountWiring) => {
     siteStats,
     badges,
     settings,
-    qq: nicknames,
     ownerQqNumber: env.account.ownerQqNumber,
     statusEvents,
     bangumiMirror,

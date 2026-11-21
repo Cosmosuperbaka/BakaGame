@@ -130,8 +130,11 @@ export const authGet = <T>(path: string) => authRequest<T>(path, { method: "GET"
 export const authPost = <T = void>(path: string, body: Record<string, unknown>) =>
   authRequest<T>(path, { method: "POST", body });
 
-/** 邮箱验证码登录；首次登录即注册，账号昵称由服务端强制取自 QQ 昵称，客户端不必也不可自报。 */
-export const signInWithCode = (input: { email: string; otp: string }) =>
+/**
+ * 邮箱验证码登录；首次登录即注册。新号必须带玩家自填的账号昵称 `name`（服务端清洗并过敏感词，
+ * 在消耗验证码之前校验）；老号登录不需要，带了也不会改名。
+ */
+export const signInWithCode = (input: { email: string; otp: string; name?: string }) =>
   authPost("/sign-in/email-otp", input);
 
 export const signOut = () => authPost("/sign-out", {});

@@ -2,6 +2,7 @@ import { oc } from "@orpc/contract";
 import { z } from "zod";
 
 import {
+  ACCOUNT_NAME_MAX_LENGTH,
   FEEDBACK_CONTENT_MAX_LENGTH,
   FEEDBACK_REPLY_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
@@ -37,6 +38,11 @@ import {
  */
 
 const qqNumber = z.string().regex(QQ_NUMBER_PATTERN, "QQ 号格式不正确");
+/**
+ * 账号昵称的原始输入：只挡明显超长的请求体，真正的长度上限与清洗由服务端
+ * `normalizeAccountName` 统一处理（空白折叠、去不可见字符后按码点截断）。
+ */
+const accountNameInput = z.string().max(ACCOUNT_NAME_MAX_LENGTH * 4);
 
 /** 身份徽章随资料返回；徽章不进房间快照，客户端按用户 ID 查询。 */
 export const badgeKindSchema = z.enum(BADGE_KINDS);
@@ -58,6 +64,8 @@ export const accountProfileSchema = z.object({
   badges: z.array(accountBadgeSchema),
   /** 当前佩戴的徽章；只能是自己已获得的一枚，空表示不佩戴。 */
   equippedBadge: badgeKindSchema.nullable(),
+  /** 上次改名时刻（新号为注册时刻）；从未改过名的老账号为空。前端据此与共享冷却常量推算下次可改名时间。 */
+  nameChangedAt: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -192,8 +200,6 @@ export const adminUserSchema = z.object({
   banReason: z.string().nullable(),
   banExpires: z.string().nullable(),
   showQq: z.boolean(),
-  /** 经查询号获取的 QQ 昵称；未查到为空。 */
-  qqName: z.string().nullable(),
   badges: z.array(accountBadgeSchema),
   equippedBadge: badgeKindSchema.nullable(),
   createdAt: z.string(),
@@ -379,17 +385,6 @@ export const sentryOverviewSchema = z.object({
   /** 部分查询失败时的说明，不含凭据。 */
   warnings: z.array(z.string()),
   fetchedAt: z.string().nullable(),
-});
-
-/** QQ 昵称来源（NapCat / OneBot 11）的可用状态；查询号由 NapCat 自己维护，站点不再持有登录态。 */
-export const qqLookupStatusSchema = z.object({
-  state: z.enum(["active", "unavailable"]),
-  /** NapCat 当前登录的 QQ 号与昵称；连不上或未登录时为空，「已登录但查不到资料」时保留。 */
-  uin: z.string().nullable(),
-  nickname: z.string().nullable(),
-  checkedAt: z.string().nullable(),
-  /** 不可用原因（固定文案，可附 NapCat 的失败说明；不含内网地址与令牌）。 */
-  error: z.string().nullable(),
 });
 
 export const auditEntrySchema = z.object({
@@ -636,18 +631,6 @@ const adminContract = {
       )
       .output(paged(auditEntrySchema)),
   },
-  qq: {
-    status: op("探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。", "admin").output(
-      qqLookupStatusSchema
-    ),
-    refreshNames: op("刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。", "admin").output(
-      z.object({
-        checked: z.number().int(),
-        updated: z.number().int(),
-        remaining: z.number().int(),
-      })
-    ),
-  },
   stats: {
     overview: op(
       "后台概览：账号与反馈量、三款游戏的实时房间，以及按北京时间自然日的访问与对局（`days` 默认 14，上限 90）。",
@@ -678,8 +661,7 @@ export const apiContract = {
   },
   account: {
     requestLoginCode: op(
-      "发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；" +
-        "`qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。",
+      "发送登录验证码。`registered` 让登录弹窗区分登录与注册：未注册的号须在提交验证码时一并填写账号昵称。",
       "public"
     )
       .input(z.object({ qqNumber }))
@@ -687,25 +669,23 @@ export const apiContract = {
         z.object({
           registered: z.boolean(),
           resendAfterSeconds: z.number().int(),
-          qqName: z.string().nullable(),
         })
       ),
-    qqName: op(
-      "登录弹窗输入 QQ 号后回显的身份昵称：已注册取库里最近一次同步的值，未注册现查（即即将注册的账号昵称）。" +
-        "查不到返回 `null`，不挡住发码。不回答该号是否已注册；按客户端地址限流，防止按号批量枚举昵称。",
-      "public"
-    )
-      .input(z.object({ qqNumber }))
-      .output(z.string().nullable()),
     me: op(
       "当前登录资料与身份徽章；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
       "public"
     ).output(accountProfileSchema.nullable()),
     updateProfile: op(
-      "账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。",
+      "修改账号资料：QQ 号公开开关与账号昵称。昵称经统一清洗与敏感词检测，与当前昵称相同视为未修改；" +
+        "距上次改名不足冷却期时回 `NAME_CHANGE_COOLDOWN`，文案带可再次修改的时间。",
       "session"
     )
-      .input(z.object({ showQq: z.boolean().optional() }))
+      .input(
+        z.object({
+          showQq: z.boolean().optional(),
+          name: accountNameInput.optional(),
+        })
+      )
       .output(accountProfileSchema),
     equipBadge: op(
       "佩戴自己已获得的一枚徽章；传 `null` 取消佩戴。只能选自己已获得的徽章。",
@@ -783,4 +763,3 @@ export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;
 export type AdminOverview = z.infer<typeof adminOverviewSchema>;
 export type SentryOverview = z.infer<typeof sentryOverviewSchema>;
-export type QQLookupStatus = z.infer<typeof qqLookupStatusSchema>;

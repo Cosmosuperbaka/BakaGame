@@ -48,7 +48,7 @@ export const Full: Story = {
   },
 };
 
-/** 信息很少：刚注册、没查到 QQ 昵称、没徽章没对局。 */
+/** 信息很少：刚注册、没徽章没对局。 */
 export const Sparse: Story = {
   name: "信息很少",
   args: { userId: ADMIN_USER_SPARSE.id },

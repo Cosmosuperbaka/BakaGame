@@ -2,10 +2,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "@bakagame/shared";
+import { ORPCError } from "@orpc/client";
 import { AuthRequestError } from "@/lib/Api";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { ProfileDialog } from "./ProfileDialog";
 
+const updateProfile = vi.hoisted(() =>
+  vi.fn<(input: { showQq?: boolean; name?: string }) => Promise<AccountProfile>>()
+);
 const equipBadge = vi.hoisted(() =>
   vi.fn<(input: { badge: "owner" | "contributor" | "pioneer" | null }) => Promise<AccountProfile>>()
 );
@@ -22,7 +26,7 @@ const renamePasskey = vi.hoisted(() => vi.fn<(id: string, name: string) => Promi
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/Api")>()),
-  api: { account: { equipBadge } },
+  api: { account: { equipBadge, updateProfile } },
 }));
 
 vi.mock("@/lib/Passkey", () => ({
@@ -48,6 +52,7 @@ const profile: AccountProfile = {
   createdAt: "2026-10-01T00:00:00.000Z",
   badges: [],
   equippedBadge: null,
+  nameChangedAt: null,
 };
 
 const entry = (id: string, name: string | null) => ({
@@ -84,6 +89,8 @@ afterEach(() => {
   removePasskey.mockReset();
   renamePasskey.mockReset();
   equipBadge.mockReset();
+  updateProfile.mockReset();
+  vi.useRealTimers();
 });
 
 const renderDialog = () => {
@@ -91,6 +98,65 @@ const renderDialog = () => {
   render(<ProfileDialog open onOpenChange={onOpenChange} />);
   return { onOpenChange, user: userEvent.setup() };
 };
+
+describe("账号资料弹窗的账号昵称", () => {
+  it("从未改过名可直接改：提交清洗后的昵称并更新账号资料", async () => {
+    updateProfile.mockImplementation(async (input) => ({
+      ...profile,
+      name: input.name ?? profile.name,
+      nameChangedAt: "2026-11-22T00:00:00.000Z",
+    }));
+    const { user, onOpenChange } = renderDialog();
+    const input = screen.getByLabelText("账号昵称");
+    expect(input).toHaveValue("测试玩家");
+    expect(input).toBeEnabled();
+    expect(screen.getByText("其他玩家在资料卡上看到的名字，每 7 天可修改一次")).toBeInTheDocument();
+
+    // 只多敲空格不算改名：保存不亮，也就不会白白消耗冷却
+    await user.type(input, "  ");
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+
+    await user.clear(input);
+    await user.type(input, " 新 ​名字 ");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(updateProfile).toHaveBeenCalledWith({ showQq: false, name: "新 名字" });
+    await vi.waitFor(() => expect(useAccountStore.getState().profile?.name).toBe("新 名字"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("清空昵称时就地提示，不发请求", async () => {
+    const { user } = renderDialog();
+    await user.clear(screen.getByLabelText("账号昵称"));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("请填写账号昵称");
+    expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("冷却中禁用昵称框，说明给出下次可改的时刻与剩余时间", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 22, 9, 0));
+    useAccountStore.setState({
+      profile: { ...profile, nameChangedAt: new Date(2026, 10, 20, 14, 30).toISOString() },
+    });
+    renderDialog();
+    expect(screen.getByLabelText("账号昵称")).toBeDisabled();
+    expect(screen.getByText("11月27日 14:30 后可再次修改，还剩 6 天")).toBeInTheDocument();
+  });
+
+  it("服务端的昵称类拒绝落在昵称字段下方", async () => {
+    updateProfile.mockRejectedValue(
+      new ORPCError("TEXT_SENSITIVE", { status: 400, message: "内容包含不允许的词语，请修改" })
+    );
+    const { user, onOpenChange } = renderDialog();
+    const input = screen.getByLabelText("账号昵称");
+    await user.clear(input);
+    await user.type(input, "不行的名字");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("内容包含不允许的词语，请修改");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});
 
 describe("账号资料弹窗的身份徽章", () => {
   it("列出已获得的徽章，点佩戴立即切换并更新账号资料", async () => {

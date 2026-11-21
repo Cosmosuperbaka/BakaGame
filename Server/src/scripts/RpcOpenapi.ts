@@ -18,7 +18,6 @@ import {
   gameRecordItemSchema,
   musicSessionSchema,
   publicProfileSchema,
-  qqLookupStatusSchema,
   sentryOverviewSchema,
   type RpcAuth,
 } from "../shared/ApiContract";
@@ -51,7 +50,6 @@ const responseModels: ReadonlyArray<readonly [string, z.ZodType]> = [
   ["AdminRoom", adminRoomSchema],
   ["AdminOverview", adminOverviewSchema],
   ["SentryOverview", sentryOverviewSchema],
-  ["QQLookupStatus", qqLookupStatusSchema],
   ["AuditEntry", auditEntrySchema],
 ];
 
@@ -203,7 +201,7 @@ const RPC_ERROR_SCHEMA: Json = {
           description:
             "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、" +
             "FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、" +
-            "INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。",
+            "INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。",
         },
         status: { type: "integer", description: "与 HTTP 状态码一致。" },
         message: { type: "string", description: "可直接展示给玩家的中文文案。" },

@@ -6,6 +6,11 @@ export const QQ_NUMBER_PATTERN = /^[1-9]\d{4,10}$/;
 export const QQ_EMAIL_PATTERN = /^([1-9]\d{4,10})@qq\.com$/;
 
 export const ACCOUNT_NAME_MAX_LENGTH = 24;
+/**
+ * 账号昵称的改名冷却：距上次改名（新号从注册起算）不足这段时间不能再改，前端倒计时与后端校验共用。
+ * 从未改过名的老账号没有改名时刻，第一次改名不受限。
+ */
+export const ACCOUNT_NAME_CHANGE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 export const LOGIN_CODE_LENGTH = 6;
 /** 验证码输入校验（前端输入框与测试共用）。 */
 export const LOGIN_CODE_PATTERN = /^\d{6}$/;

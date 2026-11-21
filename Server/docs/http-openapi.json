@@ -2445,7 +2445,7 @@
         ],
         "operationId": "account.requestLoginCode",
         "summary": "account.requestLoginCode",
-        "description": "发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；`qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。",
+        "description": "发送登录验证码。`registered` 让登录弹窗区分登录与注册：未注册的号须在提交验证码时一并填写账号昵称。",
         "security": [],
         "requestBody": {
           "required": true,
@@ -2492,93 +2492,13 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
-                        },
-                        "qqName": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
                         }
                       },
                       "required": [
                         "registered",
-                        "resendAfterSeconds",
-                        "qqName"
+                        "resendAfterSeconds"
                       ],
                       "additionalProperties": false
-                    }
-                  },
-                  "required": [
-                    "json"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "503": {
-            "$ref": "#/components/responses/AccountDisabled"
-          }
-        }
-      }
-    },
-    "/api/rpc/account/qqName": {
-      "post": {
-        "tags": [
-          "Account"
-        ],
-        "operationId": "account.qqName",
-        "summary": "account.qqName",
-        "description": "登录弹窗输入 QQ 号后回显的身份昵称：已注册取库里最近一次同步的值，未注册现查（即即将注册的账号昵称）。查不到返回 `null`，不挡住发码。不回答该号是否已注册；按客户端地址限流，防止按号批量枚举昵称。",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "json": {
-                    "type": "object",
-                    "properties": {
-                      "qqNumber": {
-                        "type": "string",
-                        "pattern": "^[1-9]\\d{4,10}$"
-                      }
-                    },
-                    "required": [
-                      "qqNumber"
-                    ]
-                  }
-                },
-                "required": [
-                  "json"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "调用成功；业务数据在 `json` 字段内。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "json": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
                     }
                   },
                   "required": [
@@ -2671,7 +2591,7 @@
         ],
         "operationId": "account.updateProfile",
         "summary": "account.updateProfile",
-        "description": "账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。",
+        "description": "修改账号资料：QQ 号公开开关与账号昵称。昵称经统一清洗与敏感词检测，与当前昵称相同视为未修改；距上次改名不足冷却期时回 `NAME_CHANGE_COOLDOWN`，文案带可再次修改的时间。",
         "security": [
           {
             "sessionCookie": []
@@ -2689,6 +2609,10 @@
                     "properties": {
                       "showQq": {
                         "type": "boolean"
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 96
                       }
                     }
                   }
@@ -7152,157 +7076,6 @@
         }
       }
     },
-    "/api/rpc/admin/qq/status": {
-      "post": {
-        "tags": [
-          "Admin"
-        ],
-        "operationId": "admin.qq.status",
-        "summary": "admin.qq.status",
-        "description": "探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "调用成功；业务数据在 `json` 字段内。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "json": {
-                      "$ref": "#/components/schemas/QQLookupStatus"
-                    }
-                  },
-                  "required": [
-                    "json"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "503": {
-            "$ref": "#/components/responses/AccountDisabled"
-          }
-        }
-      }
-    },
-    "/api/rpc/admin/qq/refreshNames": {
-      "post": {
-        "tags": [
-          "Admin"
-        ],
-        "operationId": "admin.qq.refreshNames",
-        "summary": "admin.qq.refreshNames",
-        "description": "刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "调用成功；业务数据在 `json` 字段内。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "json": {
-                      "type": "object",
-                      "properties": {
-                        "checked": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "updated": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "remaining": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "checked",
-                        "updated",
-                        "remaining"
-                      ],
-                      "additionalProperties": false
-                    }
-                  },
-                  "required": [
-                    "json"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "503": {
-            "$ref": "#/components/responses/AccountDisabled"
-          }
-        }
-      }
-    },
     "/api/rpc/admin/stats/overview": {
       "post": {
         "tags": [
@@ -7525,6 +7298,12 @@
               }
             ]
           },
+          "nameChangedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -7538,6 +7317,7 @@
           "role",
           "badges",
           "equippedBadge",
+          "nameChangedAt",
           "createdAt"
         ],
         "additionalProperties": false
@@ -7942,12 +7722,6 @@
           "showQq": {
             "type": "boolean"
           },
-          "qqName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "badges": {
             "type": "array",
             "items": {
@@ -8010,7 +7784,6 @@
           "banReason",
           "banExpires",
           "showQq",
-          "qqName",
           "badges",
           "equippedBadge",
           "createdAt"
@@ -8059,12 +7832,6 @@
           },
           "showQq": {
             "type": "boolean"
-          },
-          "qqName": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "badges": {
             "type": "array",
@@ -8139,7 +7906,6 @@
           "banReason",
           "banExpires",
           "showQq",
-          "qqName",
           "badges",
           "equippedBadge",
           "createdAt",
@@ -9080,50 +8846,6 @@
         ],
         "additionalProperties": false
       },
-      "QQLookupStatus": {
-        "type": "object",
-        "properties": {
-          "state": {
-            "type": "string",
-            "enum": [
-              "active",
-              "unavailable"
-            ]
-          },
-          "uin": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "nickname": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "checkedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "state",
-          "uin",
-          "nickname",
-          "checkedAt",
-          "error"
-        ],
-        "additionalProperties": false
-      },
       "AuditEntry": {
         "type": "object",
         "properties": {
@@ -9232,7 +8954,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",
@@ -9279,7 +9001,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",
@@ -9326,7 +9048,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",
@@ -9373,7 +9095,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",
@@ -9420,7 +9142,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",
@@ -9467,7 +9189,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、MAIL_UNAVAILABLE 等 503 类依赖不可用码。"
                     },
                     "status": {
                       "type": "integer",

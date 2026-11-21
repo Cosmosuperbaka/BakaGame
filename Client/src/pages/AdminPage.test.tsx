@@ -10,7 +10,6 @@ import type {
   AdminRoom,
   AdminRuntimeSetting,
   AdminUser,
-  QQLookupStatus,
 } from "@bakagame/shared";
 import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
 import { MIRROR_STALE } from "@/stories/fixtures/BangumiMirror";
@@ -33,7 +32,6 @@ const admin = vi.hoisted(() => ({
   antiCheat: { list: vi.fn(), history: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
-  qq: { status: vi.fn(), refreshNames: vi.fn() },
   settings: { list: vi.fn(), set: vi.fn() },
   bangumiMirror: { status: vi.fn() },
 }));
@@ -53,6 +51,7 @@ const profile = (role: AccountProfile["role"]): AccountProfile => ({
   createdAt: "2026-10-01T00:00:00.000Z",
   badges: [],
   equippedBadge: null,
+  nameChangedAt: null,
 });
 
 const overview: AdminOverview = {
@@ -87,7 +86,6 @@ const user: AdminUser = {
   banReason: null,
   banExpires: null,
   showQq: false,
-  qqName: "阿狸",
   badges: [{ kind: "pioneer", serial: 42 }],
   equippedBadge: "pioneer",
   createdAt: "2026-10-02T00:00:00.000Z",
@@ -115,21 +113,6 @@ const room: AdminRoom = {
       userId: null,
     },
   ],
-};
-
-const unavailable: QQLookupStatus = {
-  state: "unavailable",
-  uin: null,
-  nickname: null,
-  checkedAt: "2026-10-13T00:00:00.000Z",
-  error: "NapCat 当前没有登录任何 QQ 号",
-};
-const active: QQLookupStatus = {
-  state: "active",
-  uin: "12345",
-  nickname: "查询号",
-  checkedAt: "2026-10-13T00:00:00.000Z",
-  error: null,
 };
 
 const review: AdminAntiCheatReview = {
@@ -249,7 +232,6 @@ beforeEach(() => {
   admin.rooms.list.mockResolvedValue([room]);
   admin.users.list.mockResolvedValue({ items: [user], total: 1 });
   admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
-  admin.qq.status.mockResolvedValue(unavailable);
   admin.settings.list.mockResolvedValue({ items: runtimeSettings });
   admin.settings.set.mockResolvedValue({ items: runtimeSettings });
   // 概览会读一条待复核计数；默认给空队列，需要条数的用例各自覆盖。
@@ -302,16 +284,17 @@ describe("管理后台", () => {
     expect(admin.stats.overview).toHaveBeenCalledWith({ days: 14 });
   });
 
-  it("用户列表展示 QQ 昵称，点开详情可以封禁", async () => {
+  it("用户列表与详情展示 QQ 号以核对身份，点开详情可以封禁", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     admin.users.ban.mockResolvedValue({ ...user, banned: true });
     const events = renderAdmin("/admin?tab=users");
     const table = await screen.findByRole("table", { name: "用户列表" });
-    expect(within(table).getByText("阿狸")).toBeInTheDocument();
+    expect(within(table).getByText("10001")).toBeInTheDocument();
 
     await events.click(within(table).getByRole("button", { name: /Alice/ }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("还没有对局记录")).toBeInTheDocument();
+    expect(within(dialog).getByText("10001")).toBeInTheDocument();
     await events.click(within(dialog).getByRole("button", { name: "封禁" }));
     const submit = within(dialog).getByRole("button", { name: "封禁并踢下线" });
     expect(submit).toBeDisabled();
@@ -724,20 +707,6 @@ describe("管理后台", () => {
     expect(admin.feedback.list).toHaveBeenCalledTimes(2);
   });
 
-  it("QQ 昵称来源：显示 NapCat 在线状态，可刷新全部昵称", async () => {
-    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
-    admin.qq.status.mockResolvedValue(active);
-    admin.qq.refreshNames.mockResolvedValue({ checked: 3, updated: 1, remaining: 0 });
-    const events = renderAdmin("/admin?tab=qq");
-    expect(await screen.findByText("查询号")).toBeInTheDocument();
-    expect(screen.getByText("12345")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeEnabled();
-
-    await events.click(screen.getByRole("button", { name: "刷新全部昵称" }));
-    expect(admin.qq.refreshNames).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/已检查 3 个账号，更新 1 个昵称/)).toBeInTheDocument();
-  });
-
   it("Bangumi 镜像：从接口读状态，超期时列出提示，可手动刷新", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     admin.bangumiMirror.status.mockResolvedValue(MIRROR_STALE);
@@ -754,14 +723,6 @@ describe("管理后台", () => {
     admin.bangumiMirror.status.mockRejectedValue(new Error("网络错误"));
     renderAdmin("/admin?tab=bangumi");
     expect(await screen.findByText("镜像状态加载失败")).toBeInTheDocument();
-  });
-
-  it("QQ 昵称来源：不可用时给出原因并禁用刷新", async () => {
-    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
-    admin.qq.status.mockResolvedValue(unavailable);
-    renderAdmin("/admin?tab=qq");
-    expect(await screen.findByText("NapCat 当前没有登录任何 QQ 号")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
   });
 
   it("运行期旋钮：三行给出生效值、取值来源与环境变量缺省", async () => {

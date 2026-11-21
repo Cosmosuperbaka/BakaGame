@@ -67,9 +67,8 @@ export const user = mysqlTable("user", {
   /** QQ 头像内容摘要；变化即换代头像 URL，浏览器缓存随之失效。 */
   avatarHash: varchar("avatar_hash", { length: 64 }),
   avatarCheckedAt: datetime("avatar_checked_at", { mode: "date", fsp: 3 }),
-  /** QQ 昵称（经后台扫码登录的查询号获取，只给管理员看与注册预填）；与账号昵称互不覆盖。 */
-  qqName: varchar("qq_name", { length: 64 }),
-  qqNameCheckedAt: datetime("qq_name_checked_at", { mode: "date", fsp: 3 }),
+  /** 上次改名时刻（新号为注册时刻）：改名冷却据此起算；从未改过名的老账号为空，第一次改名不受限。 */
+  nameChangedAt: datetime("name_changed_at", { mode: "date", fsp: 3 }),
   /** 玩家佩戴的徽章；为空表示不佩戴。只能佩戴自己已获得的徽章。 */
   equippedBadge: varchar("equipped_badge", { length: 16 }).references(() => badge.id, {
     onDelete: "set null",

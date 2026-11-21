@@ -4,8 +4,6 @@ import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
 import { AppSettings } from "../src/application/AppSettings";
 import { InMemoryAntiCheatReviewQueue } from "../src/application/CEEAntiCheatSignals";
-import { QQNicknameService } from "../src/application/QQNicknameService";
-import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
 import { SiteStatsService } from "../src/application/SiteStatsService";
 import type { SentryApiClient } from "../src/infrastructure/SentryApi";
 import type {
@@ -333,57 +331,13 @@ export class MemorySiteStatsRepository implements SiteStatsRepository {
   }
 }
 
-/** 假的 NapCat（OneBot 11）：`get_login_info` 返回登录号自身，`get_stranger_info` 按 QQ 号查昵称。 */
-export const createNapCatFetcher = () => {
-  const state = {
-    token: "napcat-test-token",
-    /** false 模拟 NapCat 掉线：所有动作返回 failed。 */
-    online: true,
-    names: new Map<string, string>([
-      ["10001", "阿狸"],
-      ["20002", "请先"],
-    ]),
-    /** 每次 `get_stranger_info` 的 QQ 号（一个元素一条调用），批量断言靠它。 */
-    calls: [] as string[][],
-    loginInfo: { uin: "90001", nickname: "查询号" },
-  };
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(String(input instanceof Request ? input.url : input));
-    const headers = new Headers(init?.headers);
-    if (headers.get("authorization") !== `Bearer ${state.token}`) {
-      return new Response(JSON.stringify({ message: "token verify failed!" }), { status: 401 });
-    }
-    const body =
-      typeof init?.body === "string" ? (JSON.parse(init.body) as { user_id?: number }) : {};
-    if (url.pathname.endsWith("/get_login_info")) {
-      if (!state.online)
-        return new Response(
-          JSON.stringify({ status: "failed", retcode: 1400, message: "QQ 未登录" })
-        );
-      return new Response(
-        JSON.stringify({
-          status: "ok",
-          retcode: 0,
-          data: { user_id: Number(state.loginInfo.uin), nickname: state.loginInfo.nickname },
-        })
-      );
-    }
-    if (url.pathname.endsWith("/get_stranger_info")) {
-      const uin = String(body.user_id ?? "");
-      state.calls.push([uin]);
-      const name = state.online ? state.names.get(uin) : undefined;
-      if (!name)
-        return new Response(
-          JSON.stringify({ status: "failed", retcode: 1404, message: "not found" })
-        );
-      return new Response(
-        JSON.stringify({ status: "ok", retcode: 0, data: { user_id: Number(uin), nickname: name } })
-      );
-    }
-    return new Response("not found", { status: 404 });
-  }) as typeof fetch;
-  return { fetcher, state };
-};
+/** 夹具注册新号时缺省填写的账号昵称：个别号沿用固定昵称，供断言具体名字的用例使用。 */
+const FIXED_ACCOUNT_NAMES = new Map<string, string>([
+  ["10001", "阿狸"],
+  ["20002", "请先"],
+]);
+export const defaultAccountNameOf = (qqNumber: string): string =>
+  FIXED_ACCOUNT_NAMES.get(qqNumber) ?? `玩家${qqNumber}`;
 
 /** 记录发出的验证码，测试据此完成登录。 */
 export class CapturedMailer implements Mailer {
@@ -464,8 +418,7 @@ export const createAccountTestApp = (
     verification: [],
     passkey: [],
   };
-  // 建号钩子要解析 QQ 昵称、补系统徽章，而相关服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
-  let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
+  // 建号钩子要补系统徽章，而账号服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
   let accountCreated: ((user: { id: string; qqNumber?: string | null }) => Promise<void>) | null =
     null;
   const auth = createAuth({
@@ -477,8 +430,6 @@ export const createAccountTestApp = (
     adminQqNumbers: options.adminQqNumbers ?? [],
     passkeyRpId: new URL(env.clientUrl).hostname,
     mailer,
-    resolveNickname: (qqNumber) =>
-      resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
     onUserCreated: async (user) => {
       try {
         await accountCreated?.(user);
@@ -487,19 +438,6 @@ export const createAccountTestApp = (
       }
     },
   });
-  const napcat = createNapCatFetcher();
-  const nicknames = new QQNicknameService({
-    auth,
-    client: new QQNapCatClient({
-      apiUrl: "https://napcat.test/onebot-internal",
-      accessToken: napcat.state.token,
-      fetcher: napcat.fetcher,
-      minIntervalMs: 0,
-    }),
-    logger,
-    now: options.now,
-  });
-  resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
   const registrations = new MemoryRegistrationRepository();
   const badges = new MemoryBadgeRepository(db, registrations);
   const service = new AccountService({
@@ -509,7 +447,6 @@ export const createAccountTestApp = (
     badges,
     registrations,
     ownerQqNumber: options.ownerQqNumber ?? options.adminQqNumbers?.[0],
-    nicknames,
     logger,
     now: options.now,
   });
@@ -549,7 +486,6 @@ export const createAccountTestApp = (
     // 夹具默认不带库：后台读到的旋钮一律是环境变量缺省那侧。
     settings: options.settings ?? new AppSettings({ defaults: {} }),
     sentry: options.sentry ?? null,
-    qq: nicknames,
     ownerQqNumber: options.ownerQqNumber ?? options.adminQqNumbers?.[0],
     statusEvents: options.statusEvents,
     environment: "development",
@@ -568,7 +504,7 @@ export const createAccountTestApp = (
     account: { auth, service, userData, admin, visits, ready: Promise.resolve() },
   });
 
-  /** `B` 是响应信封里 `json` 的类型：默认按对象写，输出为标量的过程（如 `account.qqName` 直接回昵称）显式传。 */
+  /** `B` 是响应信封里 `json` 的类型：默认按对象写，输出为标量的过程显式传。 */
   const rpc = async <B = Record<string, unknown>>(
     path: string,
     input?: unknown,
@@ -592,23 +528,13 @@ export const createAccountTestApp = (
     return { status: response.status, body: body.json as B };
   };
 
-  /** 让 NapCat 处于在线状态（默认就是在线的，测试用它复位）。 */
-  const ensureLookup = async () => {
-    napcat.state.online = true;
-  };
-
-  /** 让某个 QQ 号可注册：保证 NapCat 在线，并让该号的 QQ 昵称可查到（传入 `name` 时覆盖）。 */
-  const prepareSignup = async (qqNumber: string, name?: string) => {
-    await ensureLookup();
-    if (name !== undefined) napcat.state.names.set(qqNumber, name);
-    else if (!napcat.state.names.has(qqNumber)) napcat.state.names.set(qqNumber, `玩家${qqNumber}`);
-  };
-
   let signInCounter = 0;
 
-  /** 完整走一遍「发码 → 填码登录」，返回会话 Cookie；`name` 会作为该 QQ 号查到的昵称，成为账号昵称。 */
+  /**
+   * 完整走一遍「发码 → 填码登录」，返回会话 Cookie；新号以 `name` 作为玩家自填的账号昵称注册
+   * （缺省按 `defaultAccountNameOf` 取），老号登录时 `name` 被忽略。
+   */
   const signIn = async (qqNumber: string, name?: string) => {
-    await prepareSignup(qqNumber, name);
     // 夹具一口气登录很多个号：每次换一个来源地址，避免撞上单来源的发码额度。
     signInCounter += 1;
     const sent = await rpc("account/requestLoginCode", { qqNumber }, undefined, {
@@ -620,7 +546,11 @@ export const createAccountTestApp = (
       new Request("http://localhost/api/auth/sign-in/email-otp", {
         method: "POST",
         headers: { "content-type": "application/json", origin: env.clientUrl },
-        body: JSON.stringify({ email, otp: mailer.lastCodeFor(email) }),
+        body: JSON.stringify({
+          email,
+          otp: mailer.lastCodeFor(email),
+          name: name ?? defaultAccountNameOf(qqNumber),
+        }),
       })
     );
     return { response, cookie: cookieOf(response) };
@@ -645,12 +575,9 @@ export const createAccountTestApp = (
     sentry,
     mailer,
     avatarFetcher,
-    napcat,
-    nicknames,
     db,
     rpc,
     signIn,
-    prepareSignup,
   };
 };
 

@@ -96,7 +96,6 @@ export function UsersPanel() {
           <thead>
             <tr>
               <th scope="col">账号</th>
-              <th scope="col">QQ 昵称</th>
               <th scope="col">角色</th>
               <th scope="col">徽章</th>
               <th scope="col">状态</th>
@@ -111,7 +110,6 @@ export function UsersPanel() {
                     <UserCell user={user} />
                   </RowButton>
                 </td>
-                <td className="max-w-40 truncate text-muted-foreground">{user.qqName ?? "—"}</td>
                 <td>
                   {user.role === "admin" ? (
                     <Badge variant="active" size="xs">

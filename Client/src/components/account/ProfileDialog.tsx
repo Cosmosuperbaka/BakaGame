@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
+import { ORPCError } from "@orpc/client";
 import { Award } from "lucide-react";
-import { badgeDescriptionOf } from "@bakagame/shared/values";
+import {
+  ACCOUNT_NAME_MAX_LENGTH,
+  badgeDescriptionOf,
+  normalizeAccountName,
+} from "@bakagame/shared/values";
 import type { AccountBadge, AccountProfile, BadgeKind } from "@bakagame/shared";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
@@ -16,15 +21,30 @@ import {
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SettingsFields, SettingsSection } from "@/components/common/room/settings/Layout";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
+import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import {
+  ACCOUNT_NAME_COOLDOWN_DAYS,
+  formatNameChangeTime,
+  formatNameCooldownLeft,
+  nameChangeAvailableAt,
+} from "@/lib/AccountName";
 import { api, apiErrorMessage } from "@/lib/Api";
 import type { OriginPoint } from "@/lib/motion/Origin";
 import { passkeySupported } from "@/lib/Passkey";
 import { PasskeySection } from "./PasskeySection";
 import { invalidatePublicProfile } from "@/lib/ProfileCache";
 import { useAccountStore } from "@/stores/UseAccountStore";
+import { serverNow } from "@/stores/UseServerClock";
+
+/** 这些业务错误说的是昵称本身，落在昵称字段下方；其余失败归表单整体（见 DesignGuide §6）。 */
+const NAME_ERROR_CODES = new Set([
+  "ACCOUNT_NAME_REQUIRED",
+  "TEXT_SENSITIVE",
+  "NAME_CHANGE_COOLDOWN",
+]);
 
 /**
- * 账号资料：账号昵称只读展示（强制取自 QQ 昵称，不可修改）、QQ 号公开开关与通行密钥管理。
+ * 账号资料：账号昵称（玩家自填，可改名但有冷却，见 Server/docs/Account.md §1）、QQ 号公开开关与通行密钥管理。
  * 头像随 QQ 自动同步，不可在站内修改；通行密钥在这里增删，登录入口在登录弹窗（端点面见 Server/docs/Account.md §2）。
  */
 export function ProfileDialog({
@@ -109,27 +129,59 @@ function BadgeSection({ profile }: { profile: AccountProfile }) {
   );
 }
 
+/**
+ * 昵称字段的说明：可改时说明冷却规则，冷却中给出下次可改的时刻与剩余时间。
+ * 冷却按打开弹窗时的时刻判定一次：弹窗是短暂的，不为跨过冷却终点而逐秒重渲染。
+ */
+function useNameCooldown(nameChangedAt: string | null) {
+  const [now] = useState(serverNow);
+  const availableAt = nameChangeAvailableAt(nameChangedAt);
+  const locked = availableAt !== null && now < availableAt;
+  return {
+    locked,
+    description: locked
+      ? `${formatNameChangeTime(availableAt)} 后可再次修改，还剩 ${formatNameCooldownLeft(availableAt - now)}`
+      : `其他玩家在资料卡上看到的名字，每 ${ACCOUNT_NAME_COOLDOWN_DAYS} 天可修改一次`,
+  };
+}
+
 /** 每次打开以当前资料为草稿起点。 */
 function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDone: () => void }) {
   const setProfile = useAccountStore((state) => state.setProfile);
   const [supportsPasskey] = useState(passkeySupported);
+  const [name, setName] = useState(profile.name);
   const [showQq, setShowQq] = useState(profile.showQq);
   const [busy, setBusy] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dirty = showQq !== profile.showQq;
+  const cooldown = useNameCooldown(profile.nameChangedAt);
+  // 与服务端同一口径清洗后再比：只多敲了空格不算改名，也就不会白白消耗冷却。
+  const nextName = normalizeAccountName(name);
+  const nameDirty = name !== profile.name && nextName !== profile.name;
+  const dirty = nameDirty || showQq !== profile.showQq;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!dirty || busy) return;
+    if (nameDirty && !nextName) {
+      setNameError("请填写账号昵称");
+      return;
+    }
     setBusy(true);
     setError(null);
+    setNameError(null);
     try {
-      const next = await api.account.updateProfile({ showQq });
+      const next = await api.account.updateProfile({
+        showQq,
+        ...(nameDirty ? { name: nextName } : {}),
+      });
       setProfile(next);
       invalidatePublicProfile(next.id);
       onDone();
     } catch (cause) {
-      setError(apiErrorMessage(cause, "保存失败，请稍后重试"));
+      const message = apiErrorMessage(cause, "保存失败，请稍后重试");
+      if (cause instanceof ORPCError && NAME_ERROR_CODES.has(cause.code)) setNameError(message);
+      else setError(message);
     } finally {
       setBusy(false);
     }
@@ -143,7 +195,7 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
         <DialogHeader>
           <DialogTitle>账号资料</DialogTitle>
           <DialogDescription>
-            账号昵称取自你的 QQ 昵称，不可修改。游戏内昵称在各游戏里单独填写，与账号昵称无关。
+            账号昵称显示在资料卡与排位中。游戏内昵称在各游戏里单独填写，与账号昵称无关。
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-3">
@@ -156,6 +208,19 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
           </div>
         </div>
         <SettingsFields>
+          <SettingTextField
+            label="账号昵称"
+            value={name}
+            onChange={(value) => {
+              setName(value);
+              setNameError(null);
+            }}
+            placeholder="给自己取个名字"
+            maxLength={ACCOUNT_NAME_MAX_LENGTH}
+            description={cooldown.description}
+            disabled={cooldown.locked}
+            error={nameError}
+          />
           <SettingSwitchRow
             label="资料卡显示 QQ 号"
             description="关闭时其他玩家只能看到头像与昵称"

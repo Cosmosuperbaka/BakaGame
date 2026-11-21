@@ -2,7 +2,7 @@ import { TriangleAlert } from "lucide-react";
 import { LegalSection } from "@/components/common/LegalSection";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的用户条款标签页渲染。 */
-export const TERMS_UPDATED_AT = "2026-11-15";
+export const TERMS_UPDATED_AT = "2026-11-22";
 
 export function TermsBody() {
   return (
@@ -42,7 +42,10 @@ export function TermsBody() {
 
       <LegalSection title="二、账号与第三方凭据">
         <ul className="list-disc space-y-2 pl-5">
-          <li>游客可直接游玩；账号功能以 QQ 号为身份锚点，账号昵称取自 QQ 昵称。</li>
+          <li>
+            游客可直接游玩；账号功能以 QQ
+            号为身份锚点，账号昵称由你注册时自行填写，之后可在账号资料里定期修改。
+          </li>
           <li>
             你在站内配置的音乐平台账号、Cookie、令牌等凭据由你自愿提供，仅用于你请求的功能。请确保你有权使用该账号，不要提交他人的凭据。
           </li>

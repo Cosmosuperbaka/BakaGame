@@ -52,7 +52,7 @@ export interface AccountDependencies {
 
 interface RpcContext {
   headers: Headers;
-  /** 边缘写入的真实客户端地址：昵称查询这类免发信接口按它分桶计配额。 */
+  /** 边缘写入的真实客户端地址：发码这类匿名接口按它分桶计配额。 */
   clientIp: string;
 }
 
@@ -68,11 +68,10 @@ const STATUS_BY_CODE: Record<string, number> = {
   ROOM_NOT_FOUND: 404,
   PLAYER_NOT_FOUND: 404,
   RATE_LIMITED: 429,
+  NAME_CHANGE_COOLDOWN: 409,
   MAIL_UNAVAILABLE: 503,
   AVATAR_UNAVAILABLE: 503,
   QQ_LOGIN_UNAVAILABLE: 503,
-  QQ_LOOKUP_DISABLED: 503,
-  QQ_NICKNAME_UNAVAILABLE: 503,
   ACCOUNT_DISABLED: 503,
   STATUS_EVENTS_DISABLED: 503,
   SERVICE_UNAVAILABLE: 503,
@@ -121,9 +120,6 @@ const createRpcRouter = (
     account: {
       requestLoginCode: base.account.requestLoginCode.handler(({ input, context }) =>
         service.requestLoginCode(input.qqNumber, context.clientIp)
-      ),
-      qqName: base.account.qqName.handler(({ input, context }) =>
-        service.qqNickname(input.qqNumber, context.clientIp)
       ),
       me: base.account.me.handler(async ({ context }) => {
         const userId = await service.currentUserId(context.headers);
@@ -248,12 +244,6 @@ const createRpcRouter = (
       },
       audit: {
         list: adminOnly.admin.audit.list.handler(({ input }) => admin.listAudit(input)),
-      },
-      qq: {
-        status: adminOnly.admin.qq.status.handler(() => admin.qqStatus()),
-        refreshNames: adminOnly.admin.qq.refreshNames.handler(({ context }) =>
-          admin.qqRefreshNames(context.userId)
-        ),
       },
       stats: {
         overview: adminOnly.admin.stats.overview.handler(({ input }) => admin.overview(input.days)),

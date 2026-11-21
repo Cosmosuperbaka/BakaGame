@@ -33,18 +33,6 @@ export interface AccountEnv {
 }
 
 /**
- * QQ 昵称来源：管理员自建的 NapCat 实例（OneBot 11 HTTP）。
- *
- * 网址与令牌必须成对出现：缺一个就是配置错误，不能默默降级成「查不到昵称」——
- * 那会让新号注册以「QQ 昵称不可用」为由被拒，排查时看不出是配置漏填。
- */
-export interface NapCatEnv {
-  /** OneBot HTTP 基址，不含结尾斜杠。 */
-  apiUrl: string;
-  accessToken: string;
-}
-
-/**
  * 账号与投递凭据（T1）：随数据库一同启用，缺库时整体为空。
  * 分层口径见 `Agents/Conventions.md` §5。
  */
@@ -53,8 +41,6 @@ export interface EnvAccount {
   databaseUrl?: string;
   /** 账号系统配置：随数据库一同启用，缺数据库时为空。 */
   account?: AccountEnv;
-  /** NapCat（OneBot 11）昵称来源；未配置时 QQ 昵称查询整体停用。 */
-  napcat?: NapCatEnv;
 }
 
 const readSmtpEnv = (): SmtpEnv | undefined => {
@@ -135,21 +121,10 @@ const readAccountEnv = (
   };
 };
 
-const readNapCatEnv = (): NapCatEnv | undefined => {
-  const apiUrl = Bun.env.QQ_NAPCAT_API_URL?.trim();
-  const accessToken = Bun.env.QQ_NAPCAT_ACCESS_TOKEN?.trim();
-  if (!apiUrl && !accessToken) return undefined;
-  if (!apiUrl || !accessToken) {
-    throw new AppError("CONFIG_ERROR", "QQ_NAPCAT_API_URL 与 QQ_NAPCAT_ACCESS_TOKEN 必须同时配置");
-  }
-  return { apiUrl: apiUrl.replace(/\/+$/, ""), accessToken };
-};
-
 export const readAccountGroupEnv = (clientUrl: string): EnvAccount => {
   const databaseUrl = Bun.env.DATABASE_URL?.trim() || undefined;
   return {
     databaseUrl,
     account: readAccountEnv(databaseUrl, clientUrl),
-    napcat: readNapCatEnv(),
   };
 };

@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, KeyRound, UserRound } from "lucide-react";
 import {
+  ACCOUNT_NAME_MAX_LENGTH,
   LOGIN_CODE_LENGTH,
   LOGIN_CODE_PATTERN,
   LOGIN_CODE_TTL_SECONDS,
+  normalizeAccountName,
   qlogoUrlOf,
   qqEmailOf,
   QQ_NUMBER_PATTERN,
@@ -15,8 +17,8 @@ import { Collapsible, CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
 import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
-import { api, apiErrorMessage } from "@/lib/Api";
-import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
+import { ACCOUNT_NAME_COOLDOWN_DAYS } from "@/lib/AccountName";
+import { api, apiErrorMessage, AuthRequestError } from "@/lib/Api";
 import { listItem, phaseSwap } from "@/lib/motion/Choreography";
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { type OriginPoint } from "@/lib/motion/Origin";
@@ -26,7 +28,10 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 /** 头像框 80px：取 100 的小图已足够清晰，640 的大图只会白白多下载几十倍字节。 */
 const AVATAR_PREVIEW_SIZE = 100;
 
-type Step = { kind: "qq" } | { kind: "code"; registered: boolean; qqName: string | null };
+type Step = { kind: "qq" } | { kind: "code"; registered: boolean };
+
+/** 建号钩子对昵称的拒绝（缺昵称、命中敏感词）：落在昵称字段下方，不当作整体登录失败。 */
+const NAME_ERROR_CODES = new Set(["ACCOUNT_NAME_REQUIRED", "TEXT_SENSITIVE"]);
 
 /** 重发倒计时：只记到期时刻，每秒重渲染一次。 */
 function useCountdown() {
@@ -45,33 +50,6 @@ function useCountdown() {
       setUntil(current + seconds * 1_000);
     },
   };
-}
-
-/**
- * QQ 号一输完就去查昵称，不等发码。停输 `IDLE_SEARCH_MS` 再查，避免逐位敲字各打一次；
- * 查不到（号不存在、查询号掉线、超出配额、网络失败）一律当作没有昵称，空着不挡住发码。
- * 结果按所属 QQ 号存：号一改立刻不显示上一号的名字，宁可空着也不把别人的昵称安在这个号上。
- * 取到的值经 `qqNames` 复用：服务端这个入口按客户端地址限流（12 次/分钟），
- * 关掉再打开弹窗、退回重输同一个号都不该再打一次。
- */
-function useQQName(qq: string, qqNames: QueryReuseCache<string | null>): string | null {
-  const valid = QQ_NUMBER_PATTERN.test(qq);
-  const [shown, setShown] = useState<{ qq: string; name: string | null } | null>(null);
-  useEffect(() => {
-    if (!valid) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void qqNames
-        .run(qq, () => api.account.qqName({ qqNumber: qq }))
-        .then((name) => !cancelled && setShown({ qq, name }))
-        .catch(() => !cancelled && setShown({ qq, name: null }));
-    }, IDLE_SEARCH_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [valid, qq, qqNames]);
-  return valid && shown?.qq === qq ? shown.name : null;
 }
 
 /** 值停住 `ms` 之后才跟上：连续变化的中间态不触发依赖它的副作用（取图、请求）。 */
@@ -148,8 +126,8 @@ function LoginNotice() {
  *
  * 整块弹窗分两区：上方通栏身份区常驻——标题、圆头像、昵称与 QQ 号，两步共用，切步时身份不消失；
  * 下方操作区按步切换字段（QQ 号 → 验证码），新内容自后方推入、旧内容向前退出（`phaseSwap`）。
- * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，紧接着输完号查到的昵称自它上方顶进来，
- * 发码后再以服务端回传值为准；
+ * 号一合法先落 QQ 号；新号在验证码一步多一个账号昵称字段（玩家自填，注册必填），
+ * 边填边在身份区的昵称行回显，读作「这张脸叫这个名字」。老号不再回显昵称，那一行留空。
  * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度：页脚两步各放两枚按钮
  * （第一步「通行密钥 + 发送验证码」，第二步「换个 QQ 号 + 登录」）。
  * 操作区底部常驻一段收起的登录说明（用途、QQ 号边界、验证码投递、通行密钥来路），两步共用、不随切步跳动。
@@ -165,24 +143,73 @@ export function LoginDialog({
 }) {
   // QQ 号留在外层：关掉再打开仍保留上次输入；其余状态随弹窗内容每次打开重新开始。
   const [qq, setQq] = useState("");
-  // 昵称窗口也留在外层：本组件随页面常驻，关掉再打开、退回重输同一个号都不再打一次限流接口。
-  const [qqNames] = useState(() => createQueryReuseCache<string | null>(exactQueryKey));
   return (
     <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
-      <LoginDialogBody qq={qq} setQq={setQq} qqNames={qqNames} onDone={() => onOpenChange(false)} />
+      <LoginDialogBody qq={qq} setQq={setQq} onDone={() => onOpenChange(false)} />
     </Dialog>
+  );
+}
+
+/**
+ * 注册时自填的账号昵称：与服务端同一口径清洗，只敲了空格或不可见字符不算填了昵称，
+ * 按钮不亮，免得白白作废验证码。头像下的身份行注册时回显清洗后的昵称，登录时留空；
+ * 老号登录不带 `name`。
+ */
+function accountNameDraft(
+  isRegister: boolean,
+  raw: string
+): { identity: string; ready: boolean; payload: { name?: string } } {
+  if (!isRegister) return { identity: "", ready: true, payload: {} };
+  const name = normalizeAccountName(raw);
+  return { identity: name, ready: name !== "", payload: { name } };
+}
+
+/** 登录失败的去向：建号钩子对昵称的拒绝落在昵称字段，其余（验证码错误、网络）归整个表单。 */
+function signInFailure(cause: unknown): { name: string | null; form: string | null } {
+  const message =
+    cause instanceof Error && /[一-鿿]/.test(cause.message)
+      ? cause.message
+      : "登录失败，请稍后重试";
+  return cause instanceof AuthRequestError && NAME_ERROR_CODES.has(cause.code)
+    ? { name: message, form: null }
+    : { name: null, form: message };
+}
+
+/** 新号注册必填的账号昵称：发码后出现在验证码之上并先获得焦点；老号登录不出现。 */
+function AccountNameField({
+  visible,
+  value,
+  error,
+  onChange,
+}: {
+  visible: boolean;
+  value: string;
+  error: string | null;
+  onChange: (value: string) => void;
+}) {
+  if (!visible) return null;
+  return (
+    <SettingTextField
+      label="账号昵称"
+      value={value}
+      onChange={onChange}
+      placeholder="给自己取个名字"
+      description={`注册后可在账号资料里修改，每 ${ACCOUNT_NAME_COOLDOWN_DAYS} 天一次`}
+      maxLength={ACCOUNT_NAME_MAX_LENGTH}
+      error={error}
+      autoFocus
+      inputClassName="h-10"
+    />
   );
 }
 
 function LoginDialogBody({
   qq,
   setQq,
-  qqNames,
   onDone,
 }: {
   qq: string;
   setQq: (value: string) => void;
-  qqNames: QueryReuseCache<string | null>;
   onDone: () => void;
 }) {
   const signIn = useAccountStore((state) => state.signIn);
@@ -191,13 +218,14 @@ function LoginDialogBody({
   const [supportsPasskey] = useState(passkeySupported);
   const [step, setStep] = useState<Step>({ kind: "qq" });
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"send" | "resend" | "sign-in" | "passkey" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const countdown = useCountdown();
 
   const validQq = QQ_NUMBER_PATTERN.test(qq);
-  const lookedUpName = useQQName(qq, qqNames);
   // 头像在号停输后才取；号被删到不合法时立刻回占位圆，不为等防抖留着上一张脸。
   const idleQq = useIdleValue(qq, IDLE_SEARCH_MS);
 
@@ -207,7 +235,7 @@ function LoginDialogBody({
     try {
       const result = await api.account.requestLoginCode({ qqNumber: qq });
       countdown.start(result.resendAfterSeconds);
-      setStep({ kind: "code", registered: result.registered, qqName: result.qqName });
+      setStep({ kind: "code", registered: result.registered });
     } catch (cause) {
       setError(apiErrorMessage(cause, "验证码发送失败，请稍后重试"));
     } finally {
@@ -217,12 +245,9 @@ function LoginDialogBody({
 
   const isRegister = step.kind === "code" && !step.registered;
   const title = isRegister ? "注册账号" : "登录";
-  /**
-   * 头像下的身份行：号一输完就回显查到的昵称；发码后改用服务端回传值
-   * （新号为刚落库的昵称，老号为库中最近同步的），它为空时仍用回显值兜住。
-   */
-  const identityName = step.kind === "code" ? (step.qqName ?? lookedUpName) : lookedUpName;
-  const canSignIn = LOGIN_CODE_PATTERN.test(code);
+  const draft = accountNameDraft(isRegister, name);
+  const identityName = draft.identity;
+  const canSignIn = LOGIN_CODE_PATTERN.test(code) && draft.ready;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -235,15 +260,14 @@ function LoginDialogBody({
     if (!canSignIn) return;
     setBusy("sign-in");
     setError(null);
+    setNameError(null);
     try {
-      await signIn({ email: qqEmailOf(qq), otp: code });
+      await signIn({ email: qqEmailOf(qq), otp: code, ...draft.payload });
       onDone();
     } catch (cause) {
-      setError(
-        cause instanceof Error && /[一-鿿]/.test(cause.message)
-          ? cause.message
-          : "登录失败，请稍后重试"
-      );
+      const failure = signInFailure(cause);
+      setNameError(failure.name);
+      setError(failure.form);
     } finally {
       setBusy(null);
     }
@@ -285,9 +309,10 @@ function LoginDialogBody({
           />
           <div className="flex w-full flex-col items-center gap-0.5">
             <span className="flex h-6 max-w-full items-center justify-center">
+              {/* 昵称是边打边回显的：键固定，只在昵称出现时入场一次，不为每次按键重播。 */}
               {identityName ? (
                 <motion.span
-                  key={identityName}
+                  key="account-name"
                   variants={readoutSwap}
                   initial="initial"
                   animate="animate"
@@ -332,32 +357,43 @@ function LoginDialogBody({
                   inputClassName="h-10"
                 />
               ) : (
-                <SettingTextField
-                  label="验证码"
-                  value={code}
-                  onChange={(value) => {
-                    setCode(value.replace(/\D/g, "").slice(0, LOGIN_CODE_LENGTH));
-                    setError(null);
-                  }}
-                  placeholder={`${LOGIN_CODE_LENGTH} 位数字`}
-                  description={`已发送至 ${qqEmailOf(qq)}，${LOGIN_CODE_TTL_SECONDS / 60} 分钟内有效`}
-                  inputMode="numeric"
-                  maxLength={LOGIN_CODE_LENGTH}
-                  autoFocus
-                  inputClassName="h-10 font-mono tracking-code placeholder:tracking-normal"
-                  action={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-10 shrink-0"
-                      disabled={countdown.seconds > 0 || busy !== null}
-                      loading={busy === "resend"}
-                      onClick={() => void sendCode("resend")}
-                    >
-                      {countdown.seconds > 0 ? `${countdown.seconds} 秒后重发` : "重新发送"}
-                    </Button>
-                  }
-                />
+                <>
+                  <AccountNameField
+                    visible={isRegister}
+                    value={name}
+                    error={nameError}
+                    onChange={(value) => {
+                      setName(value);
+                      setNameError(null);
+                    }}
+                  />
+                  <SettingTextField
+                    label="验证码"
+                    value={code}
+                    onChange={(value) => {
+                      setCode(value.replace(/\D/g, "").slice(0, LOGIN_CODE_LENGTH));
+                      setError(null);
+                    }}
+                    placeholder={`${LOGIN_CODE_LENGTH} 位数字`}
+                    description={`已发送至 ${qqEmailOf(qq)}，${LOGIN_CODE_TTL_SECONDS / 60} 分钟内有效`}
+                    inputMode="numeric"
+                    maxLength={LOGIN_CODE_LENGTH}
+                    autoFocus={!isRegister}
+                    inputClassName="h-10 font-mono tracking-code placeholder:tracking-normal"
+                    action={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 shrink-0"
+                        disabled={countdown.seconds > 0 || busy !== null}
+                        loading={busy === "resend"}
+                        onClick={() => void sendCode("resend")}
+                      >
+                        {countdown.seconds > 0 ? `${countdown.seconds} 秒后重发` : "重新发送"}
+                      </Button>
+                    }
+                  />
+                </>
               )}
               <CollapsibleRegion open={Boolean(error)}>
                 <FormAlert>{error}</FormAlert>

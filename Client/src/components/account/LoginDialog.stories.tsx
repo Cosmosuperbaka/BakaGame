@@ -6,7 +6,7 @@ import { presetAccount, stubApi } from "@/stories/fixtures/Account";
 import { LoginDialog } from "./LoginDialog";
 
 /**
- * 登录 / 注册弹窗。昵称回显与发码接口都由故事桩住；QQ 头像是站外地址，截图环境拦掉外网，
+ * 登录 / 注册弹窗。发码接口由故事桩住；QQ 头像是站外地址，截图环境拦掉外网，
  * 头像按「取不到」落回同尺寸的占位圆。
  */
 function OpenLogin() {
@@ -23,8 +23,7 @@ const meta = {
   beforeEach: () => {
     const restoreAccount = presetAccount({ status: "guest" });
     const restoreApi = stubApi({
-      "account/qqName": "小布丁",
-      "account/requestLoginCode": { registered: true, resendAfterSeconds: 60, qqName: "小布丁" },
+      "account/requestLoginCode": { registered: true, resendAfterSeconds: 60 },
     });
     return () => {
       restoreApi();
@@ -41,13 +40,13 @@ const dialog = async () => within(await screen.findByRole("dialog"));
 /** 刚打开：占位头像、空的 QQ 号框，发送验证码禁用。 */
 export const Empty: Story = { name: "输入 QQ 号" };
 
-/** QQ 号合法：号先落在头像下，停输后查到的昵称自上方顶进来。 */
+/** QQ 号合法：号落在头像下，说明改写成具体的收信邮箱。 */
 export const Identified: Story = {
-  name: "QQ 号与昵称到达",
+  name: "QQ 号到达",
   play: async ({ userEvent }) => {
     const scope = await dialog();
     await userEvent.type(scope.getByLabelText("QQ 号"), "123456789");
-    await scope.findByText("小布丁");
+    await scope.findByText("QQ 123456789");
   },
 };
 
@@ -67,7 +66,7 @@ export const Sending: Story = {
   play: async ({ userEvent }) => {
     const scope = await dialog();
     await userEvent.type(scope.getByLabelText("QQ 号"), "123456789");
-    await scope.findByText("小布丁");
+    await scope.findByText("QQ 123456789");
     await userEvent.click(scope.getByRole("button", { name: "发送验证码" }));
     dropFocus();
   },
@@ -97,19 +96,33 @@ export const CodeStep: Story = {
   },
 };
 
-/** 新号：标题改为「注册账号」，主按钮「注册并登录」。 */
-export const Register: Story = {
-  name: "新号注册",
+/** 新号刚发完码：多出账号昵称字段（自动聚焦），没填昵称时「注册并登录」不可点。 */
+export const RegisterEmpty: Story = {
+  name: "新号注册·待填昵称",
   beforeEach: () =>
-    stubApi({
-      "account/requestLoginCode": { registered: false, resendAfterSeconds: 60, qqName: "新来的" },
-    }),
+    stubApi({ "account/requestLoginCode": { registered: false, resendAfterSeconds: 60 } }),
   play: async ({ userEvent }) => {
     const scope = await dialog();
     await userEvent.type(scope.getByLabelText("QQ 号"), "123456789");
     await userEvent.click(scope.getByRole("button", { name: "发送验证码" }));
     await scope.findByRole("button", { name: "注册并登录" });
     await userEvent.type(scope.getByLabelText("验证码"), "123456");
+  },
+};
+
+/** 新号填好昵称：昵称边填边落到头像下的身份行，主按钮「注册并登录」可点。 */
+export const Register: Story = {
+  name: "新号注册",
+  beforeEach: () =>
+    stubApi({ "account/requestLoginCode": { registered: false, resendAfterSeconds: 60 } }),
+  play: async ({ userEvent }) => {
+    const scope = await dialog();
+    await userEvent.type(scope.getByLabelText("QQ 号"), "123456789");
+    await userEvent.click(scope.getByRole("button", { name: "发送验证码" }));
+    await userEvent.type(await scope.findByLabelText("账号昵称"), "新来的");
+    await userEvent.type(scope.getByLabelText("验证码"), "123456");
+    await scope.findByText("新来的");
+    dropFocus();
   },
 };
 

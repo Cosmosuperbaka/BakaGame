@@ -8,8 +8,13 @@ import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { Auth } from "../infrastructure/auth/Auth";
 import type { Mailer } from "../infrastructure/auth/Mailer";
 import type { AvatarImage, AvatarSize, QQAvatarService } from "../infrastructure/auth/QQAvatar";
-import type { QQNicknameService } from "./QQNicknameService";
-import { accountAvatarUrlOf, LOGIN_CODE_RESEND_SECONDS, qqEmailOf } from "../shared/Account";
+import { checkAccountName } from "../infrastructure/auth/AccountName";
+import {
+  ACCOUNT_NAME_CHANGE_COOLDOWN_MS,
+  accountAvatarUrlOf,
+  LOGIN_CODE_RESEND_SECONDS,
+  qqEmailOf,
+} from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
 import { PIONEER_BADGE_LIMIT, type AccountBadge, type BadgeKind } from "../shared/Badges";
 import type { PlayerAccount } from "../shared/Model";
@@ -27,8 +32,7 @@ interface AccountRow {
   showQq?: boolean | null;
   avatarHash?: string | null;
   avatarCheckedAt?: Date | null;
-  qqName?: string | null;
-  qqNameCheckedAt?: Date | null;
+  nameChangedAt?: Date | null;
   equippedBadge?: string | null;
 }
 
@@ -43,19 +47,8 @@ export interface AccountServiceOptions {
   /** 最高管理员 QQ 号：主理人只授予这个账号。 */
   ownerQqNumber?: string | null;
   logger: EventLogger;
-  /** QQ 昵称查询号：新号发码前必须取到昵称，取不到即拒绝（停用注册）。 */
-  nicknames?: QQNicknameService | null;
   now?: () => number;
 }
-
-/** 登录弹窗昵称回显的限时：只是输入框旁的提示，查询号慢就先空着。 */
-const NICKNAME_LOOKUP_TIMEOUT_MS = 3_000;
-/**
- * 新号发码前取 QQ 昵称的限时：查询号挂了直接拒绝注册，不让请求挂死。
- * 比回显宽：`get_stranger_info` 要打 QQ 侧资料卡接口，偶尔要好几秒，发码本身用户也在等；
- * 与 NapCat 客户端的单次请求超时对齐，不在它还可能返回时提前判失败。
- */
-const SIGNUP_NICKNAME_TIMEOUT_MS = 8_000;
 
 /** 同一账号头像回源的最小间隔：用户每次访问会触发一次，短时间内反复刷新页面不重复抓。 */
 const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -91,14 +84,6 @@ export class AccountService {
   private readonly clientHourlyLimiter = new SlidingWindowRateLimiter({
     windowMs: 60 * 60 * 1000,
     maxRequests: 60,
-  });
-  /**
-   * 登录弹窗按 QQ 号回显昵称的配额：按客户端地址分桶。
-   * 这个接口不必发信就能拿到昵称，不限住就成了按号枚举昵称的入口（见 Server/docs/Account.md §4）。
-   */
-  private readonly nicknameLimiter = new SlidingWindowRateLimiter({
-    windowMs: 60 * 1000,
-    maxRequests: 12,
   });
   /** 头像路由的「用户 ID → QQ 号 / 当前版本」短缓存，避免每张图都查库。 */
   private readonly avatarOwners = new LRUCache<string, { qqNumber: string; hash: string | null }>({
@@ -216,18 +201,12 @@ export class AccountService {
   async requestLoginCode(
     qqNumber: string,
     clientKey: string
-  ): Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }> {
+  ): Promise<{ registered: boolean; resendAfterSeconds: number }> {
     const email = qqEmailOf(qqNumber);
     this.takeLoginCodeQuota(email, clientKey, this.now());
     const now = this.now();
     const existing = (await (await this.adapter()).findUserByEmail(email))?.user as
-      | {
-          banned?: boolean | null;
-          banExpires?: Date | null;
-          name?: string | null;
-          qqName?: string | null;
-        }
-      | undefined;
+      { banned?: boolean | null; banExpires?: Date | null } | undefined;
     // 封禁中的账号登录必然被拒，不为它消耗发信额度；到期的封禁由 Better Auth 在登录时自动解除。
     if (
       existing?.banned &&
@@ -235,11 +214,6 @@ export class AccountService {
     ) {
       throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
     }
-    // 账号昵称强制使用 QQ 昵称：新号发码前必须取到昵称，取不到即拒绝（停用注册）；
-    // 老号回传库里最近一次同步的昵称供登录弹窗展示身份，不为此打扰查询号。
-    const qqName = existing
-      ? (existing.qqName ?? existing.name ?? null)
-      : await this.requireNickname(qqNumber);
     const code = await this.options.auth.api.createVerificationOTP({
       body: { email, type: "sign-in" },
     });
@@ -250,7 +224,7 @@ export class AccountService {
       this.options.logger.error("登录验证码投递失败", { error: String(error) });
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
-    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName };
+    return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS };
   }
 
   /**
@@ -270,51 +244,6 @@ export class AccountService {
       if (!limiter.peek(key, now).allowed) throw new AppError("RATE_LIMITED", message);
     }
     for (const [limiter, key] of gates) limiter.consume(key, now);
-  }
-
-  /**
-   * 登录弹窗的身份回显：QQ 号输入后立刻告诉访客「这个号是谁」。
-   * 已注册只回库里最近一次同步的昵称，不为一个输入框去打查询号；未注册现查一次即将用作账号昵称的值。
-   * 查不到就返回 `null`（空着），不挡住发码；配额按客户端地址计，防止按号枚举昵称。
-   */
-  async qqNickname(qqNumber: string, clientKey: string): Promise<string | null> {
-    if (!this.nicknameLimiter.allow(clientKey, this.now()))
-      throw new AppError("RATE_LIMITED", "昵称查询过于频繁，请稍后再试");
-    // 查询号没配就等于「新号一律注册不了」：这时只回库里那份昵称，本接口不再需要发信也不再需要
-    // 打上游，非空与空的差别直接读成「这个号在本站注册过」，白送一个可批量用的注册状态答案。
-    const nicknames = this.options.nicknames;
-    if (!nicknames) return null;
-    const existing = (await (await this.adapter()).findUserByEmail(qqEmailOf(qqNumber)))?.user as
-      { name?: string | null; qqName?: string | null } | undefined;
-    if (existing) return existing.qqName ?? existing.name ?? null;
-    const timeout = new Promise<null>((resolve) =>
-      setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null)
-    );
-    // 命中发码阶段的查询缓存时不打上游；查询号慢或挂了都只等 `NICKNAME_LOOKUP_TIMEOUT_MS`。
-    return (
-      (await Promise.race([nicknames.resolveNickname(qqNumber).catch(() => null), timeout])) ?? null
-    );
-  }
-
-  /**
-   * 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。
-   * 先用缓存：输入 QQ 号时的回显已经查过一次，哪怕那次超过了回显时限、后台晚些才查到，
-   * 结果也已进缓存。直接重查会让「查询号偏慢」变成「每次点发码都重新等、每次都超时」。
-   */
-  private async requireNickname(qqNumber: string): Promise<string> {
-    const nicknames = this.options.nicknames;
-    const timeout = new Promise<null>((resolve) =>
-      setTimeout(resolve, SIGNUP_NICKNAME_TIMEOUT_MS, null)
-    );
-    const name = nicknames
-      ? await Promise.race([nicknames.resolveNickname(qqNumber).catch(() => null), timeout])
-      : null;
-    if (!name)
-      throw new AppError(
-        "QQ_NICKNAME_UNAVAILABLE",
-        "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试"
-      );
-    return name;
   }
 
   /**
@@ -343,12 +272,6 @@ export class AccountService {
   async me(userId: string): Promise<AccountProfile | null> {
     const row = await this.findUser(userId);
     if (!row) return null;
-    // QQ 昵称刷新在后台跑，不拖慢本次请求；刷新到新昵称时会同步账号昵称。
-    void this.options.nicknames
-      ?.refreshUser(row)
-      .catch((error: unknown) =>
-        this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) })
-      );
     const [refreshed, badges] = await Promise.all([
       this.refreshAvatar(row),
       this.options.badges.badgesOf(row.id),
@@ -361,16 +284,43 @@ export class AccountService {
     return (await this.findUser(userId))?.name ?? null;
   }
 
-  /** 账号昵称强制取自 QQ 昵称（见 Server/docs/Account.md §4），不可修改；这里只接受 QQ 号公开开关。 */
-  async updateProfile(userId: string, input: { showQq?: boolean }): Promise<AccountProfile> {
+  /**
+   * 修改资料：QQ 号公开开关与账号昵称（见 Server/docs/Account.md §1）。
+   *
+   * 昵称与注册同一口径清洗并过敏感词；清洗后与当前昵称相同视为未修改，不消耗冷却。
+   * 冷却从上次改名（新号为注册）起算；从未改过名的老账号没有改名时刻，第一次改名不受限。
+   * 校验全部放在写库之前，任何一项被拒都不留下半个改动（公开开关也不生效）。
+   */
+  async updateProfile(
+    userId: string,
+    input: { showQq?: boolean; name?: string }
+  ): Promise<AccountProfile> {
+    const row = await this.findUser(userId);
+    if (!row) throw new AppError("UNAUTHORIZED", "请先登录");
     const patch: Record<string, unknown> = {};
     if (input.showQq !== undefined) patch.showQq = input.showQq;
-    const adapter = await this.adapter();
-    const row = Object.keys(patch).length
-      ? ((await adapter.updateUser(userId, patch)) as AccountRow | null)
-      : await this.findUser(userId);
-    if (!row) throw new AppError("UNAUTHORIZED", "请先登录");
-    return toProfile(row, await this.options.badges.badgesOf(row.id));
+    if (input.name !== undefined) {
+      const checked = checkAccountName(input.name);
+      if (!checked.ok) throw new AppError(checked.code, checked.message);
+      if (checked.name !== row.name) {
+        const now = this.now();
+        const availableAt = row.nameChangedAt
+          ? new Date(row.nameChangedAt).getTime() + ACCOUNT_NAME_CHANGE_COOLDOWN_MS
+          : 0;
+        if (now < availableAt)
+          throw new AppError(
+            "NAME_CHANGE_COOLDOWN",
+            `账号昵称每 ${ACCOUNT_NAME_CHANGE_COOLDOWN_MS / 86_400_000} 天只能修改一次，${formatBeijingMinute(availableAt)} 后可再次修改`
+          );
+        patch.name = checked.name;
+        patch.nameChangedAt = new Date(now);
+      }
+    }
+    const updated = Object.keys(patch).length
+      ? ((await (await this.adapter()).updateUser(userId, patch)) as AccountRow | null)
+      : row;
+    if (!updated) throw new AppError("UNAUTHORIZED", "请先登录");
+    return toProfile(updated, await this.options.badges.badgesOf(updated.id));
   }
 
   /** 玩家自行切换佩戴的徽章；`null` 表示不佩戴。只能佩戴自己已获得的那一枚。 */
@@ -464,5 +414,22 @@ const toProfile = (row: AccountRow, badges: readonly AccountBadge[]): AccountPro
   role: row.role === "admin" ? "admin" : "user",
   badges: [...badges],
   equippedBadge: equippedBadgeOf(row, badges),
+  nameChangedAt: row.nameChangedAt ? new Date(row.nameChangedAt).toISOString() : null,
   createdAt: new Date(row.createdAt).toISOString(),
 });
+
+/** 改名冷却提示里的时刻：按北京时间写到分钟（如「11月29日 14:30」），玩家不必换算时区。 */
+const beijingMinute = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+const formatBeijingMinute = (time: number): string => {
+  const parts = Object.fromEntries(
+    beijingMinute.formatToParts(time).map((part) => [part.type, part.value])
+  );
+  return `${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}`;
+};

@@ -9,7 +9,6 @@ import type {
   AdminRuntimeSetting,
   AdminUser,
   AdminUserDetail,
-  QQLookupStatus,
 } from "@bakagame/shared";
 import { presetAccount, stubApi, type StubReply } from "./Account";
 
@@ -31,6 +30,7 @@ export const ADMIN_PROFILE: AccountProfile = {
   role: "admin",
   badges: [{ kind: "owner", serial: null }],
   equippedBadge: "owner",
+  nameChangedAt: null,
   createdAt: at("2026-06-01T09:00:00"),
 };
 
@@ -76,8 +76,6 @@ export const ADMIN_USERS: AdminUser[] = Array.from({ length: 57 }, (_, index) =>
     banReason: banned ? "多次在聊天里刷屏广告" : null,
     banExpires: index === 2 ? at("2027-01-07T20:00:00") : null,
     showQq: index % 3 === 0,
-    qqName:
-      index % 4 === 3 ? null : `${base.name}${index % 5 === 1 ? "（QQ 昵称也很长很长很长）" : ""}`,
     badges:
       index === 0
         ? [
@@ -123,10 +121,9 @@ export const ADMIN_USER_FULL: AdminUserDetail = {
   feedbackCount: 4,
 };
 
-/** 用户详情：信息很少（刚注册、没徽章、没对局、没查到 QQ 昵称）。 */
+/** 用户详情：信息很少（刚注册、没徽章、没对局）。 */
 export const ADMIN_USER_SPARSE: AdminUserDetail = {
   ...ADMIN_USERS[56],
-  qqName: null,
   badges: [],
   equippedBadge: null,
   recentGames: [],
@@ -529,7 +526,6 @@ const AUDIT_ACTIONS = [
     { title: LONG_BODY.slice(0, 80), components: ["netease", "rooms"] },
   ],
   ["user.setRole", "user", { role: "admin" }],
-  ["qq.refreshNames", "qq", null],
   ["legacy.unknownAction", "misc", { note: "旧版本写入的动作名，没有中文标签" }],
 ] as const;
 
@@ -548,24 +544,6 @@ export const ADMIN_AUDIT = Array.from({ length: 95 }, (_, index) => {
     createdAt: new Date(ms("2027-01-01T11:30:00") - index * 5 * 3_600_000).toISOString(),
   };
 });
-
-// ---------- QQ 查询号 ----------
-
-export const QQ_ACTIVE: QQLookupStatus = {
-  state: "active",
-  uin: "100002",
-  nickname: "查询号·小助手",
-  checkedAt: at("2027-01-01T11:59:30"),
-  error: null,
-};
-
-export const QQ_DOWN: QQLookupStatus = {
-  state: "unavailable",
-  uin: null,
-  nickname: null,
-  checkedAt: at("2027-01-01T11:59:30"),
-  error: "NapCat 未响应：连接被拒绝，请检查实例是否在运行",
-};
 
 // ---------- 运行期旋钮 ----------
 
@@ -682,8 +660,6 @@ export const ADMIN_ROUTES: Record<string, StubReply> = {
   },
   "admin/games/get": ADMIN_GAME_DETAIL,
   "admin/audit/list": (input: unknown) => pageOf(ADMIN_AUDIT, input, 30),
-  "admin/qq/status": QQ_ACTIVE,
-  "admin/qq/refreshNames": { checked: 200, updated: 37, remaining: 1_204 },
   "admin/settings/list": { items: ADMIN_SETTINGS },
   "admin/settings/set": { items: ADMIN_SETTINGS },
   "admin/bangumiMirror/status": "pending",
