@@ -69,6 +69,9 @@ export default defineConfig({
     setupFiles: ["./src/test/Setup.ts"],
     clearMocks: true,
     restoreMocks: true,
+    // run 模式默认开「逻辑核数 − 1」个 jsdom 进程，32 线程的开发机上是 31 个，叠加覆盖率会把整机占满、前台卡顿；
+    // 留一半核心给桌面与并行的其他任务。
+    maxWorkers: "50%",
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
