@@ -421,6 +421,38 @@ jobs:
           path: Desktop/src-tauri/target/release/bundle/**
           retention-days: 14
 
+  # 桌面壳的 macOS 编译与单测：Apple 芯片的 runner 上只跑 cargo check 与 cargo test，不打包、不签名。
+  # 壳的 macOS 分支（平台标识、外链、单实例锁、HTTPDNS 关闭）只有在真 macOS 上编译才会被检查到：
+  # Windows 本机交叉检查会卡在依赖的 Objective-C 构建脚本上（要 macOS SDK），所以这道门只能放在这里。
+  # 打包、签名与公证属于发布流水线，尚未接入，不在这个作业里做。
+  desktop-macos:
+    name: Desktop Check (Tauri · macOS)
+    runs-on: macos-latest
+    needs: [changes]
+    timeout-minutes: 30
+    if: ${{ needs.changes.outputs.desktop == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: Desktop/src-tauri
+
+      - name: Type check the shell
+        working-directory: Desktop/src-tauri
+        run: cargo check --locked
+
+      - name: Run shell unit tests
+        working-directory: Desktop/src-tauri
+        run: cargo test --locked
+
   # 安卓壳：APK 内嵌 Client 构建产物，所以先把前端构建出来再喂 prepare-web。
   # 仓库里没有 Gradle wrapper jar 与 gradlew（见 Mobile/.gitignore），因此用系统 Gradle 构建；
   # 版本由下面的 setup-gradle 钉死，并与 Mobile/android/gradle/wrapper/gradle-wrapper.properties
