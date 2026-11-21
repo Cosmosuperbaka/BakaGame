@@ -7,7 +7,13 @@ on:
     branches: [main]
   # 手动全量：两个壳作业受路径过滤控制，而客户端制品此前一次都没真正构建过，
   # 需要一个能把它们强制拉起来跑通的入口（dispatch 没有变更集，见 changes 作业）。
+  # 勾选 publish_macos 时只发布 macOS 桌面壳：其余作业一律跳过，不会重打、重传 Windows 与安卓的包。
   workflow_dispatch:
+    inputs:
+      publish_macos:
+        description: 只发布 macOS 桌面壳的当前版本（已发布过的版本不会重发，其余作业全部跳过）
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,6 +27,9 @@ permissions:
 # --frozen-lockfile 直接硬失败），因此无需在作业里自证。
 env:
   NODE_VERSION: "22"
+  # 打包 CLI 的精确版本在这里单点声明（Windows 与 macOS 两个打包作业共用），升级时同改这里与
+  # Cargo.lock（两者主次版本必须匹配）。
+  TAURI_CLI_VERSION: "2.12.3"
 
 # main 上的推送不取消：部署门禁认「该提交的那次 CI 成功」，被后一次推送取消就等于这个提交没有门禁结论。
 concurrency:
@@ -133,13 +142,18 @@ jobs:
               - 'package.json'
               - '.github/workflows/ci.yml'
 
+      # 只发布 macOS 时六路一律置 false：其余作业（含 Windows 与安卓的打包和发布）全部跳过。
       - name: Force every path when dispatched manually
         id: force
         if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          PUBLISH_MACOS_ONLY: ${{ inputs.publish_macos }}
         run: |
           set -euo pipefail
+          value=true
+          [ "$PUBLISH_MACOS_ONLY" = "true" ] && value=false
           for key in server client desktop android e2e knip; do
-            echo "${key}=true" >> "$GITHUB_OUTPUT"
+            echo "${key}=$value" >> "$GITHUB_OUTPUT"
           done
 
   server:
@@ -372,9 +386,7 @@ jobs:
     needs: [changes]
     timeout-minutes: 45
     if: ${{ needs.changes.outputs.desktop == 'true' }}
-    # 打包 CLI 的精确版本在这里单点声明，升级时同改这里与 Cargo.lock（两者主次版本必须匹配）。
     env:
-      TAURI_CLI_VERSION: "2.12.3"
       # HTTPDNS 凭据只在构建期读取（见 Desktop 目录的 README）；三项都为空时壳自动保持系统 DNS。
       BAKA_HTTPDNS_APP_ID: ${{ secrets.BAKA_HTTPDNS_APP_ID }}
       BAKA_HTTPDNS_SECRET_KEY: ${{ secrets.BAKA_HTTPDNS_SECRET_KEY }}
@@ -838,6 +850,263 @@ jobs:
             --content-type "application/json; charset=utf-8" \
             --cache-control "public, max-age=0, must-revalidate"
           echo "已发布 $bundle_name 与 BakaGame-web-latest.json"
+
+  # macOS 桌面壳发布，分三步：先判定这个版本要不要发，再在 macOS 上打通用包，最后传对象存储。
+  # 触发与 Windows 一致（main 上壳目录有改动时），另有 workflow_dispatch 的 publish_macos 入口补发当前版本。
+  # 同一版本只发一次：版本化对象已经在桶里就整条跳过——同版本重打出来的是另一份构建（构建标记不同），
+  # 覆盖长缓存的版本化对象会让签名与缓存里的包对不上；这一步也省下 macOS 运行器的分钟数。
+  macos-release-plan:
+    name: Plan macOS Release
+    runs-on: ubuntu-latest
+    needs: [changes]
+    timeout-minutes: 5
+    if: >-
+      ${{ github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (needs.changes.outputs.desktop == 'true' || inputs.publish_macos) }}
+    permissions:
+      contents: read
+    env:
+      HAS_R2: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+      R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Decide whether this version needs publishing
+        id: plan
+        run: |
+          set -euo pipefail
+          # 清单里第一处 version = "…" 属于 [package]
+          version="$(sed -n -E 's/^version = "([^"]+)"$/\1/p' Desktop/src-tauri/Cargo.toml | head -n 1)"
+          [ -n "$version" ] || { echo "::error::读不到 Desktop/src-tauri/Cargo.toml 的版本号"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_R2" != "true" ]; then
+            echo "::notice::未配置对象存储凭证，跳过 macOS 发布"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          aws configure set default.s3.addressing_style path
+          exists() {
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3api head-object \
+              --bucket "$R2_BUCKET" --key "$1" > /dev/null 2>&1
+          }
+          # dmg 每次发布都会传（更新包要有签名私钥才有），用它判断这个版本发过没有
+          if exists "BakaGame-$version-universal.dmg"; then
+            echo "::notice::macOS $version 已经发布过，不重复发布"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 通用包（Apple 芯片 + Intel）：有自签名证书就用它签，没有就退回临时签名（ad-hoc），发布不失败。
+  # 自签名证书在运行器上默认不受信，codesign 找不到可用身份，所以先导进临时钥匙串并信任它用于代码签名。
+  # 自签名不能免掉首次打开的拦截（只有苹果签发并公证的才行），作用是让每一版的签名身份固定。
+  desktop-macos-bundle:
+    name: Desktop Bundle (Tauri · macOS)
+    runs-on: macos-latest
+    needs: [macos-release-plan]
+    timeout-minutes: 60
+    if: ${{ needs.macos-release-plan.outputs.publish == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: Desktop/src-tauri
+
+      # 证书与密码只在这一步的环境里；临时钥匙串的密码随机生成，作业结束即作废。
+      - name: Import the signing certificate
+        id: sign
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: BakaGame Self-Signed Code Signing
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            echo "::notice::未配置签名证书，本次用临时签名（ad-hoc）"
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/baka-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          p12="$RUNNER_TEMP/baka-signing.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          # 证书本身从刚导入的钥匙串里导出，再把它设为代码签名用途的受信根
+          security find-certificate -c "$SIGNING_IDENTITY" -p "$keychain" > "$RUNNER_TEMP/baka-signing.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k "$keychain" "$RUNNER_TEMP/baka-signing.pem"
+          if ! security find-identity -v -p codesigning "$keychain" | grep -F "\"$SIGNING_IDENTITY\"" > /dev/null; then
+            security find-identity -p codesigning "$keychain" || true
+            echo "::error::证书导入后仍不是可用的代码签名身份"
+            exit 1
+          fi
+          echo "identity=$SIGNING_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      # 只合并更新签名那一份配置：主配置与 tauri.macos.conf.json 由 CLI 自己读取合并，
+      # 再用 --config 传一遍主配置会把 macOS 的打包目标与图标列表覆盖回 Windows 的那份。
+      # 签名身份由 APPLE_SIGNING_IDENTITY 覆盖配置里的临时签名。
+      - name: Bundle the universal app
+        working-directory: Desktop
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ steps.sign.outputs.identity }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          configs=()
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            printf '%s' '{"bundle":{"createUpdaterArtifacts":true}}' > "$RUNNER_TEMP/updater.conf.json"
+            configs+=(--config "$RUNNER_TEMP/updater.conf.json")
+          else
+            echo "::notice::未配置更新签名私钥，本次 macOS 包不带自动更新签名"
+          fi
+          npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build \
+            --target universal-apple-darwin ${configs[@]+"${configs[@]}"}
+
+      # 发布前在运行器上核对签名：.app、dmg 里的应用与 .app.tar.gz 里的应用必须是同一份签名，
+      # 用了证书时签名者必须是这张证书。任何一项不符就不发布。
+      - name: Verify the signatures
+        working-directory: Desktop/src-tauri/target/universal-apple-darwin/release/bundle
+        env:
+          SIGNING_IDENTITY: ${{ steps.sign.outputs.identity }}
+        run: |
+          set -euo pipefail
+          app="$(find macos -maxdepth 1 -name '*.app' -print -quit)"
+          dmg="$(find dmg -maxdepth 1 -name '*_universal.dmg' -print -quit)"
+          # 更新包只在有更新签名私钥时产出；没有就只发 dmg，这一版没有自动更新
+          tarball="$(find macos -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+          [ -n "$app" ] && [ -n "$dmg" ] || { echo "::error::macOS 产物不全"; ls -R .; exit 1; }
+          summary() { codesign -dv --verbose=4 "$1" 2>&1 | grep -E '^(Identifier|Authority|CDHash|Signature)=' ; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv --verbose=4 "$app"
+          summary "$app" > "$RUNNER_TEMP/app.txt"
+          if [ "$SIGNING_IDENTITY" != "-" ]; then
+            grep -Fx "Authority=$SIGNING_IDENTITY" "$RUNNER_TEMP/app.txt" > /dev/null || {
+              echo "::error::应用的签名者不是 $SIGNING_IDENTITY"; exit 1; }
+          fi
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/from-dmg" "$dmg" > /dev/null
+          summary "$RUNNER_TEMP/from-dmg/$(basename "$app")" > "$RUNNER_TEMP/dmg.txt"
+          hdiutil detach "$RUNNER_TEMP/from-dmg" > /dev/null
+          diff "$RUNNER_TEMP/app.txt" "$RUNNER_TEMP/dmg.txt"
+          if [ -n "$tarball" ]; then
+            mkdir -p "$RUNNER_TEMP/from-tar"
+            tar -xzf "$tarball" -C "$RUNNER_TEMP/from-tar"
+            summary "$RUNNER_TEMP/from-tar/$(basename "$app")" > "$RUNNER_TEMP/tar.txt"
+            diff "$RUNNER_TEMP/app.txt" "$RUNNER_TEMP/tar.txt"
+          fi
+          echo "签名一致："; cat "$RUNNER_TEMP/app.txt"
+
+      - name: Upload macOS bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-macos-bundle
+          path: |
+            Desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            Desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            Desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+          retention-days: 14
+
+  # 传对象存储，口径同 Windows：版本化对象长缓存、latest 别名 no-cache，服务端读别名旁的
+  # .version / .sig。顺序：先传版本化对象与别名，再传签名，最后写版本旁文件。
+  macos-publish:
+    name: Publish macOS Installer
+    runs-on: ubuntu-latest
+    needs: [macos-release-plan, desktop-macos-bundle]
+    timeout-minutes: 15
+    if: ${{ needs.desktop-macos-bundle.result == 'success' }}
+    permissions:
+      contents: read
+    env:
+      HAS_R2: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+      R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      PLANNED_VERSION: ${{ needs.macos-release-plan.outputs.version }}
+    steps:
+      - name: Download macOS bundle
+        if: env.HAS_R2 == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: desktop-macos-bundle
+          path: inbound/macos
+
+      - name: Publish macOS installer and updater package
+        if: env.HAS_R2 == 'true'
+        run: |
+          set -euo pipefail
+          aws configure set default.s3.addressing_style path
+          dmg="$(find inbound/macos -name '*_universal.dmg' -print -quit)"
+          tarball="$(find inbound/macos -name '*.app.tar.gz' -print -quit)"
+          [ -n "$dmg" ] || { echo "::error::产物里没有 macOS 的 dmg"; exit 1; }
+          version="$(basename "$dmg" | sed -E 's/^BakaGame_(.+)_universal\.dmg$/\1/')"
+          [ "$version" = "$PLANNED_VERSION" ] || {
+            echo "::error::产物版本 $version 与计划版本 $PLANNED_VERSION 不一致"; exit 1; }
+          put() {
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$1" "s3://$R2_BUCKET/$2" \
+              --content-type "$3" --cache-control "$4"
+          }
+          immutable="public, max-age=31536000, immutable"
+          revalidate="public, max-age=0, must-revalidate"
+          printf '%s\n' "$version" > "$RUNNER_TEMP/macos-version.txt"
+          put "$dmg" "BakaGame-$version-universal.dmg" "application/x-apple-diskimage" "$immutable"
+          if [ -n "$tarball" ] && [ -f "$tarball.sig" ]; then
+            put "$tarball" "BakaGame-$version-universal.app.tar.gz" "application/gzip" "$immutable"
+            put "$tarball.sig" "BakaGame-$version-universal.app.tar.gz.sig" "text/plain; charset=utf-8" "$immutable"
+          fi
+          put "$dmg" "BakaGame-latest-universal.dmg" "application/x-apple-diskimage" "$revalidate"
+          put "$RUNNER_TEMP/macos-version.txt" "BakaGame-latest-universal.dmg.version" "text/plain; charset=utf-8" "$revalidate"
+          # 自动更新：包排在签名之前，版本旁文件最后写，服务端读到新版本时同批的包与签名已经就位。
+          # 这一版没有带签名的更新包时撤下别名旁的旧签名，免得新版本号配旧包旧签名
+          if [ -n "$tarball" ] && [ -f "$tarball.sig" ]; then
+            put "$tarball" "BakaGame-latest-universal.app.tar.gz" "application/gzip" "$revalidate"
+            put "$tarball.sig" "BakaGame-latest-universal.app.tar.gz.sig" "text/plain; charset=utf-8" "$revalidate"
+            put "$RUNNER_TEMP/macos-version.txt" "BakaGame-latest-universal.app.tar.gz.version" "text/plain; charset=utf-8" "$revalidate"
+            echo "已发布 macOS $version：dmg、更新包、签名与版本旁文件"
+          else
+            echo "::notice::本次 macOS 没有带签名的更新包，只发布 dmg，撤下别名旁的旧签名"
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3 rm "s3://$R2_BUCKET/BakaGame-latest-universal.app.tar.gz.sig" || true
+          fi
 
   # 格式门禁：全量触发（任何改动都跑）。它原先挂在 knip 作业里，而 knip 的过滤集合只有
   # Client/ Server/ 与几个根清单 —— 改 Desktop/**、Mobile/**、scripts/**、Agents/** 时
