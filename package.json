@@ -32,7 +32,7 @@
     "knip:prod": "knip --production --config knip.production.jsonc --workspace Client"
   },
   "devDependencies": {
-    "knip": "6.41.0",
+    "knip": "6.47.0",
     "prettier": "3.9.10",
     "yaml": "2.9.1"
   }

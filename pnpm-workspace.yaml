@@ -41,4 +41,14 @@ overrides:
   # 同一个网易云 API 包经代理库带进 basic-ftp（只在 ftp:// 的代理自动配置地址下才会用到）与 express 的 qs
   # （只在那个从不启动的自带服务里用到）。生产路径同样够不到，抬到各自大版本内的补丁下限，上游跟上后可删除。
   "basic-ftp@<6.2.4": ">=6.2.4 <7"
-  "qs@>=6.7.0 <6.16.1": ">=6.16.1 <7"
+  "qs@>=6.7.0 <6.16.2": ">=6.16.2 <7"
+  # drizzle-kit 经已停更的 @esbuild-kit/core-utils 钉死 esbuild ~0.18（开发服务器跨域读响应的公告）。
+  # 那条路径只调转换接口、从不启动开发服务器，且 drizzle-kit 只在本地迁移时用到；抬到 0.25 消掉审计告警，
+  # 转换接口在两版之间兼容。drizzle-kit 去掉这条依赖后可删除。
+  "@esbuild-kit/core-utils>esbuild": "^0.25.0"
+  # Storybook 的组件文档插件钉 glob 13（连带 minimatch 10），两者都有拒绝服务类公告；只在故事构建时
+  # 扫本仓库组件，输入不受外部控制。插件只用 globSync，14 版接口与引擎范围不变。Storybook 换掉它后可删除。
+  "@joshwooding/vite-plugin-react-docgen-typescript>glob": "^14.0.6"
+  # sonarjs lint 插件最新版仍钉 minimatch 10（同一条拒绝服务公告），只匹配本仓库的文件路径；
+  # 11 版导出面不变，lint 全量通过。插件跟上后可删除。
+  "eslint-plugin-sonarjs>minimatch": "^11.0.5"
