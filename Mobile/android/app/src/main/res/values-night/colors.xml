@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 默认主题（v1）暗色页面底色令牌（background）的 sRGB 值，用途见 values/colors.xml。 -->
+    <color name="baka_background">#2D2621</color>
+</resources>

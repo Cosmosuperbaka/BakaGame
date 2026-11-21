@@ -1,11 +1,14 @@
 package website.baka.game
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebSettingsCompat
@@ -21,8 +24,8 @@ import website.baka.game.update.HotUpdateStore
 import java.util.concurrent.Executor
 
 /**
- * Capacitor 壳主 Activity。只做四件事：装载内嵌前端、注册通道插件、放行跨站 Cookie、
- * 开启 WebAuthn 并放行接口请求。
+ * Capacitor 壳主 Activity：装载内嵌前端、注册通道插件、放行跨站 Cookie、
+ * 开启 WebAuthn 并放行接口请求，外加启动画面与 WebView 首帧前的底色。
  * 不含任何业务 UI（UI 全部来自内嵌的 Client 构建产物）。
  *
  * 窗口级防截屏不在这里：它按房间开关，见 BakaChannelPlugin.setSecureScreen。
@@ -38,7 +41,13 @@ class MainActivity : BridgeActivity() {
 
     private var dnsProxy: DnsProxyServer? = null
 
+    /** 页面已经画出第一帧（WebViewClient.onPageCommitVisible）；启动画面留到这一刻。 */
+    @Volatile
+    private var pageVisible = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 必须在 super.onCreate 之前：它把启动主题换成 postSplashScreenTheme，并接管系统启动画面。
+        val splash = installSplashScreen()
         registerPlugin(BakaChannelPlugin::class.java)
         registerPlugin(BakaHotUpdatePlugin::class.java)
         // 必须在 super.onCreate 之前：Capacitor 在 super 里创建 WebView 并读取
@@ -59,11 +68,19 @@ class MainActivity : BridgeActivity() {
         prepareHttpDns()
         applyHttpDnsProxy()
         super.onCreate(savedInstanceState)
+        // 启动画面留到页面画出第一帧：否则它一退场就露出还没内容的 WebView。
+        // 设上限兜底，页面出错时不至于一直卡在启动画面上。
+        val splashDeadline = SystemClock.uptimeMillis() + SPLASH_MAX_MS
+        splash.setKeepOnScreenCondition {
+            !pageVisible && SystemClock.uptimeMillis() < splashDeadline
+        }
         // 注意：这里**不**设 FLAG_SECURE。窗口级防截屏只在反作弊房里开 —— 由页面根据
         // 房间快照经 BakaChannel.setSecureScreen 切换（见 Client/src/lib/BakaChannel.ts）。
         // 启动即全量开启会让普通玩家连截图分享都做不到。
         val bridge = bridge ?: return
         val webView = bridge.webView
+        // WebView 默认白底：在页面样式到位之前先铺上与启动画面同一档的底色，暗色下不再白闪。
+        webView.setBackgroundColor(ContextCompat.getColor(this, R.color.baka_background))
         // 页面 origin 是 https://localhost（未配置 server.hostname 时），接口在公网域名上 ——
         // 会话 Cookie 属于跨站 Cookie。Capacitor 自己没有设置这个开关，不同 WebView 版本默认值
         // 不一致；显式打开，否则登录态在壳内时有时无（表现为昵称读不到、验证码发不出、WS 是游客）。
@@ -81,7 +98,7 @@ class MainActivity : BridgeActivity() {
         // server.hostname 把内嵌资源挂到站点域名后，/api/* 也落在该域名下：Capacitor 的本地
         // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
         // 仍走本地服务（SPA 深链刷新才不会 404）。
-        bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge))
+        bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge) { pageVisible = true })
     }
 
     override fun onDestroy() {
@@ -142,10 +159,21 @@ class MainActivity : BridgeActivity() {
 
     private companion object {
         private const val TAG = "BakaMain"
+
+        /** 启动画面最多停留这么久：页面迟迟画不出来时宁可露出底色，也不让玩家以为应用卡死。 */
+        private const val SPLASH_MAX_MS = 3000L
     }
 }
 
-private class ApiPassthroughWebViewClient(bridge: Bridge) : BridgeWebViewClient(bridge) {
+private class ApiPassthroughWebViewClient(
+    bridge: Bridge,
+    private val onFirstVisible: () -> Unit,
+) : BridgeWebViewClient(bridge) {
+    override fun onPageCommitVisible(view: WebView, url: String) {
+        super.onPageCommitVisible(view, url)
+        onFirstVisible()
+    }
+
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest

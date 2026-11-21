@@ -1,9 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:background">@color/white</item>
+    <!--
+      主题级不写 android:background：它会成为每个 View 的默认背景，而不只是窗口底色。
+      窗口底色一律走 android:windowBackground。
+    -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
+    <!--
+      覆盖 Capacitor 库里的同名主题（库里继承的是暗色的 Theme.AppCompat.NoActionBar）。
+      BridgeActivity 在 onCreate 里切到这个主题，WebView 再按它的 isLightTheme 给页面的
+      prefers-color-scheme：继承昼夜主题，「跟随系统」的玩家看到的才是系统当前的明暗。
+    -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/baka_background</item>
     </style>
+
+    <!--
+      启动主题：图标用应用自己的自适应图标（不写时库给的是系统默认图标），底色分昼夜。
+      MainActivity 调 installSplashScreen() 后切到 postSplashScreenTheme，并把启动画面留到页面首次绘制。
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@color/white</item>
+        <item name="windowSplashScreenBackground">@color/baka_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

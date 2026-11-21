@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="white">#FFFFFF</color>
+    <!--
+      默认主题（Client/src/themes 的 v1）亮色页面底色令牌（background）的 sRGB 值。
+      只管页面还没起来的那一段：启动画面、WebView 首帧前的底色、系统栏与挖孔区的初值；
+      页面加载后由桥接按实际主题与明暗回报真实底色（MainActivity.applyPageAppearance）。
+      主题令牌改了要同步这里与 values-night。
+    -->
+    <color name="baka_background">#F5F1E6</color>
 </resources>

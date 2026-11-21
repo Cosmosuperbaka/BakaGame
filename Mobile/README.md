@@ -146,7 +146,7 @@ Mobile/
     ├── buildscript-gradle.lockfile / app/gradle.lockfile  # Gradle 依赖锁（入库，勿手改）
     ├── app/build.gradle / src/main/AndroidManifest.xml
     └── app/src/main/java/website/baka/game/
-        ├── MainActivity.kt              # 注册插件 + 启动时选择热更资源 + HTTPDNS 与 WebAuthn 开关
+        ├── MainActivity.kt              # 注册插件 + 启动画面 + 启动时选择热更资源 + HTTPDNS 与 WebAuthn 开关
         ├── channel/
         │   ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck / setSecureScreen（FLAG_SECURE 开关）
         │   ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
