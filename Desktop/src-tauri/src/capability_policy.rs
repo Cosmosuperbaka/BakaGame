@@ -118,6 +118,30 @@ fn dev_capabilities_stay_in_subdirectory_without_core_permissions() {
     }
 }
 
+/// 能力文件按 `platforms` 只在列出的系统上生效：漏了哪个桌面平台，那个平台的页面调桥接命令
+/// 就一律被权限层拒（拿不到票、自检失败），壳自己却照常运行，很难从表面看出来
+#[test]
+fn capabilities_cover_every_desktop_platform() {
+    let mut files = json_files_in(&manifest_dir().join("capabilities"));
+    files.extend(json_files_in(&manifest_dir().join("capabilities").join("dev")));
+    for file in &files {
+        let capability = read_json(file);
+        let platforms: BTreeSet<&str> = capability["platforms"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} 缺少 platforms", file.display()))
+            .iter()
+            .map(|value| value.as_str().unwrap_or_default())
+            .collect();
+        for platform in ["windows", "macOS"] {
+            assert!(
+                platforms.contains(platform),
+                "{} 没有覆盖 {platform}，该平台的页面会拿到 not allowed",
+                file.display()
+            );
+        }
+    }
+}
+
 /// `withGlobalTauri` 会把整套 Tauri API 挂到页面的 `window.__TAURI__` 上，桥接脚本并不需要
 #[test]
 fn global_tauri_api_is_not_exposed_to_pages() {
