@@ -1,6 +1,10 @@
 import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
-import type { ClientArtifacts, ClientPackagePlatform } from "../../infrastructure/ClientArtifacts";
+import type {
+  ClientArtifacts,
+  ClientPackagePlatform,
+  UpdaterPlatform,
+} from "../../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../../infrastructure/ClientChannel";
 import {
   CLIENT_ATTESTATION_CHAIN_MAX,
@@ -46,6 +50,15 @@ const packagePlatformOf = (
 ): ClientPackagePlatform => {
   if (clientType === "mobile") return "android";
   return platform === "macos" ? "macos" : "windows";
+};
+/**
+ * Tauri 更新器的平台段 + 架构段 → 自动更新包平台。Windows 只出 x64；macOS 出通用包，
+ * 两种芯片都给同一个包。其余组合（ARM 版 Windows、Linux 等）没有发布，回 204。
+ */
+const updaterPlatformOf = (target: string, arch: string): UpdaterPlatform | undefined => {
+  if (target === "windows" && arch === "x86_64") return "windows";
+  if (target === "darwin" && (arch === "aarch64" || arch === "x86_64")) return "macos";
+  return undefined;
 };
 /**
  * 壳上报版本号的唯一口径：壳把项目文件里的 version 原样送来，这里放宽或收紧都会让
@@ -238,6 +251,36 @@ export const clientChannelRoutes = (
             maxLength: 64,
             pattern: "^(?!.*\\.\\.)(?!\\.$)[A-Za-z0-9._-]+$",
           }),
+        }),
+      }
+    )
+    .get(
+      CLIENT_CHANNEL_PATHS.desktopUpdate,
+      async ({ params, set }) => {
+        // Tauri 更新器的动态清单：有新版回 200 + 版本、地址、签名，没有就回 204。
+        // 地址指向对象存储/CDN，安装包字节不经过源站；签名由壳用编进二进制的公钥校验，
+        // 这里只是把发布流水线写下的 .sig 原样转交，服务端被篡改也换不来能装上的包。
+        // 与 update-check 不同，这里不涉及准入门槛，可以短时缓存。
+        const cacheControl = "public, max-age=60";
+        set.headers["cache-control"] = cacheControl;
+        const platform = updaterPlatformOf(params.target, params.arch);
+        const release = platform ? await artifacts?.updaterRelease(platform) : undefined;
+        if (!release || compareDottedVersion(params.currentVersion, release.version) >= 0) {
+          return new Response(null, { status: 204, headers: { "cache-control": cacheControl } });
+        }
+        return {
+          version: release.version,
+          notes: "",
+          ...(release.pubDate ? { pub_date: release.pubDate } : {}),
+          url: release.url,
+          signature: release.signature,
+        };
+      },
+      {
+        params: t.Object({
+          target: t.String({ minLength: 1, maxLength: 16 }),
+          arch: t.String({ minLength: 1, maxLength: 16 }),
+          currentVersion: versionSchema,
         }),
       }
     )

@@ -18,6 +18,11 @@ export const CLIENT_CHANNEL_PATHS = {
   updateCheck: "/api/client/update-check",
   webBundle: "/api/client/web-bundle",
   packages: "/api/client/packages",
+  /**
+   * 桌面壳自动更新清单（Tauri 更新器的动态格式）。三个占位段由壳的更新器按自身平台、架构与
+   * 当前版本填好再请求；壳源码里写的是 `{{target}}` 形式的同一条路径，由对账测试核对。
+   */
+  desktopUpdate: "/api/client/desktop-update/:target/:arch/:currentVersion",
 } as const;
 
 /** 单个自检 id 的长度上限：壳超长截断后，服务端仍按冒号前的稳定前缀判定。 */

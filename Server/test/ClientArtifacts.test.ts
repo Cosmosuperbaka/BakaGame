@@ -220,3 +220,76 @@ test("macOS 地址为空串（缺省）时不进列表，也读不到它的最�
   // 没配的平台连探测都不发
   expect(fetched.some((url) => url.includes("dmg"))).toBe(false);
 });
+
+/** 自动更新用的桩：按后缀分别回版本旁文件、签名旁文件与更新包本身，记下请求过的地址。 */
+const updaterHarness = (files: { version?: string; sig?: string; packageOk?: boolean }) => {
+  const fetched: string[] = [];
+  const artifacts = new ClientArtifacts({
+    urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe" },
+    updaterUrls: {
+      windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
+      macos: "https://cdn.test/files/BakaGame-latest-universal.app.tar.gz",
+    },
+    fetcher: (async (url: string) => {
+      fetched.push(url);
+      if (url.endsWith(".version"))
+        return versionStub(files.version !== undefined, files.version ?? "");
+      if (url.endsWith(".sig")) return versionStub(files.sig !== undefined, files.sig ?? "");
+      return stub(files.packageOk ?? true, { "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT" });
+    }) as unknown as typeof fetch,
+  });
+  return { artifacts, fetched };
+};
+
+const SIGNATURE = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==";
+
+test("自动更新：更新包、版本与签名旁文件都在时给出地址与签名，地址就是对象存储上的包", async () => {
+  const { artifacts } = updaterHarness({ version: "0.2.0", sig: `${SIGNATURE}\n` });
+  expect(await artifacts.updaterRelease("windows")).toEqual({
+    version: "0.2.0",
+    url: "https://cdn.test/files/BakaGame-latest-x64.exe",
+    signature: SIGNATURE,
+    pubDate: "2026-10-19T09:12:33.000Z",
+  });
+  expect((await artifacts.updaterRelease("macos"))?.url).toBe(
+    "https://cdn.test/files/BakaGame-latest-universal.app.tar.gz"
+  );
+});
+
+test("自动更新：缺签名、签名形状不对、缺版本或包不在，一律当没有可更新的发布", async () => {
+  for (const files of [
+    { version: "0.2.0" },
+    { version: "0.2.0", sig: "not a signature!" },
+    { version: "0.2.0", sig: "A".repeat(5000) },
+    { sig: SIGNATURE },
+    { version: "0.2.0", sig: SIGNATURE, packageOk: false },
+  ]) {
+    const { artifacts } = updaterHarness(files);
+    expect(await artifacts.updaterRelease("windows")).toBeUndefined();
+  }
+});
+
+test("自动更新：没配更新包地址的平台不发任何探测", async () => {
+  const fetched: string[] = [];
+  const artifacts = new ClientArtifacts({
+    urls: {},
+    updaterUrls: { macos: "" },
+    fetcher: (async (url: string) => {
+      fetched.push(url);
+      return stub(true, {});
+    }) as unknown as typeof fetch,
+  });
+  expect(await artifacts.updaterRelease("macos")).toBeUndefined();
+  expect(await artifacts.updaterRelease("windows")).toBeUndefined();
+  expect(fetched).toEqual([]);
+});
+
+test("自动更新与下载弹窗共用同一次探测：Windows 的更新包就是安装包，TTL 内只问一次", async () => {
+  const { artifacts, fetched } = updaterHarness({ version: "0.2.0", sig: SIGNATURE });
+  await artifacts.list();
+  await artifacts.updaterRelease("windows");
+  await artifacts.updaterRelease("windows");
+  const heads = fetched.filter((url) => url.endsWith(".exe"));
+  expect(heads).toHaveLength(1);
+  expect(fetched.filter((url) => url.endsWith(".sig"))).toHaveLength(1);
+});

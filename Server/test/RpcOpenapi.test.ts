@@ -95,6 +95,7 @@ const EXPECTED_HTTP_PATHS = [
   "/api/client/update-check",
   "/api/client/web-bundle",
   "/api/client/packages",
+  "/api/client/desktop-update/{target}/{arch}/{currentVersion}",
 ];
 
 const pathOf = (operationId: string): string =>

@@ -490,6 +490,11 @@ const createClientDistribution = (options: {
       macos: env.clientPackageMacosUrl,
       android: env.clientPackageAndroidUrl,
     },
+    // 自动更新包：Windows 的就是安装包本身（同一个对象、同一次探测），macOS 另配 .app.tar.gz
+    updaterUrls: {
+      windows: env.clientPackageWindowsUrl,
+      macos: env.clientUpdaterMacosUrl,
+    },
   });
   // 热更新清单与安装包清单分开：前者只影响移动壳能否换资源，后者只影响下载弹窗。
   const clientWebBundle = new ClientWebBundle({

@@ -229,6 +229,111 @@ test("缺版本号时拒绝：没有版本就没有提醒的依据", async () =>
   expect(result.status).toBeLessThan(500);
 });
 
+/** 桌面壳自动更新清单：按更新器替换好的平台、架构与当前版本提问。 */
+async function desktopUpdate(path: string, artifacts?: ClientArtifacts) {
+  const response = await clientChannelRoutes(undefined, artifacts).handle(
+    new Request(`http://localhost/api/client/desktop-update/${path}`)
+  );
+  const text = await response.text();
+  return {
+    status: response.status,
+    cacheControl: response.headers.get("cache-control"),
+    body: text ? (JSON.parse(text) as Record<string, unknown>) : null,
+  };
+}
+
+const UPDATE_SIGNATURE = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==";
+
+/** Windows 2.5.0、macOS 2.1.0 两个更新包，签名与版本旁文件都齐；记下所有被请求的地址。 */
+const updaterArtifacts = () => {
+  const fetched: string[] = [];
+  const artifacts = new ClientArtifacts({
+    urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe" },
+    updaterUrls: {
+      windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
+      macos: "https://cdn.test/files/BakaGame-latest-universal.app.tar.gz",
+    },
+    fetcher: (async (url: string, init?: RequestInit) => {
+      const text = String(url);
+      fetched.push(`${init?.method ?? "GET"} ${text}`);
+      if (text.endsWith(".version"))
+        return {
+          ok: true,
+          text: async () => (text.includes("universal") ? "2.1.0" : "2.5.0"),
+        } as unknown as Response;
+      if (text.endsWith(".sig"))
+        return { ok: true, text: async () => UPDATE_SIGNATURE } as unknown as Response;
+      return {
+        ok: true,
+        headers: new Headers({ "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT" }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch,
+  });
+  return { artifacts, fetched };
+};
+
+test("自动更新清单：落后于已发布版时按 Tauri 动态格式给出版本、地址与签名", async () => {
+  const { artifacts } = updaterArtifacts();
+  const result = await desktopUpdate("windows/x86_64/2.0.0", artifacts);
+  expect(result.status).toBe(200);
+  expect(result.cacheControl).toBe("public, max-age=60");
+  expect(result.body).toEqual({
+    version: "2.5.0",
+    notes: "",
+    pub_date: "2026-10-19T09:12:33.000Z",
+    url: "https://cdn.test/files/BakaGame-latest-x64.exe",
+    signature: UPDATE_SIGNATURE,
+  });
+});
+
+test("自动更新清单：macOS 两种芯片都拿通用包，版本按 macOS 自己的发布比", async () => {
+  const { artifacts } = updaterArtifacts();
+  for (const arch of ["aarch64", "x86_64"]) {
+    const result = await desktopUpdate(`darwin/${arch}/2.0.0`, artifacts);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      version: "2.1.0",
+      url: "https://cdn.test/files/BakaGame-latest-universal.app.tar.gz",
+    });
+  }
+  // Windows 已经发到 2.5.0 也不影响 Mac 壳：2.1.0 的 Mac 壳就是最新
+  expect((await desktopUpdate("darwin/aarch64/2.1.0", artifacts)).status).toBe(204);
+});
+
+test("自动更新清单：已是最新、平台没有发布或没配制品时回 204", async () => {
+  const { artifacts } = updaterArtifacts();
+  for (const path of [
+    "windows/x86_64/2.5.0",
+    "windows/x86_64/3.0.0",
+    "windows/aarch64/1.0.0",
+    "linux/x86_64/1.0.0",
+  ]) {
+    const result = await desktopUpdate(path, artifacts);
+    expect(result.status, path).toBe(204);
+    expect(result.body, path).toBeNull();
+  }
+  expect((await desktopUpdate("windows/x86_64/1.0.0")).status).toBe(204);
+});
+
+test("自动更新清单：版本段不合法时拒绝，不当成「有新版」", async () => {
+  const { artifacts, fetched } = updaterArtifacts();
+  const result = await desktopUpdate("windows/x86_64/not-a-version", artifacts);
+  expect(result.status).toBeGreaterThanOrEqual(400);
+  expect(result.status).toBeLessThan(500);
+  expect(fetched).toEqual([]);
+});
+
+test("自动更新清单只转交地址，不经源站转发安装包：服务端只读版本、签名旁文件与 HEAD", async () => {
+  const { artifacts, fetched } = updaterArtifacts();
+  await desktopUpdate("windows/x86_64/2.0.0", artifacts);
+  // 安装包本身只发 HEAD（读大小与修改时间），GET 的只有两个几百字节的旁文件
+  expect(fetched.sort()).toEqual([
+    "GET https://cdn.test/files/BakaGame-latest-x64.exe.sig",
+    "GET https://cdn.test/files/BakaGame-latest-x64.exe.version",
+    "HEAD https://cdn.test/files/BakaGame-latest-x64.exe",
+  ]);
+});
+
 /** 下载弹窗读的那条：制品元数据来自 `ClientArtifacts`，与通道证明启没启用无关。 */
 async function packages(artifacts?: ClientArtifacts) {
   const response = await clientChannelRoutes(undefined, artifacts).handle(

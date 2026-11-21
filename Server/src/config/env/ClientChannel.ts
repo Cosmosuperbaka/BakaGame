@@ -10,6 +10,11 @@ const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-lat
  */
 const DEFAULT_MACOS_PACKAGE_URL = "";
 /**
+ * macOS 自动更新包（`.app.tar.gz`）的固定别名。Windows 的更新包就是安装包本身，复用上面的
+ * Windows 地址；macOS 的更新包与 dmg 不是同一个文件，单独配。发布流水线还没有 Mac 这一侧，缺省空串。
+ */
+const DEFAULT_MACOS_UPDATER_URL = "";
+/**
  * 移动壳 Web 资源热更新清单：与安装包同一个分发目录、同样是不带版本号的固定别名。
  * 清单里只写资源包文件名，下载地址由服务端相对本地址解析。
  */
@@ -36,6 +41,8 @@ export interface EnvClientChannel {
   clientPackageWindowsUrl?: string;
   clientPackageMacosUrl?: string;
   clientPackageAndroidUrl?: string;
+  /** macOS 桌面壳自动更新包的公开地址；空串 = Mac 壳没有自动更新。 */
+  clientUpdaterMacosUrl?: string;
   /**
    * Android Key Attestation 的期望包名。不配 = 不校验证明链（带链注册只记 `degraded`）：
    * 包名是信任基准，写死默认值会让任何 APK 都能声称自己是我们的。
@@ -65,6 +72,7 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
   clientPackageWindowsUrl:
     Bun.env.CLIENT_PACKAGE_WINDOWS_URL?.trim() ?? DEFAULT_WINDOWS_PACKAGE_URL,
   clientPackageMacosUrl: Bun.env.CLIENT_PACKAGE_MACOS_URL?.trim() ?? DEFAULT_MACOS_PACKAGE_URL,
+  clientUpdaterMacosUrl: Bun.env.CLIENT_UPDATER_MACOS_URL?.trim() ?? DEFAULT_MACOS_UPDATER_URL,
   clientPackageAndroidUrl:
     Bun.env.CLIENT_PACKAGE_ANDROID_URL?.trim() ?? DEFAULT_ANDROID_PACKAGE_URL,
   // 显式空串 = 不提供热更新：与安装包地址不同，这里的「没配」有默认值，

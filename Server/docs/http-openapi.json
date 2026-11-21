@@ -2310,6 +2310,44 @@
         "operationId": "getApiClientWeb-bundle"
       }
     },
+    "/api/client/desktop-update/{target}/{arch}/{currentVersion}": {
+      "get": {
+        "parameters": [
+          {
+            "name": "target",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "maxLength": 16,
+              "type": "string"
+            }
+          },
+          {
+            "name": "arch",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "maxLength": 16,
+              "type": "string"
+            }
+          },
+          {
+            "name": "currentVersion",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^\\d+(\\.\\d+){0,3}$",
+              "type": "string"
+            }
+          }
+        ],
+        "operationId": "getApiClientDesktop-updateByTargetByArchByCurrentVersion"
+      }
+    },
     "/api/client/packages": {
       "get": {
         "operationId": "getApiClientPackages"

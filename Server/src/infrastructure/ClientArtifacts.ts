@@ -9,6 +9,10 @@
  *
  * 探测失败（404 = 制品还没推上去、超时、边缘节点抽风）一律归成「读不到元数据」而不是报错：
  * 这条只是给页面贴标签用的，不该拦住首页，也不该让弹窗开不起来。
+ *
+ * 桌面壳的自动更新也从这里取数：更新器要的「版本 + 地址 + 签名」分别来自 `.version` 旁文件、
+ * 更新包地址本身与 `.sig` 签名旁文件（发布流水线用更新签名私钥生成）。服务端只读这几个小文件，
+ * 安装包字节永远由对象存储直接发给壳，源站不转发。
  */
 
 export type ClientPackagePlatform = "windows" | "macos" | "android";
@@ -50,9 +54,28 @@ const ARCH_BY_PLATFORM: Record<ClientPackagePlatform, string> = {
 /** 列表顺序即弹窗里的顺序：两个桌面平台在前，Windows 打头。 */
 const PLATFORMS: ClientPackagePlatform[] = ["windows", "macos", "android"];
 
+/**
+ * 桌面壳自动更新的平台。Windows 的更新包就是 NSIS 安装包本身；macOS 的更新包是 `.app.tar.gz`，
+ * 与下载弹窗给的 dmg 不是同一个文件，所以单独配地址。
+ */
+export type UpdaterPlatform = "windows" | "macos";
+
+/** 一个可供壳自动更新的发布：三样都齐了才算，缺一样就当没有新版。 */
+export interface UpdaterRelease {
+  version: string;
+  /** 对象存储/CDN 上的更新包地址：壳直接从这里下载，源站只给地址。 */
+  url: string;
+  /** `.sig` 旁文件的原文（minisign 签名的 base64），壳用编进二进制的公钥校验。 */
+  signature: string;
+  /** 更新包对象的最后修改时间（ISO 串）；读不到时省略。 */
+  pubDate?: string;
+}
+
 export interface ClientArtifactsOptions {
   /** 平台 → 公开下载地址；没配或配成空串的平台不进列表。 */
   urls: Partial<Record<ClientPackagePlatform, string | undefined>>;
+  /** 平台 → 自动更新包地址；没配或配成空串的平台没有自动更新。 */
+  updaterUrls?: Partial<Record<UpdaterPlatform, string | undefined>>;
   fetcher?: typeof fetch;
   ttlMs?: number;
   now?: () => number;
@@ -68,19 +91,31 @@ interface Probe {
 /** 与壳自报、服务端校验的版本形状保持一致：只认点分数字。 */
 const VERSION_PATTERN = /^\d+(\.\d+){0,3}$/;
 
+/** minisign 签名的 base64 原文只有几百字节；超长或混进别的字符都当读不到，不交给壳。 */
+const SIGNATURE_MAX_LENGTH = 4_096;
+const SIGNATURE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+
+interface Cached<T> {
+  expiresAt: number;
+  promise: Promise<T>;
+}
+
 export class ClientArtifacts {
   private readonly urls: Partial<Record<ClientPackagePlatform, string | undefined>>;
+  private readonly updaterUrls: Partial<Record<UpdaterPlatform, string | undefined>>;
   private readonly fetcher: typeof fetch;
   private readonly ttlMs: number;
   private readonly now: () => number;
-  /** 存的是在途 promise：同一分钟内并发进来也只发一次 HEAD。 */
-  private readonly probes = new Map<
-    ClientPackagePlatform,
-    { expiresAt: number; promise: Promise<Probe> }
-  >();
+  /**
+   * 存的是在途 promise：同一分钟内并发进来也只发一次 HEAD。按地址缓存：Windows 的更新包与
+   * 下载用的安装包是同一个对象，下载弹窗与更新器共用一次探测。
+   */
+  private readonly probes = new Map<string, Cached<Probe>>();
+  private readonly signatures = new Map<string, Cached<string | undefined>>();
 
   constructor(options: ClientArtifactsOptions) {
     this.urls = options.urls;
+    this.updaterUrls = options.updaterUrls ?? {};
     this.fetcher = options.fetcher ?? fetch;
     this.ttlMs = options.ttlMs ?? CLIENT_PACKAGE_TTL_MS;
     this.now = options.now ?? (() => Date.now());
@@ -91,7 +126,7 @@ export class ClientArtifacts {
       const url = this.urls[platform]?.trim();
       if (!url) return [];
       return [
-        this.probe(platform, url).then((probe): ClientPackage => ({
+        this.probe(url).then((probe): ClientPackage => ({
           platform,
           arch: ARCH_BY_PLATFORM[platform],
           url,
@@ -109,19 +144,48 @@ export class ClientArtifacts {
   async latestVersion(platform: ClientPackagePlatform): Promise<string | undefined> {
     const url = this.urls[platform]?.trim();
     if (!url) return undefined;
-    return (await this.probe(platform, url)).version;
+    return (await this.probe(url)).version;
   }
 
-  private probe(platform: ClientPackagePlatform, url: string): Promise<Probe> {
-    const at = this.now();
-    const cached = this.probes.get(platform);
-    if (cached && cached.expiresAt > at) return cached.promise;
-    // HEAD 与版本旁文件一起打：两者都只读元数据、共用同一个 TTL，
-    // 分两次发会在「刚好跨过发版」时给出自相矛盾的一组值。
-    const promise = Promise.all([this.head(url), this.versionOf(url)]).then(
-      ([head, version]): Probe => ({ ...head, version })
+  /**
+   * 该平台可供自动更新的最新发布：更新包在、版本旁文件与签名旁文件都读得到才返回。
+   * 发布顺序是先传更新包与签名、最后写版本旁文件，所以版本一变，同批的签名已经就位；
+   * 万一读到新包配旧签名，壳校验失败只会稍后重试，不会装错。
+   */
+  async updaterRelease(platform: UpdaterPlatform): Promise<UpdaterRelease | undefined> {
+    const url = this.updaterUrls[platform]?.trim();
+    if (!url) return undefined;
+    const [probe, signature] = await Promise.all([this.probe(url), this.signature(url)]);
+    if (!probe.available || !probe.version || !signature) return undefined;
+    return {
+      version: probe.version,
+      url,
+      signature,
+      ...(probe.builtAt ? { pubDate: probe.builtAt } : {}),
+    };
+  }
+
+  private probe(url: string): Promise<Probe> {
+    return this.cached(this.probes, url, () =>
+      // HEAD 与版本旁文件一起打：两者都只读元数据、共用同一个 TTL，
+      // 分两次发会在「刚好跨过发版」时给出自相矛盾的一组值。
+      Promise.all([this.head(url), this.versionOf(url)]).then(([head, version]): Probe => ({
+        ...head,
+        version,
+      }))
     );
-    this.probes.set(platform, { expiresAt: at + this.ttlMs, promise });
+  }
+
+  private signature(url: string): Promise<string | undefined> {
+    return this.cached(this.signatures, url, () => this.signatureOf(url));
+  }
+
+  private cached<T>(cache: Map<string, Cached<T>>, key: string, load: () => Promise<T>) {
+    const at = this.now();
+    const hit = cache.get(key);
+    if (hit && hit.expiresAt > at) return hit.promise;
+    const promise = load();
+    cache.set(key, { expiresAt: at + this.ttlMs, promise });
     return promise;
   }
 
@@ -145,18 +209,30 @@ export class ClientArtifacts {
 
   /** 旁文件是流水线写的纯文本；读不到、解析失败、格式不对都只当「没有版本」，不抛错。 */
   private async versionOf(url: string): Promise<string | undefined> {
+    const value = await this.sidecar(url, ".version");
+    return value !== undefined && VERSION_PATTERN.test(value) ? value : undefined;
+  }
+
+  /** 签名旁文件同样只当元数据读：读不到或形状不对就当没有签名，这一档不给壳更新。 */
+  private async signatureOf(url: string): Promise<string | undefined> {
+    const value = await this.sidecar(url, ".sig");
+    if (value === undefined || value.length > SIGNATURE_MAX_LENGTH) return undefined;
+    return SIGNATURE_PATTERN.test(value) ? value : undefined;
+  }
+
+  /** 读 `<地址><后缀>` 的纯文本并去掉首尾空白；任何失败都返回 `undefined`。 */
+  private async sidecar(url: string, suffix: string): Promise<string | undefined> {
     try {
       // 用 URL 改 pathname，保留可能存在的查询串；直接拼 `${url}.version` 会在带查询时拼错。
-      const versionUrl = new URL(url);
-      versionUrl.pathname = `${versionUrl.pathname}.version`;
-      const response = await this.fetcher(versionUrl.toString(), {
+      const sidecarUrl = new URL(url);
+      sidecarUrl.pathname = `${sidecarUrl.pathname}${suffix}`;
+      const response = await this.fetcher(sidecarUrl.toString(), {
         redirect: "follow",
         headers: { Accept: "text/plain" },
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
       if (!response.ok) return undefined;
-      const value = (await response.text()).trim();
-      return VERSION_PATTERN.test(value) ? value : undefined;
+      return (await response.text()).trim();
     } catch {
       return undefined;
     }
