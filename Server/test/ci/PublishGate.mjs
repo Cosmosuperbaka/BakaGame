@@ -53,8 +53,15 @@ const context = (event, ref, desktop, android, hasR2 = true) => ({
 /** 判定表：[事件, 引用, desktop 结果, android 结果, 作业是否运行, 说明]。 */
 const TABLE = [
   ["push", "refs/heads/main", "success", "success", true, "两个壳都成功"],
-  // F04 的那次运行：纯前端改动 → desktop 被路径过滤跳过，android 已产出签名 APK。
-  ["push", "refs/heads/main", "skipped", "success", true, "只改前端时 APK 必须仍能发布"],
+  // F04 的那次运行：纯前端改动 → desktop 被路径过滤跳过，android 已产出签名 APK，热更新包要发出去。
+  [
+    "push",
+    "refs/heads/main",
+    "skipped",
+    "success",
+    true,
+    "只改前端时安卓侧发布步骤必须仍会运行（热更新包要发，同版本 APK 由步骤内判重跳过）",
+  ],
   ["push", "refs/heads/main", "skipped", "skipped", false, "两壳都没构建就不进发布"],
   ["push", "refs/heads/main", "failure", "success", true, "桌面挂了不拖累安卓"],
   ["push", "refs/heads/main", "success", "failure", true, "安卓挂了不拖累桌面"],

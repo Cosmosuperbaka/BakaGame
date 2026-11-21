@@ -690,6 +690,9 @@ jobs:
     # 作业级 if 里读不到 secrets 上下文（GitHub 只给 github/needs/vars/inputs），
     # 所以凭证有没有只在各步骤里判，缺凭证时作业照常绿。
     # 手动 dispatch 也允许发布：客户端制品此前一次都没出过包，需要一个能主动发版的入口。
+    # 作业跑起来不等于一定上传：Windows 与安卓按版本幂等（与 macOS 同口径），版本化对象已在桶里
+    # 就整步跳过。只改 ci.yml 或只改前端也会重跑壳作业，重打出来的是同版本号的另一份构建，
+    # 覆盖长缓存的版本化对象会让缓存里的包与签名对不上；发新包靠抬版本号（壳版本门禁守着）。
     if: >-
       ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main' && always() &&
@@ -722,6 +725,31 @@ jobs:
         if: env.HAS_R2 == 'true'
         run: aws configure set default.s3.addressing_style path
 
+      # CDN 预热要的公开地址只有一处来源：服务端配置里的下载地址默认值（即发布约定），
+      # 这里只稀疏检出那一个文件。读不到就不预热，不影响发布。
+      - name: Checkout public download addresses
+        if: env.HAS_R2 == 'true'
+        continue-on-error: true
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: Server/src/config/env/ClientChannel.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Read public download addresses
+        id: cdn
+        if: env.HAS_R2 == 'true'
+        run: |
+          defaults=Server/src/config/env/ClientChannel.ts
+          url_of() {
+            [ -f "$defaults" ] || return 0
+            grep -A1 "const $1 =" "$defaults" | grep -o -m1 'https://[^"]*' || true
+          }
+          {
+            echo "windows=$(url_of DEFAULT_WINDOWS_PACKAGE_URL)"
+            echo "android=$(url_of DEFAULT_ANDROID_PACKAGE_URL)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download desktop installer
         if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -752,8 +780,28 @@ jobs:
           installer: ${{ steps.win.outputs.installer }}
           version: ${{ steps.win.outputs.version }}
           signature: ${{ steps.win.outputs.signature }}
+          PUBLIC_URL: ${{ steps.cdn.outputs.windows }}
         run: |
           set -euo pipefail
+          exists() {
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3api head-object \
+              --bucket "$R2_BUCKET" --key "$1" > /dev/null 2>&1
+          }
+          # 同一版本只发一次：版本化安装包已经在桶里就不传、也不动别名与旁文件
+          if exists "BakaGame-$version-x64.exe"; then
+            echo "::notice::Windows $version 已经发布过，不重复发布"
+            exit 0
+          fi
+          # CDN 预热：每个地址请求一次，让服务端的首次探测不撞冷缓存；失败只警告，不让发布失败
+          warm() {
+            local base="$1" suffix
+            shift
+            [ -n "$base" ] || { echo "::warning::读不到公开下载地址，跳过 CDN 预热"; return 0; }
+            for suffix in "$@"; do
+              curl -fsS -o /dev/null --max-time 120 --retry 2 "$base$suffix" \
+                || echo "::warning::CDN 预热失败：$base$suffix"
+            done
+          }
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
             "s3://$R2_BUCKET/BakaGame-$version-x64.exe" \
             --cache-control "public, max-age=31536000, immutable"
@@ -784,6 +832,11 @@ jobs:
             --content-type "text/plain; charset=utf-8" \
             --cache-control "public, max-age=0, must-revalidate"
           echo "已发布 BakaGame-$version-x64.exe、别名 BakaGame-latest-x64.exe、签名与版本旁文件"
+          if [ -n "$signature" ]; then
+            warm "$PUBLIC_URL" "" ".sig" ".version"
+          else
+            warm "$PUBLIC_URL" "" ".version"
+          fi
 
       # 安卓只发布签过名的 release 包：debug 包的签名摘要对不上 attestation 的期望值，
       # 放进公开下载链等于给玩家发一个进不了反作弊房的客户端。
@@ -797,6 +850,8 @@ jobs:
 
       - name: Publish Android APK
         if: env.HAS_R2 == 'true' && needs.android.result == 'success'
+        env:
+          PUBLIC_URL: ${{ steps.cdn.outputs.android }}
         run: |
           set -euo pipefail
           apk="$(find inbound/android -name '*-release.apk' -print -quit 2>/dev/null || true)"
@@ -805,6 +860,25 @@ jobs:
             exit 0
           fi
           version="$(basename "$apk" | sed -E 's/^BakaGame-(.+)-release\.apk$/\1/')"
+          exists() {
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3api head-object \
+              --bucket "$R2_BUCKET" --key "$1" > /dev/null 2>&1
+          }
+          # 同一版本只发一次：只改前端时安卓作业也会重打同版本号的 APK，前端改动由下面的热更新包送达
+          if exists "BakaGame-$version-release.apk"; then
+            echo "::notice::安卓 $version 已经发布过，不重复发布"
+            exit 0
+          fi
+          # CDN 预热：每个地址请求一次，让服务端的首次探测不撞冷缓存；失败只警告，不让发布失败
+          warm() {
+            local base="$1" suffix
+            shift
+            [ -n "$base" ] || { echo "::warning::读不到公开下载地址，跳过 CDN 预热"; return 0; }
+            for suffix in "$@"; do
+              curl -fsS -o /dev/null --max-time 120 --retry 2 "$base$suffix" \
+                || echo "::warning::CDN 预热失败：$base$suffix"
+            done
+          }
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$apk" \
             "s3://$R2_BUCKET/BakaGame-$version-release.apk" \
             --cache-control "public, max-age=31536000, immutable"
@@ -817,6 +891,7 @@ jobs:
             --content-type "text/plain; charset=utf-8" \
             --cache-control "public, max-age=0, must-revalidate"
           echo "已发布 BakaGame-$version-release.apk、别名与版本旁文件"
+          warm "$PUBLIC_URL" "" ".version"
 
       # 热更新资源包：先传版本化 zip，最后写清单。顺序反了会让清单短暂指向一个不存在的对象。
       - name: Download hot-update web bundle
@@ -1064,6 +1139,30 @@ jobs:
       AWS_EC2_METADATA_DISABLED: "true"
       PLANNED_VERSION: ${{ needs.macos-release-plan.outputs.version }}
     steps:
+      # 与 client-publish 同一来源：CDN 预热的公开地址取服务端配置里的下载地址默认值
+      - name: Checkout public download addresses
+        if: env.HAS_R2 == 'true'
+        continue-on-error: true
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: Server/src/config/env/ClientChannel.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Read public download addresses
+        id: cdn
+        if: env.HAS_R2 == 'true'
+        run: |
+          defaults=Server/src/config/env/ClientChannel.ts
+          url_of() {
+            [ -f "$defaults" ] || return 0
+            grep -A1 "const $1 =" "$defaults" | grep -o -m1 'https://[^"]*' || true
+          }
+          {
+            echo "dmg=$(url_of DEFAULT_MACOS_PACKAGE_URL)"
+            echo "updater=$(url_of DEFAULT_MACOS_UPDATER_URL)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download macOS bundle
         if: env.HAS_R2 == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -1073,9 +1172,22 @@ jobs:
 
       - name: Publish macOS installer and updater package
         if: env.HAS_R2 == 'true'
+        env:
+          DMG_URL: ${{ steps.cdn.outputs.dmg }}
+          UPDATER_URL: ${{ steps.cdn.outputs.updater }}
         run: |
           set -euo pipefail
           aws configure set default.s3.addressing_style path
+          # CDN 预热：每个地址请求一次，让服务端的首次探测不撞冷缓存；失败只警告，不让发布失败
+          warm() {
+            local base="$1" suffix
+            shift
+            [ -n "$base" ] || { echo "::warning::读不到公开下载地址，跳过 CDN 预热"; return 0; }
+            for suffix in "$@"; do
+              curl -fsS -o /dev/null --max-time 120 --retry 2 "$base$suffix" \
+                || echo "::warning::CDN 预热失败：$base$suffix"
+            done
+          }
           dmg="$(find inbound/macos -name '*_universal.dmg' -print -quit)"
           tarball="$(find inbound/macos -name '*.app.tar.gz' -print -quit)"
           [ -n "$dmg" ] || { echo "::error::产物里没有 macOS 的 dmg"; exit 1; }
@@ -1103,9 +1215,12 @@ jobs:
             put "$tarball.sig" "BakaGame-latest-universal.app.tar.gz.sig" "text/plain; charset=utf-8" "$revalidate"
             put "$RUNNER_TEMP/macos-version.txt" "BakaGame-latest-universal.app.tar.gz.version" "text/plain; charset=utf-8" "$revalidate"
             echo "已发布 macOS $version：dmg、更新包、签名与版本旁文件"
+            warm "$DMG_URL" "" ".version"
+            warm "$UPDATER_URL" "" ".sig" ".version"
           else
             echo "::notice::本次 macOS 没有带签名的更新包，只发布 dmg，撤下别名旁的旧签名"
             aws --endpoint-url "$R2_S3_ENDPOINT" s3 rm "s3://$R2_BUCKET/BakaGame-latest-universal.app.tar.gz.sig" || true
+            warm "$DMG_URL" "" ".version"
           fi
 
   # 格式门禁：全量触发（任何改动都跑）。它原先挂在 knip 作业里，而 knip 的过滤集合只有
