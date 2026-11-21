@@ -15,6 +15,22 @@ import {
   CLIENT_TICKET_REFRESH_MARGIN_MS,
 } from "../src/infrastructure/ClientChannelContract";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
+import {
+  CLIENT_UA_CLIENT_TYPES,
+  CLIENT_UA_COMMIT_LENGTH,
+  CLIENT_UA_OS_NAMES,
+  CLIENT_UA_PRODUCT,
+  CLIENT_UA_PRODUCT_VERSION,
+  CLIENT_UA_SHORT_COMMIT,
+  CLIENT_UA_TOKEN_MAX_LENGTH,
+  CLIENT_UA_TOKEN_UNSAFE,
+  CLIENT_UA_UNKNOWN,
+  GAME_VERSION_MANIFEST_PATH,
+  formatClientUserAgent,
+  type ClientUaClientType,
+  type ClientUaOsName,
+  type GameVersionManifest,
+} from "../src/shared/ClientUserAgent";
 
 /**
  * 壳与服务端的通道契约对账。
@@ -35,6 +51,7 @@ const rust = {
   selfcheck: read("Desktop/src-tauri/src/selfcheck.rs"),
   bridge: read("Desktop/src-tauri/src/bridge.rs"),
   selfUpdate: read("Desktop/src-tauri/src/self_update.rs"),
+  userAgent: read("Desktop/src-tauri/src/user_agent.rs"),
 };
 /** 桌面注入脚本原文（`bridge.rs` 里的原始字符串）：对账只读它，不读文件头的契约注释。 */
 const desktopScript = (() => {
@@ -44,6 +61,9 @@ const desktopScript = (() => {
 })();
 const mobileBridge = read("Mobile/bridge/baka-bridge.js");
 const selfCheckKt = read("Mobile/android/app/src/main/java/website/baka/game/channel/SelfCheck.kt");
+const userAgentKt = read(
+  "Mobile/android/app/src/main/java/website/baka/game/shell/ClientUserAgent.kt"
+);
 
 // ——— 从源码取字面量 ———
 
@@ -486,6 +506,162 @@ describe("响应字段", () => {
     // 拆开的片段要覆盖桥脚本里全部按名字读取的调用，不能有漏网的
     expect(registerReads.length + challengeReads.length + attestReads.length).toBe(
       unwrapCalls(mobileBridge).length
+    );
+  });
+});
+
+// ——— User-Agent 段：三端拼法与取值规则 ———
+
+/** 函数体：从签名起到下一个顶格（Rust）或同缩进（Kotlin）的右花括号/空行为止，够定位字面量用。 */
+const fnBody = (source: string, signature: string, end: string): string => {
+  const start = source.indexOf(signature);
+  if (start < 0) throw new Error(`源码里没有 ${signature}`);
+  const stop = source.indexOf(end, start + signature.length);
+  return source.slice(start, stop < 0 ? undefined : stop);
+};
+const ktConst = (source: string, name: string): string => {
+  const match = new RegExp(`const val ${name} = "([^"]*)"`).exec(source);
+  if (!match) throw new Error(`Kotlin 源码里没有字符串常量 ${name}`);
+  return match[1];
+};
+/** Kotlin 字符串字面量里的正则：去掉一层字符串转义后才是正则本身。 */
+const ktRegex = (source: string, name: string): string => {
+  const match = new RegExp(`val ${name} = Regex\\("((?:[^"\\\\]|\\\\.)*)"\\)`).exec(source);
+  if (!match) throw new Error(`Kotlin 源码里没有正则 ${name}`);
+  return match[1].replace(/\\(.)/g, "$1");
+};
+const ktFirstListItem = (source: string, name: string): string => {
+  const match = new RegExp(`val ${name} = listOf\\("([^"]+)"`).exec(source);
+  if (!match) throw new Error(`Kotlin 源码里没有列表 ${name}`);
+  return match[1];
+};
+const rustUsize = (source: string, name: string): number => {
+  const match = new RegExp(`const ${name}: usize = (\\d+);`).exec(source);
+  if (!match) throw new Error(`Rust 源码里没有数值常量 ${name}`);
+  return Number(match[1]);
+};
+/** 正则里 `{m,n}` 量词的上下限 */
+const quantifier = (pattern: string): [number, number] => {
+  const match = /\{(\d+),(\d+)\}/.exec(pattern);
+  if (!match) throw new Error(`正则 ${pattern} 里没有 {m,n} 量词`);
+  return [Number(match[1]), Number(match[2])];
+};
+/** 版本清单的字段名：随 `GameVersionManifest` 编译期对齐 */
+const manifestFields = Object.keys({ version: "", commit: "" } satisfies Record<
+  keyof GameVersionManifest,
+  string
+>);
+const uaSample = {
+  clientVersion: "0.2.1",
+  osVersion: "10.0.26100",
+  arch: "x64",
+  gameVersion: "2.0.3+eb11009",
+};
+
+describe("User-Agent 段", () => {
+  const rustTemplate = (() => {
+    const match = /const SEGMENT_TEMPLATE: &str =\s*"([^"]*)";/.exec(rust.userAgent);
+    if (!match) throw new Error("user_agent.rs 里没有 SEGMENT_TEMPLATE");
+    return match[1];
+  })();
+
+  test("桌面壳的模板按共享契约渲染：每个编译目标的系统名都在词表里，拼出来逐字一致", () => {
+    const desktopType = rustString(rust.device, "CLIENT_TYPE");
+    expect(CLIENT_UA_CLIENT_TYPES as readonly string[]).toContain(desktopType);
+    // 模板里的占位符正好是 render 替换的那几个，测试里的模拟渲染才与 Rust 一致
+    const placeholders = sorted([...rustTemplate.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]));
+    const replaced = sorted(
+      [
+        ...fnBody(rust.userAgent, "pub fn render(", "\n}\n").matchAll(
+          /\.replace\("\{([a-z_]+)\}"/g
+        ),
+      ].map((m) => m[1])
+    );
+    expect(placeholders).toEqual(replaced);
+    const osNames = rustCfgStrings(rust.userAgent, "OS_NAME");
+    expect(sorted(osNames)).toEqual(["Windows", "macOS"]);
+    for (const osName of osNames) {
+      expect(CLIENT_UA_OS_NAMES as readonly string[]).toContain(osName);
+      const rendered = rustTemplate
+        .replace("{client}", uaSample.clientVersion)
+        .replace("{os_version}", uaSample.osVersion)
+        .replace("{os}", osName)
+        .replace("{arch}", uaSample.arch)
+        .replace("{client_type}", desktopType)
+        .replace("{game}", uaSample.gameVersion);
+      expect(rendered).toBe(
+        formatClientUserAgent({
+          ...uaSample,
+          osName: osName as ClientUaOsName,
+          clientType: desktopType as ClientUaClientType,
+        })
+      );
+    }
+  });
+
+  test("桌面壳的取值规则与共享契约一致：占位、长度、字符集、版本与提交号的形状", () => {
+    const ua = rust.userAgent;
+    expect(rustString(ua, "UNKNOWN")).toBe(CLIENT_UA_UNKNOWN);
+    expect(rustString(ua, "GAME_VERSION_MANIFEST_PATH")).toBe(GAME_VERSION_MANIFEST_PATH);
+    expect(rustUsize(ua, "TOKEN_MAX_LENGTH")).toBe(CLIENT_UA_TOKEN_MAX_LENGTH);
+    expect(rustUsize(ua, "COMMIT_LENGTH")).toBe(CLIENT_UA_COMMIT_LENGTH);
+    // 单截允许的标点：Rust 写成 matches!，契约写成取反的字符类
+    const punctuation = /matches!\(c, ((?:'.'(?: \| )?)+)\)/.exec(
+      fnBody(ua, "pub fn token(", "\n}\n")
+    );
+    expect(punctuation).not.toBeNull();
+    expect(CLIENT_UA_TOKEN_UNSAFE.source).toBe(
+      `[^A-Za-z0-9${[...(punctuation?.[1] ?? "").matchAll(/'(.)'/g)].map((m) => m[1]).join("")}]`
+    );
+    // 产品版本在 Rust 里是手写的匹配，注释里登记它对齐的契约正则：契约改了这里就红，提醒同步改 Rust
+    expect(ua).toContain(
+      `/// 产品版本：与共享契约 \`${CLIENT_UA_PRODUCT_VERSION.source}\` 同一规则`
+    );
+    const commitRange = /\((\d+)\.\.=(\d+)\)\.contains\(&value\.len\(\)\)/.exec(
+      fnBody(ua, "fn is_short_commit(", "\n}\n")
+    );
+    expect(commitRange?.slice(1).map(Number)).toEqual(quantifier(CLIENT_UA_SHORT_COMMIT.source));
+    const manifestReader = fnBody(ua, "pub fn game_version_from_manifest(", "\n}\n");
+    for (const field of manifestFields) expect(manifestReader).toContain(`field("${field}")`);
+  });
+
+  test("安卓壳的拼法与取值规则与共享契约一致（只读 Mobile 源码）", () => {
+    const kt = userAgentKt;
+    expect(ktConst(kt, "PRODUCT")).toBe(CLIENT_UA_PRODUCT);
+    expect(ktConst(kt, "UNKNOWN")).toBe(CLIENT_UA_UNKNOWN);
+    expect(`/${ktConst(kt, "VERSION_FILE")}`).toBe(GAME_VERSION_MANIFEST_PATH);
+    const mobileType = ktConst(kt, "CLIENT_TYPE");
+    expect(CLIENT_UA_CLIENT_TYPES as readonly string[]).toContain(mobileType);
+    expect(ktRegex(kt, "TOKEN_UNSAFE")).toBe(CLIENT_UA_TOKEN_UNSAFE.source);
+    expect(ktRegex(kt, "PRODUCT_VERSION")).toBe(CLIENT_UA_PRODUCT_VERSION.source);
+    expect(ktRegex(kt, "SHORT_COMMIT")).toBe(CLIENT_UA_SHORT_COMMIT.source);
+    // 版本清单按候选键取第一个合法值：首选键必须就是清单里的字段名
+    expect([ktFirstListItem(kt, "VERSION_KEYS"), ktFirstListItem(kt, "COMMIT_KEYS")]).toEqual(
+      manifestFields
+    );
+    expect(/take\((\d+)\)/.exec(fnBody(kt, "private fun token(", "\n\n"))?.[1]).toBe(
+      String(CLIENT_UA_TOKEN_MAX_LENGTH)
+    );
+    expect(/take\((\d+)\)/.exec(fnBody(kt, "fun gameVersionFrom(", "\n    }\n"))?.[1]).toBe(
+      String(CLIENT_UA_COMMIT_LENGTH)
+    );
+    // 拼装式：把字符串模板里的插值换成样例，与契约的拼装结果逐字比
+    const formatExpr = fnBody(kt, "fun format(", "\n\n");
+    const literal = [...formatExpr.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+    const sample = { ...uaSample, clientVersion: "0.1.6", osVersion: "15", arch: "arm64-v8a" };
+    const rendered = literal
+      .replace("${token(clientVersion)}", sample.clientVersion)
+      .replace("${token(osVersion)}", sample.osVersion)
+      .replace("${token(abi)}", sample.arch)
+      .replace("${gameToken(gameVersion)}", sample.gameVersion)
+      .replace("$CLIENT_TYPE", mobileType)
+      .replace("$PRODUCT", CLIENT_UA_PRODUCT);
+    expect(rendered).toBe(
+      formatClientUserAgent({
+        ...sample,
+        osName: "Android",
+        clientType: mobileType as ClientUaClientType,
+      })
     );
   });
 });
