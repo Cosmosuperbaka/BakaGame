@@ -11,11 +11,23 @@ import { createPromiseCache } from "@/lib/PromiseCache";
  * 而客户端一天不发版、页面一天就得跟着改。
  */
 
-export type ClientPackagePlatform = "windows" | "android";
+export type ClientPackagePlatform = "windows" | "macos" | "android";
+
+/**
+ * 壳自报的身份 → 它该拿的安装包平台。移动壳只有安卓包；桌面壳按自报的 `platform`
+ * 分 Windows 与 macOS，认不出的（旧壳或别的系统）按 Windows——与服务端更新检查挑包的口径相同。
+ */
+export const packagePlatformOf = (
+  clientType: "desktop" | "mobile",
+  platform: string | undefined
+): ClientPackagePlatform => {
+  if (clientType === "mobile") return "android";
+  return platform === "macos" ? "macos" : "windows";
+};
 
 export interface ClientPackage {
   platform: ClientPackagePlatform;
-  /** 安装包架构标签，如 `x64`、`全架构通用`。 */
+  /** 安装包架构标签，如 `x64`、`全架构通用`，由服务端按发布约定给。 */
   arch: string;
   url: string;
   /** 发布流水线写下的壳版本；旧制品没有旁文件时缺省。 */
@@ -39,7 +51,7 @@ const isPackage = (value: unknown): value is ClientPackage => {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return (
-    (item.platform === "windows" || item.platform === "android") &&
+    (item.platform === "windows" || item.platform === "macos" || item.platform === "android") &&
     typeof item.url === "string" &&
     typeof item.arch === "string" &&
     typeof item.available === "boolean" &&
@@ -71,6 +83,9 @@ const cache = createPromiseCache<void, ClientPackagesState>(async () => {
 });
 
 export const loadClientPackages = cache.get;
+
+/** 故事与测试用：清掉模块级缓存，让下一次读取重新向服务端要。 */
+export const resetClientPackagesForTest = (): void => cache.clear();
 
 /** `enabled` 为假时不发请求：入口按钮不该替没点开弹窗的玩家先问一次。 */
 export const useClientPackages = (

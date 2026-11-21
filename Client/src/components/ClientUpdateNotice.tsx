@@ -9,7 +9,11 @@ import {
   clientUpdateNoticeText,
 } from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
-import { useClientPackages, type ClientPackagePlatform } from "@/lib/ClientPackages";
+import {
+  packagePlatformOf,
+  useClientPackages,
+  type ClientPackagePlatform,
+} from "@/lib/ClientPackages";
 import { dropIn } from "@/lib/motion/NamedMoves";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
@@ -27,12 +31,6 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 /** 存档记的是「已经关掉过哪一档提醒」，服务端换档或抬版本后提醒会重新出现。 */
 const DISMISS_KEY = "bakagame:client-update-dismissed";
-
-/** 壳类型 → 安装包平台：提醒里那颗按钮按这个挑包。 */
-const PLATFORM_BY_CLIENT_TYPE: Record<Exclude<BakaClientType, "web">, ClientPackagePlatform> = {
-  desktop: "windows",
-  mobile: "android",
-};
 
 export interface ClientUpdateFloor {
   clientType: Exclude<BakaClientType, "web">;
@@ -62,16 +60,26 @@ const writeDismissed = (key: string): void => {
   }
 };
 
+/** 要提醒的那一档，连同提醒里那颗按钮该给哪个平台的包（按壳自报的类型与平台定）。 */
+interface PendingNotice {
+  floor: ClientUpdateFloor;
+  packagePlatform: ClientPackagePlatform;
+}
+
 export function ClientUpdateNotice() {
-  const [floor, setFloor] = useState<ClientUpdateFloor | null>(null);
+  const [notice, setNotice] = useState<PendingNotice | null>(null);
   const [hidden, setHidden] = useState(false);
+  const floor = notice?.floor ?? null;
 
   useEffect(() => {
     const channel = bakaChannel();
     if (!channel || channel.clientType === "web" || !channel.clientVersion) return;
     const clientType = channel.clientType;
+    const packagePlatform = packagePlatformOf(clientType, channel.platform);
     const controller = new AbortController();
     const search = new URLSearchParams({ clientType, clientVersion: channel.clientVersion });
+    // 壳自报的平台随查询带上：服务端按它挑「最新已发布版」该看哪个平台的包，Mac 壳不拿 Windows 的版本比
+    if (channel.platform) search.set("platform", channel.platform);
 
     void (async () => {
       try {
@@ -97,7 +105,7 @@ export function ClientUpdateNotice() {
               ? { clientType, mode: "available", version: body.latestVersion }
               : null;
         if (!next || readDismissed() === dismissKeyOf(next)) return;
-        setFloor(next);
+        setNotice({ floor: next, packagePlatform });
       } catch {
         // 门槛读不到就不提醒：这条是便利，不该拦住首页，也不该反复重试。
       }
@@ -113,11 +121,11 @@ export function ClientUpdateNotice() {
     setHidden(true);
   };
 
-  // 更新要给的是「自己那一档」的包：安卓壳点开的应当是 APK，不是 Windows 的 exe。
-  // 提醒只在有门槛可提醒时才去问一次发布信息。
+  // 更新要给的是「自己那一档」的包：安卓壳点开的应当是 APK，Mac 壳点开的应当是 Mac 的包，
+  // 都不是 Windows 的 exe；本平台没发布时按钮整颗不出现。提醒只在有门槛可提醒时才去问一次发布信息。
   const { state } = useClientPackages(Boolean(floor) && !hidden);
-  const pkg = floor
-    ? state?.packages.find((item) => item.platform === PLATFORM_BY_CLIENT_TYPE[floor.clientType])
+  const pkg = notice
+    ? state?.packages.find((item) => item.platform === notice.packagePlatform)
     : undefined;
 
   return (

@@ -26,13 +26,21 @@ const ANDROID_PACKAGE = {
   sizeBytes: 7_168_400,
 };
 
+const MACOS_PACKAGE = {
+  platform: "macos",
+  arch: "Intel 与 Apple 芯片",
+  url: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+  available: true,
+  sizeBytes: 31_457_280,
+};
+
 /** 只注入壳自报的那几个字段：提醒读的是版本，凭据一概不碰。 */
-const shellAt = (clientVersion: string, clientType: "desktop" | "mobile" = "desktop") => {
-  window.__BAKA_CHANNEL__ = {
-    clientType,
-    platform: clientType === "mobile" ? "android" : "windows",
-    clientVersion,
-  };
+const shellAt = (
+  clientVersion: string,
+  clientType: "desktop" | "mobile" = "desktop",
+  platform = clientType === "mobile" ? "android" : "windows"
+) => {
+  window.__BAKA_CHANNEL__ = { clientType, platform, clientVersion };
 };
 
 interface ServerOptions {
@@ -120,6 +128,35 @@ describe("客户端更新提醒", () => {
       "href",
       ANDROID_PACKAGE.url
     );
+  });
+
+  it("Mac 壳查询时带上平台，下载按钮给 Mac 的包而不是 Windows 的 exe", async () => {
+    shellAt("1.0.0", "desktop", "macos");
+    const { urls } = server({
+      floor: "2.0.0",
+      packages: [WINDOWS_PACKAGE, MACOS_PACKAGE, ANDROID_PACKAGE],
+    });
+    await mountNotice();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("桌面端版本较旧");
+    const search = new URLSearchParams(new URL(urls[0]!).search);
+    expect(search.get("clientType")).toBe("desktop");
+    expect(search.get("platform")).toBe("macos");
+    expect(await screen.findByRole("link", { name: "下载最新版" })).toHaveAttribute(
+      "href",
+      MACOS_PACKAGE.url
+    );
+  });
+
+  it("Mac 包还没进清单时 Mac 壳只看到提醒，没有下载按钮", async () => {
+    shellAt("1.0.0", "desktop", "macos");
+    const { urls } = server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE, ANDROID_PACKAGE] });
+    await mountNotice();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("普通房间不受影响");
+    await waitFor(() => expect(urls.some((url) => url.includes("packages"))).toBe(true));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("够新时不打扰：不渲染也不留占位", async () => {

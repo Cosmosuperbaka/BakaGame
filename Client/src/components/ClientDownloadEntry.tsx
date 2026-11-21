@@ -17,20 +17,42 @@ import {
   type ClientPackage,
   type ClientPackagePlatform,
 } from "@/lib/ClientPackages";
+import { useMinWidth } from "@/hooks/UseMinWidth";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import type { OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
-const OPTIONS: { value: ClientPackagePlatform; label: string }[] = [
-  { value: "windows", label: "Windows" },
-  { value: "android", label: "Android" },
-];
+const LABELS: Record<ClientPackagePlatform, string> = {
+  windows: "Windows",
+  macos: "macOS",
+  android: "Android",
+};
 
-const LABELS: Record<ClientPackagePlatform, string> = { windows: "Windows", android: "Android" };
+/** 分段控件里的顺序：两个桌面平台在前。 */
+const ORDER: ClientPackagePlatform[] = ["windows", "macos", "android"];
 
-/** 手机上默认停在安卓那一档：多数人不会再去点一次分段控件。 */
-const guessPlatform = (): ClientPackagePlatform =>
-  /android/i.test(navigator.userAgent) ? "android" : "windows";
+/**
+ * Windows 与安卓两档始终列出（包没发布时写「尚未发布」）；macOS 只在服务端清单里有它时才出现：
+ * Mac 包正式分发前地址配成空串，弹窗与加入 macOS 之前一模一样，不给 Mac 用户一档点不动的选项。
+ */
+const ALWAYS_LISTED: ClientPackagePlatform[] = ["windows", "android"];
+
+const visiblePlatforms = (packages: ClientPackage[] | undefined): ClientPackagePlatform[] =>
+  ORDER.filter(
+    (platform) =>
+      ALWAYS_LISTED.includes(platform) || packages?.some((item) => item.platform === platform)
+  );
+
+/**
+ * 按设备猜默认档：手机停在安卓，Mac 停在 macOS（该档没列出时回到 Windows），其余 Windows。
+ * iPad 的桌面版浏览器也自称 Macintosh，靠多点触控把它排除：Mac 安装包装不到 iPad 上。
+ */
+const guessPlatform = (): ClientPackagePlatform => {
+  const agent = navigator.userAgent;
+  if (/android/i.test(agent)) return "android";
+  if (/Macintosh/i.test(agent) && !(navigator.maxTouchPoints > 1)) return "macos";
+  return "windows";
+};
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
@@ -66,8 +88,17 @@ export interface ClientDownloadDialogProps {
 
 /** 平台选择弹窗：先选系统，再照安装包自己的元数据决定给不给下载。 */
 export function ClientDownloadDialog({ open, onOpenChange, origin }: ClientDownloadDialogProps) {
-  const [platform, setPlatform] = useState<ClientPackagePlatform>(guessPlatform);
+  const [guessed] = useState<ClientPackagePlatform>(guessPlatform);
+  const [chosen, setChosen] = useState<ClientPackagePlatform | null>(null);
   const { state, reload } = useClientPackages(open);
+  const platforms = visiblePlatforms(state?.packages);
+  // 玩家点过的档优先；没点过就按设备猜，猜中的档不在列表里时落回 Windows
+  const preferred = chosen ?? guessed;
+  const platform = platforms.includes(preferred) ? preferred : "windows";
+  const options = platforms.map((value) => ({ value, label: LABELS[value] }));
+  // 手机宽度下三档平分不到一行舒展的宽度，换紧凑档；只有两档时保持原样
+  const roomy = useMinWidth("sm");
+  const compactSwitch = platforms.length > 2 && !roomy;
   const pkg = state?.packages.find((item) => item.platform === platform);
   const downloadLabel = `下载 ${LABELS[platform]} 安装包`;
 
@@ -81,9 +112,10 @@ export function ClientDownloadDialog({ open, onOpenChange, origin }: ClientDownl
 
         <SegmentedControl
           aria-label="选择下载平台"
+          size={compactSwitch ? "sm" : "default"}
           value={platform}
-          options={OPTIONS}
-          onValueChange={setPlatform}
+          options={options}
+          onValueChange={setChosen}
           className="w-full"
         />
 

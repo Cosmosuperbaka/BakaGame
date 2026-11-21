@@ -39,9 +39,36 @@ const ANDROID = {
   builtAt: "2026-10-18T23:59:59.000Z",
 };
 
+const MACOS = {
+  platform: "macos",
+  arch: "Intel 与 Apple 芯片",
+  url: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+  available: true,
+  sizeBytes: 31_457_280,
+  builtAt: "2026-10-20T01:00:00.000Z",
+};
+
+const MAC_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+
+/** 把浏览器伪装成某台设备：UA 走原型上的 getter，触控点数直接盖在实例上，用例结束时还原。 */
+const pretendDevice = (userAgent: string, maxTouchPoints = 0) => {
+  vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(userAgent);
+  Object.defineProperty(window.navigator, "maxTouchPoints", {
+    value: maxTouchPoints,
+    configurable: true,
+  });
+};
+
+/** 分段控件各档的取值，按界面上的先后顺序。 */
+const radioValues = () =>
+  screen.getAllByRole<HTMLInputElement>("radio").map((radio) => radio.value);
+
 afterEach(() => {
   delete window.__BAKA_CHANNEL__;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(window.navigator, "maxTouchPoints");
 });
 
 describe("ClientDownloadEntry", () => {
@@ -136,5 +163,47 @@ describe("ClientDownloadEntry", () => {
     await user.click(screen.getByRole("button", { name: "重试" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("link", { name: "下载 Windows 安装包" })).toBeInTheDocument();
+  });
+
+  it("macOS 包没进清单（缺省配置）时弹窗里没有 macOS 这一档，Mac 上也停在 Windows", async () => {
+    pretendDevice(MAC_AGENT);
+    await renderWithPackages([WINDOWS, ANDROID]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "下载客户端" }));
+
+    await screen.findByRole("link", { name: "下载 Windows 安装包" });
+    expect(radioValues()).toEqual(["windows", "android"]);
+    expect(screen.queryByRole("radio", { name: "macOS" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Windows" })).toBeChecked();
+  });
+
+  it("清单里有 macOS 时多出这一档，Mac 上默认选中它并给 Mac 的包", async () => {
+    pretendDevice(MAC_AGENT);
+    await renderWithPackages([WINDOWS, MACOS, ANDROID]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "下载客户端" }));
+
+    const link = await screen.findByRole("link", { name: "下载 macOS 安装包" });
+    expect(link).toHaveAttribute("href", MACOS.url);
+    expect(screen.getByRole("radio", { name: "macOS" })).toBeChecked();
+    expect(screen.getByRole("dialog")).toHaveTextContent("Intel 与 Apple 芯片");
+    // 三档按 Windows、macOS、Android 排
+    expect(radioValues()).toEqual(["windows", "macos", "android"]);
+
+    await user.click(screen.getByRole("radio", { name: "Windows" }));
+    expect(screen.getByRole("link", { name: "下载 Windows 安装包" })).toHaveAttribute(
+      "href",
+      WINDOWS.url
+    );
+  });
+
+  it("iPad 的桌面版浏览器自称 Macintosh 也不默认给 Mac 的包", async () => {
+    pretendDevice(MAC_AGENT, 5);
+    await renderWithPackages([WINDOWS, MACOS, ANDROID]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "下载客户端" }));
+
+    await screen.findByRole("radio", { name: "macOS" });
+    expect(screen.getByRole("radio", { name: "Windows" })).toBeChecked();
   });
 });
