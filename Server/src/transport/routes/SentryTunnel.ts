@@ -64,6 +64,16 @@ export const SENTRY_TUNNEL_FAILURE_METRIC = "bakagame.sentry.tunnel.failure";
  */
 export const SENTRY_TUNNEL_ISSUE_INTERVAL_MS = 3_600_000;
 
+/**
+ * 上游超时与连接断开是跨境链路的常态抖动（生产一周两三百次、零散分布），单次出现不算「降级」，
+ * 只记指标点；同一窗口内累计到阈值才说明链路成片不通，才进入上面的 issue 限速。
+ * 内部故障不走这道门槛，第一条就报。
+ */
+export const SENTRY_TUNNEL_TRANSIENT_THRESHOLD = 10;
+export const SENTRY_TUNNEL_TRANSIENT_WINDOW_MS = 600_000;
+
+const TRANSIENT_TUNNEL_CODES = new Set(["UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE"]);
+
 export interface TunnelFailureReporter {
   report: (failure: TunnelFailure, error?: unknown) => void;
 }
@@ -73,27 +83,36 @@ interface TunnelFailureReporterDeps {
   issue: (failure: TunnelFailure, error?: unknown) => void;
   now: () => number;
   issueIntervalMs: number;
+  transientThreshold: number;
+  transientWindowMs: number;
 }
 
 const defaultTunnelFailureReporterDeps = (): TunnelFailureReporterDeps => ({
   count: (failure) => countServerMetric(SENTRY_TUNNEL_FAILURE_METRIC, 1, { code: failure.code }),
   issue: (failure, error) =>
-    captureServerMessage("Sentry telemetry tunnel degraded", "error", {
-      tunnelFailureCode: failure.code,
-      tunnelFailureStatus: failure.status,
-      error:
-        error instanceof Error
-          ? (error.stack ?? error.message)
-          : typeof error === "string"
-            ? error
-            : undefined,
-    }),
+    captureServerMessage(
+      "Sentry telemetry tunnel degraded",
+      TRANSIENT_TUNNEL_CODES.has(failure.code) ? "warning" : "error",
+      {
+        tunnelFailureCode: failure.code,
+        tunnelFailureStatus: failure.status,
+        error:
+          error instanceof Error
+            ? (error.stack ?? error.message)
+            : typeof error === "string"
+              ? error
+              : undefined,
+      }
+    ),
   now: () => Date.now(),
   issueIntervalMs: SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
+  transientThreshold: SENTRY_TUNNEL_TRANSIENT_THRESHOLD,
+  transientWindowMs: SENTRY_TUNNEL_TRANSIENT_WINDOW_MS,
 });
 
 /**
- * 采集链路自身故障的出口：每条故障必有指标点，聚合 issue 至多每个间隔一条。
+ * 采集链路自身故障的出口：每条故障必有指标点，聚合 issue 至多每个间隔一条；
+ * 上游抖动类故障还要在窗口内攒够阈值才算降级。
  * 时钟与出口均可注入，测试用假时钟演示「整小时只报一次、跨小时重新开闸」。
  */
 export const createTunnelFailureReporter = (
@@ -101,10 +120,20 @@ export const createTunnelFailureReporter = (
 ): TunnelFailureReporter => {
   const deps: TunnelFailureReporterDeps = { ...defaultTunnelFailureReporterDeps(), ...overrides };
   let lastIssueAt = Number.NEGATIVE_INFINITY;
+  // 窗口内抖动类故障的时刻，只保留窗口内的，长度上限即阈值。
+  let transientAt: number[] = [];
+  const isSustained = (failure: TunnelFailure, at: number): boolean => {
+    if (!TRANSIENT_TUNNEL_CODES.has(failure.code)) return true;
+    transientAt = [...transientAt, at]
+      .filter((time) => at - time < deps.transientWindowMs)
+      .slice(-deps.transientThreshold);
+    return transientAt.length >= deps.transientThreshold;
+  };
   return {
     report: (failure, error) => {
       deps.count(failure);
       const at = deps.now();
+      if (!isSustained(failure, at)) return;
       if (at - lastIssueAt >= deps.issueIntervalMs) {
         lastIssueAt = at;
         deps.issue(failure, error);

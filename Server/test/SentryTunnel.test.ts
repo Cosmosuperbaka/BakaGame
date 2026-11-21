@@ -4,6 +4,8 @@ import {
   MAX_ENVELOPE_BYTES,
   SENTRY_TUNNEL_FAILURE_METRIC,
   SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
+  SENTRY_TUNNEL_TRANSIENT_THRESHOLD,
+  SENTRY_TUNNEL_TRANSIENT_WINDOW_MS,
   sentryTunnelRoutes,
 } from "../src/transport/routes/SentryTunnel";
 import { ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
@@ -718,10 +720,11 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
       now: () => now,
       issueIntervalMs: SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
     });
+    // 内部故障不经过抖动门槛，单独演示限速本身。
     const failure = {
-      status: 502,
-      code: "UPSTREAM_UNAVAILABLE",
-      message: "Sentry upstream unavailable",
+      status: 500,
+      code: "INTERNAL_ERROR",
+      message: "Internal Sentry tunnel error",
     };
 
     // 隧道全停的洪峰：一秒内几十条，全部有指标点，issue 只有一条。
@@ -742,8 +745,54 @@ describe("隧道自身故障的可见出口（采集链路不允许静默）", (
     expect(issues.length).toBe(2);
   });
 
+  it("上游超时与断连是零散抖动：只记指标，窗口内攒够阈值才报 issue", () => {
+    const counts: string[] = [];
+    const issues: string[] = [];
+    let now = 1_000_000;
+    const reporter = createTunnelFailureReporter({
+      count: (failure) => counts.push(failure.code),
+      issue: (failure) => issues.push(failure.code),
+      now: () => now,
+      issueIntervalMs: SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
+    });
+    const timeout = { status: 504, code: "UPSTREAM_TIMEOUT", message: "Sentry upstream timeout" };
+    const unavailable = {
+      status: 502,
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "Sentry upstream unavailable",
+    };
+
+    // 零散抖动：每次间隔超过窗口，永远攒不够阈值。
+    for (let i = 0; i < SENTRY_TUNNEL_TRANSIENT_THRESHOLD * 3; i++) {
+      reporter.report(i % 2 === 0 ? timeout : unavailable);
+      now += SENTRY_TUNNEL_TRANSIENT_WINDOW_MS;
+    }
+    expect(counts.length).toBe(SENTRY_TUNNEL_TRANSIENT_THRESHOLD * 3);
+    expect(issues).toEqual([]);
+
+    // 窗口内差一条不报，攒满的那一条报出；两类抖动合并计数。
+    for (let i = 0; i < SENTRY_TUNNEL_TRANSIENT_THRESHOLD - 1; i++) {
+      reporter.report(i % 2 === 0 ? timeout : unavailable);
+      now += 1_000;
+    }
+    expect(issues).toEqual([]);
+    reporter.report(timeout);
+    expect(issues).toEqual(["UPSTREAM_TIMEOUT"]);
+
+    // 内部故障不受门槛约束，但仍受同一个小时限速。
+    now += SENTRY_TUNNEL_ISSUE_INTERVAL_MS;
+    reporter.report({
+      status: 500,
+      code: "INTERNAL_ERROR",
+      message: "Internal Sentry tunnel error",
+    });
+    expect(issues).toEqual(["UPSTREAM_TIMEOUT", "INTERNAL_ERROR"]);
+  });
+
   it("专用指标名与限速窗口是稳定契约：改名或放宽间隔必须同步改这里", () => {
     expect(SENTRY_TUNNEL_FAILURE_METRIC).toBe("bakagame.sentry.tunnel.failure");
     expect(SENTRY_TUNNEL_ISSUE_INTERVAL_MS).toBe(3_600_000);
+    expect(SENTRY_TUNNEL_TRANSIENT_THRESHOLD).toBe(10);
+    expect(SENTRY_TUNNEL_TRANSIENT_WINDOW_MS).toBe(600_000);
   });
 });
