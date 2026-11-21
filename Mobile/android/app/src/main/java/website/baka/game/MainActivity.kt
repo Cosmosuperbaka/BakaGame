@@ -16,13 +16,17 @@ import androidx.webkit.WebViewFeature
 import com.getcapacitor.Bridge
 import com.getcapacitor.BridgeActivity
 import com.getcapacitor.BridgeWebViewClient
+import com.getcapacitor.CapConfig
+import org.json.JSONObject
 import website.baka.game.channel.BakaChannelPlugin
 import website.baka.game.network.DnsProxyServer
 import website.baka.game.network.HttpDns
 import website.baka.game.shell.BakaShellPlugin
+import website.baka.game.shell.ClientUserAgent
 import website.baka.game.shell.SystemBarsController
 import website.baka.game.update.BakaHotUpdatePlugin
 import website.baka.game.update.HotUpdateStore
+import java.io.File
 import java.util.concurrent.Executor
 
 /**
@@ -84,6 +88,11 @@ class MainActivity : BridgeActivity() {
                 // 连 SharedPreferences 都写不了时只能交给 Capacitor 自己的缺省行为。
             }
         }
+        // UA 段要在 super.onCreate 之前定下：Capacitor 在 super 里按 config 初始化 WebView
+        // 并立即 loadUrl，晚一步首个页面就带着旧 UA 提交，整个会话的接口请求都跟着它。
+        // 生效的资源目录此时已由 prepareBoot 定好，游戏版本从那份资源的 version.json 读。
+        val userAgent = ClientUserAgent.resolve(this)
+        runtimeConfig(userAgent)?.let { config = it }
         // 必须在 super.onCreate 之前应用：bridge 会在 super 里创建 WebView 并 loadUrl，
         // 覆写晚于页面加载时，该 WebView 的首批请求仍会直连，已有连接还会被复用。
         prepareHttpDns()
@@ -100,6 +109,10 @@ class MainActivity : BridgeActivity() {
         // 启动即全量开启会让普通玩家连截图分享都做不到。
         val bridge = bridge ?: return
         val webView = bridge.webView
+        // 兜底：运行期配置没写成时，至少让之后的导航带上 UA 段（首个页面可能已按默认 UA 提交）。
+        if (!webView.settings.userAgentString.contains(userAgent)) {
+            webView.settings.userAgentString = webView.settings.userAgentString + " " + userAgent
+        }
         // 边到边与插图避让；同时给 WebView 铺上与启动画面同一档的底色（默认白底会在暗色下白闪）。
         systemBars = SystemBarsController(this).also { it.attach(webView) }
         // 页面 origin 是 https://localhost（未配置 server.hostname 时），接口在公网域名上 ——
@@ -152,6 +165,25 @@ class MainActivity : BridgeActivity() {
     override fun onDestroy() {
         stopHttpDns()
         super.onDestroy()
+    }
+
+    /**
+     * 在打包的 capacitor.config.json 上加一项 `android.appendUserAgent`，写到应用私有目录再交给 Capacitor。
+     * `appendUserAgent` 本是静态配置，带不了运行期才知道的游戏版本；这样其余配置原样保留，
+     * Capacitor 在初始化 WebView 时（加载页面之前）把它接到系统默认 UA 之后。失败返回 null，按默认配置启动。
+     */
+    private fun runtimeConfig(userAgent: String): CapConfig? = try {
+        val packaged = assets.open("capacitor.config.json").use { it.readBytes().toString(Charsets.UTF_8) }
+        val json = JSONObject(packaged)
+        val android = json.optJSONObject("android") ?: JSONObject().also { json.put("android", it) }
+        val existing = android.optString("appendUserAgent", "").trim()
+        android.put("appendUserAgent", if (existing.isEmpty()) userAgent else "$existing $userAgent")
+        val dir = File(filesDir, RUNTIME_CONFIG_DIR).apply { mkdirs() }
+        File(dir, "capacitor.config.json").writeText(json.toString())
+        CapConfig.loadFromFile(this, dir.absolutePath)
+    } catch (err: Exception) {
+        Log.w(TAG, "运行期配置写入失败，按打包配置启动：${err.message}")
+        null
     }
 
     /**
@@ -210,6 +242,9 @@ class MainActivity : BridgeActivity() {
 
         /** 启动画面最多停留这么久：页面迟迟画不出来时宁可露出底色，也不让玩家以为应用卡死。 */
         private const val SPLASH_MAX_MS = 3000L
+
+        /** 运行期配置（打包配置 + UA 段）落盘的目录，位于应用私有目录下。 */
+        private const val RUNTIME_CONFIG_DIR = "shell-config"
 
         /** 调用桥接的返回处理；返回 "ok" 表示页面已接手（结果是 JSON 序列化后的字符串）。 */
         private const val BACK_SCRIPT =

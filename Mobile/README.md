@@ -155,7 +155,8 @@ Mobile/
         ├── shell/
         │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）、首页返回退到后台
         │   ├── SystemBarsController.kt  # 边到边、系统栏/挖孔/键盘避让与系统栏配色
-        │   └── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距）
+        │   ├── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距）
+        │   └── ClientUserAgent.kt       # 壳的 User-Agent 段（WebView 追加、原生请求专用）
         └── update/
             ├── BakaHotUpdatePlugin.kt   # 下载 / sha256 校验 / 安全解压
             └── HotUpdateStore.kt        # 资源包落盘、启动选择与失败回退
@@ -424,6 +425,21 @@ Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真�
 返回拦截在所有系统版本上一直开着。实测安卓 16 打开预测式返回后，首页不拦截时系统会结束 Activity
 （从启动器进入也一样），回来时页面重载、对局断开；安卓 7 到 11 的默认返回同样会结束它。代价是首页返回
 没有系统「回到桌面」的预测动画。页面没有桥接或脚本出错时原生直接退到后台，不会卡在按返回没反应的界面。
+
+### 7.9 User-Agent
+
+壳的 UA 段形如 `BakaGame/<壳版本> (Android <系统版本>; <架构>; mobile) Game/<游戏版本>`，例如
+`BakaGame/0.1.6 (Android 15; arm64-v8a; mobile) Game/2.0.3+eb11009`。规则在 `shell/ClientUserAgent.kt`：
+
+- 壳版本取 `versionName`，系统版本取 `Build.VERSION.RELEASE`，架构取 `Build.SUPPORTED_ABIS[0]`；
+  各字段只保留 `[A-Za-z0-9._-]`，取不到写 `unknown`，整段形状不变。
+- 游戏版本是网页产品版本加 `+<短提交号>`，从**当前生效的那份资源**（内嵌产物，或 `prepareBoot` 选中的热更新包）
+  根目录的 `version.json` 读，热更新在冷启动切换，所以启动时确定一次。文件缺失、字段不全或格式不对时写 `unknown`。
+- WebView 里追加在系统默认 UA 之后：`appendUserAgent` 是静态配置，带不了运行期版本，所以启动时在打包的
+  `capacitor.config.json` 上补一项 `android.appendUserAgent`，写到应用私有目录再交给 Capacitor（`super.onCreate`
+  之前），保证第一个页面就带上它；写不成时退到设置 `userAgentString`。
+- 壳自己发的原生 HTTP 请求（热更新下载、HTTPDNS 查询）只用这一段。
+- **只用于诊断与统计**，不参与任何信任或准入判定：UA 谁都能改，准入只看通道证明（第 3 节）。
 
 ## 8. 已知限制与待真机验证
 

@@ -131,6 +131,15 @@ internal object HotUpdateStore {
         bundleDir(context, build)?.let { setServerBasePath(context, it.absolutePath) }
     }
 
+    /**
+     * 这次启动生效的资源目录：热更新包的绝对路径，空串表示内嵌产物。
+     * 在 [prepareBoot] 之后读才是本次启动的结论。
+     */
+    fun activeBasePath(context: Context): String =
+        context.getSharedPreferences(CAP_PREFS, Context.MODE_PRIVATE)
+            .getString(CAP_SERVER_PATH, "")
+            .orEmpty()
+
     fun setServerBasePath(context: Context, path: String) {
         context.getSharedPreferences(CAP_PREFS, Context.MODE_PRIVATE)
             .edit()

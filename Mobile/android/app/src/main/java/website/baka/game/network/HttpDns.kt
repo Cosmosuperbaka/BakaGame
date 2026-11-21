@@ -6,6 +6,7 @@ import website.baka.game.BuildConfig
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import website.baka.game.shell.ClientUserAgent
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
@@ -143,6 +144,8 @@ class HttpDns private constructor(
         connection.readTimeout = QUERY_TIMEOUT_MS
         connection.requestMethod = "GET"
         connection.useCaches = false
+        // 只用壳的 UA 段（见 ClientUserAgent），仅供诊断与统计
+        connection.setRequestProperty("User-Agent", ClientUserAgent.current)
         try {
             val code = connection.responseCode
             if (code != HttpURLConnection.HTTP_OK) throw IOException("HTTPDNS 返回 HTTP $code")

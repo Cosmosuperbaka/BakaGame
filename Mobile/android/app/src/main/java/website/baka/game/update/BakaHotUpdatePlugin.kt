@@ -8,7 +8,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import website.baka.game.BuildConfig
+import website.baka.game.shell.ClientUserAgent
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -203,7 +203,8 @@ class BakaHotUpdatePlugin : Plugin() {
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept", "application/zip")
             connection.setRequestProperty("Accept-Encoding", "identity")
-            connection.setRequestProperty("User-Agent", "BakaGame-HotUpdate/${BuildConfig.VERSION_NAME}")
+            // 只用壳的 UA 段（见 ClientUserAgent），仅供诊断与统计
+            connection.setRequestProperty("User-Agent", ClientUserAgent.current)
             val status = connection.responseCode
             if (status !in REDIRECT_STATUS) return connection
             val location = connection.getHeaderField("Location")
