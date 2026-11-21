@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CLIENT_UA_UNKNOWN,
+  clientUaGameToken,
   clientUaToken,
   formatClientUserAgent,
   formatGameVersion,
@@ -38,22 +39,31 @@ describe("客户端 User-Agent 段", () => {
     ).toBe("BakaGame/0.1.6 (Android 15; arm64-v8a; mobile) Game/2.0.3+eb11009");
   });
 
-  test("取不到的截写 unknown，整体形状不变；括号、分号与空白不会打乱段结构", () => {
+  test("取不到的截写 unknown，整体形状不变；括号、分号、空白与加号不会打乱段结构", () => {
     const ua = formatClientUserAgent({
       ...desktop,
       osVersion: "",
-      arch: "x(64); evil",
+      arch: "x(64); evil+1",
       gameVersion: CLIENT_UA_UNKNOWN,
     });
-    expect(ua).toBe("BakaGame/0.2.1 (Windows unknown; x64evil; desktop) Game/unknown");
+    expect(ua).toBe("BakaGame/0.2.1 (Windows unknown; x64evil1; desktop) Game/unknown");
     expect(parseClientUserAgent(ua)).toEqual({
       ...desktop,
       osVersion: "unknown",
-      arch: "x64evil",
+      arch: "x64evil1",
       gameVersion: "unknown",
     });
     expect(clientUaToken(" 1.2 3 ")).toBe("1.23");
     expect(clientUaToken(null)).toBe("unknown");
+    expect(clientUaToken("a".repeat(40))).toBe("a".repeat(32));
+  });
+
+  test("游戏版本那一截只认恰好两段的 <版本>+<提交号>", () => {
+    expect(clientUaGameToken("2.0.3+eb11009")).toBe("2.0.3+eb11009");
+    expect(clientUaGameToken("2.0.3")).toBe("unknown");
+    expect(clientUaGameToken("2.0.3+eb1+1009")).toBe("unknown");
+    expect(clientUaGameToken("2.0.3+;;")).toBe("unknown");
+    expect(clientUaGameToken(undefined)).toBe("unknown");
   });
 
   test("从 WebView 的完整 UA 里取出追加在后面的客户端段", () => {
@@ -81,19 +91,24 @@ describe("客户端 User-Agent 段", () => {
     ).toBeNull();
   });
 
-  test("游戏版本：产品版本加短提交号，提交号取不到只写版本，版本取不到为 unknown", () => {
+  test("游戏版本：产品版本与短提交号都对才拼，提交号统一成 7 位小写，否则 unknown", () => {
     expect(formatGameVersion("2.0.3", "eb11009")).toBe("2.0.3+eb11009");
-    expect(formatGameVersion("2.0.3", "EB11009")).toBe("2.0.3+eb11009");
-    expect(formatGameVersion("2.0.3", "dev")).toBe("2.0.3");
-    expect(formatGameVersion("2.0.3", "")).toBe("2.0.3");
+    expect(formatGameVersion("2.0.3", "EB11009A3F")).toBe("2.0.3+eb11009");
+    expect(formatGameVersion("2.0.3-beta.1", "eb11009")).toBe("2.0.3-beta.1+eb11009");
+    expect(formatGameVersion("2.0.3", "dev")).toBe("unknown");
+    expect(formatGameVersion("2.0.3", "")).toBe("unknown");
     expect(formatGameVersion("", "eb11009")).toBe("unknown");
+    expect(formatGameVersion("2", "eb11009")).toBe("unknown");
     expect(formatGameVersion("v2.0", "eb11009")).toBe("unknown");
     expect(formatGameVersion(undefined, undefined)).toBe("unknown");
   });
 
-  test("版本清单：形状对就取游戏版本，不对一律 unknown", () => {
-    expect(gameVersionFromManifest({ version: "2.0.3", commit: "eb11009" })).toBe("2.0.3+eb11009");
+  test("版本清单：version 与 commit 两个字段都对就取游戏版本，其余字段不管，形状不对一律 unknown", () => {
+    expect(gameVersionFromManifest({ version: "2.0.3", commit: "eb11009", extra: 1 })).toBe(
+      "2.0.3+eb11009"
+    );
     expect(gameVersionFromManifest({ version: 2, commit: "eb11009" })).toBe("unknown");
+    expect(gameVersionFromManifest({ version: "2.0.3" })).toBe("unknown");
     expect(gameVersionFromManifest(null)).toBe("unknown");
     expect(gameVersionFromManifest("2.0.3")).toBe("unknown");
   });
