@@ -217,6 +217,72 @@ pub fn nt_query_information_process() -> Option<NtQueryInformationProcessFn> {
     Some(unsafe { std::mem::transmute::<*mut c_void, NtQueryInformationProcessFn>(raw) })
 }
 
+/// `RTL_OSVERSIONINFOW`：`RtlGetVersion` 填的结构，只读版本三段
+#[repr(C)]
+struct RtlOsVersionInfo {
+    size: ULONG,
+    major: ULONG,
+    minor: ULONG,
+    build: ULONG,
+    platform: ULONG,
+    service_pack: [u16; 128],
+}
+
+type RtlGetVersionFn = unsafe extern "system" fn(info: *mut RtlOsVersionInfo) -> i32;
+type IsWow64Process2Fn = unsafe extern "system" fn(
+    process: HANDLE,
+    process_machine: *mut u16,
+    native_machine: *mut u16,
+) -> BOOL;
+
+/// 按模块名与导出名解析函数地址；拿不到返回 `None`
+fn resolve(module: &str, symbol: &[u8]) -> Option<*mut c_void> {
+    let name = wide(module)?;
+    let handle = unsafe { GetModuleHandleW(name.as_ptr()) };
+    if handle.is_null() {
+        return None;
+    }
+    let raw = unsafe { GetProcAddress(handle, symbol.as_ptr() as LPCSTR) };
+    (!raw.is_null()).then_some(raw)
+}
+
+/// 系统真实版本（`主.次.构建号`）。`GetVersionEx` 会被兼容性清单「降级」成 6.2，
+/// 所以走 ntdll 的 `RtlGetVersion`；拿不到返回 `None`。
+pub fn os_version() -> Option<String> {
+    let raw = resolve("ntdll.dll", b"RtlGetVersion\0")?;
+    // 已确认非空；签名按官方文档
+    let get = unsafe { std::mem::transmute::<*mut c_void, RtlGetVersionFn>(raw) };
+    let mut info: RtlOsVersionInfo = unsafe { std::mem::zeroed() };
+    info.size = std::mem::size_of::<RtlOsVersionInfo>() as ULONG;
+    let status = unsafe { get(&mut info) };
+    (status == 0).then(|| format!("{}.{}.{}", info.major, info.minor, info.build))
+}
+
+/// 机器的真实架构（不是本进程的）：x64 壳跑在 ARM 版 Windows 上时报 `arm64`。
+/// `IsWow64Process2` 在较老的 Windows 10 上没有，拿不到返回 `None`。
+pub fn native_arch() -> Option<&'static str> {
+    let raw = resolve("kernel32.dll", b"IsWow64Process2\0")?;
+    let query = unsafe { std::mem::transmute::<*mut c_void, IsWow64Process2Fn>(raw) };
+    let mut process_machine: u16 = 0;
+    let mut native_machine: u16 = 0;
+    let ok = unsafe {
+        query(
+            GetCurrentProcess(),
+            &mut process_machine,
+            &mut native_machine,
+        )
+    };
+    if ok != TRUE {
+        return None;
+    }
+    match native_machine {
+        0x8664 => Some("x64"),
+        0xAA64 => Some("arm64"),
+        0x014c => Some("x86"),
+        _ => None,
+    }
+}
+
 /// 带结尾 0 的 UTF-16 缓冲区；含内部 0 的输入直接拒绝，避免截断语义
 pub fn wide(value: &str) -> Option<Vec<u16>> {
     let mut buf: Vec<u16> = value.encode_utf16().collect();

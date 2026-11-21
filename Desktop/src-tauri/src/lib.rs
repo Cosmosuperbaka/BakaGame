@@ -23,6 +23,8 @@ mod single_instance;
 mod splash;
 #[cfg(test)]
 mod test_support;
+mod user_agent;
+mod webview_ua;
 mod window_fit;
 #[cfg(target_os = "windows")]
 mod winapi;
@@ -489,6 +491,28 @@ fn start_webview_tunnel() -> Option<tauri::Url> {
     }
 }
 
+/// 读站点版本清单的超时：启动页最多等它这么久就进站，所以要短
+const GAME_VERSION_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// 后台读站点的 `version.json`，把游戏版本写进原生请求与 WebView 的 UA，然后告诉启动页可以进站。
+/// 读不到就保持 `unknown`，同样放行：UA 只用于诊断与统计，绝不能挡住玩家进站。
+fn spawn_game_version_probe(window: tauri::WebviewWindow) {
+    std::thread::spawn(move || {
+        match http::get_site_json(user_agent::GAME_VERSION_MANIFEST_PATH, GAME_VERSION_TIMEOUT) {
+            Ok(manifest) => {
+                let game = user_agent::game_version_from_manifest(&manifest);
+                user_agent::set_game_version(&game);
+                webview_ua::apply(&window);
+                eprintln!("[baka-ua] 游戏版本 {game}");
+            }
+            Err(err) => eprintln!("[baka-ua] 读不到游戏版本，保持 unknown：{}", err.text()),
+        }
+        if let Err(err) = window.eval(splash::UA_READY_SCRIPT) {
+            eprintln!("[baka-ua] 通知启动页失败：{err}");
+        }
+    });
+}
+
 fn create_main_window(
     app: &tauri::App,
     tunnel: Option<tauri::Url>,
@@ -556,6 +580,9 @@ fn create_main_window(
     let window = builder.build()?;
     // 插件在建窗时已按上次的状态恢复了位置与尺寸；再收进所在显示器的工作区，防止恢复到屏幕外
     window_fit::keep_on_screen(&window);
+    // 客户端段先带 Game/unknown 追加到默认 UA 之后；读到站点的游戏版本后再换（见 spawn_game_version_probe）
+    webview_ua::apply(&window);
+    spawn_game_version_probe(window.clone());
     let dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
     if let Err(err) = window.set_background_color(Some(splash::background(dark))) {
         eprintln!("窗口背景色设置失败：{err}");

@@ -135,9 +135,30 @@
         var timer = 0;
         var countdown = 0;
 
+        // 进站前最多等壳把游戏版本写进 User-Agent 这么久（壳读版本清单的超时是 4 秒）；
+        // 等不到也照样进站：UA 只用于诊断与统计，不能挡住玩家
+        var UA_WAIT_MS = 5000;
+        var entering = false;
+
         var show = function (text, canRetry) {
           statusEl.textContent = text;
           retryEl.hidden = !canRetry;
+        };
+
+        var enter = function () {
+          if (entering) return;
+          entering = true;
+          window.location.replace(site);
+        };
+
+        // 壳写好 UA 后经初始化脚本置 __BAKA_UA_READY__ 并调这个回调（见 splash.rs 的 UA_READY_SCRIPT）
+        var enterWhenUaReady = function () {
+          if (window.__BAKA_UA_READY__) {
+            enter();
+            return;
+          }
+          window.__bakaSplashUaReady = enter;
+          window.setTimeout(enter, UA_WAIT_MS);
         };
 
         var schedule = function () {
@@ -176,7 +197,7 @@
           }).then(
             function () {
               window.clearTimeout(abort);
-              window.location.replace(site);
+              enterWhenUaReady();
             },
             function () {
               window.clearTimeout(abort);

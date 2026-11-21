@@ -191,10 +191,12 @@ where
     B: Serialize + ?Sized,
     R: DeserializeOwned,
 {
-    // 超时按请求设：共享客户端上注册与领挑战、换票用的超时各不相同
+    // 超时按请求设：共享客户端上注册与领挑战、换票用的超时各不相同。
+    // UA 每次现取：读到站点的游戏版本后，之后的请求自动带上（只用于诊断与统计）
     let response = client
         .post(url)
         .timeout(timeout)
+        .header(reqwest::header::USER_AGENT, crate::user_agent::current())
         .json(body)
         .send()
         .map_err(|e| ApiError::local(format!("请求 {url} 失败：{e}")))?;
@@ -231,6 +233,26 @@ where
         .ok_or_else(|| ApiError::local(format!("{path} 响应体过大或读取失败")))?;
     serde_json::from_slice::<R>(&bytes)
         .map_err(|e| ApiError::local(format!("{path} 响应格式错误：{e}")))
+}
+
+/// 阻塞式读取站点上的一个 JSON 文件（如 `/version.json`）：走与注册相同的客户端（HTTPDNS、
+/// 代理口径一致），带客户端 UA。非 2xx、超大或不是 JSON 都当失败。只在后台线程调用。
+pub fn get_site_json(path: &str, timeout: Duration) -> Result<serde_json::Value, ApiError> {
+    let url = format!("{}{}", crate::config::site_url(), path);
+    let response = client_for(&url)?
+        .get(&url)
+        .timeout(timeout)
+        .header(reqwest::header::USER_AGENT, crate::user_agent::current())
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .send()
+        .map_err(|e| ApiError::local(format!("请求 {url} 失败：{e}")))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(ApiError::local(format!("{url} 被拒绝：HTTP {status}")));
+    }
+    let bytes = read_limited(response)
+        .ok_or_else(|| ApiError::local(format!("{path} 响应体过大或读取失败")))?;
+    serde_json::from_slice(&bytes).map_err(|e| ApiError::local(format!("{path} 不是 JSON：{e}")))
 }
 
 /// 错误响应体：读到上限为止，超出部分丢弃；非 UTF-8 的字节按替换字符处理

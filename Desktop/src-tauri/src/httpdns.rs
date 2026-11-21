@@ -497,8 +497,10 @@ fn send_http<S: Read + Write>(
         Some(80) | Some(443) | None => host.to_string(),
         Some(port) => format!("{host}:{port}"),
     };
+    // UA 只由安全字符拼成（见 user_agent::token），不会带出换行
+    let user_agent = crate::user_agent::current();
     let request = format!(
-        "GET {target} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nAccept: */*\r\n\r\n"
+        "GET {target} HTTP/1.1\r\nHost: {host_header}\r\nUser-Agent: {user_agent}\r\nConnection: close\r\nAccept: */*\r\n\r\n"
     );
     stream
         .write_all(request.as_bytes())

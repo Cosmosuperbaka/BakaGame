@@ -177,6 +177,8 @@ async fn run_round(app: &AppHandle) -> Round {
     let checked = match endpoint(&crate::config::api_base()).and_then(|url| {
         app.updater_builder()
             .endpoints(vec![url])
+            // 清单与下载请求都带客户端 UA（只用于诊断与统计）
+            .and_then(|builder| builder.header("User-Agent", crate::user_agent::current()))
             .and_then(|builder| builder.timeout(CHECK_TIMEOUT).build())
             .map_err(|err| format!("更新器初始化失败：{err}"))
     }) {

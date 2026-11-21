@@ -34,6 +34,10 @@ pub fn is_local_page(url: &str) -> bool {
     })
 }
 
+/// UA 准备好之后通知启动页的脚本：只在本地页上生效，站点页面上什么都不做。
+/// 启动页探测到站点可达后会等这个信号（有上限）再进站，保证进站请求已带上游戏版本。
+pub const UA_READY_SCRIPT: &str = "(function () { try { if (location.protocol !== 'tauri:' && location.hostname !== 'tauri.localhost') { return; } window.__BAKA_UA_READY__ = true; if (typeof window.__bakaSplashUaReady === 'function') { window.__bakaSplashUaReady(); } } catch (e) {} })();";
+
 /// 按系统明暗取窗口背景色
 pub fn background(dark: bool) -> Color {
     if dark {
@@ -100,5 +104,16 @@ mod tests {
         let splash = include_str!("../../splash/index.html");
         assert!(splash.contains("--background: #f5f1e6;"));
         assert!(splash.contains("--background: #2d2621;"));
+    }
+
+    /// 「UA 已就绪」的信号只在本地页生效，名字与启动页脚本里等待的那两个一致
+    #[test]
+    fn ua_ready_signal_matches_the_start_page() {
+        assert!(UA_READY_SCRIPT.contains("location.hostname !== 'tauri.localhost'"));
+        let splash = include_str!("../../splash/index.html");
+        for name in ["__BAKA_UA_READY__", "__bakaSplashUaReady"] {
+            assert!(UA_READY_SCRIPT.contains(name), "信号脚本缺 {name}");
+            assert!(splash.contains(name), "启动页缺 {name}");
+        }
     }
 }

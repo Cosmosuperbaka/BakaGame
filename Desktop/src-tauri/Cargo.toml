@@ -1,6 +1,6 @@
 [package]
 name = "bakagame-desktop"
-version = "0.2.0"
+version = "0.2.1"
 description = "BakaGame 桌面壳：远程 URL 窗口 + 设备密钥签名 + 原生自检"
 authors = ["BakaGame"]
 edition = "2021"
@@ -46,6 +46,18 @@ native-tls = "0.2"
 tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "zip", "system-proxy"] }
 # 记住窗口位置、尺寸与最大化状态（官方插件，只在 Rust 侧用）；恢复后再由 window_fit 收进工作区
 tauri-plugin-window-state = "2.5.0"
+
+# 把客户端段追加到 WebView 默认 UA 之后要走平台接口（见 src/webview_ua.rs）。版本与 wry 用的同一套，
+# 不会多编一份：Windows 是 WebView2 的 COM 绑定，macOS 是 WKWebView 的 Objective-C 绑定；
+# macOS 另用 libc 的 sysctlbyname 取系统版本与真实架构。
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+libc = "0.2"
 
 [profile.release]
 codegen-units = 1
