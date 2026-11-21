@@ -43,7 +43,7 @@ const PROBE_TIMEOUT_MS = 3_000;
 
 const ARCH_BY_PLATFORM: Record<ClientPackagePlatform, string> = {
   windows: "x64",
-  macos: "通用（Apple 芯片与 Intel）",
+  macos: "Intel 与 Apple 芯片",
   android: "全架构通用",
 };
 

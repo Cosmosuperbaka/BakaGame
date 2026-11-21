@@ -175,7 +175,7 @@ test("地址配成空串的平台不进列表：没发布的平台不该在弹�
   expect((await artifacts.list()).map((item) => item.platform)).toEqual(["windows"]);
 });
 
-test("配了 macOS 包时按 Windows、macOS、安卓的顺序列出，架构标通用包", async () => {
+test("配了 macOS 包时按 Windows、macOS、安卓的顺序列出，架构标两种芯片通用", async () => {
   const { artifacts } = harness(
     {
       windows: stub(true, { "content-length": "10" }),
@@ -192,7 +192,7 @@ test("配了 macOS 包时按 Windows、macOS、安卓的顺序列出，架构标
   expect(list.map((item) => item.platform)).toEqual(["windows", "macos", "android"]);
   expect(list[1]).toMatchObject({
     platform: "macos",
-    arch: "通用（Apple 芯片与 Intel）",
+    arch: "Intel 与 Apple 芯片",
     url: "https://cdn.test/files/BakaGame-latest-universal.dmg",
     available: true,
     sizeBytes: 20,
