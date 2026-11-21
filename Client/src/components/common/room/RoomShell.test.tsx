@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageSquare, Users } from "lucide-react";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { roomEntrance, roomEntranceMs } from "@/lib/motion/NamedMoves";
+import { SHELL_BACK_EVENT } from "@/hooks/UseShellBack";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { ChatColumn, PlayerColumn, RoomShell } from "./RoomShell";
 
@@ -207,5 +208,42 @@ describe("RoomShell 抽屉入口的未读角标", () => {
     render(shell(undefined));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "玩家列表" })).not.toHaveAccessibleDescription();
+  });
+});
+
+describe("RoomShell 系统返回键", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const pressBack = () => {
+    const event = new CustomEvent(SHELL_BACK_EVENT, { cancelable: true });
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  it("壳的返回键先问一句，确认后才离开房间", async () => {
+    stubMatchMedia(true);
+    const onLeave = vi.fn();
+    render(<RoomShell onLeave={onLeave} title="测试房间" game={<p>游戏区</p>} />);
+
+    expect(pressBack().defaultPrevented).toBe(true);
+    const dialog = await screen.findByRole("dialog", { name: "离开房间？" });
+    expect(onLeave).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "离开" }));
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("选择留在房间时不离开", async () => {
+    stubMatchMedia(true);
+    const onLeave = vi.fn();
+    render(<RoomShell onLeave={onLeave} title="测试房间" game={<p>游戏区</p>} />);
+    pressBack();
+    const dialog = await screen.findByRole("dialog", { name: "离开房间？" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "留在房间" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onLeave).not.toHaveBeenCalled();
   });
 });

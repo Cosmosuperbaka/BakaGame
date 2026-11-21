@@ -153,7 +153,7 @@ Mobile/
         │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17：只读 attestationSecurityLevel（仅展示）
         │   └── SelfCheck.kt             # P3.3 运行时检测
         ├── shell/
-        │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）
+        │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）、首页返回退到后台
         │   ├── SystemBarsController.kt  # 边到边、系统栏/挖孔/键盘避让与系统栏配色
         │   └── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距）
         └── update/
@@ -408,6 +408,21 @@ Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真�
   里默认主题的底色，启动画面与 WebView 首帧前的底色也取这一档，主题令牌改了要同步。
 - 主题继承昼夜主题（`AppTheme.NoActionBar` 覆盖 Capacitor 库里的暗色同名主题），WebView 据此给页面
   `prefers-color-scheme`；`configChanges` 保留 `uiMode`，切换系统深浅色不重建 Activity，页面原地跟随。
+
+### 7.8 系统返回键
+
+`MainActivity` 用 AndroidX 的 `OnBackPressedCallback` 把返回键交给页面（`window.__BAKA_SHELL_BACK__`，
+桥接里实现），清单打开了 `enableOnBackInvokedCallback`：
+
+1. 有打开的浮层（Radix 的对话框、抽屉、菜单、下拉）：合成一次 Escape 关掉最上层；关不掉的继续往下；
+2. 派发可取消的 `bakagame:shell-back`，页面接手就到此为止（房间外壳弹离开确认、排位对局弹判负确认，
+   见 `Client/src/hooks/UseShellBack.ts`，事件名由脚本测试对账）；
+3. 不在首页：退回上一页；冷启动落在深链上没有上一页时改写成首页并通知路由，不整页重载；
+4. 在首页：`BakaShell.moveToBack` 把应用退到后台，不结束 Activity。
+
+返回拦截在所有系统版本上一直开着。实测安卓 16 打开预测式返回后，首页不拦截时系统会结束 Activity
+（从启动器进入也一样），回来时页面重载、对局断开；安卓 7 到 11 的默认返回同样会结束它。代价是首页返回
+没有系统「回到桌面」的预测动画。页面没有桥接或脚本出错时原生直接退到后台，不会卡在按返回没反应的界面。
 
 ## 8. 已知限制与待真机验证
 

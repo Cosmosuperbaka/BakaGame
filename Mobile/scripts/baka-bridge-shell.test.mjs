@@ -16,8 +16,14 @@ const source = fs
   .readFileSync(path.resolve(here, "../bridge/baka-bridge.js"), "utf8")
   .replaceAll("__BAKA_CLIENT_VERSION__", "0.1.5");
 
-const shellHarness = ({ withShell = true, pathname = "/" } = {}) => {
+const shellHarness = ({ withShell = true, pathname = "/", historyIdx = 0 } = {}) => {
   const calls = [];
+  const backCalls = [];
+  const navigation = [];
+  const keydowns = [];
+  const windowListeners = new Map();
+  // 当前打开的浮层数（Radix 对话框、抽屉、菜单等）；Escape 能不能关掉由 escapeCloses 决定
+  const overlays = { open: 0, escapeCloses: true };
   const timers = [];
   const observers = [];
   const classes = new Set();
@@ -28,6 +34,23 @@ const shellHarness = ({ withShell = true, pathname = "/" } = {}) => {
     setSystemBars: async (args) => {
       calls.push(["setSystemBars", { ...args }]);
     },
+    moveToBack: async () => {
+      backCalls.push(["moveToBack"]);
+    },
+  };
+  const location = { pathname };
+  const history = {
+    state: { idx: historyIdx },
+    back: () => navigation.push("back"),
+    pushState: (state, _title, url) => {
+      history.state = state;
+      location.pathname = url;
+    },
+    replaceState: (state, _title, url) => {
+      history.state = state;
+      location.pathname = url;
+      navigation.push(`replace:${url}`);
+    },
   };
 
   const documentElement = {
@@ -37,9 +60,18 @@ const shellHarness = ({ withShell = true, pathname = "/" } = {}) => {
     readyState: "complete",
     visibilityState: "visible",
     documentElement,
-    body: {},
+    body: {
+      dispatchEvent: (event) => {
+        keydowns.push(event.key);
+        if (event.key === "Escape" && overlays.escapeCloses && overlays.open > 0)
+          overlays.open -= 1;
+        return true;
+      },
+    },
+    activeElement: null,
     addEventListener: () => {},
     querySelector: () => null,
+    querySelectorAll: () => ({ length: overlays.open }),
     createElement: () => ({
       getContext: () => ({
         clearRect: () => {},
@@ -72,10 +104,41 @@ const shellHarness = ({ withShell = true, pathname = "/" } = {}) => {
         this.options = options;
       }
     },
-    location: { pathname },
+    CustomEvent: class {
+      constructor(type, init = {}) {
+        this.type = type;
+        this.cancelable = Boolean(init.cancelable);
+        this.defaultPrevented = false;
+      }
+      preventDefault() {
+        if (this.cancelable) this.defaultPrevented = true;
+      }
+    },
+    KeyboardEvent: class {
+      constructor(type, init = {}) {
+        this.type = type;
+        this.key = init.key;
+      }
+    },
+    PopStateEvent: class {
+      constructor(type) {
+        this.type = type;
+      }
+    },
+    location,
     document,
     window: {
-      addEventListener: () => {},
+      history,
+      addEventListener: (type, handler) => {
+        const list = windowListeners.get(type) ?? [];
+        list.push(handler);
+        windowListeners.set(type, list);
+      },
+      dispatchEvent: (event) => {
+        if (event.type === "popstate") navigation.push("popstate");
+        for (const handler of windowListeners.get(event.type) ?? []) handler(event);
+        return !event.defaultPrevented;
+      },
       getComputedStyle: () => ({ backgroundColor: page.background }),
       localStorage: { getItem: () => null, setItem: () => {} },
       Capacitor: { Plugins: withShell ? { BakaShell: shell } : {} },
@@ -90,6 +153,14 @@ const shellHarness = ({ withShell = true, pathname = "/" } = {}) => {
   };
   return {
     calls,
+    backCalls,
+    navigation,
+    keydowns,
+    overlays,
+    location,
+    history,
+    back: () => sandbox.window.__BAKA_SHELL_BACK__(),
+    claimBack: (handler) => sandbox.window.addEventListener("bakagame:shell-back", handler),
     classes,
     page,
     sandbox,
@@ -147,4 +218,76 @@ test("旧壳没有 BakaShell 插件时静默跳过", async () => {
   assert.doesNotThrow(() => h.flush());
   await settle();
   assert.equal(h.calls.length, 0);
+});
+
+test("返回键：有浮层先合成 Escape 关掉它，不往下走", async () => {
+  const h = shellHarness({ pathname: "/cee/room/1234", historyIdx: 2 });
+  h.flush();
+  h.overlays.open = 1;
+  h.back();
+  h.flush();
+  await settle();
+  assert.deepEqual(h.keydowns, ["Escape"]);
+  assert.deepEqual(h.navigation, []);
+});
+
+test("返回键：浮层关不掉（如必须先填写的弹窗）时继续交给页面或后退", async () => {
+  const h = shellHarness({ pathname: "/cee/room/1234", historyIdx: 2 });
+  h.flush();
+  h.overlays.open = 1;
+  h.overlays.escapeCloses = false;
+  h.back();
+  assert.deepEqual(h.navigation, [], "Escape 之后要等一会儿再判断");
+  h.flush();
+  assert.deepEqual(h.navigation, ["back"]);
+});
+
+test("返回键：页面接手（房间页弹离开确认）时不后退、不退到后台", async () => {
+  const h = shellHarness({ pathname: "/whoisfaker/room/1234", historyIdx: 3 });
+  h.flush();
+  let claimed = 0;
+  h.claimBack((event) => {
+    event.preventDefault();
+    claimed += 1;
+  });
+  h.back();
+  h.flush();
+  await settle();
+  assert.equal(claimed, 1);
+  assert.deepEqual(h.navigation, []);
+  assert.ok(!h.backCalls.some(([name]) => name === "moveToBack"));
+});
+
+test("返回键：非首页退回上一页；冷启动落在深链上没有上一页时改写成首页并通知路由", async () => {
+  const withHistory = shellHarness({ pathname: "/abouts", historyIdx: 1 });
+  withHistory.flush();
+  withHistory.back();
+  assert.deepEqual(withHistory.navigation, ["back"]);
+
+  const deepLink = shellHarness({ pathname: "/abouts", historyIdx: 0 });
+  deepLink.flush();
+  deepLink.back();
+  assert.deepEqual(deepLink.navigation, ["replace:/", "popstate"]);
+  assert.equal(deepLink.location.pathname, "/");
+});
+
+test("返回键：首页且没有浮层时请原生退到后台", async () => {
+  const h = shellHarness({ pathname: "/" });
+  h.flush();
+  h.back();
+  await settle();
+  assert.deepEqual(h.navigation, []);
+  assert.deepEqual(h.backCalls.at(-1), ["moveToBack"]);
+});
+
+test("返回事件名与客户端钩子同一份契约", () => {
+  const hook = fs.readFileSync(
+    path.resolve(here, "../../Client/src/hooks/UseShellBack.ts"),
+    "utf8"
+  );
+  const bridge = fs.readFileSync(path.resolve(here, "../bridge/baka-bridge.js"), "utf8");
+  const clientName = /SHELL_BACK_EVENT = "([^"]+)"/.exec(hook)?.[1];
+  const bridgeName = /var SHELL_BACK_EVENT = "([^"]+)"/.exec(bridge)?.[1];
+  assert.ok(clientName);
+  assert.equal(bridgeName, clientName);
 });

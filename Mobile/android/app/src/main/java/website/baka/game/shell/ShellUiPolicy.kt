@@ -32,4 +32,5 @@ internal object ShellUiPolicy {
             right.coerceAtLeast(0),
             maxOf(bottom, imeBottom).coerceAtLeast(0),
         )
+
 }

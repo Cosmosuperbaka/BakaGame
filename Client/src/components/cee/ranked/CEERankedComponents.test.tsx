@@ -8,11 +8,12 @@ import {
 import type { ReactElement } from "react";
 import type { CEERankedGameSummary } from "@bakagame/shared";
 import { CEE_RANKED_SEASONS } from "@bakagame/shared/values";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { SHELL_BACK_EVENT } from "@/hooks/UseShellBack";
 import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import {
   RANKED_IDLE_STATE,
@@ -677,6 +678,20 @@ describe("CEERankedMatch", () => {
     expect(screen.getByRole("button", { name: /认输本局/ })).toBeEnabled();
     expect(screen.getByRole("region", { name: "你的猜测" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "对手的线索" })).toBeInTheDocument();
+  });
+
+  it("移动壳的返回键弹出同一个判负确认，不直接退出", async () => {
+    const onExit = vi.fn();
+    withProviders(<CEERankedMatch {...props} onExit={onExit} series={rankedSeries("playing")} />);
+
+    const back = new CustomEvent(SHELL_BACK_EVENT, { cancelable: true });
+    act(() => {
+      window.dispatchEvent(back);
+    });
+
+    expect(back.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("dialog", { name: "退出这场排位？" })).toBeInTheDocument();
+    expect(onExit).not.toHaveBeenCalled();
   });
 
   it("加时公开的提示落在横幅里", () => {

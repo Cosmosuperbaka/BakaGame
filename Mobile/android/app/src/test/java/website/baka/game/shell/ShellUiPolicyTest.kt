@@ -33,4 +33,5 @@ class ShellUiPolicyTest {
             ShellUiPolicy.contentPadding(136, 0, 0, 63, imeBottom = 0),
         )
     }
+
 }

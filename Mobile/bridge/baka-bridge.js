@@ -612,4 +612,92 @@
   } else {
     watchSystemBars();
   }
+
+  // —— 壳界面：系统返回键交给页面 ——
+  // 原生（MainActivity）收到返回后调用 window.__BAKA_SHELL_BACK__，这里按顺序处理：
+  //   1. 有打开的浮层（Radix 的对话框、抽屉、菜单、下拉）：合成一次 Escape 关掉最上层；
+  //   2. 派发可取消的 SHELL_BACK_EVENT，页面接手（如房间页弹离开确认）就到此为止；
+  //   3. 不在首页：退回上一页（应用内没有上一页时回首页）；
+  //   4. 在首页：请原生把应用退到后台（不销毁，回来时对局与连接都还在）。
+  // 事件名与 Client/src/hooks/UseShellBack.ts 是同一份契约。
+  var SHELL_BACK_EVENT = "bakagame:shell-back";
+  var OPEN_OVERLAY_SELECTOR =
+    '[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"],' +
+    '[role="menu"][data-state="open"],[role="listbox"][data-state="open"]';
+  // Escape 之后等这么久再看浮层是否真的关了：关不掉的（如必须先填写的弹窗）继续往下处理
+  var ESCAPE_SETTLE_MS = 150;
+
+  function openOverlayCount() {
+    try {
+      return document.querySelectorAll(OPEN_OVERLAY_SELECTOR).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function atHome() {
+    return location.pathname === "/" || location.pathname === "";
+  }
+
+  function pageClaimsBack() {
+    try {
+      var claim = new CustomEvent(SHELL_BACK_EVENT, { cancelable: true });
+      window.dispatchEvent(claim);
+      return claim.defaultPrevented;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 应用内有上一页就后退（React Router 在 history.state.idx 里记着第几页）；
+  // 冷启动直接落在深链上时没有上一页，改写成首页并通知路由，不整页重载。
+  function navigateBack() {
+    var state = window.history && window.history.state;
+    if (state && typeof state.idx === "number" && state.idx > 0) {
+      window.history.back();
+      return;
+    }
+    try {
+      window.history.replaceState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    } catch (e) {
+      location.assign("/");
+    }
+  }
+
+  function continueBack() {
+    if (pageClaimsBack()) return;
+    if (!atHome()) {
+      navigateBack();
+      return;
+    }
+    callShell("moveToBack", {});
+  }
+
+  function handleBack() {
+    var before = openOverlayCount();
+    if (before === 0) {
+      continueBack();
+      return;
+    }
+    var target = document.activeElement || document.body || document;
+    try {
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          keyCode: 27,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    } catch (e) {
+      /* 合成失败时按没有浮层处理 */
+    }
+    setTimeout(function () {
+      if (openOverlayCount() >= before) continueBack();
+    }, ESCAPE_SETTLE_MS);
+  }
+
+  window.__BAKA_SHELL_BACK__ = handleBack;
 })();

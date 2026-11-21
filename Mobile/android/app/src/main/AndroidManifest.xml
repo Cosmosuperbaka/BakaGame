@@ -13,9 +13,14 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!--
+          返回键交给页面（MainActivity 的 OnBackPressedCallback + 桥接），按 AndroidX 的口径接入，
+          打开预测式返回（targetSdk 36 起是默认行为）。首页返回也由壳拦截并退到后台，原因见 MainActivity。
+        -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:label="@string/title_activity_main"
             android:launchMode="singleTask"

@@ -5,6 +5,7 @@ import type { CEERankedSeriesView } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
+import { useShellBack } from "@/hooks/UseShellBack";
 import { bannerRise, dropIn, readoutTick } from "@/lib/motion/NamedMoves";
 import { CEEFeedbackTable } from "../CEEFeedbackTable";
 import { CEESearch } from "../CEESearch";
@@ -57,6 +58,8 @@ export function CEERankedMatch({
   onExit: () => void;
 }) {
   const [exitOpen, setExitOpen] = useState(false);
+  // 移动壳的系统返回键在对局中等同「退出这场」：先弹同一个判负确认，不直接离场。
+  useShellBack(() => setExitOpen(true));
   const game = series.game;
   if (!game) return null;
   const playing = game.phase === "playing" || game.phase === "overtime";

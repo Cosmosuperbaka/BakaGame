@@ -1,8 +1,10 @@
 import { createRef, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { LucideIcon } from "lucide-react";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerListLayout";
 import { ChatDraftContext, useChatDraftSource } from "@/hooks/UseChatDraft";
 import { useMinWidth } from "@/hooks/UseMinWidth";
+import { useShellBack } from "@/hooks/UseShellBack";
 import { roomEntranceMs } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { RoomDrawer } from "./RoomDrawer";
@@ -135,6 +137,10 @@ export function RoomShell({
     if (!triggerRefs.has(drawer.key)) triggerRefs.set(drawer.key, createRef<HTMLButtonElement>());
   }
   const opened = drawers.find((drawer) => drawer.key === openDrawer) ?? null;
+  // 移动壳的系统返回键不直接离房：先问一句，误触返回不会把玩家带出对局。
+  // 顶栏的离开按钮是明确的操作，照旧直接离开；网页端没有壳，浏览器后退不受影响。
+  const [backLeaveOpen, setBackLeaveOpen] = useState(false);
+  useShellBack(() => setBackLeaveOpen(true));
 
   // 进房编排只在房间页挂载后的一小段窗口里打开：窗口内挂载的栏依次就位（index.css 的 data-room-entering）；
   // 断线重连时房间页不重新挂载，之后补上的栏直接出现，不重播。
@@ -212,6 +218,18 @@ export function RoomShell({
           ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        open={backLeaveOpen}
+        onOpenChange={setBackLeaveOpen}
+        title="离开房间？"
+        description="离开后回到大厅。"
+        cancelLabel="留在房间"
+        confirmLabel="离开"
+        onConfirm={() => {
+          setBackLeaveOpen(false);
+          onLeave();
+        }}
+      />
     </ChatDraftContext.Provider>
   );
 }

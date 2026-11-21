@@ -7,6 +7,7 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
@@ -26,7 +27,8 @@ import java.util.concurrent.Executor
 
 /**
  * Capacitor 壳主 Activity：装载内嵌前端、注册通道插件、放行跨站 Cookie、
- * 开启 WebAuthn 并放行接口请求，外加启动画面，以及系统栏、挖孔与软键盘的避让（SystemBarsController）。
+ * 开启 WebAuthn 并放行接口请求，外加启动画面、系统栏/挖孔/软键盘的避让（SystemBarsController），
+ * 以及把系统返回键交给页面。
  * 不含任何业务 UI（UI 全部来自内嵌的 Client 构建产物）。
  *
  * 窗口级防截屏不在这里：它按房间开关，见 BakaChannelPlugin.setSecureScreen。
@@ -47,6 +49,21 @@ class MainActivity : BridgeActivity() {
     private var pageVisible = false
 
     private var systemBars: SystemBarsController? = null
+
+    /**
+     * 系统返回键交给页面（`window.__BAKA_SHELL_BACK__`，见 Mobile/bridge/baka-bridge.js）：
+     * 关浮层、房间页弹离开确认、退回上一页，首页再退到后台。
+     *
+     * 所有系统版本上一直拦截。实测安卓 16 打开预测式返回后，首页不拦截时系统会结束 Activity
+     * （即使从启动器进入），回来时页面重载、对局断开；安卓 7 到 11 的默认返回同样会结束它。
+     * 代价是首页返回没有系统「回到桌面」的预测动画，换来的是退到后台后页面与连接都还在。
+     */
+    private val backToPage =
+        object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                dispatchBackToPage()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 必须在 super.onCreate 之前：它把启动主题换成 postSplashScreenTheme，并接管系统启动画面。
@@ -103,11 +120,33 @@ class MainActivity : BridgeActivity() {
         // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
         // 仍走本地服务（SPA 深链刷新才不会 404）。
         bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge) { pageVisible = true })
+
+        onBackPressedDispatcher.addCallback(this, backToPage)
     }
 
     /** 页面回报的实际外观（BakaShell.setSystemBars）：系统栏图标深浅与让出区域的底色跟着它走。 */
     fun applyPageAppearance(dark: Boolean, color: Int?) {
         runOnUiThread { systemBars?.update(dark, color) }
+    }
+
+    /** 首页返回：退到后台，不结束 Activity（安卓 7 到 11 的默认返回会结束它并断开对局）。 */
+    fun moveToBackground() {
+        runOnUiThread { moveTaskToBack(true) }
+    }
+
+    /**
+     * 把返回交给页面。页面没有桥接（加载失败、白屏）或脚本出错时，直接退到后台，
+     * 不让玩家卡在一个按返回没有反应的界面上。
+     */
+    private fun dispatchBackToPage() {
+        val webView = bridge?.webView
+        if (webView == null) {
+            moveTaskToBack(true)
+            return
+        }
+        webView.evaluateJavascript(BACK_SCRIPT) { result ->
+            if (result != "\"ok\"") moveTaskToBack(true)
+        }
     }
 
     override fun onDestroy() {
@@ -171,6 +210,11 @@ class MainActivity : BridgeActivity() {
 
         /** 启动画面最多停留这么久：页面迟迟画不出来时宁可露出底色，也不让玩家以为应用卡死。 */
         private const val SPLASH_MAX_MS = 3000L
+
+        /** 调用桥接的返回处理；返回 "ok" 表示页面已接手（结果是 JSON 序列化后的字符串）。 */
+        private const val BACK_SCRIPT =
+            "(function(){try{if(typeof window.__BAKA_SHELL_BACK__!=='function')return 'missing';" +
+                "window.__BAKA_SHELL_BACK__();return 'ok'}catch(e){return 'error'}})()"
     }
 }
 
