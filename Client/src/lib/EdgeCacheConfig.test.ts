@@ -154,6 +154,13 @@ describe("edgeone.json 边缘缓存配置", () => {
     }
   });
 
+  it("站点根的版本清单固定名、无哈希：落在兜底档，不被长缓存，边缘也不单独缓存它", () => {
+    // 原生壳读它把游戏版本写进 User-Agent，发版后必须马上读到新值
+    expect(resolveCacheControl("/version.json")).toBe("public, max-age=0, must-revalidate");
+    const caches = config.caches ?? [];
+    expect(caches.some((entry) => matchesSource(entry.source, "/version.json"))).toBe(false);
+  });
+
   it("API 一律不缓存", () => {
     expect(resolveCacheControl("/api/game/status")).toBe("no-store");
     expect(resolveCacheControl("/api/songuessr/ws")).toBe("no-store");

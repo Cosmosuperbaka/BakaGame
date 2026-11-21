@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { commitHistoryPlugin } from "./scripts/vite-plugins/CommitHistory.ts";
 import { appVersionPlugin } from "./scripts/vite-plugins/AppVersion.ts";
+import { versionManifestPlugin } from "./scripts/vite-plugins/VersionManifest.ts";
 import { stickerManifestPlugin } from "./scripts/vite-plugins/StickerManifest.ts";
 import { creditsManifestPlugin } from "./scripts/vite-plugins/CreditsManifest.ts";
 import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp.ts";
@@ -52,6 +53,8 @@ export default defineConfig(({ command }) => {
       // 只有生产构建才走远端接口：开发期读本地 git 历史，离线可用且反映当前工作区。
       commitHistoryPlugin({ useRemote: command === "build" }),
       appVersionPlugin(changelogPath),
+      // 站点根下的 version.json：原生壳读它把游戏版本写进 User-Agent（只用于诊断与统计）
+      versionManifestPlugin(changelogPath),
       stickerManifestPlugin(emojiDir),
       creditsManifestPlugin(),
       publicWebpPlugin(),
