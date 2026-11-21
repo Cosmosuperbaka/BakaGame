@@ -50,6 +50,8 @@ const SOURCES = [
 ] as const;
 
 const PUBLIC_BASE = "https://api.example.com";
+/** 把字面量放进正则前转义全部元字符（含反斜杠），只转点号会让别的元字符漏网。 */
+const escapeRegExp = (text: string): string => text.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 const TICKET_SHAPE = /^[A-Za-z0-9_-]{32,}$/;
 
 const sourceProvider = (
@@ -157,9 +159,7 @@ describe("猜歌播放地址：站内票据地址", () => {
       );
       const playingUrl = snapshotOf(guest).currentRound?.audioUrl;
       expect(playingUrl).toMatch(
-        new RegExp(
-          `^${PUBLIC_BASE.replace(/[.]/g, "\\.")}/api/songuessr/audio/1234/[A-Za-z0-9_-]+$`
-        )
+        new RegExp(`^${escapeRegExp(PUBLIC_BASE)}/api/songuessr/audio/1234/[A-Za-z0-9_-]+$`)
       );
 
       await finishRound(service, guest, source.songId);

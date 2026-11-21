@@ -111,7 +111,7 @@ describe("首帧脚本的主题清单", () => {
   /** 取 index.html 里写 data-theme 的那段内联脚本，注入注册表后真跑一遍。 */
   const runFirstFrameScript = () => {
     const html = injectThemeRegistry(readIndexHtml());
-    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)]
       .map((match) => match[1])
       .find((code) => code.includes("data-theme"));
     if (!script) throw new Error("index.html 里找不到写 data-theme 的首帧脚本");

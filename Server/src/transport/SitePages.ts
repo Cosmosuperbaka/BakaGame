@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   SITE_PAGE_COMMAND_EVENT,
   SITE_PAGE_LEASE_EVENT,
@@ -100,10 +100,11 @@ export interface SitePagesOptions {
   onControlChange?: (tabKey: string, controlled: boolean) => void;
 }
 
+// 字母表 31 个字符不整除 256，字节取模会让前几个字符略占便宜；randomInt 内部做拒绝采样，分布均匀。
 const makeCode = (): string => {
-  const bytes = randomBytes(CODE_LENGTH);
   let code = "";
-  for (const byte of bytes) code += CODE_ALPHABET[byte % CODE_ALPHABET.length];
+  for (let index = 0; index < CODE_LENGTH; index += 1)
+    code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   return code;
 };
 

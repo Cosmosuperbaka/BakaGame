@@ -35,7 +35,10 @@ function evaluate(expression, context) {
   const body = expression.replace(/\$\{\{([^]*?)\}\}/g, "$1").replace(/\balways\(\)/g, "true");
   const keys = Object.keys(context).sort((a, b) => b.length - a.length);
   const code = body.replace(
-    new RegExp(`(?<![\\w.'"])${keys.map((key) => key.replace(/[.]/g, "\\.")).join("|")}`, "g"),
+    new RegExp(
+      `(?<![\\w.'"])${keys.map((key) => key.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")).join("|")}`,
+      "g"
+    ),
     (match) => JSON.stringify(context[match])
   );
   // new Function 求值的对象是本仓库自己写的门禁表达式，不接受外部输入。
