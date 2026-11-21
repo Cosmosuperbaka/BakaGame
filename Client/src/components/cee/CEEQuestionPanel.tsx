@@ -44,6 +44,10 @@ interface QuestionPanelProps {
   fileError: string;
   applyPreset: (name: string) => void;
   exportSettings: () => void;
+  /** 导出的方式：网页与桌面壳下载文件，安卓壳复制到剪贴板。 */
+  exportMode: "download" | "copy";
+  /** 复制方式下刚复制成功，按钮短暂显示「已复制」。 */
+  exportCopied: boolean;
   importSettings: (file?: File) => void;
 }
 
@@ -66,6 +70,8 @@ export function CEEQuestionPanel({
   fileError,
   applyPreset,
   exportSettings,
+  exportMode,
+  exportCopied,
   importSettings,
 }: QuestionPanelProps) {
   const scopedByDirectory = values.useIndex;
@@ -103,6 +109,8 @@ export function CEEQuestionPanel({
             fileError={fileError}
             onApplyPreset={applyPreset}
             onExport={exportSettings}
+            exportMode={exportMode}
+            exportCopied={exportCopied}
             onImport={importSettings}
           />
         </SettingsSection>

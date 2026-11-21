@@ -15,6 +15,8 @@ import { CEEQuestionPanel } from "./CEEQuestionPanel";
 import { SETTINGS_FILE_LIMIT } from "./CEESettingOptions";
 import { settingsValidationMessage, summaries } from "./CEESettingsRules";
 import { useSettingsDraft } from "@/hooks/UseSettingsDraft";
+import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
+import { bakaClientType } from "@/lib/BakaChannel";
 import { loadChunk } from "@/lib/ChunkRecovery";
 import { useCEESubjectNames } from "./UseCEESubjectNames";
 
@@ -105,10 +107,16 @@ export function CEEGameSettings({
     setDirectoryNotice("");
     if (next.useIndex && next.indexId) void syncDirectory(next.indexId);
   };
+  // 安卓壳的 WebView 不处理 blob 下载（点了没反应），也没有 navigator.share：壳内改为复制到剪贴板。
+  const exportMode = bakaClientType() === "mobile" ? "copy" : "download";
+  const { copied, copy } = useCopyFeedback();
   const exportSettings = () => {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" })
-    );
+    const text = JSON.stringify(draft, null, 2);
+    if (exportMode === "copy") {
+      void copy(text, "settings").then((ok) => setFileError(ok ? "" : "复制失败，请稍后重试"));
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "cee-settings.json";
@@ -177,6 +185,8 @@ export function CEEGameSettings({
         fileError={fileError}
         applyPreset={applyPreset}
         exportSettings={exportSettings}
+        exportMode={exportMode}
+        exportCopied={copied === "settings"}
         importSettings={(file) => void importSettings(file)}
       />
 

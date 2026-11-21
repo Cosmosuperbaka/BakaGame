@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Download, Upload } from "lucide-react";
+import { Check, Copy, Download, Upload } from "lucide-react";
 import type { CEESettings } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
@@ -12,6 +12,8 @@ export function CEEPresetBar({
   fileError,
   onApplyPreset,
   onExport,
+  exportMode = "download",
+  exportCopied = false,
   onImport,
 }: {
   readOnly: boolean;
@@ -20,6 +22,9 @@ export function CEEPresetBar({
   fileError: string;
   onApplyPreset: (name: string) => void;
   onExport: () => void;
+  /** 下载文件，或（安卓壳内）复制到剪贴板。 */
+  exportMode?: "download" | "copy";
+  exportCopied?: boolean;
   onImport: (file?: File) => void;
 }) {
   const upload = useRef<HTMLInputElement>(null);
@@ -41,8 +46,14 @@ export function CEEPresetBar({
             />
           </div>
           <Button variant="outline" onClick={onExport}>
-            <Download />
-            导出
+            {exportMode === "download" ? (
+              <Download />
+            ) : exportCopied ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <Copy aria-hidden="true" />
+            )}
+            {exportMode === "download" ? "导出" : exportCopied ? "已复制" : "复制配置"}
           </Button>
           <Button variant="outline" onClick={() => upload.current?.click()}>
             <Upload />

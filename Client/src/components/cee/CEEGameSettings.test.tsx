@@ -343,3 +343,51 @@ describe("CEE 设置自动保存的发送边界", () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe("CEE 玩法配置导出", () => {
+  afterEach(() => {
+    delete window.__BAKA_CHANNEL__;
+    vi.unstubAllGlobals();
+  });
+
+  it("安卓壳里改为复制到剪贴板，按钮短暂显示已复制", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    window.__BAKA_CHANNEL__ = { clientType: "mobile", platform: "android", clientVersion: "0.1.5" };
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    inRoom(base());
+    render(panel(base()));
+
+    await user.click(screen.getByRole("button", { name: /题目设置/ }));
+    await user.click(screen.getByRole("button", { name: "复制配置" }));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(writeText.mock.calls[0]?.[0] as string)).toEqual(base());
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+  });
+
+  it("剪贴板写不进去时给出可见提示", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    window.__BAKA_CHANNEL__ = { clientType: "mobile", platform: "android", clientVersion: "0.1.5" };
+    inRoom(base());
+    render(panel(base()));
+
+    await user.click(screen.getByRole("button", { name: /题目设置/ }));
+    await user.click(screen.getByRole("button", { name: "复制配置" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("复制失败，请稍后重试");
+  });
+
+  it("网页端照旧下载文件", async () => {
+    const user = userEvent.setup();
+    inRoom(base());
+    render(panel(base()));
+    await user.click(screen.getByRole("button", { name: /题目设置/ }));
+    expect(screen.getByRole("button", { name: "导出" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制配置" })).not.toBeInTheDocument();
+  });
+});
