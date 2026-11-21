@@ -13,7 +13,10 @@ import {
   HEALTH_MIN_INTERVAL_MS,
 } from "./DeploymentProbe";
 // @ts-expect-error Node workflow helper intentionally remains native ESM JavaScript.
-import { deploymentRevision } from "./DeploymentGate.mjs";
+import * as deploymentGate from "./DeploymentGate.mjs";
+
+const { deploymentRevision, fastDeployEligible, previousVerifiedRun, pushChangedFiles } =
+  deploymentGate;
 // @ts-expect-error Node helper intentionally remains native ESM JavaScript.
 import { stage as stageNpmLock, DEFAULT_MAX_B64_CHARS } from "./StageNpmLock.mjs";
 
@@ -89,6 +92,86 @@ test("门禁仅接受同仓 main push 的获验完整 SHA，手动选择不能�
     ).toBeNull();
   }
   expect(deploymentRevision(run, [], repository)).toBeNull();
+});
+
+test("快速部署只放行不碰依赖清单与部署链路的推送", () => {
+  expect(fastDeployEligible(["Server/src/Index.ts", "Client/src/data/changelog.json"])).toBe(true);
+  for (const blocked of [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "Server/package.json",
+    "Server/.npmrc",
+    ".github/workflows/deploy.yml",
+    "Server/scripts/DeploymentGate.mjs",
+    "Server/scripts/DeploymentProbe.ts",
+    "Server/scripts/StageNpmLock.mjs",
+  ])
+    expect(fastDeployEligible(["Server/src/Index.ts", blocked])).toBe(false);
+  // 取不到或列不全的变更清单一律不冒险。
+  expect(fastDeployEligible(null)).toBe(false);
+  expect(fastDeployEligible([])).toBe(false);
+});
+
+const repo = { owner: "Cosmosuperbaka", repo: "BakaGame" };
+const compareStub = (data: unknown) => ({
+  rest: { repos: { compareCommitsWithBasehead: async () => ({ data }) } },
+});
+test("推送变更清单：基线缺失、非前进或列到上限时返回 null", async () => {
+  const files = [{ filename: "Server/src/Index.ts" }];
+  const ok = compareStub({ status: "ahead", files });
+  expect(await pushChangedFiles(ok, repo, "b".repeat(40), "c".repeat(40))).toEqual([
+    "Server/src/Index.ts",
+  ]);
+  expect(await pushChangedFiles(ok, repo, "0".repeat(40), "c".repeat(40))).toBeNull();
+  expect(await pushChangedFiles(ok, repo, undefined, "c".repeat(40))).toBeNull();
+  const forced = compareStub({ status: "diverged", files });
+  expect(await pushChangedFiles(forced, repo, "b".repeat(40), "c".repeat(40))).toBeNull();
+  const full = compareStub({
+    status: "ahead",
+    files: Array.from({ length: 300 }, (_, index) => ({ filename: `Server/src/F${index}.ts` })),
+  });
+  expect(await pushChangedFiles(full, repo, "b".repeat(40), "c".repeat(40))).toBeNull();
+  const broken = {
+    rest: { repos: { compareCommitsWithBasehead: async () => Promise.reject(new Error("x")) } },
+  };
+  expect(await pushChangedFiles(broken, repo, "b".repeat(40), "c".repeat(40))).toBeNull();
+});
+
+test("回滚目标取比当前更早、后端必过检查全过的最近一次运行", async () => {
+  const at = (minute: number) => `2026-11-21T10:${String(minute).padStart(2, "0")}:00Z`;
+  const ciRun = (id: number, minute: number, sha: string) => ({
+    ...run,
+    id,
+    created_at: at(minute),
+    head_sha: sha.repeat(40),
+  });
+  const runs = [
+    ciRun(5, 50, "e"),
+    ciRun(4, 40, "d"),
+    ciRun(3, 30, "c"),
+    ciRun(2, 20, "b"),
+    ciRun(1, 10, "a"),
+  ];
+  const jobsOf: Record<number, unknown[]> = {
+    5: jobs, // 比当前更新：跳过
+    4: jobs, // 当前运行本身：跳过
+    3: withJob("End-to-End Tests", { conclusion: "failure" }), // 没过：跳过
+    2: jobs, // 目标
+    1: jobs,
+  };
+  const github = {
+    paginate: async (_: unknown, args: { run_id: number }) => jobsOf[args.run_id],
+    rest: {
+      actions: {
+        listJobsForWorkflowRun: {},
+        listWorkflowRuns: async () => ({ data: { workflow_runs: runs } }),
+      },
+    },
+  };
+  const target = await previousVerifiedRun(github, repo, runs[1]);
+  expect(target?.id).toBe(2);
+  expect(await previousVerifiedRun(github, repo, runs[4])).toBeNull();
 });
 
 test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验", async () => {
@@ -651,7 +734,11 @@ test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", 
       expect(deploy).not.toContain("X-Real-IP");
       expect(deploy).toContain("DeploymentNotify.ts");
       expect(deploy).toContain("DeploymentProbe.ts");
-      expect(deploy).toContain("filter: 'latest'");
+      // 核验只看各作业最新一次尝试：查询放在门禁脚本里，部署与 CI 裁决共用。
+      expect(deploy).toContain("gate.verifiedRevisionOfRun");
+      expect(await Bun.file(path.join(root, "Server/scripts/DeploymentGate.mjs")).text()).toContain(
+        'filter: "latest"'
+      );
     }
   }
 });

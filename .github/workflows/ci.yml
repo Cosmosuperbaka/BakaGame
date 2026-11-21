@@ -1398,31 +1398,69 @@ jobs:
           path: Client/playwright-report/
           retention-days: 14
 
-  # 后端部署派发：后端上线必过的检查一结束就触发部署，不等客户端、Storybook 与各端壳打包。
-  # 门禁口径与 Server/scripts/DeploymentGate.mjs 一致（Server CI 必须真跑且成功，其余可被路径
-  # 过滤跳过但不能失败），部署工作流的门禁会按同一份清单再核一遍，这里只是提前派发。
+  # 后端部署裁决：后端必过检查一结束就给本次推送的部署下结论（口径见 Server/scripts/DeploymentGate.mjs）。
+  # - 检查全过：推送时已快速部署的不重复部署；没走快速部署的（改了依赖或部署链路）此刻派发获验部署；
+  #   快速部署后曾因失败被回滚、重跑才过的，重新派发本次的获验部署。
+  # - 检查不过：快速部署过且之后没有更新的部署接手时，派发回滚到上一个获验修订；
+  #   之后已有新推送部署的，由那次推送的 CI 下结论。
   # GITHUB_TOKEN 触发的事件不会再起工作流，workflow_dispatch 是官方留的例外，所以用它接力。
   backend-deploy:
-    name: Request Backend Deploy
+    name: Backend Deploy Verdict
     runs-on: ubuntu-latest
     needs: [server, shutdown-smoke, e2e, docs, format, audit, knip]
     timeout-minutes: 5
     permissions:
       actions: write
-    if: >-
-      ${{ !cancelled()
-      && github.event_name == 'push' && github.ref == 'refs/heads/main'
-      && needs.server.result == 'success'
-      && contains(fromJSON('["success","skipped"]'), needs.shutdown-smoke.result)
-      && contains(fromJSON('["success","skipped"]'), needs.e2e.result)
-      && contains(fromJSON('["success","skipped"]'), needs.docs.result)
-      && contains(fromJSON('["success","skipped"]'), needs.format.result)
-      && contains(fromJSON('["success","skipped"]'), needs.audit.result)
-      && contains(fromJSON('["success","skipped"]'), needs.knip.result) }}
+      contents: read
+    # Server CI 被路径过滤跳过 = 本次推送没触发后端部署，无需裁决。
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.server.result != 'skipped' }}
     steps:
-      - name: Dispatch the backend deploy for this CI run
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          CI_RUN_ID: ${{ github.run_id }}
-        run: gh workflow run deploy.yml --ref main -f ci_run_id="$CI_RUN_ID"
+      - name: Checkout the deployment gate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: Server/scripts/DeploymentGate.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Decide deploy, keep or roll back
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const gate = await import(`${process.env.GITHUB_WORKSPACE}/Server/scripts/DeploymentGate.mjs`);
+            const repo = context.repo;
+            const dispatch = (ciRunId, reason) =>
+              github.rest.actions.createWorkflowDispatch({ ...repo, workflow_id: 'deploy.yml', ref: 'main', inputs: { ci_run_id: String(ciRunId), reason } });
+            const { data: run } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: context.runId });
+            const passed = Boolean(await gate.verifiedRevisionOfRun(github, repo, run));
+            const files = await gate.pushChangedFiles(github, repo, context.payload.before, context.sha);
+            const fast = gate.fastDeployEligible(files);
+            const { data: deploys } = await github.rest.actions.listWorkflowRuns({ ...repo, workflow_id: 'deploy.yml', per_page: 1 });
+            const latest = deploys.workflow_runs[0];
+            const rollbackTag = `rollback-of-${context.sha}`;
+            if (passed) {
+              if (!fast) {
+                await dispatch(context.runId, 'verified');
+                core.notice('后端检查全过，派发获验部署（本次推送改了依赖或部署链路，推送时未快速部署）');
+              } else if (latest?.display_title?.includes(rollbackTag)) {
+                await dispatch(context.runId, 'rerun-passed');
+                core.notice('本次推送曾因检查失败被回滚，重跑已全过，重新派发部署');
+              } else {
+                core.info('推送时已快速部署，后端检查全过，保持现状');
+              }
+              return;
+            }
+            if (!fast) {
+              core.info('推送时未快速部署，检查没过，不部署');
+              return;
+            }
+            if (!latest || latest.event !== 'push' || latest.head_sha !== context.sha) {
+              core.info('之后已有新的部署接手，由那次推送的 CI 决定去留，这里不回滚');
+              return;
+            }
+            const target = await gate.previousVerifiedRun(github, repo, run);
+            if (!target) {
+              core.setFailed('后端检查没过，但找不到可回滚的获验修订，生产仍停在本次提交，请人工处理');
+              return;
+            }
+            await dispatch(target.id, rollbackTag);
+            core.warning(`后端检查没过，已派发回滚到 ${target.head_sha}（CI run ${target.id}）`);

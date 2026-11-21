@@ -1,15 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { conditionOf, job, readRepoFile, workflow } from "./support/Workflow.mjs";
+import { parse } from "yaml";
+import { changeFilters, conditionOf, job, readRepoFile, workflow } from "./support/Workflow.mjs";
 import { BACKEND_GATE_JOBS, SERVER_JOB } from "../../scripts/DeploymentGate.mjs";
 
 /**
- * 后端部署派发与部署门禁必须盯同一份检查清单。
+ * 快速部署与 CI 裁决必须对得上。
  *
- * ci.yml 的 backend-deploy 作业按 needs 结果提前派发部署，Deploy Backend 的门禁再按
- * DeploymentGate.mjs 的作业显示名核一遍。两边各写一份：派发少等一项，会在该项结束前
- * 就派发而被门禁拒掉（部署红）；门禁少查一项，会放过那一项失败的提交。这里把两边钉在一起。
+ * 推送一到 Deploy Backend 就按自己的 push 路径集合快速部署，CI 的裁决作业等后端必过检查
+ * 结束后决定保持、补发或回滚。三处各写一份的东西在这里钉在一起：
+ * - 部署的 push 路径 = CI 的 server 过滤：部署了却没跑 Server CI，就没有结论可裁决，坏版本会一直留在生产；
+ * - 裁决作业的 needs = 门禁清单：少等一项，会在那一项出结果之前就下结论；
+ * - 门禁清单点名的作业显示名在 ci.yml 里真实存在：改名后门禁会永远等不到它。
  */
+
+const deployWorkflow = parse(readRepoFile(".github/workflows/deploy.yml"));
 
 const jobIdByName = new Map(Object.entries(workflow.jobs).map(([id, body]) => [body.name, id]));
 
@@ -19,29 +24,37 @@ const gateJobIds = [SERVER_JOB, ...BACKEND_GATE_JOBS].map((name) => {
   return id;
 });
 
-test("派发作业等齐门禁清单里的每一项，且不多等客户端与壳打包", () => {
+test("部署的 push 路径与 CI 的 server 过滤逐条一致", () => {
+  const push = deployWorkflow.on?.push;
+  assert.deepEqual(push?.branches, ["main"]);
+  assert.deepEqual([...push.paths].sort(), [...changeFilters().server].sort());
+});
+
+test("部署不再挂 workflow_run：快速部署与 CI 后补发并存会同一提交部署两次", () => {
+  assert.equal(deployWorkflow.on?.workflow_run, undefined);
+  assert.ok(
+    deployWorkflow.on?.workflow_dispatch?.inputs?.ci_run_id,
+    "获验部署与回滚要能指定 CI run"
+  );
+});
+
+test("裁决作业等齐门禁清单里的每一项，且不多等客户端与壳打包", () => {
   const needs = job("backend-deploy").needs;
   assert.deepEqual([...needs].sort(), [...gateJobIds].sort());
 });
 
-test("派发条件逐项检查结果：Server CI 必须成功，其余允许跳过但不能失败", () => {
-  const condition = conditionOf(job("backend-deploy"));
+test("裁决作业只在 main 推送且 Server CI 真跑过时运行，并能派发部署", () => {
+  const body = job("backend-deploy");
+  const condition = conditionOf(body);
   assert.match(condition, /!cancelled\(\)/);
   assert.match(condition, /github\.event_name == 'push'/);
   assert.match(condition, /github\.ref == 'refs\/heads\/main'/);
-  const serverId = jobIdByName.get(SERVER_JOB);
-  assert.match(condition, new RegExp(`needs\\.${serverId}\\.result == 'success'`));
-  for (const name of BACKEND_GATE_JOBS) {
-    const id = jobIdByName.get(name);
-    assert.ok(
-      condition.includes(`contains(fromJSON('["success","skipped"]'), needs.${id}.result)`),
-      `派发条件缺少对 ${id} 的结果检查`
-    );
-  }
-});
-
-test("部署只由派发触发：不再挂 workflow_run，避免同一提交部署两次", () => {
-  const deploy = readRepoFile(".github/workflows/deploy.yml");
-  assert.doesNotMatch(deploy, /^\s*workflow_run:/m);
-  assert.match(job("backend-deploy").steps.at(-1).run, /gh workflow run deploy\.yml/);
+  assert.match(
+    condition,
+    new RegExp(`needs\\.${jobIdByName.get(SERVER_JOB)}\\.result != 'skipped'`)
+  );
+  assert.equal(body.permissions?.actions, "write");
+  const script = body.steps.at(-1).with.script;
+  assert.match(script, /createWorkflowDispatch\(\{[^}]*workflow_id: 'deploy\.yml'/);
+  assert.match(script, /rollback-of-/);
 });

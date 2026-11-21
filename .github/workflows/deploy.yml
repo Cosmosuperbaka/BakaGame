@@ -1,18 +1,38 @@
 name: Deploy Backend
+run-name: ${{ github.event_name == 'push' && format('快速部署 {0}', github.sha) || format('获验部署 CI {0}（{1}）', inputs.ci_run_id, inputs.reason) }}
 
-# 部署不再自带全量测试：服务端类型检查 + 全量测试只在 CI 跑一次，这里消费 CI 的结论。
-# 触发：CI 的 backend-deploy 作业在后端必过检查（清单见 Server/scripts/DeploymentGate.mjs）
-# 全部结束后用 workflow_dispatch 派发本工作流，不等客户端、Storybook 与各端壳打包。
-# 不再挂 workflow_run：那要等整条 CI 跑完，且与派发并存会同一提交部署两次。
-# 手动 dispatch 显式选择 CI run，与自动派发走同一道门禁，仍消费同一获验 SHA，不绕过。
-# 部署脚本自身变更也要生效：ci.yml 的 server 过滤包含本文件，改动后会走一次
-# CI → 派发 → 部署 的链路自动落地。
+# 部署不自带全量测试：服务端检查只在 CI 跑一次，这里消费 CI 的结论（判定口径见
+# Server/scripts/DeploymentGate.mjs 头注释）。两条触发：
+# - push：main 推送一到就快速部署，不等 CI；CI 同时跑完整检查，后端必过检查不过时由 CI 的
+#   裁决作业派发回滚。推送改了依赖清单或部署链路时门禁判为不可快速部署，本次直接跳过，
+#   等 CI 后端检查全绿后由裁决作业派发获验部署。push 的路径集合与 ci.yml 的 server 过滤一致
+#   （门禁测试核对），保证「部署了」与「Server CI 跑了」是同一件事，CI 才有结论可裁决。
+# - workflow_dispatch：获验部署、回滚与手动部署，显式选择 CI run，按同一份清单核验获验 SHA。
 on:
+  push:
+    branches: [main]
+    paths:
+      - "Server/**"
+      - "Desktop/**"
+      - "Mobile/**"
+      - "Client/src/data/changelog.json"
+      - "Client/public/.well-known/**"
+      - "Client/public/llms.txt"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
     inputs:
       ci_run_id:
         description: "main push 的 CI run ID（Server CI 必须成功，其余后端必过检查不能失败）"
         required: true
+        type: string
+      reason:
+        description: "派发原因，写进运行标题（CI 裁决作业据此认出回滚）"
+        required: false
+        default: manual
         type: string
 
 concurrency:
@@ -28,8 +48,7 @@ permissions:
 # 升级时同批改 SHA 与注释。
 
 jobs:
-  # 部署门禁：后端必过检查（含 E2E）任一失败不部署；本次推送未改服务端（Server CI 被跳过）不部署。
-  # 客户端与壳打包作业的结论不参与判定，它们还在跑时也能部署。
+  # 部署门禁：push 只判能否快速部署；dispatch 核验所选 CI run 的后端必过检查（含 E2E）全过。
   # 超时也要写：这一步在等第三方 Action 与 GitHub API，卡住不等于失败，不写就会一直占 runner。
   gate:
     name: Deployment Gate
@@ -37,14 +56,17 @@ jobs:
     timeout-minutes: 5
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
+      mode: ${{ steps.decide.outputs.mode }}
       revision: ${{ steps.decide.outputs.revision }}
       run_id: ${{ steps.decide.outputs.run_id }}
     steps:
-      # 使用当前工作流修订的门禁实现，绝不执行候选 CI 提交里的脚本。
+      # 只取门禁脚本，不检出整个仓库：这一步在推送到部署的关键路径上。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          sparse-checkout: Server/scripts/DeploymentGate.mjs
+          sparse-checkout-cone-mode: false
       - name: Decide whether to deploy
         id: decide
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
@@ -52,15 +74,28 @@ jobs:
           SELECTED_RUN_ID: ${{ inputs.ci_run_id }}
         with:
           script: |
-            const { deploymentRevision } = await import(`${process.env.GITHUB_WORKSPACE}/Server/scripts/DeploymentGate.mjs`);
+            const gate = await import(`${process.env.GITHUB_WORKSPACE}/Server/scripts/DeploymentGate.mjs`);
+            if (context.eventName === 'push') {
+              const files = await gate.pushChangedFiles(github, context.repo, context.payload.before, context.sha);
+              if (!gate.fastDeployEligible(files)) {
+                core.setOutput('deploy', 'false');
+                core.notice('本次推送改了依赖清单或部署链路（或变更列表取不全），不快速部署；CI 后端检查全过后自动派发获验部署');
+                return;
+              }
+              core.setOutput('deploy', 'true');
+              core.setOutput('mode', 'fast');
+              core.setOutput('revision', context.sha);
+              core.setOutput('run_id', String(context.runId));
+              core.info(`快速部署 ${context.sha}，CI 结论由裁决作业跟进`);
+              return;
+            }
             const raw = process.env.SELECTED_RUN_ID;
             if (!/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('Invalid CI run ID');
-            const run_id = Number(raw);
-            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id });
-            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, { ...context.repo, run_id, filter: 'latest', per_page: 100 });
-            const revision = deploymentRevision(run, jobs, `${context.repo.owner}/${context.repo.repo}`);
+            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: Number(raw) });
+            const revision = await gate.verifiedRevisionOfRun(github, context.repo, run);
             core.setOutput('deploy', revision ? 'true' : 'false');
             if (!revision) throw new Error('Selected CI run is not deployable');
+            core.setOutput('mode', 'verified');
             core.setOutput('revision', revision);
             core.setOutput('run_id', raw);
             core.info(`Deploy verified CI run ${raw}, SHA ${revision}`);
@@ -130,8 +165,10 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      # 快速部署没有 CI 制品可取：能走快速部署说明依赖清单没变，挂载树里那份锁仍是对的。
       - name: Fetch the verified npm runtime lock
         id: npmlock
+        if: ${{ needs.gate.outputs.mode == 'verified' }}
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -142,9 +179,15 @@ jobs:
 
       - name: Stage the npm runtime lock for the container
         id: stage
+        env:
+          DEPLOY_MODE: ${{ needs.gate.outputs.mode }}
         run: |
           set -euo pipefail
           LOCK=npm-lock/server-npm-lock.json
+          if [ ! -s "$LOCK" ] && [ "$DEPLOY_MODE" = "fast" ]; then
+            echo "快速部署：依赖清单未变，容器沿用挂载树里已有的 package-lock.json。"
+            exit 0
+          fi
           if [ ! -s "$LOCK" ]; then
             echo "⚠️ 未取到本轮 CI 的 server-npm-lock 制品（缺失、过期或该 CI run 未产出）。"
             echo "⚠️ 回退：容器将沿用挂载树里已有的 package-lock.json；没有则按 package.json 区间浮动解析。"
@@ -210,7 +253,7 @@ jobs:
             [[ "$DEPLOY_REV" =~ ^[0-9a-f]{40}$ ]] || exit 1
             [[ "$VERIFIED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
             REF="$DEPLOY_REV"
-            echo "发布获验 CI run=$VERIFIED_RUN_ID SHA=$DEPLOY_REV"
+            echo "发布来源 run=$VERIFIED_RUN_ID SHA=$DEPLOY_REV（快速部署时为部署工作流自身的 run）"
             DB_FILES="Server/data/bangumi.sqlite"
             # 数据库实体文件中转目录：与仓库同盘，mv 为原子改名，不产生拷贝开销。
             STASH="/BakaGame/.deploy-stash"
