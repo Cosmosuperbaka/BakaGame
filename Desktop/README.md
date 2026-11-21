@@ -1,4 +1,4 @@
-# BakaGame 桌面壳（Windows / Tauri v2）
+# BakaGame 桌面壳（Windows / macOS · Tauri v2）
 
 那个游戏反作弊计划的桌面端实现。**形态**：Tauri v2 壳 + 远程站点地址，前端 0 改动、不打包前端产物。
 壳里只做三件事——开窗口、跑原生自检、给通道证明签名，不含任何业务 UI。
@@ -11,6 +11,12 @@
 
 窗口导航只留在本站；页面里新开窗口的链接（`target="_blank"`、`window.open`）必须由壳接住并交给系统浏览器，
 只放行 http(s)。WebView2 在壳没挂新窗口处理器时会静默吞掉这类请求，下载新版安装包等外链会点了毫无反应。
+交给系统浏览器的方式按平台走系统自带能力：Windows 调 Shell，macOS 调系统自带的 `open`（地址作为独立参数传入，
+不经过 shell），失败都只记日志。
+
+**平台差异总览**：macOS 第一版只求「能开、能玩普通房、能注册设备」。与 Windows 的差别集中在以下几处，
+各节分别展开：平台标识按编译目标取值；HTTPDNS 与回环隧道关闭；私钥只有软件保护；自检不跑任何检测、
+只报 `platform_unsupported`；单实例用锁文件而不是具名互斥量；安装包未经 Apple 签名与公证。
 
 ---
 
@@ -25,6 +31,19 @@
 | WebView2 Runtime | 随系统与 Edge 分发；安装包用下载引导器兜底 |
 | `@tauri-apps/cli` | `pnpm dlx @tauri-apps/cli <命令>`，或 `cargo install tauri-cli --lockfile` |
 
+### 前置（macOS）
+
+| 需要 | 说明 |
+|---|---|
+| Xcode 或 Xcode Command Line Tools | 提供 clang 与 macOS SDK；依赖里有 Objective-C 构建脚本，没有 SDK 就编不过 |
+| Rust stable（`aarch64-apple-darwin`，出通用包另加 `x86_64-apple-darwin`） | 通用包用 `--target universal-apple-darwin` 打 |
+| `@tauri-apps/cli` | 同 Windows；版本与 CI 钉的那一枚一致 |
+
+WebView 是系统自带的 WKWebView，不需要另装运行时。**Windows 上交叉检查 macOS 目标走不通**：
+`cargo check --target aarch64-apple-darwin` 会卡在依赖的 Objective-C 构建脚本上（要 Apple 的编译器与 SDK），
+不要为此伪造编译器硬凑。macOS 分支的类型检查与单测由 CI 的 macOS 作业兜底（只跑 `cargo check` 与
+`cargo test`，不打包、不签名）。
+
 ### 命令
 
 ```powershell
@@ -32,8 +51,13 @@ cd Desktop\src-tauri
 
 cargo check                              # 只做类型检查（不打包）
 pnpm dlx @tauri-apps/cli dev             # 开发运行
-pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
+pnpm dlx @tauri-apps/cli build           # Windows 上打 NSIS 安装包；macOS 上打 .app 与 .dmg
 ```
+
+平台差异写在平台配置文件里：Tauri 只在对应平台上把 `tauri.<平台>.conf.json` 合并进主配置（JSON Merge Patch，
+数组整个替换、不追加）。`tauri.macos.conf.json` 只在 macOS 上生效，定打包目标、最低系统版本与图标列表，
+Windows 的打包结果不受它影响。取值读文件本身。其中签名身份写的是临时签名（ad-hoc），只为让本地产物能在
+Apple 芯片上启动，不是正式签名，见第 2 节。
 
 版本只写在 `src-tauri/Cargo.toml`：`tauri.conf.json` 不声明 `version`，Tauri 回落到 Cargo 清单，
 安装包文件名、壳上报的 `clientVersion` 因此同源；发版改 `Cargo.toml` 后要把 `Cargo.lock` 里自身那一项带上。
@@ -57,8 +81,9 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 
 ### 图标
 
-图标按 `tauri.conf.json` 的 `bundle.icon` 命名，源图与 `Client/` 共用同一枚 favicon。重新生成的命令与
-口径写在 `src-tauri/icons/README.md`。`tauri build` 在缺图标时会直接失败，这是有意保留的硬门槛。
+图标按 `bundle.icon` 命名，源图与 `Client/` 共用同一枚 favicon；macOS 另用 `icon.icns`（由平台配置换上）。
+重新生成的命令与口径写在 `src-tauri/icons/README.md`。`tauri build` 在缺图标时会直接失败，这是有意保留的
+硬门槛；CI 的 macOS 作业不打包，缺 `icon.icns` 要到 Mac 上打包才会暴露。
 
 ### 蜜标与构建批次
 
@@ -89,9 +114,16 @@ CI 必须显式传批次标识与随机段两个变量，否则同一发布批�
 
 CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
 
+**macOS 上整个关闭**：WebView 改走回环隧道要靠 Tauri 的 `macos-proxy` 特性，且只支持 macOS 14 以上，第一版不接。
+只关隧道而壳内请求照用 HTTPDNS 会让两条路径的解析口径不一致，所以 macOS 上 HTTPDNS 一起关掉：启动时在 stderr 打
+`[baka-httpdns] disabled reason=...`，页面与壳内请求都走系统 DNS（与 Windows 未配凭据时同一形态），构建期凭据也
+不编进 Mac 二进制。要在 Mac 上启用，需要先接 `macos-proxy` 并处理 14 以下系统的回落。
+
 ---
 
 ## 2. 代码签名与分发
+
+### Windows
 
 壳产物由 Windows Authenticode 签名，签名在打包**之后**做（Tauri 自己不签 Windows 制品）：
 
@@ -102,10 +134,20 @@ CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
 - 壳的「唯一构建标记」与 Authenticode 是两套独立证据：前者定位构建批次，后者只证明制品出自同一发布者、
   没被改过。
 
-分发侧约束：
+### macOS
+
+- **未签名（含临时签名）的包会被 Gatekeeper 拦下**：从网上下载的 .app 或 .dmg 首次打开会提示无法验证开发者，
+  玩家只能到系统设置里手动放行。这样的包只适合内部测试，不能对外分发。
+- **正式分发需要 Apple 开发者账号**：用 Developer ID Application 证书签名（开启 hardened runtime），再提交
+  Apple 公证并把公证票据钉进产物，.app 与 .dmg 都要处理。证书与账号凭据属于发布流水线的密钥，不进仓库。
+- 签名与公证同样是分发流水线的最后几步，签完、公证完再上传；与 Windows 一样，签名不改变唯一构建标记的作用。
+- 当前 CI 只做 macOS 的编译与单测，没有 Mac 的打包、签名与上传作业；下载地址配置也因此保持空串。
+
+### 分发侧约束
 
 - **下载地址由服务端配置给**（每个平台一条固定别名，不带版本号、永远指向最新，旧链接长期有效）；配成空
-  串即从下载弹窗里去掉该平台。取值与变量名读服务端配置。
+  串即该平台不进制品清单，页面不给它下载链接，更新提醒也读不到它的最新版本。macOS 的缺省就是空串，
+  正式分发前保持这样，例子形如 `https://example.com/files/<固定别名>`。取值与变量名读服务端配置。
 - **前端不写死日期与大小**：安装包架构、构建日期、文件大小一律来自服务端制品清单接口，逐条说明见
   [Server/docs/ClientChannel.md](../Server/docs/ClientChannel.md)。入口在首页，先选平台再给链接，
   入口文案不写反作弊前提——装不装由玩家自己判断。
@@ -115,8 +157,10 @@ CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
   握手回 `CLIENT_OUTDATED`，**只拦反作弊房，普通房不受影响**。通道证明协议一旦变更必须抬高最低版本，
   否则旧壳还能继续签名通关。最低版本放在服务端配置里，不发版也能紧急抬升。
 - **首页软提醒**与准入是两件事：不更新照样进普通房，反作弊房仍由服务端硬拦。提示里的「下载最新版」按壳
-  自报的类型给对应平台的包，不得让移动端壳也拿到桌面链接。提醒有两个来源：低于最低准入版本（硬提醒），
-  或低于发布流水线写下的最新壳版本（软提醒）；后者不改变任何准入判定。
+  自报的类型与平台给对应平台的包，不得让移动端壳拿到桌面链接，也不得让 Mac 壳拿到 Windows 的安装包；
+  本平台没发布时不给按钮。查询更新时带上壳自报的平台，「有没有新版」按本平台的已发布版本比。
+  提醒有两个来源：低于最低准入版本（硬提醒），或低于发布流水线写下的最新壳版本（软提醒）；后者不改变
+  任何准入判定。
 - **资源更新**：桌面壳加载远程站点，Client 发版后刷新页面即用上新资源，不需要重装；只有原生侧变更
   （自检、签名、构建布局）才需要发新安装包。
 
@@ -127,6 +171,9 @@ CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
 `bridge.rs` 的脚本经 `WebviewWindowBuilder::initialization_script` 注入，时机是「全局对象已建好、HTML
 尚未开始解析」，因此页面脚本执行前 `window.__BAKA_CHANNEL__` 一定存在。契约成员的名称与类型以 `bridge.rs`
 为准，这里只记不可破坏的性质：
+
+- `platform` 按编译目标取值（Windows 与 macOS 各一个分支），脚本里只留占位符，生成脚本时换成注册上报的
+  同一个常量：页面看到的平台与服务端登记的平台不能各说各话。服务端的壳契约对账测试逐个分支核对。
 
 - `channelTicket` 必须是**访问器属性**（getter），不是普通字符串字段：票是短 TTL 且用过即焚，读走一次
   立刻作废并同步向壳再要一张，第二次读取绝不能返回同一张。`Object.freeze` 只锁数据属性的写入，访问器
@@ -154,9 +201,12 @@ CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
 - 离线时轮询要有退避，不能变成对证明接口的轰炸。
 
 `selfCheck` 上报的 id 词表、权重与归类以服务端 `ClientChannel.ts` 的权重表为唯一真相源，判定原则见
-[Server/docs/ClientChannel.md](../Server/docs/ClientChannel.md)。**新增 id 只能追加，不要改名**——服务端
-与前端按字面量匹配；改名等于换协议，两边都得同时抬最低版本。要把某项从标记改成硬失败，改权重表，别靠改
-id 名解决。没跑成的检测绝不能当成「已通过」：拿不准的一律进软失败或标记，不计入 clean。
+[Server/docs/ClientChannel.md](../Server/docs/ClientChannel.md)。**macOS 上不跑任何检测**，只上报一条
+`platform_unsupported`：它写在硬失败格里，但服务端按权重判、不看格子，以权重表的归类为准（当前归为标记：
+放行并标可疑）。壳侧日志里的判定只按格子数数，这一项会显示成不可信，不要据此排查准入。
+
+**新增 id 只能追加，不要改名**——服务端与前端按字面量匹配；改名等于换协议，两边都得同时抬最低版本。
+要把某项从标记改成硬失败，改权重表，别靠改 id 名解决。没跑成的检测绝不能当成「已通过」：拿不准的一律进软失败或标记，不计入 clean。
 
 模块白名单按系统目录、壳自身安装目录与浏览器运行时分发目录判定（按目录边界匹配，不是字符串前缀），热修可经环境变量追加分号分隔的目录路径，
 抬白名单不需要重新发版；变量名读 `selfcheck.rs`。
@@ -173,8 +223,15 @@ id + 命中原因，用于本地排查，不自动上传。反作弊房关闭时
 ——此时私钥只有用户目录 ACL 这一层保护，上报字段要让服务端分辨得出。离线启动不阻塞：注册失败只记日志，
 签发通道证明时会顺带补一次注册。
 
-发布构建同一登录会话里只允许一个壳进程（具名互斥量判定，后来者把已有窗口拉到前台后退出）：
-双开会让两个进程竞争同一份设备密钥文件、各起一套回环隧道。开发构建不限制，方便多账号联调。
+macOS 没有这层系统加密，私钥一律是软件保护并如实上报 `software`，只靠用户目录的文件权限；改用钥匙串是
+后续工作。壳的数据目录（密钥、`clientId` 与单实例锁文件）在 Windows 上落在漫游应用数据目录下，在 macOS 上
+落在当前用户的 `~/Library/Application Support` 下；取不到用户目录时不启用桌面通道，绝不退回相对路径。
+具体路径读 `device.rs`。本地诊断日志只在 Windows 上写，macOS 上不写（只有一条固定的平台项，没有可排查的内容）。
+
+发布构建同一登录会话里只允许一个壳进程：双开会让两个进程竞争同一份设备密钥文件、各起一套回环隧道。
+Windows 用具名互斥量判定，后来者把已有窗口拉到前台后退出；macOS 对数据目录里的锁文件加独占锁，后来者直接
+退出（从访达或程序坞重复打开同一个 .app 时系统本身会把已有实例带到前台），锁随进程退出自动释放。
+拿不到锁时失败放行，不拦玩家启动。开发构建不限制，方便多账号联调。
 设备密钥文件确认损坏（或 DPAPI 在可用的前提下解不开）时，旧文件改名留证并重新生成设备身份；
 读取失败、版本或保护方式不认识、DPAPI 暂不可用这类说不清好坏的情形只报错，不重建。
 
@@ -205,3 +262,10 @@ id + 命中原因，用于本地排查，不自动上传。反作弊房关闭时
 | 降级态文件的显式 ACL | 依赖用户目录 ACL | 安全描述符与文件安全接口的 SDDL 绑定 |
 | 强制更新的壳侧拦截 | 只记录并打日志 | 契约里没有可暴露的字段；按「只拦反作弊房」口径由服务端拒 |
 | 移动端 / iOS | 不在本目录范围 | 见 [Mobile/README.md](../Mobile/README.md) |
+| macOS 私钥的钥匙串保护 | 软件保护，上报 `software` | 钥匙串存取与访问控制的绑定，以及从软件保护迁移的口径 |
+| macOS 上的 HTTPDNS | 整个关闭，走系统 DNS | 接 `macos-proxy` 特性，并给 macOS 14 以下系统留回落 |
+| macOS 自检 | 只报 `platform_unsupported` | 调试器、注入库、父进程等检测的 macOS 实现，新增 id 要同步服务端权重表 |
+| macOS 的正式分发 | 只有编译与单测，未签名、未公证、无下载地址 | Apple 开发者账号、签名与公证、CI 打包与上传作业、版本旁文件 |
+
+macOS 分支在本仓库开发机（Windows）上**没有任何真机验证**：窗口、外链、单实例锁、数据目录、注册与取票都只有
+单测与 CI 编译兜底，首次在真 Mac 上运行时要逐项确认。

@@ -53,7 +53,7 @@ pnpm dev
 | `Server/` | 服务端，Bun + Elysia，持有全部对局状态 |
 | `Client/` | 客户端，React + Vite |
 | `Server/src/shared/` | 双端共用的模型与协议，客户端经 `@bakagame/shared` 引用 |
-| `Desktop/`、`Mobile/` | Windows 与 Android 客户端外壳 |
+| `Desktop/`、`Mobile/` | 桌面（Windows，macOS 适配中）与 Android 客户端外壳 |
 | `Agents/` | 跨包工程规范，入口见 [AGENTS.md](AGENTS.md) |
 
 ## 许可证
