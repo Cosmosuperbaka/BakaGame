@@ -362,8 +362,9 @@ Client 的页面、脚本、样式、字体与图片。
    再核对包内 `index.html` 的 `bakagame-build` 与清单一致。
 4. 解压后的目录成为「待确认包」，`CapWebViewSettings.serverBasePath` 指向它；**下次启动生效**，
    不打断当前对局。
-5. 启动时 `MainActivity` 在 `super.onCreate` 之前把路径交给 Capacitor；页面加载成功后桥接调用
-   `confirm` 把它转成当前包。连续两次启动都没确认就丢弃该包，回到内嵌产物。
+5. 启动时 `MainActivity` 在 `super.onCreate` 之前把路径交给 Capacitor；页面真正渲染出应用内容后
+   （`load` 之后 `#root` 有内容，且不是错误兜底页 `data-app-error` 或加载占位 `data-page-loading`）桥接才调用
+   `confirm` 把它转成当前包；只在 DOMContentLoaded 就确认会把入口报错、白屏的坏包当成好包留下。连续两次启动都没确认就丢弃该包，回到内嵌产物。
 6. 壳版本变化（安装新 APK）时，旧资源包全部作废：新资源可能依赖旧壳没有的能力。
 
 **线程**：下载与解压在插件自己的后台线程上跑，`install` 校验参数后立即返回；Capacitor 只有一条插件线程，

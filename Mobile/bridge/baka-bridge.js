@@ -421,7 +421,34 @@
     return meta && meta.content ? String(meta.content).trim() : "";
   }
 
-  // 页面真正加载起来了才确认待生效包：连续几次没确认，原生侧会回退到内嵌产物。
+  // 页面真正渲染出来了才确认待生效包：连续几次没确认，原生侧会回退到内嵌产物。
+  // 不能在 DOMContentLoaded 就确认——入口脚本报错、分块缺失或渲染崩溃时它照样触发，
+  // 坏包会被当成好包留下。这里等 load 之后，确认 #root 里已有应用内容、
+  // 不是错误兜底页（data-app-error）也不是还在转圈的加载占位（data-page-loading）。
+  var CONFIRM_FIRST_CHECK_MS = 1500;
+  var CONFIRM_RECHECK_MS = 1500;
+  var CONFIRM_MAX_CHECKS = 8;
+
+  function appRendered() {
+    var root = document.getElementById ? document.getElementById("root") : null;
+    if (!root || !root.firstElementChild) return false;
+    if (document.querySelector("[data-app-error]")) return false;
+    if (root.querySelector("[data-page-loading]")) return false;
+    return true;
+  }
+
+  function confirmWhenRendered(checks) {
+    if (appRendered()) {
+      confirmRunningBuild();
+      return;
+    }
+    // 迟迟渲染不出来（白屏、一直报错）就不确认，交给原生的启动次数上限回退
+    if (checks + 1 >= CONFIRM_MAX_CHECKS) return;
+    setTimeout(function () {
+      confirmWhenRendered(checks + 1);
+    }, CONFIRM_RECHECK_MS);
+  }
+
   function confirmRunningBuild() {
     var plugin = hotUpdatePlugin();
     var build = currentBuild();
@@ -495,7 +522,15 @@
     );
   }
 
-  document.addEventListener("DOMContentLoaded", confirmRunningBuild, false);
+  function scheduleConfirm() {
+    setTimeout(function () {
+      confirmWhenRendered(0);
+    }, CONFIRM_FIRST_CHECK_MS);
+  }
+  if (document.readyState === "complete") scheduleConfirm();
+  else if (typeof window.addEventListener === "function") {
+    window.addEventListener("load", scheduleConfirm, { once: true });
+  }
   document.addEventListener(
     "visibilitychange",
     function () {

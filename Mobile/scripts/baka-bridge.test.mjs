@@ -16,7 +16,14 @@ const source = fs
   .readFileSync(path.resolve(here, "../bridge/baka-bridge.js"), "utf8")
   .replaceAll("__BAKA_CLIENT_VERSION__", "0.1.2");
 
-const harness = ({ manifest, pathname = "/", nativeBridgeOnly = false } = {}) => {
+// page：根节点里渲染出了什么。rendered = 应用内容，error = 错误兜底页，loading = 加载占位，empty = 白屏
+const harness = ({
+  manifest,
+  pathname = "/",
+  nativeBridgeOnly = false,
+  page = "rendered",
+} = {}) => {
+  const view = { page };
   const listeners = new Map();
   const timers = [];
   const confirms = [];
@@ -67,8 +74,19 @@ const harness = ({ manifest, pathname = "/", nativeBridgeOnly = false } = {}) =>
       readyState: "complete",
       visibilityState: "visible",
       addEventListener: on,
-      querySelector: (selector) =>
-        selector.includes("bakagame-build") ? { content: "abc1234" } : null,
+      querySelector: (selector) => {
+        if (selector.includes("bakagame-build")) return { content: "abc1234" };
+        if (selector === "[data-app-error]") return view.page === "error" ? {} : null;
+        return null;
+      },
+      getElementById: (id) =>
+        id === "root"
+          ? {
+              firstElementChild: view.page === "empty" ? null : {},
+              querySelector: (selector) =>
+                selector === "[data-page-loading]" && view.page === "loading" ? {} : null,
+            }
+          : null,
       dispatch: (type) => (listeners.get(type) ?? []).forEach((handler) => handler()),
     },
     window: {
@@ -90,6 +108,7 @@ const harness = ({ manifest, pathname = "/", nativeBridgeOnly = false } = {}) =>
   vm.runInNewContext(source, sandbox, { filename: "baka-bridge.js" });
 
   return {
+    view,
     confirms,
     installs,
     fetches,
@@ -98,8 +117,9 @@ const harness = ({ manifest, pathname = "/", nativeBridgeOnly = false } = {}) =>
     sandbox,
     fire: (type) => (listeners.get(type) ?? []).forEach((handler) => handler()),
     runTimer: (ms) => {
-      const timer = timers.find((entry) => entry.ms === ms);
-      assert.ok(timer, `没有找到 ${ms}ms 的定时器`);
+      const index = timers.findIndex((entry) => entry.ms === ms);
+      assert.ok(index >= 0, `没有找到 ${ms}ms 的定时器`);
+      const [timer] = timers.splice(index, 1);
       timer.fn();
     },
   };
@@ -119,9 +139,11 @@ const settle = async () => {
   for (let index = 0; index < 4; index += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
-test("页面加载后先确认待生效包，再在首页空闲时询问热更新清单", async () => {
+test("页面渲染出应用内容后确认待生效包，再在首页空闲时询问热更新清单", async () => {
   const h = harness({ manifest });
   h.fire("DOMContentLoaded");
+  assert.equal(h.confirms.length, 0, "DOMContentLoaded 时应用还没渲染，不能确认");
+  h.runTimer(1500);
   assert.deepEqual(
     h.confirms.map((entry) => ({ ...entry })),
     [{ build: "abc1234" }]
@@ -214,4 +236,26 @@ test("只有原生桥的 Plugins 代理、没有 registerPlugin 时，热更新�
   await settle();
   assert.equal(h.installs.length, 1);
   h.sandbox.window.__BAKA_CHANNEL__.setSecureScreen(true);
+});
+
+test("错误兜底页或白屏时不确认待生效包，交给原生按启动次数回退", async () => {
+  for (const page of ["error", "empty"]) {
+    const h = harness({ manifest: { available: false }, page });
+    for (let check = 0; check < 8; check += 1) h.runTimer(1500);
+    assert.equal(h.confirms.length, 0, `${page} 不该确认`);
+    assert.ok(!h.timers.some((entry) => entry.ms === 1500), `${page} 查够次数后应当停手`);
+  }
+});
+
+test("还在加载占位时等一等，渲染出来后再确认", async () => {
+  const h = harness({ manifest: { available: false }, page: "loading" });
+  h.runTimer(1500);
+  h.runTimer(1500);
+  assert.equal(h.confirms.length, 0);
+  h.view.page = "rendered";
+  h.runTimer(1500);
+  assert.deepEqual(
+    h.confirms.map((entry) => ({ ...entry })),
+    [{ build: "abc1234" }]
+  );
 });

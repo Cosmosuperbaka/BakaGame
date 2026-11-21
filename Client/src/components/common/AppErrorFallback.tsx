@@ -11,8 +11,12 @@ import { captureClientException } from "@/lib/Sentry";
  */
 export function AppErrorFallback() {
   if (isChunkRecoveryReloading()) return <PageLoadingFallback />;
+  // data-app-error 是移动壳桥接的判据：出现它说明这一版资源没跑起来，热更新包不会被确认。
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center bg-background text-foreground">
+    <div
+      data-app-error=""
+      className="flex min-h-screen flex-col items-center justify-center p-6 text-center bg-background text-foreground"
+    >
       <h2 className="text-xl font-bold mb-2">哎呀，页面遇到了意料之外的错误</h2>
       <p className="text-sm text-muted-foreground mb-4">异常已自动记录上报，请尝试刷新页面重试。</p>
       <button
