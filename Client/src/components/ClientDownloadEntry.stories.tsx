@@ -43,7 +43,7 @@ export const WithMacos: Story = {
   play: () => settled("x64"),
 };
 
-/** 选中 macOS 档：架构标两种芯片通用，下载按钮给 Mac 的包。 */
+/** 选中 macOS 档：架构标两种芯片通用，下载按钮给 Mac 的包，并提示首次打开怎么放行。 */
 export const MacosSelected: Story = {
   name: "选中 macOS",
   beforeEach: () =>
@@ -52,6 +52,23 @@ export const MacosSelected: Story = {
     const dialog = within(await screen.findByRole("dialog"));
     await userEvent.click(await dialog.findByRole("radio", { name: "macOS" }));
     await dialog.findByText("Intel 与 Apple 芯片");
+    dropFocus();
+  },
+};
+
+/** macOS 别名还没传上去：这一档照样列出，写「尚未发布」、不给链接，也不提示放行。 */
+export const MacosUnpublished: Story = {
+  name: "macOS 尚未发布",
+  beforeEach: () =>
+    stubClientPackages([
+      STORY_WINDOWS_PACKAGE,
+      { ...STORY_MACOS_PACKAGE, available: false, sizeBytes: undefined, builtAt: undefined },
+      STORY_ANDROID_PACKAGE,
+    ]),
+  play: async ({ userEvent }) => {
+    const dialog = within(await screen.findByRole("dialog"));
+    await userEvent.click(await dialog.findByRole("radio", { name: "macOS" }));
+    await dialog.findByRole("button", { name: "尚未发布" });
     dropFocus();
   },
 };

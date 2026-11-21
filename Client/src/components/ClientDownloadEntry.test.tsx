@@ -206,4 +206,32 @@ describe("ClientDownloadEntry", () => {
     await screen.findByRole("radio", { name: "macOS" });
     expect(screen.getByRole("radio", { name: "Windows" })).toBeChecked();
   });
+
+  it("macOS 档在包可下载时提示首次打开怎么放行，其它档与未发布时不提示", async () => {
+    pretendDevice(MAC_AGENT);
+    await renderWithPackages([WINDOWS, MACOS, ANDROID]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "下载客户端" }));
+
+    await screen.findByRole("link", { name: "下载 macOS 安装包" });
+    expect(screen.getByText(/隐私与安全性/)).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Windows" }));
+    expect(screen.queryByText(/隐私与安全性/)).not.toBeInTheDocument();
+  });
+
+  it("macOS 别名还没发布时照样列出这一档，写「尚未发布」且不提示放行", async () => {
+    pretendDevice(MAC_AGENT);
+    await renderWithPackages([
+      WINDOWS,
+      { ...MACOS, available: false, sizeBytes: undefined, builtAt: undefined },
+      ANDROID,
+    ]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "下载客户端" }));
+
+    expect(await screen.findByRole("radio", { name: "macOS" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "尚未发布" })).toBeDisabled();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByText(/隐私与安全性/)).not.toBeInTheDocument();
+  });
 });

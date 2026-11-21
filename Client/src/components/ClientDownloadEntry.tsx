@@ -22,6 +22,12 @@ import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import type { OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
+/**
+ * macOS 包没有经过苹果公证，首次打开会被系统拦下；只在 macOS 档、包确实可下载时提示怎么放行。
+ */
+const MACOS_FIRST_OPEN_HINT =
+  "首次打开若被系统拦下，到系统设置的「隐私与安全性」里点「仍要打开」。";
+
 const LABELS: Record<ClientPackagePlatform, string> = {
   windows: "Windows",
   macos: "macOS",
@@ -135,6 +141,9 @@ export function ClientDownloadDialog({ open, onOpenChange, origin }: ClientDownl
           </div>
         )}
         {state && !state.failed && <PackageDetails pkg={pkg} />}
+        {platform === "macos" && pkg?.available && (
+          <p className="text-xs leading-relaxed text-muted-foreground">{MACOS_FIRST_OPEN_HINT}</p>
+        )}
 
         {/* 没发布就不给链接：一枚点了跳到 404 的按钮比不按钮更糟。 */}
         {pkg?.available ? (
