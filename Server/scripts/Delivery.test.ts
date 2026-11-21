@@ -28,23 +28,66 @@ const run = {
   head_sha: "a".repeat(40),
   head_repository: { full_name: repository },
 };
-const jobs = [{ name: "Server CI", conclusion: "success" }];
+// 门禁只认后端必过的几道检查：客户端、Storybook 与壳打包失败或仍在跑都不挡后端部署。
+const jobs = [
+  { name: "Server CI", status: "completed", conclusion: "success" },
+  { name: "Shutdown Smoke", status: "completed", conclusion: "success" },
+  { name: "End-to-End Tests", status: "completed", conclusion: "success" },
+  { name: "Docs Check", status: "completed", conclusion: "success" },
+  { name: "Format Check", status: "completed", conclusion: "success" },
+  { name: "Dependency Audit", status: "completed", conclusion: "success" },
+  { name: "Knip", status: "completed", conclusion: "skipped" },
+  { name: "Client CI", status: "completed", conclusion: "failure" },
+  { name: "Desktop Build (Tauri · Windows)", status: "in_progress", conclusion: null },
+];
+const withJob = (name: string, patch: Record<string, unknown>) =>
+  jobs.map((job) => (job.name === name ? { ...job, ...patch } : job));
 test("门禁仅接受同仓 main push 的获验完整 SHA，手动选择不能绕过", () => {
   expect(deploymentRevision(run, jobs, repository)).toBe(run.head_sha);
+  // 整条 CI 还没跑完、或因客户端失败而整体失败，只要后端必过项全绿就能部署。
+  for (const patch of [{ status: "in_progress", conclusion: null }, { conclusion: "failure" }])
+    expect(deploymentRevision({ ...run, ...patch }, jobs, repository)).toBe(run.head_sha);
   for (const patch of [
     { path: ".github/workflows/other.yml" },
-    { conclusion: "failure" },
-    { conclusion: "cancelled" },
     { event: "pull_request" },
-    { status: "in_progress" },
     { head_branch: "other" },
     { head_repository: { full_name: "fork/BakaGame" } },
     { head_sha: "main" },
   ]) {
     expect(deploymentRevision({ ...run, ...patch }, jobs, repository)).toBeNull();
   }
+  // Server CI 必须真跑过且成功，被路径过滤跳过也不部署。
   for (const conclusion of ["skipped", "failure", "cancelled"])
-    expect(deploymentRevision(run, [{ name: "Server CI", conclusion }], repository)).toBeNull();
+    expect(deploymentRevision(run, withJob("Server CI", { conclusion }), repository)).toBeNull();
+  // 其余必过项可以被路径过滤跳过，但不能失败、取消、仍在运行或缺席。
+  for (const name of [
+    "Shutdown Smoke",
+    "End-to-End Tests",
+    "Docs Check",
+    "Format Check",
+    "Dependency Audit",
+    "Knip",
+  ]) {
+    expect(deploymentRevision(run, withJob(name, { conclusion: "skipped" }), repository)).toBe(
+      run.head_sha
+    );
+    for (const conclusion of ["failure", "cancelled"])
+      expect(deploymentRevision(run, withJob(name, { conclusion }), repository)).toBeNull();
+    expect(
+      deploymentRevision(
+        run,
+        withJob(name, { status: "in_progress", conclusion: null }),
+        repository
+      )
+    ).toBeNull();
+    expect(
+      deploymentRevision(
+        run,
+        jobs.filter((job) => job.name !== name),
+        repository
+      )
+    ).toBeNull();
+  }
   expect(deploymentRevision(run, [], repository)).toBeNull();
 });
 

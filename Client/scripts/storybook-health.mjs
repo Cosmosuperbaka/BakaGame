@@ -1,7 +1,8 @@
 // 逐个执行 Storybook 静态构建里的故事，只判健康、不出图：没有未捕获页面异常、没有 console.error、
 // Storybook 没有显示出错界面、故事根节点不是空的。任一故事不健康就列出编号与原因并以非零退出。
 //
-// 用法：npm run storybook:health -- [--dir 静态目录] [--workers 并发数] [--timeout 毫秒] [--filter 正则]
+// 用法：npm run storybook:health -- [--dir 静态目录] [--workers 并发数] [--timeout 毫秒] [--filter 正则] [--shard 序号/总数]
+// --shard 按故事在索引里的顺序轮流分片（序号从 1 起），供 CI 多个作业并行各跑一份。
 // 前置：先 build-storybook。这里只服务已经构建好的产物，不起开发服务器。
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
@@ -18,6 +19,7 @@ const { values: options } = parseArgs({
     workers: { type: "string", default: "4" },
     timeout: { type: "string", default: "45000" },
     filter: { type: "string" },
+    shard: { type: "string" },
   },
 });
 
@@ -26,6 +28,18 @@ const staticDir = path.resolve(clientDir, options.dir);
 const workers = Math.max(1, Number(options.workers) || 1);
 const storyTimeout = Math.max(1_000, Number(options.timeout) || 45_000);
 const filter = options.filter ? new RegExp(options.filter, "i") : null;
+const shard = parseShard(options.shard);
+
+/** 解析 `序号/总数`；格式不对直接报错，避免分片写错时静默只跑一部分故事。 */
+function parseShard(text) {
+  if (!text) return { index: 1, total: 1 };
+  const match = /^(\d+)\/(\d+)$/.exec(text);
+  const index = match ? Number(match[1]) : 0;
+  const total = match ? Number(match[2]) : 0;
+  if (!match || total < 1 || index < 1 || index > total)
+    throw new Error(`--shard 要写成「序号/总数」且 1 ≤ 序号 ≤ 总数，收到：${text}`);
+  return { index, total };
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -207,7 +221,8 @@ async function readStories() {
   const index = JSON.parse(raw);
   return Object.values(index.entries)
     .filter((entry) => entry.type === "story")
-    .filter((entry) => !filter || filter.test(entry.id) || filter.test(entry.title));
+    .filter((entry) => !filter || filter.test(entry.id) || filter.test(entry.title))
+    .filter((_, position) => position % shard.total === shard.index - 1);
 }
 
 async function main() {
@@ -243,7 +258,7 @@ async function main() {
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
   console.log(
     `\n故事 ${stories.length} 个，健康 ${stories.length - failures.length} 个，不健康 ${failures.length} 个，` +
-      `豁免报错 ${exemptedCount} 条，用时 ${seconds} 秒（并发 ${workers}）。`
+      `豁免报错 ${exemptedCount} 条，用时 ${seconds} 秒（并发 ${workers}，分片 ${shard.index}/${shard.total}）。`
   );
   if (failures.length) {
     console.log("不健康的故事：");

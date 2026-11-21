@@ -1,19 +1,17 @@
 name: Deploy Backend
 
 # 部署不再自带全量测试：服务端类型检查 + 全量测试只在 CI 跑一次，这里消费 CI 的结论。
-# 触发条件：CI 全绿，且其中「Server CI」确实执行过（而非被路径过滤跳过）。
-# 手动 dispatch 显式选择 CI run，仍消费同一获验 SHA，不绕过门禁。
+# 触发：CI 的 backend-deploy 作业在后端必过检查（清单见 Server/scripts/DeploymentGate.mjs）
+# 全部结束后用 workflow_dispatch 派发本工作流，不等客户端、Storybook 与各端壳打包。
+# 不再挂 workflow_run：那要等整条 CI 跑完，且与派发并存会同一提交部署两次。
+# 手动 dispatch 显式选择 CI run，与自动派发走同一道门禁，仍消费同一获验 SHA，不绕过。
 # 部署脚本自身变更也要生效：ci.yml 的 server 过滤包含本文件，改动后会走一次
-# CI → workflow_run → 部署 的链路自动落地。
+# CI → 派发 → 部署 的链路自动落地。
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: "已成功完成的 main push CI run ID（必须包含成功 Server CI）"
+        description: "main push 的 CI run ID（Server CI 必须成功，其余后端必过检查不能失败）"
         required: true
         type: string
 
@@ -30,7 +28,8 @@ permissions:
 # 升级时同批改 SHA 与注释。
 
 jobs:
-  # 部署门禁：CI 失败（含 E2E 失败）不部署；本次推送未改服务端（Server CI 被跳过）不部署。
+  # 部署门禁：后端必过检查（含 E2E）任一失败不部署；本次推送未改服务端（Server CI 被跳过）不部署。
+  # 客户端与壳打包作业的结论不参与判定，它们还在跑时也能部署。
   # 超时也要写：这一步在等第三方 Action 与 GitHub API，卡住不等于失败，不写就会一直占 runner。
   gate:
     name: Deployment Gate
@@ -50,7 +49,7 @@ jobs:
         id: decide
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
-          SELECTED_RUN_ID: ${{ github.event.workflow_run.id || inputs.ci_run_id }}
+          SELECTED_RUN_ID: ${{ inputs.ci_run_id }}
         with:
           script: |
             const { deploymentRevision } = await import(`${process.env.GITHUB_WORKSPACE}/Server/scripts/DeploymentGate.mjs`);
@@ -61,11 +60,7 @@ jobs:
             const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, { ...context.repo, run_id, filter: 'latest', per_page: 100 });
             const revision = deploymentRevision(run, jobs, `${context.repo.owner}/${context.repo.repo}`);
             core.setOutput('deploy', revision ? 'true' : 'false');
-            if (!revision) {
-              if (context.eventName === 'workflow_dispatch') throw new Error('Selected CI run is not deployable');
-              core.info('CI run is not deployable');
-              return;
-            }
+            if (!revision) throw new Error('Selected CI run is not deployable');
             core.setOutput('revision', revision);
             core.setOutput('run_id', raw);
             core.info(`Deploy verified CI run ${raw}, SHA ${revision}`);

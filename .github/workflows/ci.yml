@@ -356,6 +356,45 @@ jobs:
         working-directory: Client
         run: node scripts/asset-smoke.mjs
 
+      - name: Upload client coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: client-coverage
+          path: Client/coverage/
+          retention-days: 14
+
+  # Storybook 构建与故事健康检查：从 client 作业拆出来按分片并行，它曾是整条 CI 最长的一段。
+  # Storybook 构建不依赖生产构建产物（.storybook/main.ts 已排除写 dist/ 的插件），干净检出即可构建；
+  # 每个分片各自构建一次（几十秒），换来故事逐个过浏览器的时间按分片数摊薄。
+  storybook:
+    name: Storybook Health (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    timeout-minutes: 20
+    if: ${{ needs.changes.outputs.client == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
       # 组件截图工具的构建冒烟：故事随组件改动失效时在 CI 暴露。
       - name: Build Storybook
         run: pnpm --filter client build-storybook
@@ -367,15 +406,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Check Storybook story health
-        run: pnpm --filter client storybook:health
-
-      - name: Upload client coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() }}
-        with:
-          name: client-coverage
-          path: Client/coverage/
-          retention-days: 14
+        run: pnpm --filter client storybook:health --shard ${{ matrix.shard }}/2
 
   # 桌面壳：远程 URL 的 Tauri v2 壳，必须在 CI 上真打包一次。
   # 图标只在打包阶段校验（cargo check/build 都不读），缺文件要到这里才炸，
@@ -1285,10 +1316,11 @@ jobs:
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
-    needs: [changes, server, client]
+    # 不等 server/client 作业：E2E 自己构建客户端、自己起隔离服务端，不消费它们的产物。
+    # 串在后面只会让整条链多等十分钟；单测先挂时 E2E 照跑，结论各自独立。
+    needs: [changes]
     timeout-minutes: 30
-    # 任一依赖真正失败则不跑；server/client 因路径过滤被跳过不算失败，照常执行。
-    if: ${{ !cancelled() && needs.changes.outputs.e2e == 'true' && needs.server.result != 'failure' && needs.client.result != 'failure' }}
+    if: ${{ needs.changes.outputs.e2e == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -1365,3 +1397,32 @@ jobs:
           name: playwright-report
           path: Client/playwright-report/
           retention-days: 14
+
+  # 后端部署派发：后端上线必过的检查一结束就触发部署，不等客户端、Storybook 与各端壳打包。
+  # 门禁口径与 Server/scripts/DeploymentGate.mjs 一致（Server CI 必须真跑且成功，其余可被路径
+  # 过滤跳过但不能失败），部署工作流的门禁会按同一份清单再核一遍，这里只是提前派发。
+  # GITHUB_TOKEN 触发的事件不会再起工作流，workflow_dispatch 是官方留的例外，所以用它接力。
+  backend-deploy:
+    name: Request Backend Deploy
+    runs-on: ubuntu-latest
+    needs: [server, shutdown-smoke, e2e, docs, format, audit, knip]
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    if: >-
+      ${{ !cancelled()
+      && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.server.result == 'success'
+      && contains(fromJSON('["success","skipped"]'), needs.shutdown-smoke.result)
+      && contains(fromJSON('["success","skipped"]'), needs.e2e.result)
+      && contains(fromJSON('["success","skipped"]'), needs.docs.result)
+      && contains(fromJSON('["success","skipped"]'), needs.format.result)
+      && contains(fromJSON('["success","skipped"]'), needs.audit.result)
+      && contains(fromJSON('["success","skipped"]'), needs.knip.result) }}
+    steps:
+      - name: Dispatch the backend deploy for this CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CI_RUN_ID: ${{ github.run_id }}
+        run: gh workflow run deploy.yml --ref main -f ci_run_id="$CI_RUN_ID"
