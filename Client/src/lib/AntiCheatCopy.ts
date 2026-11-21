@@ -129,6 +129,8 @@ export const clientUpdateNoticeText = (
     : `${CEE_CLIENT_TYPE_LABELS[clientType]}有新版本 ${version} 可用，建议更新到最新版。`;
 
 export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
+/** 桌面壳已在后台下好并校验过新版时给的按钮：点了由壳安装并重启。 */
+export const CLIENT_UPDATE_RESTART_LABEL = "重启更新";
 /** 关闭只压到下一次抬档，不是「永不再提醒」，按钮文字据实写「暂不」。 */
 export const CLIENT_UPDATE_DISMISS_LABEL = "暂不提醒";
 

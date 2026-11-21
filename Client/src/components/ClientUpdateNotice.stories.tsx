@@ -42,6 +42,28 @@ export const MobileOutdated: Story = {
     downloadUrl: "https://cdn.example.com/files/BakaGame-latest-release.apk",
   },
 };
+/** 桌面壳已在后台下好并校验过新版：按钮换成「重启更新」，下载链接让位。 */
+export const DesktopReadyToRestart: Story = {
+  name: "桌面端新版已就绪",
+  args: { floor: desktopAvailable, onRestart: fn() },
+};
+/** 窄宽度下正文换行，按钮与关闭钮不被挤走（手机宽度下的同一条提醒）。 */
+export const DesktopReadyNarrow: Story = {
+  name: "桌面端新版已就绪（窄屏）",
+  args: { floor: desktopAvailable, onRestart: fn() },
+  decorators: [
+    (Story) => (
+      <div className="w-80">
+        <Story />
+      </div>
+    ),
+  ],
+};
+/** 点了「重启更新」、等壳安装：按钮进入进行中，防止连点。 */
+export const DesktopRestarting: Story = {
+  name: "桌面端正在重启更新",
+  args: { floor: desktopAvailable, onRestart: fn(), restarting: true },
+};
 export const NothingToDownload: Story = {
   name: "安装包还没发布",
   args: { downloadUrl: undefined },

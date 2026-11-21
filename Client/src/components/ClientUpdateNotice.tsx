@@ -6,6 +6,7 @@ import { CloseButton } from "@/components/ui/CloseButton";
 import {
   CLIENT_UPDATE_DISMISS_LABEL,
   CLIENT_UPDATE_DOWNLOAD_LABEL,
+  CLIENT_UPDATE_RESTART_LABEL,
   clientUpdateNoticeText,
 } from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
@@ -14,6 +15,7 @@ import {
   useClientPackages,
   type ClientPackagePlatform,
 } from "@/lib/ClientPackages";
+import { installDesktopUpdate, useDesktopUpdateStatus } from "@/lib/DesktopUpdate";
 import { dropIn } from "@/lib/motion/NamedMoves";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
@@ -27,6 +29,9 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
  *
  * 两档提醒的来源不同：`required` 是最低准入版本（与服务端硬门槛同源），`available` 是发布
  * 流水线写下的最新壳版本。后者只说明「有新版可拿」，不代表协议变更，不能自动抬硬门槛。
+ *
+ * 桌面壳会在后台自己下载并校验新版：壳报「已就绪」时按钮换成「重启更新」，交给壳安装并重启；
+ * 没就绪、壳不支持或安装失败时照旧给「下载最新版」链接兜底。
  */
 
 /** 存档记的是「已经关掉过哪一档提醒」，服务端换档或抬版本后提醒会重新出现。 */
@@ -69,6 +74,8 @@ interface PendingNotice {
 export function ClientUpdateNotice() {
   const [notice, setNotice] = useState<PendingNotice | null>(null);
   const [hidden, setHidden] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartFailed, setRestartFailed] = useState(false);
   const floor = notice?.floor ?? null;
 
   useEffect(() => {
@@ -127,12 +134,27 @@ export function ClientUpdateNotice() {
   const pkg = notice
     ? state?.packages.find((item) => item.platform === notice.packagePlatform)
     : undefined;
+  // 只有桌面壳会自己下载更新；提醒在场时才去问它
+  const desktop = useDesktopUpdateStatus(floor?.clientType === "desktop" && !hidden);
+  const restartReady = desktop?.state === "ready" && !restartFailed;
+
+  const restart = () => {
+    setRestarting(true);
+    // 成功时壳会退出，等不到返回；失败就回落到下载链接，不再给一颗点了没反应的按钮
+    void installDesktopUpdate().then((ok) => {
+      if (ok) return;
+      setRestarting(false);
+      setRestartFailed(true);
+    });
+  };
 
   return (
     <ClientUpdateBanner
       open={!hidden}
       floor={floor}
       downloadUrl={pkg?.available ? pkg.url : undefined}
+      onRestart={restartReady ? restart : undefined}
+      restarting={restarting}
       onDismiss={dismiss}
     />
   );
@@ -143,6 +165,10 @@ export interface ClientUpdateBannerProps {
   floor: ClientUpdateFloor | null;
   /** 本平台的安装包地址；没发布（或发布信息读不到）时留空，按钮整颗不出现。 */
   downloadUrl?: string;
+  /** 壳已下载并校验好新版时给出：按钮换成「重启更新」，下载链接让位。 */
+  onRestart?: () => void;
+  /** 已点「重启更新」、等壳安装时为真：按钮进入进行中，防止连点。 */
+  restarting?: boolean;
   onDismiss: () => void;
 }
 
@@ -156,6 +182,8 @@ export function ClientUpdateBanner({
   open,
   floor,
   downloadUrl,
+  onRestart,
+  restarting = false,
   onDismiss,
 }: ClientUpdateBannerProps) {
   return (
@@ -174,13 +202,26 @@ export function ClientUpdateBanner({
           <span className="min-w-0 flex-1 text-xs leading-snug">
             {clientUpdateNoticeText(floor.clientType, floor.version, floor.mode)}
           </span>
-          {/* 制品还没推上去时不给链接：不留一枚点了跳到 404 的下载按钮。 */}
-          {downloadUrl && (
-            <Button asChild size="sm" variant="outline" className="shrink-0">
-              <a href={downloadUrl} target="_blank" rel="noreferrer">
-                {CLIENT_UPDATE_DOWNLOAD_LABEL}
-              </a>
+          {/* 壳已备好新版时只给「重启更新」；否则给下载链接，制品还没推上去时连链接也不给，
+              不留一枚点了跳到 404 的下载按钮。 */}
+          {onRestart ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              loading={restarting}
+              onClick={onRestart}
+            >
+              {CLIENT_UPDATE_RESTART_LABEL}
             </Button>
+          ) : (
+            downloadUrl && (
+              <Button asChild size="sm" variant="outline" className="shrink-0">
+                <a href={downloadUrl} target="_blank" rel="noreferrer">
+                  {CLIENT_UPDATE_DOWNLOAD_LABEL}
+                </a>
+              </Button>
+            )
           )}
           <CloseButton
             aria-label={CLIENT_UPDATE_DISMISS_LABEL}

@@ -81,8 +81,24 @@ const server = (options: ServerOptions = {}) => {
   return { fetchMock, urls, checks: () => urls.filter((url) => url.includes("update-check")) };
 };
 
+/** 假的桌面壳 IPC：更新状态按给定序列逐次返回（末一个之后重复它），安装命令可指定成败。 */
+const desktopShell = (statuses: unknown[], install: "ok" | "fail" = "ok") => {
+  let polled = 0;
+  const invoke = vi.fn(async (command: string) => {
+    if (command === "baka_update_status") return statuses[Math.min(polled++, statuses.length - 1)];
+    if (command === "baka_update_install") {
+      if (install === "fail") throw new Error("安装新版失败");
+      return null;
+    }
+    throw new Error(`unknown command ${command}`);
+  });
+  window.__TAURI_INTERNALS__ = { invoke };
+  return invoke;
+};
+
 afterEach(() => {
   delete window.__BAKA_CHANNEL__;
+  delete window.__TAURI_INTERNALS__;
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
@@ -157,6 +173,68 @@ describe("客户端更新提醒", () => {
     await waitFor(() => expect(urls.some((url) => url.includes("packages"))).toBe(true));
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("壳已下载好新版时按钮换成「重启更新」，点了只请壳安装、不带任何参数", async () => {
+    shellAt("1.0.0");
+    server({ floor: "", outdated: false, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    const invoke = desktopShell([{ state: "ready", version: "1.0.1" }]);
+    await mountNotice();
+
+    const restart = await screen.findByRole("button", { name: "重启更新" });
+    expect(screen.queryByRole("link", { name: "下载最新版" })).not.toBeInTheDocument();
+    await userEvent.click(restart);
+    expect(invoke).toHaveBeenCalledWith("baka_update_install");
+    expect(invoke.mock.calls.find(([command]) => command === "baka_update_install")).toEqual([
+      "baka_update_install",
+    ]);
+  });
+
+  it("壳还在下载时照旧给下载链接，下载完成后换成「重启更新」", async () => {
+    shellAt("1.0.0");
+    server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE] });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      desktopShell([
+        { state: "downloading", version: "2.0.0" },
+        { state: "ready", version: "2.0.0" },
+      ]);
+      await mountNotice();
+
+      expect(await screen.findByRole("link", { name: "下载最新版" })).toHaveAttribute(
+        "href",
+        WINDOWS_PACKAGE.url
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByRole("button", { name: "重启更新" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("安装失败时回落到下载链接，不留一颗点了没反应的按钮", async () => {
+    shellAt("1.0.0");
+    server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE] });
+    desktopShell([{ state: "ready", version: "2.0.0" }], "fail");
+    await mountNotice();
+
+    await userEvent.click(await screen.findByRole("button", { name: "重启更新" }));
+    expect(await screen.findByRole("link", { name: "下载最新版" })).toHaveAttribute(
+      "href",
+      WINDOWS_PACKAGE.url
+    );
+    expect(screen.queryByRole("button", { name: "重启更新" })).not.toBeInTheDocument();
+  });
+
+  it("移动壳不问桌面更新状态：只有桌面壳会自己下载新版", async () => {
+    shellAt("1.0.0", "mobile");
+    server({ floor: "3.1.0", packages: [ANDROID_PACKAGE] });
+    const invoke = desktopShell([{ state: "ready", version: "3.1.0" }]);
+    await mountNotice();
+
+    expect(await screen.findByRole("link", { name: "下载最新版" })).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "重启更新" })).not.toBeInTheDocument();
   });
 
   it("够新时不打扰：不渲染也不留占位", async () => {
