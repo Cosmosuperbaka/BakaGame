@@ -40,6 +40,15 @@ export const isBakaClient = (): boolean => bakaChannel() !== undefined;
 export const bakaClientType = (): BakaClientType => bakaChannel()?.clientType ?? "web";
 
 /**
+ * 把客户端类型写到 `<html data-surface>`，供样式按壳区分（如移动壳关掉游戏界面的长按选字，见 index.css）。
+ * 壳身份在页面脚本之前就已注入，入口调用一次即可。
+ */
+export const applySurfaceAttribute = (): void => {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.surface = bakaClientType();
+};
+
+/**
  * 切换窗口级防截屏（安卓的 FLAG_SECURE）。
  *
  * 只在反作弊房里开：那里要求客户端接入，也不允许靠录屏/投屏把题目带出去。

@@ -130,6 +130,8 @@ export function MessageBubble({
       <div
         ref={bubbleRef}
         data-testid="chat-message-bubble"
+        // 聊天内容要能长按复制：移动壳里游戏界面默认不可选，这里显式放开（index.css）。
+        data-selectable=""
         className={cn(
           "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
           safeStickerPath ? "p-1.5" : "px-3 py-1.5",

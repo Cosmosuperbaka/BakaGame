@@ -1046,6 +1046,28 @@ img {
   }
 }
 
+/* 移动壳里游戏界面不响应长按选字：误触会选中按钮文字、弹出系统的复制/搜索浮条。
+   输入框、可编辑区与显式标记 data-selectable 的内容（聊天正文等）照常可选、可复制。
+   网页端与桌面壳不受影响（data-surface 由入口按壳身份写入，见 lib/BakaChannel.ts）。 */
+html[data-surface="mobile"] body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html[data-surface="mobile"]
+  :is(
+    input,
+    textarea,
+    [contenteditable]:not([contenteditable="false"]),
+    [data-selectable],
+    [data-selectable] *
+  ) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* 接管期间页面不可选中，光标也不再暗示可以操作。 */
 html[data-agent-locked] {
   user-select: none;

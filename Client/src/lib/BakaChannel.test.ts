@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  applySurfaceAttribute,
   bakaChannelQuery,
   bakaClientType,
   isBakaClient,
@@ -126,5 +127,20 @@ describe("原生客户端通道探测", () => {
     };
     bakaChannelQuery();
     expect(lastHandshakeHadTicket()).toBe(true);
+  });
+});
+
+describe("applySurfaceAttribute", () => {
+  afterEach(() => {
+    delete document.documentElement.dataset.surface;
+  });
+
+  it("按壳身份写到 <html data-surface>，网页环境记 web", () => {
+    applySurfaceAttribute();
+    expect(document.documentElement.dataset.surface).toBe("web");
+
+    window.__BAKA_CHANNEL__ = { clientType: "mobile", platform: "android", clientVersion: "0.1.5" };
+    applySurfaceAttribute();
+    expect(document.documentElement.dataset.surface).toBe("mobile");
   });
 });

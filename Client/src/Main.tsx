@@ -13,6 +13,7 @@ import { recoverFromDomInvariant } from "./lib/DomRecovery";
 import { stripStaticSeo } from "./lib/StaticSeo";
 import { installMotionTokens } from "./lib/motion/CssTokens";
 import { initTheme } from "./lib/Theme";
+import { applySurfaceAttribute } from "./lib/BakaChannel";
 import { initSoundEffects } from "./lib/SoundEffects";
 
 // 中文字体样式表：生产构建里 index.html 已非阻塞地加载它，这条导入只让构建把它拆成独立文件
@@ -25,6 +26,8 @@ installChunkLoadRecovery();
 installMotionTokens();
 // index.html 的首帧脚本已先落位；这里接上系统主题与跨标签页的监听。
 initTheme();
+// 壳的类型写到 <html data-surface>，样式据此区分移动壳。
+applySurfaceAttribute();
 // 只挂首次交互的解锁监听，此时不创建 AudioContext。
 initSoundEffects();
 setupGlobalImageProtection();
