@@ -1,10 +1,14 @@
 # 应用图标
 
-这里是 Tauri 打包必需的五枚图标，已按 `tauri.conf.json` 的 `bundle.icon` 命名落地：
+这里是 Tauri 打包必需的图标，已按 `bundle.icon` 命名落地：
 
 ```
 32x32.png  128x128.png  128x128@2x.png  icon.png（1024）  icon.ico（16/32/48/64/128/256 六帧）
+icon.icns（macOS 专用，16 到 1024 多尺寸）
 ```
+
+Windows 用 `tauri.conf.json` 的列表（含 `icon.ico`）；macOS 由 `tauri.macos.conf.json` 整段替换这份列表
+（平台配置按 JSON Merge Patch 合并，数组整个换掉而不是追加），换成带 `icon.icns` 的那一份。
 
 源图与 `Client/` 用同一张品牌资产：`Client/public/assets/favicon.png`（1114×1080，带 alpha，
 contain 方式补成正方形后缩放，不重画、不加边）。图标属于品牌资产，桌面端不得另画一套。
@@ -20,6 +24,10 @@ pnpm dlx @tauri-apps/cli icon Client/public/assets/favicon.png --output Desktop/
 
 `tauri icon` 要求源图为正方形且边长 ≥1024；favicon 原图是 1114×1080，先用任意工具 contain
 补方（透明背景）再喂给它。`icon.ico` 必须含 16/32/48/64 多尺寸，NSIS 安装向导与任务栏都用它。
+
+只补 `icon.icns` 时（不想动 Windows 已发布的那几枚），把命令的 `--output` 指到临时目录，再只拷回
+`icon.icns`：该命令在 Windows 上同样能产出 icns，CLI 版本用 CI 里钉的那一枚。命令还会顺带生成
+商店方块图、iOS 与安卓图标，这些桌面壳都不用，不要拷进来。
 
 ## 为什么缺文件时 CI 才发现
 
