@@ -340,13 +340,19 @@ export class ClientChannel {
    * 移动端注册时做一次完整证书链验证，结论随设备存下来；之后的握手只复用密钥签挑战。
    * 拒绝即拒：解锁刷机、改包、被吊销都是设备完整性被破坏，不是「证明强度不够」。
    * 没配校验器时只记 `degraded` 并留警告——链没被任何人看过，不该写成「验过但降级」。
+   * 不带链的移动端注册一律拒（与有没有配校验器无关）：合法壳最低系统版本就支持密钥证明，
+   * 拿不到会在自检里报硬失败，所以合法壳必带链，不带链只可能是自写客户端。
    */
   private async resolveAttestationLevel(
     input: ClientRegisterInput
   ): Promise<ClientAttestationLevel | undefined> {
     if (input.clientType !== "mobile") return undefined;
     const report = input.attestation;
-    if (!report || report.chain.length === 0) return undefined;
+    if (!report || report.chain.length === 0) {
+      // 注册入口匿名可达，不带链的请求可以任意刷，所以只记信息级，不占告警额度。
+      this.onInfo("移动端注册缺少证明链", { platform: input.platform });
+      throw new AppError("ATTESTATION_REQUIRED", "移动端注册必须附带设备平台证明");
+    }
     if (!this.attestation) {
       this.onWarn("收到 Android 证明链但服务端未配置校验", { platform: input.platform });
       return "degraded";

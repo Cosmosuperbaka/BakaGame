@@ -73,6 +73,12 @@ function harness(
   return { channel, clock, store, warnings, infos };
 }
 
+/** 移动端注册必带证明链；通道这层不解析 DER，链只是透传，结构正确性由 `AndroidAttestation` 自己的用例覆盖。 */
+const MOBILE_ATTESTATION = {
+  chain: ["-----BEGIN CERTIFICATE-----\nMA==\n-----END CERTIFICATE-----\n"],
+  attestationChallenge: "AQIDBAU=",
+};
+
 describe("客户端通道判定", () => {
   test("硬失败任一即拒：调试器附着比二十条软失败都严重", () => {
     expect(judgeSelfCheck({ ...clean, hardFail: ["debugger_attached"] }).trusted).toBe(false);
@@ -720,6 +726,7 @@ describe("密钥口径", () => {
       keyAlgorithm: "ec-p256" as const,
       publicKey: spki,
       selfCheck: { ...clean, keyProtection: "hardware" as const },
+      attestation: MOBILE_ATTESTATION,
     };
     const { clientId } = await context.channel.register(mobile);
     const { challenge } = context.channel.issue(clientId);
@@ -753,6 +760,7 @@ describe("移动端自检词表接入", () => {
     keyAlgorithm: "ec-p256",
     publicKey: ANDROID_SPKI,
     selfCheck,
+    attestation: MOBILE_ATTESTATION,
   });
 
   test("开了读屏的真机注册得进来：未知无障碍服务不算是作弊证据", async () => {
@@ -782,9 +790,7 @@ describe("移动端自检词表接入", () => {
 });
 
 describe("Android 平台证明接入", () => {
-  // 通道这层不解析 DER，链只是透传；结构正确性由 `AndroidAttestation` 自己的用例覆盖。
-  const chain = ["-----BEGIN CERTIFICATE-----\nMA==\n-----END CERTIFICATE-----\n"];
-  const report = { chain, attestationChallenge: "AQIDBAU=" };
+  const report = MOBILE_ATTESTATION;
   const mobileRegister = (over: Partial<ClientRegisterInput> = {}): ClientRegisterInput => ({
     clientType: "mobile",
     platform: "android",
@@ -830,6 +836,45 @@ describe("Android 平台证明接入", () => {
     const input = mobileRegister({ attestation: report });
     await channel.register(input);
     expect(seen).toEqual([`${input.publicKey}|${report.attestationChallenge}|1`]);
+  });
+  test("移动端不带证明链 → 注册即拒：合法壳必带链，不带只可能是自写客户端", async () => {
+    // 有无校验器都一样：没配校验器只放宽「带链」的结论（记降级），不放宽「不带链」。
+    for (const attestation of [undefined, checker("trusted")]) {
+      const { channel, store, infos } = harness({ attestation });
+      const input = mobileRegister();
+      await expect(channel.register(input)).rejects.toMatchObject({
+        code: "ATTESTATION_REQUIRED",
+      });
+      await expect(store.find(clientIdOfPublicKey(input.publicKey))).resolves.toBeUndefined();
+      expect(infos.map((entry) => entry.message)).toContain("移动端注册缺少证明链");
+    }
+  });
+  test("移动端证明链为空数组 → 同样拒，不调用校验器", async () => {
+    let called = 0;
+    const { channel, store } = harness({
+      attestation: async () => {
+        called += 1;
+        return { level: "trusted", reasons: [] };
+      },
+    });
+    const input = mobileRegister({ attestation: { ...report, chain: [] } });
+    await expect(channel.register(input)).rejects.toMatchObject({ code: "ATTESTATION_REQUIRED" });
+    expect(called).toBe(0);
+    await expect(store.find(clientIdOfPublicKey(input.publicKey))).resolves.toBeUndefined();
+  });
+  test("链判 rejected 与缺链是两个独立错误码：客户端据此给不同提示", async () => {
+    const { channel } = harness({
+      attestation: checker("rejected", ["software_attestation_root"]),
+    });
+    await expect(channel.register(mobileRegister({ attestation: report }))).rejects.toMatchObject({
+      code: "ATTESTATION_REJECTED",
+    });
+  });
+  test("桌面端注册不受影响：没有平台证明也照常放行", async () => {
+    const { channel, store } = harness({ attestation: checker("rejected") });
+    const input = mobileRegister({ clientType: "desktop", platform: "windows" });
+    const { clientId } = await channel.register(input);
+    expect((await store.find(clientId))?.attestationLevel).toBeUndefined();
   });
   test("桌面端没有平台证明：混进链也不调用校验器，档位保持未验", async () => {
     let called = 0;

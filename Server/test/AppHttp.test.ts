@@ -1,9 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
+import { generateKeyPairSync } from "node:crypto";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
 import type { AppEnv } from "../src/config/Env";
-import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
+import {
+  ClientChannel,
+  clientIdOfPublicKey,
+  InMemoryClientChannelStore,
+} from "../src/infrastructure/ClientChannel";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/HttpOperation";
@@ -287,6 +292,35 @@ test("客户端完整性拒绝只产生一条告警级日志，4xx 与扫描探�
       String(record.attributes["operation.action"]).includes("UNROUTED")
     );
     expect(scan?.severityText).toBe("DEBUG");
+  } finally {
+    await stop();
+  }
+});
+test("移动端注册不带证明链：接口回 400 与 ATTESTATION_REQUIRED，设备表不留档", async () => {
+  const store = new InMemoryClientChannelStore();
+  const clientChannel = new ClientChannel({ store, minimumVersion: () => "" });
+  const { port, stop } = startTestServer({ clientChannel });
+  try {
+    const publicKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .publicKey.export({ format: "der", type: "spki" })
+      .toString("base64");
+    const registered = await fetch(`http://127.0.0.1:${port}/api/client/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        clientType: "mobile",
+        platform: "android",
+        clientVersion: "1.0.0",
+        keyAlgorithm: "ec-p256",
+        publicKey,
+        selfCheck: { hardFail: [], softFail: [], attestationLevel: "trusted" },
+      }),
+    });
+    expect(registered.status).toBe(400);
+    expect(((await registered.json()) as { error: { code: string } }).error.code).toBe(
+      "ATTESTATION_REQUIRED"
+    );
+    await expect(store.find(clientIdOfPublicKey(publicKey))).resolves.toBeUndefined();
   } finally {
     await stop();
   }

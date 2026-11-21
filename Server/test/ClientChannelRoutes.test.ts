@@ -341,7 +341,7 @@ test("旧壳视角：按旧请求形状走完注册、领挑战、换票，只�
   expect(attested.body.ttlMs).toBe(CLIENT_TICKET_TTL_MS);
 });
 
-test("旧壳视角（移动）：按旧移动壳的请求形状走完注册、领挑战、换票，只读旧字段，票照常能用", async () => {
+test("旧壳视角（移动）：按带证明链的移动壳请求形状走完注册、领挑战、换票，只读旧字段，票照常能用", async () => {
   const now = 6_000_000;
   const channel = new ClientChannel({
     store: new InMemoryClientChannelStore(),
@@ -361,8 +361,18 @@ test("旧壳视角（移动）：按旧移动壳的请求形状走完注册、�
   };
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const spki = publicKey.export({ format: "der", type: "spki" }).toString("base64");
-  // 旧移动壳的自检报告：带 attestationLevel、没有 keyProtection；老 APK 取不到证明链时不带 attestation
+  // 旧移动壳的自检报告：带 attestationLevel、没有 keyProtection；注册必须带证明链，
+  // 没配校验器的服务端不解析链，只透传并记降级，所以这里的占位 PEM 无需是真链。
   const selfCheck = { hardFail: [], softFail: [], attestationLevel: "trusted" };
+  const attestation = {
+    attestationChallenge: "AQIDBAUGBwg=",
+    chain: [
+      `-----BEGIN CERTIFICATE-----
+${"A".repeat(80)}
+-----END CERTIFICATE-----
+`,
+    ],
+  };
   const registered = await post("/api/client/register", {
     clientType: "mobile",
     platform: "android",
@@ -370,6 +380,7 @@ test("旧壳视角（移动）：按旧移动壳的请求形状走完注册、�
     keyAlgorithm: "ec-p256",
     publicKey: spki,
     selfCheck,
+    attestation,
   });
   expect(registered.status).toBe(200);
   const clientId = registered.body.clientId as string;
