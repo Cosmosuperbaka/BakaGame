@@ -15,7 +15,7 @@ export function AppErrorFallback() {
   return (
     <div
       data-app-error=""
-      className="flex min-h-screen flex-col items-center justify-center p-6 text-center bg-background text-foreground"
+      className="flex min-h-dvh flex-col items-center justify-center p-6 text-center bg-background text-foreground"
     >
       <h2 className="text-xl font-bold mb-2">哎呀，页面遇到了意料之外的错误</h2>
       <p className="text-sm text-muted-foreground mb-4">异常已自动记录上报，请尝试刷新页面重试。</p>
