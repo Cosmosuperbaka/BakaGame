@@ -129,6 +129,13 @@ export const clientUpdateNoticeText = (
     : `${CEE_CLIENT_TYPE_LABELS[clientType]}有新版本 ${version} 可用，建议更新到最新版。`;
 
 export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
+/**
+ * 点了「下载最新版」之后短暂换上的确认：链接由壳交给系统浏览器在后台下载，客户端里本来什么都看不到，
+ * 不给这一句玩家会以为点了没反应。
+ */
+export const CLIENT_UPDATE_HANDED_OFF_LABEL = "已转到浏览器下载";
+/** 桌面壳正在查新版或在后台下载时的进行中按钮：此时不给下载链接，免得和壳自己下的那份撞车。 */
+export const CLIENT_UPDATE_PREPARING_LABEL = "正在准备更新";
 /** 桌面壳已在后台下好并校验过新版时给的按钮：点了由壳安装并重启。 */
 export const CLIENT_UPDATE_RESTART_LABEL = "重启更新";
 /** 关闭只压到下一次抬档，不是「永不再提醒」，按钮文字据实写「暂不」。 */

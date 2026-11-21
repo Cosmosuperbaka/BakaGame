@@ -64,6 +64,28 @@ export const DesktopRestarting: Story = {
   name: "桌面端正在重启更新",
   args: { floor: desktopAvailable, onRestart: fn(), restarting: true },
 };
+/** 壳正在查新版或在后台下载：按钮进入进行中，下载链接让位，免得和壳自己下的那份撞车。 */
+export const DesktopPreparing: Story = {
+  name: "桌面端正在准备更新",
+  args: { floor: desktopAvailable, preparing: true },
+};
+/** 点了「下载最新版」：链接交给系统浏览器下载，按钮短暂换成确认，不让点击看起来没反应。 */
+export const DownloadHandedOff: Story = {
+  name: "下载已转到浏览器",
+  args: { floor: desktopAvailable, downloadHandedOff: true, onDownload: fn() },
+};
+/** 窄宽度下确认文案变长，正文换行让位，按钮与关闭钮不被挤走。 */
+export const DownloadHandedOffNarrow: Story = {
+  name: "下载已转到浏览器（窄屏）",
+  args: { floor: desktopAvailable, downloadHandedOff: true, onDownload: fn() },
+  decorators: [
+    (Story) => (
+      <div className="w-80">
+        <Story />
+      </div>
+    ),
+  ],
+};
 export const NothingToDownload: Story = {
   name: "安装包还没发布",
   args: { downloadUrl: undefined },

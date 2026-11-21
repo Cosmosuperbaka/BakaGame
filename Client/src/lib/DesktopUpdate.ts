@@ -4,8 +4,12 @@ import { useEffect, useState } from "react";
  * 桌面壳本体的自动更新：壳在后台下载并校验好新版，页面只读状态、在玩家点「重启更新」时请壳安装。
  *
  * 走的是两条契约外的壳命令（不在 `window.__BAKA_CHANNEL__` 冻结契约里）：`baka_update_status`
- * 只读状态，`baka_update_install` 不收参数——装什么由壳决定，壳安装前还会再校验一遍签名，
+ * 读状态，`baka_update_install` 不收参数——装什么由壳决定，壳安装前还会再校验一遍签名，
  * 页面给不出地址也给不出字节。旧版壳没有这两条命令，调用失败就当不支持，提醒照旧给下载链接。
+ *
+ * 页面只在更新提醒在场时才读状态，壳据此把「有人在看提醒」当作提前复查的理由：停在「没有新版」
+ * 或「失败」且距上一轮检查已过最小间隔时，读状态会叫醒壳的后台线程立刻复查（限频在壳里）。
+ * 所以空闲时的慢速轮询不只是等壳的定时重试，也是在催新版发布后迟迟没查到的壳。
  */
 
 export type DesktopUpdatePhase = "checking" | "none" | "downloading" | "ready" | "failed";
@@ -35,7 +39,7 @@ const PHASES: readonly DesktopUpdatePhase[] = [
   "failed",
 ];
 
-/** 查询中、下载中时较快地轮询；其余状态放慢，壳的后台重试成功后页面也能慢慢看到。 */
+/** 查询中、下载中时较快地轮询；其余状态放慢，每次空闲轮询也会促使壳在限频内提前复查。 */
 const DESKTOP_UPDATE_POLL_BUSY_MS = 4_000;
 const DESKTOP_UPDATE_POLL_IDLE_MS = 60_000;
 

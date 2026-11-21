@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import {
   CLIENT_UPDATE_DISMISS_LABEL,
   CLIENT_UPDATE_DOWNLOAD_LABEL,
+  CLIENT_UPDATE_HANDED_OFF_LABEL,
+  CLIENT_UPDATE_PREPARING_LABEL,
   CLIENT_UPDATE_RESTART_LABEL,
   clientUpdateNoticeText,
 } from "@/lib/AntiCheatCopy";
@@ -31,8 +33,13 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
  * 流水线写下的最新壳版本。后者只说明「有新版可拿」，不代表协议变更，不能自动抬硬门槛。
  *
  * 桌面壳会在后台自己下载并校验新版：壳报「已就绪」时按钮换成「重启更新」，交给壳安装并重启；
- * 没就绪、壳不支持或安装失败时照旧给「下载最新版」链接兜底。
+ * 壳还在查新版或在下载时按钮进入进行中（读状态本身会促使壳提前复查，见 `DesktopUpdate`）；
+ * 壳没有新版可装、不支持或安装失败时照旧给「下载最新版」链接兜底。链接由壳交给系统浏览器下载，
+ * 客户端里本来看不到任何动静，所以点下去后按钮短暂换成确认文案，不让点击看起来毫无反应。
  */
+
+/** 点了下载链接后确认文案停留多久；之后换回「下载最新版」，玩家还能再点一次。 */
+const DOWNLOAD_HANDOFF_FEEDBACK_MS = 5_000;
 
 /** 存档记的是「已经关掉过哪一档提醒」，服务端换档或抬版本后提醒会重新出现。 */
 const DISMISS_KEY = "bakagame:client-update-dismissed";
@@ -76,7 +83,15 @@ export function ClientUpdateNotice() {
   const [hidden, setHidden] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [restartFailed, setRestartFailed] = useState(false);
+  // 点下载链接的次数：每点一次重新计时，确认文案从最后一次点击起停留
+  const [handoffs, setHandoffs] = useState(0);
   const floor = notice?.floor ?? null;
+
+  useEffect(() => {
+    if (handoffs === 0) return;
+    const timer = window.setTimeout(() => setHandoffs(0), DOWNLOAD_HANDOFF_FEEDBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [handoffs]);
 
   useEffect(() => {
     const channel = bakaChannel();
@@ -137,6 +152,9 @@ export function ClientUpdateNotice() {
   // 只有桌面壳会自己下载更新；提醒在场时才去问它
   const desktop = useDesktopUpdateStatus(floor?.clientType === "desktop" && !hidden);
   const restartReady = desktop?.state === "ready" && !restartFailed;
+  // 壳正在查或在下：给进行中，不给下载链接，免得玩家另下一份和壳自己下的那份撞车
+  const preparing =
+    !restartFailed && (desktop?.state === "checking" || desktop?.state === "downloading");
 
   const restart = () => {
     setRestarting(true);
@@ -155,6 +173,9 @@ export function ClientUpdateNotice() {
       downloadUrl={pkg?.available ? pkg.url : undefined}
       onRestart={restartReady ? restart : undefined}
       restarting={restarting}
+      preparing={preparing}
+      downloadHandedOff={handoffs > 0}
+      onDownload={() => setHandoffs((count) => count + 1)}
       onDismiss={dismiss}
     />
   );
@@ -169,6 +190,12 @@ export interface ClientUpdateBannerProps {
   onRestart?: () => void;
   /** 已点「重启更新」、等壳安装时为真：按钮进入进行中，防止连点。 */
   restarting?: boolean;
+  /** 桌面壳正在查新版或在后台下载：按钮进入进行中，下载链接让位。 */
+  preparing?: boolean;
+  /** 刚点过下载链接：按钮短暂换成「已转到浏览器下载」的确认。 */
+  downloadHandedOff?: boolean;
+  /** 点下载链接时通知调用方（链接照常交给浏览器打开，这里只用来给反馈）。 */
+  onDownload?: () => void;
   onDismiss: () => void;
 }
 
@@ -184,6 +211,9 @@ export function ClientUpdateBanner({
   downloadUrl,
   onRestart,
   restarting = false,
+  preparing = false,
+  downloadHandedOff = false,
+  onDownload,
   onDismiss,
 }: ClientUpdateBannerProps) {
   return (
@@ -202,8 +232,8 @@ export function ClientUpdateBanner({
           <span className="min-w-0 flex-1 text-xs leading-snug">
             {clientUpdateNoticeText(floor.clientType, floor.version, floor.mode)}
           </span>
-          {/* 壳已备好新版时只给「重启更新」；否则给下载链接，制品还没推上去时连链接也不给，
-              不留一枚点了跳到 404 的下载按钮。 */}
+          {/* 壳已备好新版时只给「重启更新」；壳还在查或在下时给进行中；否则给下载链接，
+              制品还没推上去时连链接也不给，不留一枚点了跳到 404 的下载按钮。 */}
           {onRestart ? (
             <Button
               size="sm"
@@ -214,11 +244,22 @@ export function ClientUpdateBanner({
             >
               {CLIENT_UPDATE_RESTART_LABEL}
             </Button>
+          ) : preparing ? (
+            <Button size="sm" variant="outline" className="shrink-0" loading>
+              {CLIENT_UPDATE_PREPARING_LABEL}
+            </Button>
           ) : (
             downloadUrl && (
               <Button asChild size="sm" variant="outline" className="shrink-0">
-                <a href={downloadUrl} target="_blank" rel="noreferrer">
-                  {CLIENT_UPDATE_DOWNLOAD_LABEL}
+                <a href={downloadUrl} target="_blank" rel="noreferrer" onClick={onDownload}>
+                  {downloadHandedOff ? (
+                    <>
+                      <Check aria-hidden="true" />
+                      {CLIENT_UPDATE_HANDED_OFF_LABEL}
+                    </>
+                  ) : (
+                    CLIENT_UPDATE_DOWNLOAD_LABEL
+                  )}
                 </a>
               </Button>
             )

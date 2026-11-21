@@ -190,9 +190,9 @@ describe("客户端更新提醒", () => {
     ]);
   });
 
-  it("壳还在下载时照旧给下载链接，下载完成后换成「重启更新」", async () => {
+  it("壳还在下载时按钮进入进行中、不给下载链接，下载完成后换成「重启更新」", async () => {
     shellAt("1.0.0");
-    server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE] });
+    const { urls } = server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE] });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       desktopShell([
@@ -201,14 +201,66 @@ describe("客户端更新提醒", () => {
       ]);
       await mountNotice();
 
-      expect(await screen.findByRole("link", { name: "下载最新版" })).toHaveAttribute(
-        "href",
-        WINDOWS_PACKAGE.url
-      );
+      const preparing = await screen.findByRole("button", { name: "正在准备更新" });
+      expect(preparing).toBeDisabled();
+      expect(preparing).toHaveAttribute("aria-busy", "true");
+      // 发布信息问完了也不给链接：壳在下，玩家另下一份只会撞车
+      await waitFor(() => expect(urls.some((url) => url.includes("packages"))).toBe(true));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
       await vi.advanceTimersByTimeAsync(5_000);
       expect(await screen.findByRole("button", { name: "重启更新" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "正在准备更新" })).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("壳查过没有新版时给下载链接；读状态促使壳复查后进入进行中，复查完回到链接", async () => {
+    shellAt("1.0.0");
+    server({ floor: "", outdated: false, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const invoke = desktopShell([{ state: "none" }, { state: "checking" }, { state: "none" }]);
+      await mountNotice();
+
+      expect(await screen.findByRole("link", { name: "下载最新版" })).toBeInTheDocument();
+      // 空闲轮询：下一次读到的是壳被催着复查时的「查询中」
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(await screen.findByRole("button", { name: "正在准备更新" })).toBeDisabled();
+      // 进行中改为快轮询，复查没找到新版就回到下载链接
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByRole("link", { name: "下载最新版" })).toBeInTheDocument();
+      expect(invoke.mock.calls.every(([command]) => command === "baka_update_status")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("点了下载链接后按钮短暂换成「已转到浏览器下载」，之后换回，仍可再点", async () => {
+    shellAt("1.0.0");
+    server({ floor: "2.0.0", packages: [WINDOWS_PACKAGE] });
+    desktopShell([{ state: "failed" }]);
+    // 链接由壳交给系统浏览器；测试环境里拦下默认动作，只看页面给的反馈
+    const blockNavigation = (event: Event) => event.preventDefault();
+    document.addEventListener("click", blockNavigation);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await mountNotice();
+      const link = await screen.findByRole("link", { name: "下载最新版" });
+      await userEvent.click(link);
+
+      const handed = await screen.findByRole("link", { name: "已转到浏览器下载" });
+      expect(handed).toHaveAttribute("href", WINDOWS_PACKAGE.url);
+      expect(handed).toHaveAttribute("target", "_blank");
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(await screen.findByRole("link", { name: "下载最新版" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "已转到浏览器下载" })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      document.removeEventListener("click", blockNavigation);
     }
   });
 
@@ -382,6 +434,23 @@ describe("客户端更新提醒", () => {
     expect(screen.getByRole("status")).toHaveTextContent("更新到 1.2.0 以上");
     await userEvent.click(screen.getByRole("button", { name: "暂不提醒" }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("展示层：进行中时只给一颗禁用的进行中按钮，不给下载链接", async () => {
+    vi.resetModules();
+    const { ClientUpdateBanner } = await import("./ClientUpdateNotice");
+    render(
+      <ClientUpdateBanner
+        open
+        floor={{ clientType: "desktop", mode: "available", version: "1.2.0" }}
+        downloadUrl={WINDOWS_PACKAGE.url}
+        preparing
+        onDismiss={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "正在准备更新" })).toBeDisabled();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("open 为假或还没读到门槛时不占位", async () => {
