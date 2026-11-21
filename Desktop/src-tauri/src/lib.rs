@@ -279,10 +279,16 @@ async fn baka_ticket(app: tauri::AppHandle) -> Result<Option<attest::TicketPaylo
 }
 
 /// 壳本体自动更新的状态（契约外命令，调用方式同 `baka_client_id`）：
-/// 页面据此决定更新提醒里给「重启更新」还是「下载最新版」。只读，不触发任何网络请求。
+/// 页面据此决定更新提醒里给「重启更新」「正在准备更新」还是「下载最新版」。
+///
+/// 页面只在首页更新提醒在场时才来读，说明服务端已经公布了更新的版本：壳这边若停在「没有新版」
+/// 或「失败」、且距上一轮检查结束已过最小间隔，就顺手叫醒后台线程提前复查一轮（本次返回即为
+/// 「查询中」）。命令本身不发网络请求、不收参数，复查照旧由后台线程按限频去做，见 `self_update`。
 #[tauri::command]
 async fn baka_update_status(app: tauri::AppHandle) -> Result<self_update::UpdateStatus, String> {
-    Ok(app.state::<self_update::UpdateState>().status())
+    let state = app.state::<self_update::UpdateState>();
+    state.request_recheck();
+    Ok(state.status())
 }
 
 /// 安装壳已经下载并校验过签名的更新，然后重启（契约外命令）。不收任何参数：

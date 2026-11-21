@@ -4,13 +4,18 @@
 //! 启动后在后台线程检查 → 有新版就在后台下载并校验签名 → 校验过的包留在内存里、状态记为就绪 →
 //! 页面通过契约外命令读状态，玩家点「重启更新」时才安装并重启。不做退出时静默安装。
 //!
+//! 页面只在首页更新提醒在场时才读状态，所以「有人在读」本身就说明服务端已经公布了更新的版本：
+//! 读到「没有新版」或「失败」、且距上一轮检查结束已过最小间隔时，唤醒后台线程立刻复查一轮，
+//! 免得新版发布在壳启动之后、玩家要干等到下一次定时复查。最小间隔保证离线时页面的定时轮询
+//! 也不会变成对接口的轰炸；连续失败次数照旧累计，定时退避不因提前复查而清零。
+//!
 //! 页面能做的只有两件事：读状态、请求安装壳自己已经下载并校验过的那一份。它给不出地址也给不出
 //! 字节；安装前插件还会用编进二进制的公钥再校验一遍签名，所以页面没有任何途径让壳装上一个
 //! 未签名或被改过的包。任何一步失败都只记日志并退避重试，不影响游玩；网页上的「下载最新版」
 //! 链接始终是兜底。
 
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Url};
@@ -26,6 +31,9 @@ const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
 const RECHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 失败退避：从这里起每次翻倍，封顶到 `RECHECK_INTERVAL`，离线时不会变成对接口的轰炸
 const RETRY_BASE: Duration = Duration::from_secs(5 * 60);
+/// 页面读状态促使提前复查时，距上一轮检查结束至少要隔这么久：页面空闲时每分钟读一次，
+/// 离线时也只会隔这么久打一次清单接口
+const MIN_RECHECK_GAP: Duration = Duration::from_secs(2 * 60);
 /// 查询清单只是一个小 JSON，超时要短；下载安装包要给足时间（慢网下几十兆也得下得完）
 const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -62,10 +70,35 @@ struct Prepared {
     bytes: Vec<u8>,
 }
 
+/// 后台线程的排期：页面据此判断能不能提前叫醒它
+#[derive(Debug, Default)]
+struct Schedule {
+    /// 后台线程还在循环里；本构建不启用自动更新、或已就绪后线程结束时为假
+    running: bool,
+    /// 上一轮检查结束的时刻；第一轮还没跑完、或一轮正在进行时为空
+    last_round_end: Option<Instant>,
+    /// 页面已请求提前复查，后台线程醒来时清掉
+    wake: bool,
+}
+
+/// 现在要不要提前复查：线程还在、没有挂着的唤醒、阶段是「没有新版」或「失败」，
+/// 并且距上一轮检查结束已过最小间隔。检查进行中（`last_round_end` 为空）一律不叫醒。
+fn recheck_due(phase: Phase, schedule: &Schedule, now: Instant) -> bool {
+    schedule.running
+        && !schedule.wake
+        && matches!(phase, Phase::None | Phase::Failed)
+        && schedule
+            .last_round_end
+            .is_some_and(|end| now.saturating_duration_since(end) >= MIN_RECHECK_GAP)
+}
+
 /// 壳内的更新状态：后台线程写，页面命令读
 pub struct UpdateState {
     status: Mutex<UpdateStatus>,
     prepared: Mutex<Option<Prepared>>,
+    /// 锁顺序：需要同时持有时先 `schedule` 后 `status`
+    schedule: Mutex<Schedule>,
+    wakeup: Condvar,
 }
 
 impl UpdateState {
@@ -76,6 +109,62 @@ impl UpdateState {
                 version: None,
             }),
             prepared: Mutex::new(None),
+            schedule: Mutex::new(Schedule::default()),
+            wakeup: Condvar::new(),
+        }
+    }
+
+    /// 页面读状态时调用：到了该提前复查的时候就叫醒后台线程，并立刻把阶段记为查询中，
+    /// 让这一次读到的就是「查询中」，页面马上切到进行中并加快轮询。返回是否叫醒了。
+    pub fn request_recheck(&self) -> bool {
+        let Ok(mut schedule) = self.schedule.lock() else {
+            return false;
+        };
+        if !recheck_due(self.status().state, &schedule, Instant::now()) {
+            return false;
+        }
+        schedule.wake = true;
+        self.set(Phase::Checking, None);
+        self.wakeup.notify_one();
+        eprintln!("[baka-updater] 页面在看更新提醒，提前复查");
+        true
+    }
+
+    /// 后台线程：一轮检查开始。清掉上一轮的结束时刻，检查期间页面不会再叫醒它
+    fn begin_round(&self) {
+        if let Ok(mut schedule) = self.schedule.lock() {
+            schedule.running = true;
+            schedule.last_round_end = None;
+            schedule.wake = false;
+        }
+    }
+
+    /// 后台线程：一轮检查结束（阶段已经写好），从此刻起算最小间隔
+    fn finish_round(&self, now: Instant) {
+        if let Ok(mut schedule) = self.schedule.lock() {
+            schedule.last_round_end = Some(now);
+        }
+    }
+
+    /// 后台线程：退出循环（已就绪），此后页面读状态不再叫醒任何人
+    fn stop(&self) {
+        if let Ok(mut schedule) = self.schedule.lock() {
+            schedule.running = false;
+            schedule.last_round_end = None;
+        }
+    }
+
+    /// 后台线程：等到 `delay` 到期或被页面叫醒，先到者为准。醒来后清掉唤醒标记
+    fn wait(&self, delay: Duration) {
+        let Ok(schedule) = self.schedule.lock() else {
+            std::thread::sleep(delay);
+            return;
+        };
+        if let Ok((mut schedule, _)) = self
+            .wakeup
+            .wait_timeout_while(schedule, delay, |schedule| !schedule.wake)
+        {
+            schedule.wake = false;
         }
     }
 
@@ -147,11 +236,18 @@ pub fn spawn(app: AppHandle) {
     }
     std::thread::spawn(move || {
         std::thread::sleep(FIRST_CHECK_DELAY);
+        let state = app.state::<UpdateState>();
         let mut failures = 0u32;
         loop {
-            let delay = match tauri::async_runtime::block_on(run_round(&app)) {
+            state.begin_round();
+            let round = tauri::async_runtime::block_on(run_round(&app));
+            state.finish_round(Instant::now());
+            let delay = match round {
                 // 就绪后不再查：包已经在手里，等玩家决定什么时候重启
-                Round::Ready => return,
+                Round::Ready => {
+                    state.stop();
+                    return;
+                }
                 Round::UpToDate => {
                     failures = 0;
                     RECHECK_INTERVAL
@@ -166,7 +262,8 @@ pub fn spawn(app: AppHandle) {
                     delay
                 }
             };
-            std::thread::sleep(delay);
+            // 可被页面提前叫醒；失败次数不因提前复查清零，下一次定时退避照旧翻倍
+            state.wait(delay);
         }
     });
 }
@@ -319,6 +416,143 @@ mod tests {
         let state = UpdateState::new();
         assert_eq!(state.status().state, Phase::Checking);
         assert!(state.take().is_none());
+    }
+
+    fn schedule(running: bool, last_round_end: Option<Instant>, wake: bool) -> Schedule {
+        Schedule {
+            running,
+            last_round_end,
+            wake,
+        }
+    }
+
+    /// 提前复查的判定：只在「没有新版 / 失败」且距上一轮结束已过最小间隔时叫醒；
+    /// 查询中、下载中、已就绪、检查进行中、线程已结束、已有挂着的唤醒一律不叫
+    #[test]
+    fn recheck_is_due_only_when_idle_and_past_the_gap() {
+        let now = Instant::now() + Duration::from_secs(24 * 60 * 60);
+        let long_ago = Some(now - MIN_RECHECK_GAP);
+        let just_now = Some(now - MIN_RECHECK_GAP + Duration::from_secs(1));
+
+        assert!(recheck_due(
+            Phase::None,
+            &schedule(true, long_ago, false),
+            now
+        ));
+        assert!(recheck_due(
+            Phase::Failed,
+            &schedule(true, long_ago, false),
+            now
+        ));
+
+        for phase in [Phase::Checking, Phase::Downloading, Phase::Ready] {
+            assert!(
+                !recheck_due(phase, &schedule(true, long_ago, false), now),
+                "{phase:?} 不该叫醒"
+            );
+        }
+        // 离线时页面每分钟读一次，也只能隔最小间隔才打一次接口
+        assert!(!recheck_due(
+            Phase::Failed,
+            &schedule(true, just_now, false),
+            now
+        ));
+        // 一轮正在进行（或第一轮还没跑完）
+        assert!(!recheck_due(Phase::None, &schedule(true, None, false), now));
+        // 已就绪后线程结束、或本构建不启用自动更新：没有人可叫
+        assert!(!recheck_due(
+            Phase::Failed,
+            &schedule(false, long_ago, false),
+            now
+        ));
+        // 已经叫过、线程还没醒
+        assert!(!recheck_due(
+            Phase::None,
+            &schedule(true, long_ago, true),
+            now
+        ));
+        // 时钟回拨也不会 panic，只当间隔未到
+        assert!(!recheck_due(
+            Phase::None,
+            &schedule(true, Some(now + MIN_RECHECK_GAP), false),
+            now
+        ));
+    }
+
+    /// 页面读状态叫醒等待中的后台线程：线程立刻醒来，状态先一步记为查询中，同一轮不重复叫醒
+    #[test]
+    fn page_read_wakes_the_waiting_worker() {
+        let state = std::sync::Arc::new(UpdateState::new());
+        state.begin_round();
+        state.set(Phase::None, None);
+        let Some(ended) = Instant::now().checked_sub(MIN_RECHECK_GAP) else {
+            return;
+        };
+        state.finish_round(ended);
+
+        let worker = {
+            let state = state.clone();
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                state.wait(Duration::from_secs(60 * 60));
+                started.elapsed()
+            })
+        };
+        assert!(state.request_recheck());
+        assert_eq!(state.status().state, Phase::Checking);
+        assert!(!state.request_recheck(), "已叫醒过，不重复叫");
+        let waited = worker.join().unwrap();
+        assert!(waited < Duration::from_secs(30), "线程没被叫醒：{waited:?}");
+        assert!(!state.schedule.lock().unwrap().wake, "醒来后要清掉唤醒标记");
+    }
+
+    /// 唤醒先于等待到达也不会丢：标记留着，线程一进等待就返回
+    #[test]
+    fn wake_before_wait_is_not_lost() {
+        let state = UpdateState::new();
+        state.begin_round();
+        state.set(Phase::Failed, None);
+        let Some(ended) = Instant::now().checked_sub(MIN_RECHECK_GAP) else {
+            return;
+        };
+        state.finish_round(ended);
+        assert!(state.request_recheck());
+        let started = Instant::now();
+        state.wait(Duration::from_secs(60 * 60));
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    /// 没人叫醒时按原定时长等满；等待中刚结束的一轮不会被页面立刻再叫醒
+    #[test]
+    fn wait_times_out_without_a_wake() {
+        let state = UpdateState::new();
+        state.begin_round();
+        state.set(Phase::None, None);
+        state.finish_round(Instant::now());
+        assert!(!state.request_recheck(), "刚查完，没过最小间隔");
+        assert_eq!(state.status().state, Phase::None);
+        let started = Instant::now();
+        state.wait(Duration::from_millis(50));
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
+
+    /// 本构建不启用自动更新（线程从未启动）或已就绪后线程结束：读状态不改阶段、不叫任何人
+    #[test]
+    fn no_recheck_without_a_running_worker() {
+        let disabled = UpdateState::new();
+        disabled.set(Phase::None, None);
+        assert!(!disabled.request_recheck());
+        assert_eq!(disabled.status().state, Phase::None);
+
+        let finished = UpdateState::new();
+        finished.begin_round();
+        finished.set(Phase::Ready, Some("0.2.2".into()));
+        finished.finish_round(Instant::now());
+        finished.stop();
+        // 安装失败后阶段回到失败，但线程已经结束，叫醒只会让页面卡在「查询中」
+        finished.set(Phase::Failed, Some("0.2.2".into()));
+        assert!(!finished.request_recheck());
+        assert_eq!(finished.status().state, Phase::Failed);
     }
 
     /// 发布构建恒启用；开发构建默认不启用（这里只钉住开发构建不设变量时的默认值）
