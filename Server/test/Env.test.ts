@@ -57,19 +57,35 @@ describe("readEnv 环境变量与启动断言", () => {
     expect(() => createServer(options)).toThrow(/DATABASE_URL/);
   });
 
-  it("macOS 安装包地址缺省为空串：Mac 包没正式分发前不进制品清单", () => {
-    const keys = ["CLIENT_PACKAGE_MACOS_URL", "CLIENT_PACKAGE_WINDOWS_URL"] as const;
+  it("macOS 的 dmg 与自动更新包缺省取发布约定的固定别名，显式空串即不提供", () => {
+    const keys = [
+      "CLIENT_PACKAGE_MACOS_URL",
+      "CLIENT_UPDATER_MACOS_URL",
+      "CLIENT_PACKAGE_WINDOWS_URL",
+    ] as const;
     const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       for (const key of keys) delete Bun.env[key];
       const defaults = readEnv();
-      expect(defaults.clientPackageMacosUrl).toBe("");
-      // Windows 仍按发布约定给出缺省地址，加入 macOS 不改它
-      expect(defaults.clientPackageWindowsUrl).toMatch(/^https:\/\//);
-      Bun.env.CLIENT_PACKAGE_MACOS_URL = "  https://cdn.example.com/files/BakaGame-latest.dmg  ";
-      expect(readEnv().clientPackageMacosUrl).toBe(
-        "https://cdn.example.com/files/BakaGame-latest.dmg"
+      expect(defaults.clientPackageMacosUrl).toMatch(
+        /^https:\/\/.+\/BakaGame-latest-universal\.dmg$/
       );
+      expect(defaults.clientUpdaterMacosUrl).toMatch(
+        /^https:\/\/.+\/BakaGame-latest-universal\.app\.tar\.gz$/
+      );
+      // 与 Windows 同一个分发目录
+      const directory = (url: string | undefined) => url?.slice(0, url.lastIndexOf("/"));
+      expect(directory(defaults.clientPackageMacosUrl)).toBe(
+        directory(defaults.clientPackageWindowsUrl)
+      );
+      expect(directory(defaults.clientUpdaterMacosUrl)).toBe(
+        directory(defaults.clientPackageWindowsUrl)
+      );
+      Bun.env.CLIENT_PACKAGE_MACOS_URL = "";
+      Bun.env.CLIENT_UPDATER_MACOS_URL = "  https://cdn.example.com/files/mac.app.tar.gz  ";
+      const overridden = readEnv();
+      expect(overridden.clientPackageMacosUrl).toBe("");
+      expect(overridden.clientUpdaterMacosUrl).toBe("https://cdn.example.com/files/mac.app.tar.gz");
     } finally {
       for (const key of keys) {
         if (saved[key] === undefined) delete Bun.env[key];

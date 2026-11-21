@@ -5,15 +5,16 @@
 const DEFAULT_WINDOWS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
 const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-release.apk";
 /**
- * macOS 安装包还没正式分发（需要签名与公证），缺省为空串 = 不进制品清单、下载弹窗里没有这一档，
- * 更新提醒也读不到它的最新版本。正式发布后把固定别名写到这里，与上面两条同一个分发目录。
+ * macOS 通用包（Apple 芯片与 Intel）的 dmg。别名对象还没传上去时服务端探测不到，
+ * 下载弹窗照样列出这一档并写「尚未发布」，不给链接。
  */
-const DEFAULT_MACOS_PACKAGE_URL = "";
+const DEFAULT_MACOS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-universal.dmg";
 /**
  * macOS 自动更新包（`.app.tar.gz`）的固定别名。Windows 的更新包就是安装包本身，复用上面的
- * Windows 地址；macOS 的更新包与 dmg 不是同一个文件，单独配。发布流水线还没有 Mac 这一侧，缺省空串。
+ * Windows 地址；macOS 的更新包与 dmg 不是同一个文件，单独配。别名不在时更新清单回 204。
  */
-const DEFAULT_MACOS_UPDATER_URL = "";
+const DEFAULT_MACOS_UPDATER_URL =
+  "https://cdn.baka.website/files/BakaGame-latest-universal.app.tar.gz";
 /**
  * 移动壳 Web 资源热更新清单：与安装包同一个分发目录、同样是不带版本号的固定别名。
  * 清单里只写资源包文件名，下载地址由服务端相对本地址解析。

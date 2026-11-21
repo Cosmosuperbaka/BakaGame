@@ -293,3 +293,25 @@ test("自动更新与下载弹窗共用同一次探测：Windows 的更新包就
   expect(heads).toHaveLength(1);
   expect(fetched.filter((url) => url.endsWith(".sig"))).toHaveLength(1);
 });
+
+test("macOS 别名还没传上去（404）时照样进列表并标未发布，自动更新也没有可用发布", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: {
+      windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
+      macos: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+    },
+    updaterUrls: { macos: "https://cdn.test/files/BakaGame-latest-universal.app.tar.gz" },
+    fetcher: (async (url: string) =>
+      String(url).includes("universal")
+        ? ({ ok: false, headers: new Headers(), text: async () => "" } as unknown as Response)
+        : stub(true, { "content-length": "10" })) as unknown as typeof fetch,
+  });
+
+  const list = await artifacts.list();
+  expect(list.find((item) => item.platform === "macos")).toMatchObject({
+    platform: "macos",
+    available: false,
+    sizeBytes: undefined,
+  });
+  expect(await artifacts.updaterRelease("macos")).toBeUndefined();
+});

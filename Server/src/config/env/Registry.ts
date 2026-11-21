@@ -494,7 +494,9 @@ export const ENV_ENTRIES: EnvEntry[] = [
     layer: "T2",
     documented: true,
     sample: "",
-    note: ["macOS 安装包尚未正式分发，代码缺省为空串（不进列表）；签名公证后的包上线时再配。"],
+    note: [
+      "macOS 通用包（dmg）的公开下载地址；留空取代码里的发布约定缺省，显式空串 = 该平台不进列表。",
+    ],
   },
   {
     name: "CLIENT_UPDATER_MACOS_URL",
@@ -502,7 +504,7 @@ export const ENV_ENTRIES: EnvEntry[] = [
     documented: true,
     sample: "",
     note: [
-      "macOS 桌面壳自动更新包（.app.tar.gz）的公开地址；缺省空串 = Mac 壳没有自动更新。",
+      "macOS 桌面壳自动更新包（.app.tar.gz）的公开地址；留空取代码里的发布约定缺省，显式空串 = Mac 壳没有自动更新。",
       "Windows 的更新包就是安装包本身，沿用 CLIENT_PACKAGE_WINDOWS_URL。",
     ],
   },
