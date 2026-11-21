@@ -36,6 +36,10 @@ const BRIDGE_JS: &str = r#"(function () {
   var isTop = false;
   try { isTop = window.top === window; } catch (e) { isTop = false; }
   if (!isTop) { return; }
+  // 壳的本地启动页不是站点：它没有桥接命令权限，也不该拿票
+  var local = true;
+  try { local = location.protocol === "tauri:" || location.hostname === "tauri.localhost"; } catch (e) { local = true; }
+  if (local) { return; }
 
   // 与 Rust 侧 attest::TICKET_MARGIN_MS 同值：留出网络与页面时序余量，
   // 不把「到页面手上才过期」的票交出去
@@ -203,6 +207,13 @@ mod tests {
         // 票据通道：契约里的名字与命令名都必须出现在脚本原文里
         assert!(BRIDGE_JS.contains("channelTicket"));
         assert!(BRIDGE_JS.contains("baka_ticket"));
+    }
+
+    /// 壳的本地启动页上不注入：它没有桥接命令权限，注入了也只会拿到 not allowed
+    #[test]
+    fn bridge_skips_the_local_start_page() {
+        assert!(BRIDGE_JS.contains(r#"location.hostname === "tauri.localhost""#));
+        assert!(BRIDGE_JS.contains(r#"location.protocol === "tauri:""#));
     }
 
     /// 票的到期只按相对有效期算：脚本不再读服务端的绝对时刻，也不拿它与本地时钟比较

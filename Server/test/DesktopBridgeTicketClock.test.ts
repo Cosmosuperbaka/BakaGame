@@ -19,7 +19,12 @@ const SCRIPT = (() => {
 
 type TicketReply = { ticket: string; ttlMs?: number; expiresAt?: number };
 
-function harness(options: { wallNow: number; reply: () => TicketReply }) {
+function harness(options: {
+  wallNow: number;
+  reply: () => TicketReply;
+  /** 页面地址；缺省是站点。壳的本地启动页上桥接脚本不注入。 */
+  location?: { protocol: string; hostname: string };
+}) {
   const clock = { wall: options.wallNow, mono: 1_000 };
   const timers: Array<{ fn: () => void; ms: number }> = [];
   const invokes: string[] = [];
@@ -27,6 +32,7 @@ function harness(options: { wallNow: number; reply: () => TicketReply }) {
     Date: { now: () => clock.wall },
     setTimeout: (fn: () => void, ms: number) => timers.push({ fn, ms }),
     setInterval: (fn: () => void, ms: number) => timers.push({ fn, ms }),
+    location: options.location ?? { protocol: "https:", hostname: "game.example.com" },
   };
   const windowObject: Record<string, unknown> = {
     performance: { now: () => clock.mono },
@@ -48,7 +54,7 @@ function harness(options: { wallNow: number; reply: () => TicketReply }) {
     (windowObject.__BAKA_CHANNEL__ ?? {}) as {
       channelTicket: string;
     };
-  return { clock, invokes, settle, poll, channel };
+  return { clock, invokes, settle, poll, channel, windowObject };
 }
 
 const ticketCalls = (invokes: string[]) => invokes.filter((name) => name === "baka_ticket").length;
@@ -85,4 +91,16 @@ test("过了有效期的票会被轮询换掉，改时间或休眠都不会让�
   h.poll();
   await h.settle();
   expect(ticketCalls(h.invokes)).toBe(afterRefresh + 1);
+});
+
+test("壳的本地启动页上不注入桥接对象，也不向壳要票", async () => {
+  for (const location of [
+    { protocol: "http:", hostname: "tauri.localhost" },
+    { protocol: "tauri:", hostname: "localhost" },
+  ]) {
+    const h = harness({ wallNow: 1_000, reply: () => ({ ticket: "T", ttlMs: 30_000 }), location });
+    await h.settle();
+    expect(h.windowObject.__BAKA_CHANNEL__).toBeUndefined();
+    expect(h.invokes).toEqual([]);
+  }
 });

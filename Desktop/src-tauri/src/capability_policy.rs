@@ -1,8 +1,8 @@
 //! 能力文件的最小权限守卫（只在测试里跑）。
 //!
-//! Tauri 的能力文件默认 `local: true`：壳加载的站点按 `frontendDist` 算「本地来源」，
-//! 所以**所有**面向 `main` 窗口的能力文件会对站点页面取并集生效，与文件里写的 `remote.urls`
-//! 无关。任何一个文件多带一条 `core:*` 权限，站点页面（以及其中被注入的脚本）就多一块可调用面。
+//! Tauri 的能力文件默认 `local: true`，对 `frontendDist` 里的本地页面生效。壳的本地页是打包进去的
+//! 启动页，它不该拿到任何命令，所以每个能力文件都显式 `local: false`，只按 `remote.urls` 授给站点。
+//! 任何一个文件多带一条 `core:*` 权限，站点页面（以及其中被注入的脚本）就多一块可调用面。
 //! 页面实际只调用五条应用命令（桥接脚本的三条，加读更新状态与安装更新两条契约外命令），
 //! 这里把「只许这五条」钉死，插件权限（含自动更新插件自带的命令）一条都不给，
 //! 并保证只给开发服务器用的能力文件不会跟着发布构建一起编译进去。
@@ -120,6 +120,29 @@ fn dev_capabilities_stay_in_subdirectory_without_core_permissions() {
                 file.display()
             );
         }
+    }
+}
+
+/// 壳先打开打包在本地的启动页：任何能力文件都不许对本地来源生效（`local: false`），
+/// 否则启动页（以及能把窗口导航回启动页的任何脚本）就能调用桥接与更新命令
+#[test]
+fn capabilities_never_apply_to_the_local_start_page() {
+    let mut files = json_files_in(&manifest_dir().join("capabilities"));
+    files.extend(json_files_in(
+        &manifest_dir().join("capabilities").join("dev"),
+    ));
+    for file in &files {
+        let capability = read_json(file);
+        assert_eq!(
+            capability["local"],
+            serde_json::Value::Bool(false),
+            "{} 必须显式写 local: false",
+            file.display()
+        );
+        let urls = capability["remote"]["urls"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} 缺少远程来源", file.display()));
+        assert!(!urls.is_empty(), "{} 的远程来源不能为空", file.display());
     }
 }
 

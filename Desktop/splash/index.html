@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>BakaGame</title>
+    <!--
+      桌面壳打包在本地的启动页：先确认站点连得上，再整页切到站点；连不上时给提示与「重试」，并带退避自动重试。
+      页面本身没有任何桥接命令权限（能力文件只授给站点来源），站点地址由壳的初始化脚本写进只读全局。
+      颜色取自站点默认主题的背景、正文与主色，只用系统字体：离线时站点的自托管字体也加载不到。
+    -->
+    <style>
+      :root {
+        --background: #f5f1e6;
+        --foreground: #4a3f35;
+        --muted: #6b5945;
+        --border: #dbd0ba;
+        --card: #fffcf5;
+        --primary: #7c542a;
+        --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #2d2621;
+          --foreground: #ece5d8;
+          --muted: #c5bcac;
+          --border: #4a4039;
+          --card: #3a322c;
+          --primary: #c6a686;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--font-serif);
+        user-select: none;
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.5rem;
+        text-align: center;
+      }
+      /* 与站点首页顶部同一构图：「Baka 图标 Game」 */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin: 0;
+        font-size: 2.5rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+      .brand img {
+        width: 3rem;
+        height: 3rem;
+        border-radius: 0.25rem;
+      }
+      .status {
+        min-height: 1.5rem;
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9375rem;
+        line-height: 1.5rem;
+      }
+      .actions {
+        /* 按钮区始终占位：从「连接中」切到「连不上」时页面不跳 */
+        min-height: 2.25rem;
+      }
+      button {
+        height: 2.25rem;
+        padding: 0 1rem;
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        background: var(--card);
+        color: var(--foreground);
+        font: inherit;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+      }
+      button:hover {
+        border-color: var(--primary);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+      button[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 class="brand" aria-label="BakaGame">
+        <span aria-hidden="true">Baka</span>
+        <img src="logo.png" alt="" />
+        <span aria-hidden="true">Game</span>
+      </h1>
+      <p class="status" id="status" role="status" aria-live="polite">正在连接…</p>
+      <div class="actions">
+        <button type="button" id="retry" hidden>重试</button>
+      </div>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+        // 探测超时与自动重试的退避：从 3 秒起翻倍，封顶 1 分钟
+        var PROBE_TIMEOUT_MS = 8000;
+        var RETRY_BASE_MS = 3000;
+        var RETRY_MAX_MS = 60000;
+
+        var statusEl = document.getElementById("status");
+        var retryEl = document.getElementById("retry");
+        var config = window.__BAKA_SPLASH__;
+        var site = config && typeof config.site === "string" ? config.site : "";
+        var failures = 0;
+        var timer = 0;
+        var countdown = 0;
+
+        var show = function (text, canRetry) {
+          statusEl.textContent = text;
+          retryEl.hidden = !canRetry;
+        };
+
+        var schedule = function () {
+          var delay = Math.min(RETRY_BASE_MS * Math.pow(2, failures - 1), RETRY_MAX_MS);
+          var left = Math.ceil(delay / 1000);
+          var tick = function () {
+            show("连不上服务器，" + left + " 秒后自动重试", true);
+            left -= 1;
+          };
+          tick();
+          countdown = window.setInterval(tick, 1000);
+          timer = window.setTimeout(attempt, delay);
+        };
+
+        var clearTimers = function () {
+          window.clearTimeout(timer);
+          window.clearInterval(countdown);
+        };
+
+        // 站点首页能拿到任何响应就算连得上（跨源只要能连通，不读内容），随即整页切过去
+        var attempt = function () {
+          clearTimers();
+          if (!site) {
+            show("启动配置缺失，请重新打开客户端", false);
+            return;
+          }
+          show("正在连接…", false);
+          var controller = typeof AbortController === "function" ? new AbortController() : null;
+          var abort = window.setTimeout(function () {
+            if (controller) controller.abort();
+          }, PROBE_TIMEOUT_MS);
+          fetch(site + "/", {
+            mode: "no-cors",
+            cache: "no-store",
+            signal: controller ? controller.signal : undefined,
+          }).then(
+            function () {
+              window.clearTimeout(abort);
+              window.location.replace(site);
+            },
+            function () {
+              window.clearTimeout(abort);
+              failures += 1;
+              schedule();
+            }
+          );
+        };
+
+        retryEl.addEventListener("click", function () {
+          failures = 0;
+          attempt();
+        });
+        // 网络恢复时立刻再试一次，不用等倒计时
+        window.addEventListener("online", function () {
+          attempt();
+        });
+        attempt();
+      })();
+    </script>
+  </body>
+</html>

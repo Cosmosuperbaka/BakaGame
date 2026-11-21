@@ -3,7 +3,7 @@
   "productName": "BakaGame",
   "identifier": "website.baka.game.desktop",
   "build": {
-    "frontendDist": "https://game.baka.website"
+    "frontendDist": "../splash"
   },
   "app": {
     "withGlobalTauri": false,

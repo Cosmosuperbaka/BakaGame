@@ -19,6 +19,7 @@ mod secret;
 mod self_update;
 mod selfcheck;
 mod single_instance;
+mod splash;
 #[cfg(test)]
 mod test_support;
 #[cfg(target_os = "windows")]
@@ -427,9 +428,12 @@ fn open_in_system_browser(url: &str) {
     eprintln!("当前平台不支持打开外链：{url}");
 }
 
-/// 只允许留在壳自己的站点与空白页上，其余导航一律拒绝（外链经新窗口请求交给系统浏览器）
+/// 只允许留在壳自己的站点、本地启动页与空白页上，其余导航一律拒绝（外链经新窗口请求交给系统浏览器）
 fn navigation_allowed(url: &str, site: &str) -> bool {
-    url == "about:blank" || within_site(url, site) || within_site(url, "https://bg.baka.website")
+    url == "about:blank"
+        || splash::is_local_page(url)
+        || within_site(url, site)
+        || within_site(url, "https://bg.baka.website")
 }
 
 /// `url` 是否落在 `base` 这个站点上：整串相等，或紧接 `/`、`?`、`#` 的子路径。
@@ -492,12 +496,10 @@ fn create_main_window(
     // 导航回调里要动运行状态（弃票 + 预签），所以握一份 AppHandle
     let nav_handle = app.handle().clone();
     let pump_handle = nav_handle.clone();
-    let parsed = site
-        .parse()
-        .map_err(|err| format!("站点地址 {site} 不是合法 URL：{err}"))?;
+    // 先开本地启动页：它确认站点连得上再整页切过去，连不上时给提示与重试（见 `splash`）
+    let entry = WebviewUrl::App(std::path::PathBuf::from(splash::ENTRY));
 
-    let mut builder =
-        WebviewWindowBuilder::new(app, config::WINDOW_LABEL, WebviewUrl::External(parsed))
+    let mut builder = WebviewWindowBuilder::new(app, config::WINDOW_LABEL, entry)
         .title(config::WINDOW_TITLE)
         // 常规窗口项：可缩放、有系统边框、初始尺寸与下限、居中、拿焦点。
         // 初始尺寸按宽屏给，建窗时再按显示器工作区（扣掉任务栏）收窄：1080p 开 150% 缩放、
@@ -513,14 +515,17 @@ fn create_main_window(
         .decorations(true)
         .center()
         .focused(true)
-        .visible(true)
+        // 先不显示：按系统明暗涂好背景色再显示，启动时不闪白
+        .visible(false)
         // 不调用 builder 的 devtools()：它需要 `devtools` cargo feature，
         // 而 release 构建默认不开该 feature，DevTools 本身就不存在（计划 P2.1 的选型理由）
         // 初始化脚本在页面脚本之前执行，桥接必须在这个时机注入
         .initialization_script(bridge::build())
+        .initialization_script(splash::init_script(&site))
         .on_navigation(move |url| {
             let allowed = navigation_allowed(url.as_str(), &nav_site);
-            if allowed {
+            // 本地启动页拿不到票，也不需要为它备票
+            if allowed && !splash::is_local_page(url.as_str()) {
                 // 换页面上下文：交给过旧页面的票先清掉，再后台补一张没交出去的（已有可用的就不补），
                 // 让新页面的第一次同步读取就有票可用（票 30 秒 TTL）
                 nav_handle.state::<AppState>().on_navigation_allowed();
@@ -542,7 +547,13 @@ fn create_main_window(
         builder = builder.proxy_url(url);
     }
 
-    Ok(builder.build()?)
+    let window = builder.build()?;
+    let dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
+    if let Err(err) = window.set_background_color(Some(splash::background(dark))) {
+        eprintln!("窗口背景色设置失败：{err}");
+    }
+    window.show()?;
+    Ok(window)
 }
 
 pub fn run() {
@@ -692,6 +703,10 @@ mod tests {
         assert!(navigation_allowed("https://game.baka.website#top", site));
         assert!(navigation_allowed("about:blank", site));
         assert!(navigation_allowed("https://bg.baka.website/a.png", site));
+        // 壳自己的本地启动页（Windows 与 macOS 两种来源）
+        assert!(navigation_allowed("http://tauri.localhost/index.html", site));
+        assert!(navigation_allowed("tauri://localhost/index.html", site));
+        assert!(!navigation_allowed("http://tauri.localhost.evil.example/", site));
 
         assert!(!navigation_allowed("https://game.baka.website.evil.example/", site));
         assert!(!navigation_allowed("https://evil.example/?next=https://game.baka.website", site));
