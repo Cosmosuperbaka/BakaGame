@@ -409,9 +409,25 @@ jobs:
       # 版本必须钉死：`@^2` 每次现取最新 2.x，上游一发新版就能在不改仓库任何文件的前提下
       # 换掉签名与打包这一步的行为（安装期脚本面同样随之浮动）。产物内容由 Cargo.lock 锁定，
       # 打包过程由这一枚 CLI 决定，两处都得有出处。
+      # 自动更新签名：有签名私钥时额外合并一份配置打开 createUpdaterArtifacts，CLI 用这两个
+      # 环境变量给安装包签名并在旁边产出 .sig；没有私钥（例如拿不到 Secrets 的运行）就照常打包、
+      # 不出签名，这一版只是没有自动更新。私钥与密码只放在这一步的环境里，不进日志。
       - name: Bundle the installer
         working-directory: Desktop
-        run: npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build --config src-tauri/tauri.conf.json
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          configs=(--config src-tauri/tauri.conf.json)
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            printf '%s' '{"bundle":{"createUpdaterArtifacts":true}}' > "$RUNNER_TEMP/updater.conf.json"
+            configs+=(--config "$RUNNER_TEMP/updater.conf.json")
+          else
+            echo "::notice::未配置更新签名私钥，本次安装包不带自动更新签名"
+          fi
+          npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build "${configs[@]}"
 
       - name: Upload installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -713,12 +729,17 @@ jobs:
           version="$(basename "$installer" | sed -E 's/^BakaGame_(.+)_x64-setup\.exe$/\1/')"
           echo "installer=$installer" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # 自动更新签名：打包时有私钥才会产出，没有就留空，发布步骤据此处理
+          signature=""
+          [ -f "$installer.sig" ] && signature="$installer.sig"
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
 
       - name: Publish Windows installer
         if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'
         env:
           installer: ${{ steps.win.outputs.installer }}
           version: ${{ steps.win.outputs.version }}
+          signature: ${{ steps.win.outputs.signature }}
         run: |
           set -euo pipefail
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
@@ -727,6 +748,22 @@ jobs:
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
             "s3://$R2_BUCKET/BakaGame-latest-x64.exe" \
             --cache-control "public, max-age=0, must-revalidate"
+          # 自动更新签名旁文件：服务端的更新清单把它原样交给壳，壳用编进二进制的公钥校验。
+          # 必须排在安装包之后、版本旁文件之前：版本一变，同批的签名已经就位。
+          # 这一版没签名时删掉别名旁的旧签名，免得新包配旧签名（那样壳只会校验失败、反复重试）。
+          if [ -n "$signature" ]; then
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$signature" \
+              "s3://$R2_BUCKET/BakaGame-$version-x64.exe.sig" \
+              --content-type "text/plain; charset=utf-8" \
+              --cache-control "public, max-age=31536000, immutable"
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$signature" \
+              "s3://$R2_BUCKET/BakaGame-latest-x64.exe.sig" \
+              --content-type "text/plain; charset=utf-8" \
+              --cache-control "public, max-age=0, must-revalidate"
+          else
+            echo "::notice::本次安装包没有自动更新签名，撤下别名旁的旧签名"
+            aws --endpoint-url "$R2_S3_ENDPOINT" s3 rm "s3://$R2_BUCKET/BakaGame-latest-x64.exe.sig" || true
+          fi
           # 固定别名不带版本号，服务端靠这个旁文件回答「已发布的最新版是多少」。
           # 必须与安装包同批更新，否则首页软提醒最多会晚一个服务端缓存周期（以 ClientArtifacts 的 TTL 为准）。
           printf '%s\n' "$version" > "$RUNNER_TEMP/windows-version.txt"
@@ -734,7 +771,7 @@ jobs:
             "s3://$R2_BUCKET/BakaGame-latest-x64.exe.version" \
             --content-type "text/plain; charset=utf-8" \
             --cache-control "public, max-age=0, must-revalidate"
-          echo "已发布 BakaGame-$version-x64.exe、别名 BakaGame-latest-x64.exe 与版本旁文件"
+          echo "已发布 BakaGame-$version-x64.exe、别名 BakaGame-latest-x64.exe、签名与版本旁文件"
 
       # 安卓只发布签过名的 release 包：debug 包的签名摘要对不上 attestation 的期望值，
       # 放进公开下载链等于给玩家发一个进不了反作弊房的客户端。
