@@ -924,6 +924,65 @@ describe("Android 平台证明接入", () => {
       )
     ).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
   });
+  test("存量移动设备档位为空 → 换票回 CLIENT_UNKNOWN，自报 trusted 也换不到票；带链重注册后自愈", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const raw = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+    const clientId = clientIdOfPublicKey(raw);
+    const { channel, store, warnings } = harness();
+    // 缺链放行年代留下的记录：档位为空。
+    await store.save({
+      clientId,
+      clientType: "mobile",
+      platform: "android",
+      keyAlgorithm: "ec-p256",
+      publicKey: raw,
+      keyProtection: "hardware",
+      registeredAt: 0,
+      lastSeenAt: 0,
+    });
+    const attempt = () => {
+      const { challenge } = channel.issue(clientId);
+      const signature = nodeSign("sha256", Buffer.from(challenge, "ascii"), privateKey).toString(
+        "base64"
+      );
+      return channel.attest(
+        {
+          clientId,
+          challenge,
+          signature,
+          clientType: "mobile",
+          clientVersion: "1.0.0",
+          selfCheck: { ...clean, attestationLevel: "trusted" },
+        },
+        "203.0.113.7"
+      );
+    };
+    await expect(attempt()).rejects.toMatchObject({ code: "CLIENT_UNKNOWN" });
+    expect(warnings).toContain("客户端换票被拒");
+    // 合法壳按 CLIENT_UNKNOWN 清本地 id 后带链重注册，档位被覆盖，之后正常换票。
+    await channel.register(mobileRegister({ publicKey: raw, attestation: report }));
+    expect((await store.find(clientId))?.attestationLevel).toBe("degraded");
+    await expect(attempt()).resolves.toHaveProperty("ticket");
+  });
+  test("档位为空的桌面设备不受影响：平台证明只对移动端有意义", async () => {
+    const { device, sign } = desktopDevice();
+    const { channel, store } = harness();
+    await store.save(device);
+    const { challenge } = channel.issue(device.clientId);
+    await expect(
+      channel.attest(
+        {
+          clientId: device.clientId,
+          challenge,
+          signature: sign(challenge),
+          clientType: "desktop",
+          clientVersion: "1.0.0",
+          selfCheck: clean,
+        },
+        "203.0.113.7"
+      )
+    ).resolves.toHaveProperty("ticket");
+  });
 });
 
 describe("设备登记表清理", () => {

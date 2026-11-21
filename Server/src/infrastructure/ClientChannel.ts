@@ -466,6 +466,12 @@ export class ClientChannel {
     if (!device) return refuse("unknown_client", "CLIENT_UNKNOWN", "该客户端尚未注册");
     if (!verifyClientSignature(device, input.challenge, input.signature))
       return refuse("bad_signature", "CLIENT_UNTRUSTED", "客户端签名校验失败");
+    // 移动端设备记录必有服务端验过的档位（注册缺链即拒）。档位为空是缺链放行年代留下的存量记录：
+    // 放过去会让 `requireTrusted` 退回采信壳自报的档位，等于自报「可信」就能换票。
+    // 回 CLIENT_UNKNOWN 而不是直接拒：壳会清掉本地 id 重新注册，合法设备带链重注册后档位被覆盖、自愈；
+    // 自写客户端重注册时会被 ATTESTATION_REQUIRED 拦下。
+    if (device.clientType === "mobile" && device.attestationLevel === undefined)
+      return refuse("attestation_missing", "CLIENT_UNKNOWN", "该客户端尚未注册");
     const integrity = this.requireTrusted(
       input.selfCheck,
       "attest",
