@@ -157,6 +157,66 @@ test("版本刚好等于最新发布版时不再提示；旁文件缺失时两�
   });
 });
 
+test("桌面壳按自报平台比对最新版：macOS 看 macOS 的包，没带平台或认不出的按 Windows", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: {
+      windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
+      macos: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+      android: "https://cdn.test/files/BakaGame-latest-release.apk",
+    },
+    fetcher: (async (url: string) => {
+      const text = String(url);
+      if (text.endsWith(".version")) {
+        const version = text.includes(".dmg") ? "2.1.0" : text.includes(".apk") ? "3.0.0" : "2.5.0";
+        return { ok: true, text: async () => version } as unknown as Response;
+      }
+      return { ok: true, headers: new Headers() } as unknown as Response;
+    }) as unknown as typeof fetch,
+  });
+  const app = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "" }),
+    artifacts
+  );
+
+  expect(await check(app, "clientType=desktop&clientVersion=2.1.0&platform=macos")).toMatchObject({
+    status: 200,
+    body: { latestVersion: "2.1.0", behindLatest: false },
+  });
+  expect(await check(app, "clientType=desktop&clientVersion=2.1.0")).toMatchObject({
+    status: 200,
+    body: { latestVersion: "2.5.0", behindLatest: true },
+  });
+  expect(await check(app, "clientType=desktop&clientVersion=2.1.0&platform=windows")).toMatchObject(
+    { body: { latestVersion: "2.5.0", behindLatest: true } }
+  );
+  expect(await check(app, "clientType=desktop&clientVersion=2.1.0&platform=linux")).toMatchObject({
+    body: { latestVersion: "2.5.0" },
+  });
+  // 移动壳只认安卓包，自报平台不改变它
+  expect(await check(app, "clientType=mobile&clientVersion=2.1.0&platform=macos")).toMatchObject({
+    body: { latestVersion: "3.0.0", behindLatest: true },
+  });
+});
+
+test("macOS 包没配（缺省空串）时 Mac 壳没有软提醒依据，不拿 Windows 的版本去催", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe", macos: "" },
+    fetcher: (async (url: string) =>
+      String(url).endsWith(".version")
+        ? ({ ok: true, text: async () => "2.5.0" } as unknown as Response)
+        : ({ ok: true, headers: new Headers() } as unknown as Response)) as unknown as typeof fetch,
+  });
+  const app = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "" }),
+    artifacts
+  );
+
+  expect(await check(app, "clientType=desktop&clientVersion=0.1.0&platform=macos")).toMatchObject({
+    status: 200,
+    body: { latestVersion: "", behindLatest: false },
+  });
+});
+
 test("客户端类型不认识时拒绝，而不是当成够新放过", async () => {
   const result = await check(appAt("2.0.0"), "clientType=web&clientVersion=1.0.0");
   expect(result.status).toBeGreaterThanOrEqual(400);

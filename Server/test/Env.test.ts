@@ -57,6 +57,27 @@ describe("readEnv 环境变量与启动断言", () => {
     expect(() => createServer(options)).toThrow(/DATABASE_URL/);
   });
 
+  it("macOS 安装包地址缺省为空串：Mac 包没正式分发前不进制品清单", () => {
+    const keys = ["CLIENT_PACKAGE_MACOS_URL", "CLIENT_PACKAGE_WINDOWS_URL"] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      const defaults = readEnv();
+      expect(defaults.clientPackageMacosUrl).toBe("");
+      // Windows 仍按发布约定给出缺省地址，加入 macOS 不改它
+      expect(defaults.clientPackageWindowsUrl).toMatch(/^https:\/\//);
+      Bun.env.CLIENT_PACKAGE_MACOS_URL = "  https://cdn.example.com/files/BakaGame-latest.dmg  ";
+      expect(readEnv().clientPackageMacosUrl).toBe(
+        "https://cdn.example.com/files/BakaGame-latest.dmg"
+      );
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+
   it("SENTRY_API_TOKEN 需要 SENTRY_DSN", () => {
     const keys = ["SENTRY_DSN", "SENTRY_API_TOKEN", "SENTRY_ALLOWED_PROJECT_IDS"] as const;
     const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));

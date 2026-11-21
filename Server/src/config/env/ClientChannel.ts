@@ -5,6 +5,11 @@
 const DEFAULT_WINDOWS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
 const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-release.apk";
 /**
+ * macOS 安装包还没正式分发（需要签名与公证），缺省为空串 = 不进制品清单、下载弹窗里没有这一档，
+ * 更新提醒也读不到它的最新版本。正式发布后把固定别名写到这里，与上面两条同一个分发目录。
+ */
+const DEFAULT_MACOS_PACKAGE_URL = "";
+/**
  * 移动壳 Web 资源热更新清单：与安装包同一个分发目录、同样是不带版本号的固定别名。
  * 清单里只写资源包文件名，下载地址由服务端相对本地址解析。
  */
@@ -25,10 +30,11 @@ export interface EnvClientChannel {
   clientMinMobileVersion?: string;
   /**
    * 客户端安装包的公开下载地址（CI 的 `client-publish` 作业推上去的固定别名）。
-   * 首页下载弹窗与更新提醒都读这两条：服务端对地址发 HEAD 取回构建日期与文件大小，
+   * 首页下载弹窗与更新提醒都读这几条：服务端对地址发 HEAD 取回构建日期与文件大小，
    * 玩家点到的链接与这里同一处。空串 = 该平台不进列表。
    */
   clientPackageWindowsUrl?: string;
+  clientPackageMacosUrl?: string;
   clientPackageAndroidUrl?: string;
   /**
    * Android Key Attestation 的期望包名。不配 = 不校验证明链（带链注册只记 `degraded`）：
@@ -58,6 +64,7 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
   // 显式配成空串 = 这个平台不发（安卓没配签名密钥时就是这个状态），不给默认地址。
   clientPackageWindowsUrl:
     Bun.env.CLIENT_PACKAGE_WINDOWS_URL?.trim() ?? DEFAULT_WINDOWS_PACKAGE_URL,
+  clientPackageMacosUrl: Bun.env.CLIENT_PACKAGE_MACOS_URL?.trim() ?? DEFAULT_MACOS_PACKAGE_URL,
   clientPackageAndroidUrl:
     Bun.env.CLIENT_PACKAGE_ANDROID_URL?.trim() ?? DEFAULT_ANDROID_PACKAGE_URL,
   // 显式空串 = 不提供热更新：与安装包地址不同，这里的「没配」有默认值，

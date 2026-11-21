@@ -11,11 +11,14 @@
  * 这条只是给页面贴标签用的，不该拦住首页，也不该让弹窗开不起来。
  */
 
-export type ClientPackagePlatform = "windows" | "android";
+export type ClientPackagePlatform = "windows" | "macos" | "android";
 
 export interface ClientPackage {
   platform: ClientPackagePlatform;
-  /** 安装包架构：发布约定的固定事实，不靠探测（NSIS 只出 x64；APK 不按 ABI 拆分）。 */
+  /**
+   * 安装包架构：发布约定的固定事实，不靠探测（NSIS 只出 x64；macOS 出 Apple 芯片与 Intel
+   * 合一的通用包；APK 不按 ABI 拆分）。
+   */
   arch: string;
   /** 玩家点开的地址，与探测用的是同一条链接：读到什么就发什么，不存在两份口径。 */
   url: string;
@@ -40,11 +43,12 @@ const PROBE_TIMEOUT_MS = 3_000;
 
 const ARCH_BY_PLATFORM: Record<ClientPackagePlatform, string> = {
   windows: "x64",
+  macos: "通用（Apple 芯片与 Intel）",
   android: "全架构通用",
 };
 
-/** 列表顺序即弹窗里的顺序：Windows 在前。 */
-const PLATFORMS: ClientPackagePlatform[] = ["windows", "android"];
+/** 列表顺序即弹窗里的顺序：两个桌面平台在前，Windows 打头。 */
+const PLATFORMS: ClientPackagePlatform[] = ["windows", "macos", "android"];
 
 export interface ClientArtifactsOptions {
   /** 平台 → 公开下载地址；没配或配成空串的平台不进列表。 */

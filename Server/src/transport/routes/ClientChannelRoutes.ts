@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
-import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
+import type { ClientArtifacts, ClientPackagePlatform } from "../../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../../infrastructure/ClientChannel";
 import {
   CLIENT_ATTESTATION_CHAIN_MAX,
@@ -35,8 +35,18 @@ const selfCheckSchema = t.Object(
   { additionalProperties: false }
 );
 const clientTypeSchema = t.Union([t.Literal("desktop"), t.Literal("mobile")]);
-/** 壳类型 → 安装包平台：制品清单按平台索引，更新检查按壳类型提问。 */
-const PACKAGE_PLATFORM = { desktop: "windows", mobile: "android" } as const;
+/**
+ * 壳类型 + 壳自报平台 → 安装包平台：制品清单按平台索引，更新检查按壳提问。
+ * 桌面壳按自报的 `platform` 分 Windows 与 macOS；没带（旧页面）或认不出的一律按 Windows，
+ * 与加入 macOS 之前的口径相同。
+ */
+const packagePlatformOf = (
+  clientType: "desktop" | "mobile",
+  platform: string | undefined
+): ClientPackagePlatform => {
+  if (clientType === "mobile") return "android";
+  return platform === "macos" ? "macos" : "windows";
+};
 /**
  * 壳上报版本号的唯一口径：壳把项目文件里的 version 原样送来，这里放宽或收紧都会让
  * 发布流程与接口对不上，所以版本一致性测试也引用这一份，不另写一个正则。
@@ -172,9 +182,10 @@ export const clientChannelRoutes = (
         // 软提醒的第二个依据：已发布的最新壳版本。它回答「有没有新版可拿」，
         // 与「够不够格进反作弊房」是两件事——发新版不等于协议破坏性变更，不能自动抬硬门槛。
         // 已经低于硬门槛时不必再问制品：硬提醒优先，也别让一次 CDN 探测拖慢「进不了房」这句提示。
+        const packagePlatform = packagePlatformOf(query.clientType, query.platform);
         const latestVersion = outdated
           ? ""
-          : ((await artifacts?.latestVersion(PACKAGE_PLATFORM[query.clientType])) ?? "");
+          : ((await artifacts?.latestVersion(packagePlatform)) ?? "");
         const behindLatest =
           !outdated &&
           latestVersion.length > 0 &&
@@ -183,7 +194,12 @@ export const clientChannelRoutes = (
       },
       {
         // 查询串不锁 additionalProperties：多带一个排查用的参数不该让整条提醒失效。
-        query: t.Object({ clientType: clientTypeSchema, clientVersion: versionSchema }),
+        // `platform` 是壳自报的平台（与注册时同一个值），只用来挑「最新已发布版」该看哪个平台的包。
+        query: t.Object({
+          clientType: clientTypeSchema,
+          clientVersion: versionSchema,
+          platform: t.Optional(t.String({ maxLength: 32 })),
+        }),
       }
     )
     .get(

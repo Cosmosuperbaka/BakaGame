@@ -18,12 +18,15 @@ const harness = (
     ttlMs?: number;
     clock?: { now: number };
     versions?: Partial<Record<ClientPackagePlatform, Response | Error>>;
+    /** macOS 包缺省不配（与线上缺省空串一致），需要时由用例显式给出地址。 */
+    macosUrl?: string;
   }
 ) => {
   const calls: { platform: ClientPackagePlatform; url: string; method?: string }[] = [];
-  const urls: Record<ClientPackagePlatform, string> = {
+  const urls: Partial<Record<ClientPackagePlatform, string>> = {
     windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
     android: "https://cdn.test/files/BakaGame-latest-release.apk",
+    ...(options?.macosUrl ? { macos: options.macosUrl } : {}),
   };
   const clock = options?.clock ?? { now: 0 };
   const artifacts = new ClientArtifacts({
@@ -170,4 +173,50 @@ test("地址配成空串的平台不进列表：没发布的平台不该在弹�
   });
 
   expect((await artifacts.list()).map((item) => item.platform)).toEqual(["windows"]);
+});
+
+test("配了 macOS 包时按 Windows、macOS、安卓的顺序列出，架构标通用包", async () => {
+  const { artifacts } = harness(
+    {
+      windows: stub(true, { "content-length": "10" }),
+      macos: stub(true, { "content-length": "20" }),
+      android: stub(true, { "content-length": "30" }),
+    },
+    {
+      macosUrl: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+      versions: { macos: versionStub(true, "0.2.0") },
+    }
+  );
+
+  const list = await artifacts.list();
+  expect(list.map((item) => item.platform)).toEqual(["windows", "macos", "android"]);
+  expect(list[1]).toMatchObject({
+    platform: "macos",
+    arch: "通用（Apple 芯片与 Intel）",
+    url: "https://cdn.test/files/BakaGame-latest-universal.dmg",
+    available: true,
+    sizeBytes: 20,
+    version: "0.2.0",
+  });
+  expect(await artifacts.latestVersion("macos")).toBe("0.2.0");
+});
+
+test("macOS 地址为空串（缺省）时不进列表，也读不到它的最新版本", async () => {
+  const fetched: string[] = [];
+  const artifacts = new ClientArtifacts({
+    urls: {
+      windows: "https://cdn.test/files/BakaGame-latest-x64.exe",
+      macos: "",
+      android: "https://cdn.test/files/BakaGame-latest-release.apk",
+    },
+    fetcher: (async (url: string) => {
+      fetched.push(url);
+      return stub(true, { "content-length": "10" });
+    }) as unknown as typeof fetch,
+  });
+
+  expect((await artifacts.list()).map((item) => item.platform)).toEqual(["windows", "android"]);
+  expect(await artifacts.latestVersion("macos")).toBeUndefined();
+  // 没配的平台连探测都不发
+  expect(fetched.some((url) => url.includes("dmg"))).toBe(false);
 });

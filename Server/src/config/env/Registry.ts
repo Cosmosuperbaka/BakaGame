@@ -490,6 +490,13 @@ export const ENV_ENTRIES: EnvEntry[] = [
   },
   { name: "CLIENT_PACKAGE_ANDROID_URL", layer: "T2", documented: true, sample: "" },
   {
+    name: "CLIENT_PACKAGE_MACOS_URL",
+    layer: "T2",
+    documented: true,
+    sample: "",
+    note: ["macOS 安装包尚未正式分发，代码缺省为空串（不进列表）；签名公证后的包上线时再配。"],
+  },
+  {
     name: "CLIENT_WEB_BUNDLE_MANIFEST_URL",
     layer: "T2",
     documented: true,

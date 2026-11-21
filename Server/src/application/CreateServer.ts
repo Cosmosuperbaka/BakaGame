@@ -483,10 +483,11 @@ const createClientDistribution = (options: {
         })
       : undefined,
   });
-  // 下载弹窗标的构建日期与文件大小来自制品本身：对配置里那两条公开别名发 HEAD，结果短缓存。
+  // 下载弹窗标的构建日期与文件大小来自制品本身：对配置里各平台的公开别名发 HEAD，结果短缓存。
   const clientArtifacts = new ClientArtifacts({
     urls: {
       windows: env.clientPackageWindowsUrl,
+      macos: env.clientPackageMacosUrl,
       android: env.clientPackageAndroidUrl,
     },
   });

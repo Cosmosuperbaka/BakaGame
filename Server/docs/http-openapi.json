@@ -2255,6 +2255,15 @@
               "pattern": "^\\d+(\\.\\d+){0,3}$",
               "type": "string"
             }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 32,
+              "type": "string"
+            }
           }
         ],
         "operationId": "getApiClientUpdate-check"
