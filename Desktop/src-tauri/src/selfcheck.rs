@@ -207,11 +207,14 @@ pub fn run(key_protection: KeyProtection) -> SelfCheckReport {
             }
         }
 
-        // 5. 父进程
-        match parent_process_name() {
+        // 5. 父进程（启动时记下的那个，见 `parent_name`）。壳自己的更新安装程序装完会拉起新版壳，
+        //    它也算已知父进程，否则每次自动更新后的那一轮都会被记成可疑
+        match parent_name() {
             Some(name) => {
                 let lower = name.to_ascii_lowercase();
-                if DEBUGGER_PARENTS.contains(&lower.as_str()) || !KNOWN_PARENTS.contains(&lower.as_str()) {
+                let known = KNOWN_PARENTS.contains(&lower.as_str())
+                    || pure::is_own_updater_installer(&lower);
+                if DEBUGGER_PARENTS.contains(&lower.as_str()) || !known {
                     diag::soft(CHECK_PARENT_PROCESS, &format!("父进程 {name}"));
                     report.soft_fail.push(CHECK_PARENT_PROCESS.into());
                 }
@@ -320,6 +323,31 @@ fn sample_module_lists() -> (Option<Vec<ModuleRecord>>, Option<Vec<crate::peb::L
         sample = (toolhelp_modules(), crate::peb::load_order_modules());
     }
     sample
+}
+
+/// 父进程名：进程创建时就定了，之后不会变，所以第一次取到就缓存下来；取不到不缓存，下次再试。
+///
+/// 只在每次自检时现查会有两个问题：父进程退出后快照里就没有它了（自动更新后拉起新版壳的
+/// 安装程序装完很快就退出，之后每一轮都会变成「无法确定」）；它的进程号还可能被别的进程复用，
+/// 查到的就成了不相干的名字。所以启动时由 `remember_parent` 尽早取一次。
+#[cfg(target_os = "windows")]
+static PARENT_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn parent_name() -> Option<String> {
+    if let Some(name) = PARENT_NAME.get() {
+        return Some(name.clone());
+    }
+    let name = parent_process_name()?;
+    Some(PARENT_NAME.get_or_init(|| name).clone())
+}
+
+/// 启动时尽早记下父进程（见 `parent_name`）。非 Windows 平台不跑这项检测，什么都不做。
+pub fn remember_parent() {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = parent_name();
+    }
 }
 
 /// 进程快照里找到自己那一条，取父进程名

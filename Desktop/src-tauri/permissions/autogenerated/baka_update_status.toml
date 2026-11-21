@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-baka-update-status"
+description = "Enables the baka_update_status command without any pre-configured scope."
+commands.allow = ["baka_update_status"]
+
+[[permission]]
+identifier = "deny-baka-update-status"
+description = "Denies the baka_update_status command without any pre-configured scope."
+commands.deny = ["baka_update_status"]

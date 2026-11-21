@@ -34,6 +34,7 @@ const rust = {
   attest: read("Desktop/src-tauri/src/attest.rs"),
   selfcheck: read("Desktop/src-tauri/src/selfcheck.rs"),
   bridge: read("Desktop/src-tauri/src/bridge.rs"),
+  selfUpdate: read("Desktop/src-tauri/src/self_update.rs"),
 };
 /** 桌面注入脚本原文（`bridge.rs` 里的原始字符串）：对账只读它，不读文件头的契约注释。 */
 const desktopScript = (() => {
@@ -187,6 +188,14 @@ describe("路径", () => {
     expect(rustString(rust.device, "REGISTER_PATH")).toBe(CLIENT_CHANNEL_PATHS.register);
     expect(rustString(rust.attest, "CHALLENGE_PATH")).toBe(CLIENT_CHANNEL_PATHS.challenge);
     expect(rustString(rust.attest, "ATTEST_PATH")).toBe(CLIENT_CHANNEL_PATHS.attest);
+  });
+  test("桌面壳自动更新清单的路径模板与契约相等（占位段按插件写法换成路由参数）", () => {
+    const template = rustString(rust.selfUpdate, "UPDATE_PATH");
+    const asRoute = template
+      .replace("{{target}}", ":target")
+      .replace("{{arch}}", ":arch")
+      .replace("{{current_version}}", ":currentVersion");
+    expect(asRoute).toBe(CLIENT_CHANNEL_PATHS.desktopUpdate);
   });
   test("移动壳桥脚本的四个请求路径与契约相等", () => {
     expect(jsString(mobileBridge, "REGISTER_PATH")).toBe(CLIENT_CHANNEL_PATHS.register);

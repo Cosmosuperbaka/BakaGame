@@ -132,6 +132,22 @@ pub fn first_difference(a: &[usize], b: &[usize]) -> String {
     format!("长度不同 {} vs {}", a.len(), b.len())
 }
 
+/// 父进程名（已转小写）是不是壳自己的更新安装程序。
+///
+/// 自动更新插件把下载好的安装包写成 `<应用名>-<版本>-installer.exe` 再运行，安装程序装完由它
+/// 拉起新版壳，所以它是新版壳的父进程。与已知父进程表一样只按名字判（强度不高于现有口径），
+/// 但把中间一段限定为版本号，别的叫 `bakagame-…` 的程序不算。
+pub fn is_own_updater_installer(lower_name: &str) -> bool {
+    lower_name
+        .strip_prefix("bakagame-")
+        .and_then(|rest| rest.strip_suffix("-installer.exe"))
+        .is_some_and(|version| {
+            !version.is_empty()
+                && version.chars().all(|c| c.is_ascii_digit() || c == '.')
+                && version.chars().next().is_some_and(|c| c.is_ascii_digit())
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +304,24 @@ mod tests {
         assert_eq!(first_difference(&[1, 2, 3], &[1, 9, 3]), "#1: 0x2 vs 0x9");
         assert_eq!(first_difference(&[1, 2], &[1, 2, 3]), "长度不同 2 vs 3");
         assert_eq!(first_difference(&[], &[]), "长度不同 0 vs 0");
+    }
+
+    /// 只认更新插件写出的安装包名：前缀、版本段与后缀都要对上
+    #[test]
+    fn own_updater_installer_is_recognized_by_its_exact_shape() {
+        assert!(is_own_updater_installer("bakagame-0.2.0-installer.exe"));
+        assert!(is_own_updater_installer("bakagame-12.10.3-installer.exe"));
+
+        assert!(!is_own_updater_installer("bakagame--installer.exe"));
+        assert!(!is_own_updater_installer("bakagame-x64dbg-installer.exe"));
+        assert!(!is_own_updater_installer("bakagame-.1-installer.exe"));
+        assert!(!is_own_updater_installer("bakagame_0.2.0_x64-setup.exe"));
+        assert!(!is_own_updater_installer(
+            "evil-bakagame-0.2.0-installer.exe"
+        ));
+        assert!(!is_own_updater_installer(
+            "bakagame-0.2.0-installer.exe.exe"
+        ));
+        assert!(!is_own_updater_installer("x64dbg.exe"));
     }
 }

@@ -77,10 +77,13 @@ fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .capabilities_path_pattern(capabilities_pattern)
-            .app_manifest(
-                tauri_build::AppManifest::new()
-                    .commands(&["baka_self_check", "baka_client_id", "baka_ticket"]),
-            ),
+            .app_manifest(tauri_build::AppManifest::new().commands(&[
+                "baka_self_check",
+                "baka_client_id",
+                "baka_ticket",
+                "baka_update_status",
+                "baka_update_install",
+            ])),
     )
     .expect("tauri-build 失败");
 }

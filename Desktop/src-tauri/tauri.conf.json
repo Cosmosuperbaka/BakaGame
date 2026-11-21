@@ -16,6 +16,14 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYwMjFDQkQxN0I4NkYyNDgKUldSSThvWjcwY3NoWUJGZDlvbHN5R04wUDdyQ3FXMDBpVUM3M2QxTWxsVnBoN3duUXFRdEEzMTgK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],

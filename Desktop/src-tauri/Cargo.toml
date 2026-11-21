@@ -1,6 +1,6 @@
 [package]
 name = "bakagame-desktop"
-version = "0.1.4"
+version = "0.2.0"
 description = "BakaGame 桌面壳：远程 URL 窗口 + 设备密钥签名 + 原生自检"
 authors = ["BakaGame"]
 edition = "2021"
@@ -40,6 +40,10 @@ hex = "0.4"
 # HTTPS Token 模式的 DNS 查询走 native-tls：证书校验保持默认开启，不能为了
 # 连一个 IP 就放行非法证书；Token 模式优先于 AES 模式。
 native-tls = "0.2"
+# 壳本体自动更新（官方插件，只在 Rust 侧用，页面拿不到它自带的命令）。走 native-tls 与上面同一套证书校验，
+# 不引入 rustls；`zip` 带上解 macOS 的 .app.tar.gz 所需的解包依赖；`system-proxy` 让下载与 WebView 一样
+# 认系统代理设置。更新包的签名由插件用 tauri.conf.json 里的公钥校验。
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "zip", "system-proxy"] }
 
 [profile.release]
 codegen-units = 1

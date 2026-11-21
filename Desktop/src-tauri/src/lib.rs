@@ -16,6 +16,7 @@ mod httpdns;
 mod notice;
 mod peb;
 mod secret;
+mod self_update;
 mod selfcheck;
 mod single_instance;
 #[cfg(test)]
@@ -272,6 +273,23 @@ async fn baka_ticket(app: tauri::AppHandle) -> Result<Option<attest::TicketPaylo
     .map_err(|err| format!("取票任务异常：{err}"))?
 }
 
+/// 壳本体自动更新的状态（契约外命令，调用方式同 `baka_client_id`）：
+/// 页面据此决定更新提醒里给「重启更新」还是「下载最新版」。只读，不触发任何网络请求。
+#[tauri::command]
+async fn baka_update_status(app: tauri::AppHandle) -> Result<self_update::UpdateStatus, String> {
+    Ok(app.state::<self_update::UpdateState>().status())
+}
+
+/// 安装壳已经下载并校验过签名的更新，然后重启（契约外命令）。不收任何参数：
+/// 页面只能说「装吧」，装什么由壳决定，安装前插件会用编进二进制的公钥再校验一遍。
+#[tauri::command]
+async fn baka_update_install(app: tauri::AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || self_update::install(&handle))
+        .await
+        .map_err(|err| format!("安装任务异常：{err}"))?
+}
+
 /// 桥接的 `selfCheck()`：每次调用都重新跑一遍，不缓存（调试器可能中途才附着）
 #[tauri::command]
 async fn baka_self_check(app: tauri::AppHandle) -> Result<selfcheck::SelfCheckReport, String> {
@@ -526,27 +544,33 @@ fn create_main_window(
 pub fn run() {
     // 先落条款与构建身份，再启动任何可能失败的步骤
     notice::log_identity();
+    // 父进程要趁早记下：自动更新后拉起新版壳的安装程序很快就退出，晚了快照里就没有它了
+    selfcheck::remember_parent();
 
     // 单实例保护只在发布构建启用：开发时需要同时开多个壳（不同账号联调）。
     // 已有实例在跑就让位并退出（Windows 先把它的窗口拉到前台），不去碰同一份设备密钥文件、
     // 不再起第二套隧道。
-    let _single_instance = if cfg!(debug_assertions) {
-        None
-    } else {
+    // 守卫交给进程级存放处持有到进程退出；自动更新重启前由 `self_update` 主动放掉。
+    if !cfg!(debug_assertions) {
         match single_instance::acquire_for_app() {
-            single_instance::Instance::First(guard) => Some(guard),
+            single_instance::Instance::First(guard) => single_instance::hold(guard),
             single_instance::Instance::AlreadyRunning => {
                 single_instance::yield_to_existing(config::WINDOW_TITLE);
                 return;
             }
         }
-    };
+    }
 
     tauri::Builder::default()
+        // 自动更新插件只在 Rust 侧用：能力文件不授任何 updater 权限，页面调不到它自带的命令
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(self_update::UpdateState::new())
         .invoke_handler(tauri::generate_handler![
             baka_self_check,
             baka_client_id,
-            baka_ticket
+            baka_ticket,
+            baka_update_status,
+            baka_update_install
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -561,6 +585,7 @@ pub fn run() {
                 ),
             }
             create_main_window(app, tunnel)?;
+            self_update::spawn(handle);
             Ok(())
         })
         .run(tauri::generate_context!())

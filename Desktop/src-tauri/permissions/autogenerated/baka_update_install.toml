@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-baka-update-install"
+description = "Enables the baka_update_install command without any pre-configured scope."
+commands.allow = ["baka_update_install"]
+
+[[permission]]
+identifier = "deny-baka-update-install"
+description = "Denies the baka_update_install command without any pre-configured scope."
+commands.deny = ["baka_update_install"]

@@ -10,6 +10,7 @@
 //! 取不到互斥量或锁（权限、系统异常、文件系统不支持加锁）时**失败放行**：保护不可用不能拦玩家启动。
 
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 
 #[cfg(target_os = "windows")]
@@ -30,6 +31,28 @@ pub struct Guard {
     handle: w::HANDLE,
     /// 加了独占锁的锁文件句柄：句柄关闭即释放锁
     _lock: Option<std::fs::File>,
+}
+
+// SAFETY：Windows 下守卫只持有一个具名互斥量的内核句柄，句柄与线程无关，可以在任意线程关闭；
+// 守卫除了在 drop 时关闭它之外不做别的事。锁文件句柄本身就是 Send。
+unsafe impl Send for Guard {}
+
+/// 本进程持有的守卫：存到进程结束，进程退出时系统一并回收。自动更新重启前要先放掉它。
+static HELD: Mutex<Option<Guard>> = Mutex::new(None);
+
+/// 把守卫交给进程级的存放处，一直持有到进程退出或 `release`
+pub fn hold(guard: Guard) {
+    if let Ok(mut held) = HELD.lock() {
+        *held = Some(guard);
+    }
+}
+
+/// 主动放掉单实例保护。只给「自己要重启」用：重启会先拉起新进程再退出旧进程，
+/// 不先放掉的话新进程会把还没退出的自己当成已有实例而退出
+pub fn release() {
+    if let Ok(mut held) = HELD.lock() {
+        held.take();
+    }
 }
 
 impl Guard {
@@ -324,6 +347,20 @@ mod tests {
     fn unusable_lock_path_fails_open() {
         let dir = TempDir::new("instance-lock-dir");
         assert!(matches!(acquire_lock_file(dir.path()), Instance::First(_)));
+    }
+
+    /// 交出去的守卫在 `release` 之前一直有效，`release` 之后锁可以被重新拿到（自动更新重启依赖这一点）
+    #[test]
+    fn released_guard_frees_the_lock_for_the_restarted_process() {
+        let dir = TempDir::new("instance-release");
+        let path = dir.path().join(LOCK_FILE);
+        match acquire_lock_file(&path) {
+            Instance::First(guard) => hold(guard),
+            Instance::AlreadyRunning => panic!("第一个应当拿到"),
+        }
+        assert!(matches!(acquire_lock_file(&path), Instance::AlreadyRunning));
+        release();
+        assert!(matches!(acquire_lock_file(&path), Instance::First(_)));
     }
 
     #[cfg(target_os = "windows")]
