@@ -44,6 +44,8 @@ native-tls = "0.2"
 # 不引入 rustls；`zip` 带上解 macOS 的 .app.tar.gz 所需的解包依赖；`system-proxy` 让下载与 WebView 一样
 # 认系统代理设置。更新包的签名由插件用 tauri.conf.json 里的公钥校验。
 tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "zip", "system-proxy"] }
+# 记住窗口位置、尺寸与最大化状态（官方插件，只在 Rust 侧用）；恢复后再由 window_fit 收进工作区
+tauri-plugin-window-state = "2.5.0"
 
 [profile.release]
 codegen-units = 1

@@ -23,6 +23,7 @@ mod single_instance;
 mod splash;
 #[cfg(test)]
 mod test_support;
+mod window_fit;
 #[cfg(target_os = "windows")]
 mod winapi;
 
@@ -553,6 +554,8 @@ fn create_main_window(
     }
 
     let window = builder.build()?;
+    // 插件在建窗时已按上次的状态恢复了位置与尺寸；再收进所在显示器的工作区，防止恢复到屏幕外
+    window_fit::keep_on_screen(&window);
     let dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
     if let Err(err) = window.set_background_color(Some(splash::background(dark))) {
         eprintln!("窗口背景色设置失败：{err}");
@@ -584,6 +587,12 @@ pub fn run() {
     tauri::Builder::default()
         // 自动更新插件只在 Rust 侧用：能力文件不授任何 updater 权限，页面调不到它自带的命令
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // 记住窗口位置、尺寸与最大化状态；同样只在 Rust 侧用，页面拿不到它自带的命令
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(window_fit::state_flags())
+                .build(),
+        )
         .manage(self_update::UpdateState::new())
         .invoke_handler(tauri::generate_handler![
             baka_self_check,
