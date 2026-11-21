@@ -507,4 +507,109 @@
   // 首页停留时间短、或一直待在房间页时，8 秒那一次可能错过；每分钟再看一次路由，
   // 真正发起网络请求仍只在首页或退后台时发生。
   setInterval(attemptHotUpdate, HOT_UPDATE_RETRY_MS);
+
+  // —— 壳界面（原生 BakaShell 插件）：系统栏跟随页面的实际外观 ——
+  // 原生侧把系统栏、挖孔与键盘让出来的边铺成页面底色，状态栏与导航栏图标按页面明暗取深浅。
+  // 页面明暗可能与系统不同（玩家手动选了亮色或暗色），所以以 <html> 上的 .dark 为准，
+  // 底色取页面实际渲染的背景色（各主题令牌不同），不在壳里写死。旧壳没有这个插件时静默跳过。
+  var shellProxy = null;
+  function shellPlugin() {
+    if (shellProxy) return shellProxy;
+    try {
+      shellProxy = nativePlugin("BakaShell");
+    } catch (e) {
+      shellProxy = null;
+    }
+    return shellProxy;
+  }
+
+  function callShell(method, args) {
+    var target = shellPlugin();
+    if (!target || typeof target[method] !== "function") return;
+    try {
+      Promise.resolve(target[method](args)).catch(function () {});
+    } catch (e) {
+      /* 旧壳没有这个方法：忽略 */
+    }
+  }
+
+  function listenWindow(type, handler) {
+    if (typeof window.addEventListener === "function")
+      window.addEventListener(type, handler, false);
+  }
+
+  function nextFrame(callback) {
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(callback);
+    else setTimeout(callback, 16);
+  }
+
+  // 主题令牌是 oklch，计算值会原样保留色彩空间；交给 canvas 换算成原生认得的 sRGB #rrggbb。
+  // 透明（还没铺上底色）时不回报颜色，原生保留上一次的值。
+  var colorCanvas = null;
+  function toOpaqueHex(cssColor) {
+    try {
+      if (!colorCanvas) {
+        colorCanvas = document.createElement("canvas");
+        colorCanvas.width = 1;
+        colorCanvas.height = 1;
+      }
+      var context = colorCanvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return "";
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = "rgba(0, 0, 0, 0)";
+      context.fillStyle = String(cssColor || "");
+      context.fillRect(0, 0, 1, 1);
+      var pixel = context.getImageData(0, 0, 1, 1).data;
+      if (pixel[3] !== 255) return "";
+      var hex = "#";
+      for (var index = 0; index < 3; index++) {
+        hex += (pixel[index] < 16 ? "0" : "") + pixel[index].toString(16);
+      }
+      return hex;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  var reportedBars = "";
+  function reportSystemBars() {
+    var root = document.documentElement;
+    var body = document.body;
+    if (!root || !body || typeof window.getComputedStyle !== "function") return;
+    var dark = root.classList.contains("dark");
+    var color = toOpaqueHex(window.getComputedStyle(body).backgroundColor);
+    var key = (dark ? "dark" : "light") + color;
+    if (key === reportedBars) return;
+    reportedBars = key;
+    callShell("setSystemBars", color ? { dark: dark, color: color } : { dark: dark });
+  }
+
+  // 明暗或主题一变就回报；底色可能带过渡、主题样式表也可能稍后才到，过一会儿再补看一次。
+  var barsQueued = false;
+  function scheduleSystemBars() {
+    if (barsQueued) return;
+    barsQueued = true;
+    nextFrame(function () {
+      barsQueued = false;
+      reportSystemBars();
+    });
+    setTimeout(reportSystemBars, 500);
+  }
+
+  function watchSystemBars() {
+    scheduleSystemBars();
+    if (typeof MutationObserver === "function" && document.documentElement) {
+      new MutationObserver(scheduleSystemBars).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class", "data-theme", "style"],
+      });
+    }
+    listenWindow("load", scheduleSystemBars);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchSystemBars, false);
+  } else {
+    watchSystemBars();
+  }
 })();

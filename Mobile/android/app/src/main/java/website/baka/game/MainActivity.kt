@@ -7,7 +7,6 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
@@ -19,13 +18,15 @@ import com.getcapacitor.BridgeWebViewClient
 import website.baka.game.channel.BakaChannelPlugin
 import website.baka.game.network.DnsProxyServer
 import website.baka.game.network.HttpDns
+import website.baka.game.shell.BakaShellPlugin
+import website.baka.game.shell.SystemBarsController
 import website.baka.game.update.BakaHotUpdatePlugin
 import website.baka.game.update.HotUpdateStore
 import java.util.concurrent.Executor
 
 /**
  * Capacitor 壳主 Activity：装载内嵌前端、注册通道插件、放行跨站 Cookie、
- * 开启 WebAuthn 并放行接口请求，外加启动画面与 WebView 首帧前的底色。
+ * 开启 WebAuthn 并放行接口请求，外加启动画面，以及系统栏、挖孔与软键盘的避让（SystemBarsController）。
  * 不含任何业务 UI（UI 全部来自内嵌的 Client 构建产物）。
  *
  * 窗口级防截屏不在这里：它按房间开关，见 BakaChannelPlugin.setSecureScreen。
@@ -45,11 +46,14 @@ class MainActivity : BridgeActivity() {
     @Volatile
     private var pageVisible = false
 
+    private var systemBars: SystemBarsController? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // 必须在 super.onCreate 之前：它把启动主题换成 postSplashScreenTheme，并接管系统启动画面。
         val splash = installSplashScreen()
         registerPlugin(BakaChannelPlugin::class.java)
         registerPlugin(BakaHotUpdatePlugin::class.java)
+        registerPlugin(BakaShellPlugin::class.java)
         // 必须在 super.onCreate 之前：Capacitor 在 super 里创建 WebView 并读取
         // `CapWebViewSettings.serverBasePath`，晚一步就会先加载内嵌产物、再被热更新目录覆盖。
         // 启动路径选择失败不能把应用带崩：退回内嵌产物，下次热更新仍会重试。
@@ -79,8 +83,8 @@ class MainActivity : BridgeActivity() {
         // 启动即全量开启会让普通玩家连截图分享都做不到。
         val bridge = bridge ?: return
         val webView = bridge.webView
-        // WebView 默认白底：在页面样式到位之前先铺上与启动画面同一档的底色，暗色下不再白闪。
-        webView.setBackgroundColor(ContextCompat.getColor(this, R.color.baka_background))
+        // 边到边与插图避让；同时给 WebView 铺上与启动画面同一档的底色（默认白底会在暗色下白闪）。
+        systemBars = SystemBarsController(this).also { it.attach(webView) }
         // 页面 origin 是 https://localhost（未配置 server.hostname 时），接口在公网域名上 ——
         // 会话 Cookie 属于跨站 Cookie。Capacitor 自己没有设置这个开关，不同 WebView 版本默认值
         // 不一致；显式打开，否则登录态在壳内时有时无（表现为昵称读不到、验证码发不出、WS 是游客）。
@@ -99,6 +103,11 @@ class MainActivity : BridgeActivity() {
         // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
         // 仍走本地服务（SPA 深链刷新才不会 404）。
         bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge) { pageVisible = true })
+    }
+
+    /** 页面回报的实际外观（BakaShell.setSystemBars）：系统栏图标深浅与让出区域的底色跟着它走。 */
+    fun applyPageAppearance(dark: Boolean, color: Int?) {
+        runOnUiThread { systemBars?.update(dark, color) }
     }
 
     override fun onDestroy() {

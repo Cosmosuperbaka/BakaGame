@@ -137,7 +137,7 @@ type SelfCheckReport = {
 Mobile/
 ├── package.json            # 独立 npm 包，不在根 pnpm workspace 成员内
 ├── capacitor.config.ts     # webDir=dist-web（内嵌产物），不做远程 URL
-├── bridge/baka-bridge.js   # 唯一前端桥接：通道契约 + 注册/证明闭环 + 热更新检查
+├── bridge/baka-bridge.js   # 唯一前端桥接：通道契约 + 注册/证明闭环 + 热更新检查 + 壳界面回报
 ├── scripts/prepare-web.mjs # Client/dist → dist-web + 注入桥接
 ├── scripts/web-bundle.mjs  # dist-web → 热更新 zip + BakaGame-web-latest.json
 ├── scripts/apk.mjs         # Gradle 定位（wrapper 声明 → 同版本缓存 → PATH）并跑构建
@@ -152,6 +152,10 @@ Mobile/
         │   ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
         │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17：只读 attestationSecurityLevel（仅展示）
         │   └── SelfCheck.kt             # P3.3 运行时检测
+        ├── shell/
+        │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）
+        │   ├── SystemBarsController.kt  # 边到边、系统栏/挖孔/键盘避让与系统栏配色
+        │   └── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距）
         └── update/
             ├── BakaHotUpdatePlugin.kt   # 下载 / sha256 校验 / 安全解压
             └── HotUpdateStore.kt        # 资源包落盘、启动选择与失败回退
@@ -387,6 +391,23 @@ Client 的页面、脚本、样式、字体与图片。
 
 **尚未真机验证**：下载中断、WebView 白屏回退与壳升级后的清包只有真实设备能验收；CI 只保证
 Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真机上走一遍「下载 → 重启生效 → 断网启动」。
+
+### 7.7 系统栏、挖孔与软键盘
+
+安卓 15 起 targetSdk 35 强制边到边。壳在所有系统版本上统一走边到边，由 `shell/SystemBarsController.kt`
+自己处理插图，**不用** Capacitor 的 `adjustMarginsForEdgeToEdge`（它的 force/auto 会把输入法插图一起吞掉）：
+
+- WebView 的父容器按「系统栏 ∪ 挖孔」加内边距，底边再与输入法取大：键盘弹出时整个 WebView 缩到键盘上方，
+  与安卓 14 及以前 `adjustResize` 的效果相同，不依赖 WebView 自己按输入法缩小可视区域（M139 起才有）。
+  横屏时挖孔在侧边，同样让开。
+- 交给 WebView 的插图把这几类置零，页面里的 `env(safe-area-inset-*)` 在壳内恒为 0。**页面不要为壳另加安全区内边距**，
+  否则与原生的内边距叠加；网页端照常按浏览器给的值处理。
+- 让出来的边铺页面底色，状态栏与导航栏图标深浅跟随页面**实际**明暗（`<html>` 的 `.dark`，玩家可以不跟随系统）。
+  桥接监听 `<html>` 的 class、`data-theme` 与 style，把明暗与换算成 sRGB 的 `body` 背景色经 `BakaShell.setSystemBars`
+  回报；原生按系统明暗分两份记下，下次启动在页面回报之前先用它。都没有时用 `res/values(-night)/colors.xml`
+  里默认主题的底色，启动画面与 WebView 首帧前的底色也取这一档，主题令牌改了要同步。
+- 主题继承昼夜主题（`AppTheme.NoActionBar` 覆盖 Capacitor 库里的暗色同名主题），WebView 据此给页面
+  `prefers-color-scheme`；`configChanges` 保留 `uiMode`，切换系统深浅色不重建 Activity，页面原地跟随。
 
 ## 8. 已知限制与待真机验证
 
