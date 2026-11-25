@@ -235,11 +235,10 @@ export function FeedbackButton({ compact = false }: { compact?: boolean | "narro
       onClick={(event) => openDialog("feedback", originOfEvent(event))}
     >
       <MessageSquareText aria-hidden="true" />
-      {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
+      {/* 矮屏（横屏手机）上页头本来就挤：只留图标，名称走 aria-label。
+          首页顶栏与账号入口并排，按宽度统一收放，不单独在矮屏收起，免得两个入口一个有字一个没有。 */}
       {compact === true ? null : (
-        <span className={cn("[@media(max-height:680px)]:hidden", narrow && "max-sm:hidden")}>
-          反馈
-        </span>
+        <span className={narrow ? "max-sm:hidden" : "[@media(max-height:680px)]:hidden"}>反馈</span>
       )}
       {unread ? <UnreadDot className="absolute right-1 top-1" /> : null}
     </Button>
