@@ -162,9 +162,13 @@ Mac 的打包作业读同一份凭据；页面与壳内请求在两个平台上�
 
 ### Windows
 
+**现状：安装包与主 exe 都没有 Authenticode 签名**（没有代码签名证书，CI 里也没有签名步骤）。所以手动下载的
+安装包会被 SmartScreen 当作来源不明的程序提示一次；自动更新由壳自己下载并启动安装程序，不带网络来源标记，
+一般不受影响。更新包可信与否由 minisign 签名保证（见自动更新），与 Authenticode 无关。
+
 安装界面只用简体中文，与站点语言一致（`tauri.conf.json` 的 NSIS 语言配置）；自动更新走被动模式，只有进度条。
 
-壳产物由 Windows Authenticode 签名，签名在打包**之后**做（Tauri 自己不签 Windows 制品）：
+**以后接入 Authenticode** 时按以下约束，签名在打包**之后**做（Tauri 自己不签 Windows 制品）：
 
 - **安装包与主 exe 都要签**。只签安装包的话，安装后的 exe 没有签名，SmartScreen 与自检的模块白名单
   都会更难解释。
