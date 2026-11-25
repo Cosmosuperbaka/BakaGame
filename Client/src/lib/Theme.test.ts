@@ -173,15 +173,121 @@ describe("外观切换的揭示", () => {
       const finished = new Promise<void>((resolve) => {
         finishers.push(resolve);
       });
-      return { finished, ready: Promise.resolve(), updateCallbackDone: Promise.resolve() };
+      // 与浏览器一致：被跳过时 ready 以 AbortError 拒绝，没人接住就是一条未处理的拒绝，测试随之失败
+      let abort: (reason: unknown) => void = () => {};
+      const ready = new Promise<void>((_, reject) => {
+        abort = reject;
+      });
+      return {
+        finished,
+        ready,
+        updateCallbackDone: Promise.resolve(),
+        skipTransition: () => {
+          skip();
+          abort(new DOMException("Transition was skipped", "AbortError"));
+        },
+      };
     });
+    const skip = vi.fn();
     Object.defineProperty(document, "startViewTransition", { configurable: true, value: start });
-    return { start, finishers, finish: () => finishers.forEach((resolve) => resolve()) };
+    return { start, skip, finishers, finish: () => finishers.forEach((resolve) => resolve()) };
   };
 
   afterEach(() => {
     delete (document as { startViewTransition?: unknown }).startViewTransition;
     Reflect.deleteProperty(navigator, "userActivation");
+    Reflect.deleteProperty(document, "elementFromPoint");
+  });
+
+  /**
+   * 揭示途中浏览器把指针一律判给 `<html>`：这里在 `<html>` 上派发原事件模拟它，
+   * `elementFromPoint` 给出跳过揭示之后的真实落点，`<html>` 上的冒泡监听记下页面（弹窗的「点在外面」检测）实际看到了谁。
+   */
+  const startRevealWithButton = () => {
+    stubMatchMedia(false);
+    const transition = stubViewTransition();
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { isActive: true },
+    });
+    const stop = initTheme();
+    const button = document.createElement("button");
+    document.body.append(button);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => button,
+    });
+    const seen: string[] = [];
+    const record = (event: Event) =>
+      seen.push(`${event.type}@${(event.target as Element).tagName.toLowerCase()}`);
+    for (const type of ["pointerdown", "mousedown", "click"])
+      document.documentElement.addEventListener(type, record);
+    setThemePreference("dark");
+    const cleanup = () => {
+      for (const type of ["pointerdown", "mousedown", "click"])
+        document.documentElement.removeEventListener(type, record);
+      button.remove();
+      stop();
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    };
+    return { ...transition, button, seen, cleanup };
+  };
+
+  const press = (type: string, init: PointerEventInit = {}) =>
+    document.documentElement.dispatchEvent(
+      type === "pointerdown"
+        ? new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: 10,
+            clientY: 10,
+            ...init,
+          })
+        : new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
+    );
+
+  it("揭示途中用鼠标点按钮：揭示立即走完，按下与点击都改投给按钮，页面看不到落在根元素上的那一份", () => {
+    const { skip, button, seen, cleanup } = startRevealWithButton();
+    const onClick = vi.fn();
+    button.addEventListener("click", onClick);
+
+    press("pointerdown", { pointerType: "mouse" });
+    expect(skip).toHaveBeenCalledOnce();
+    press("mousedown");
+    expect(document.activeElement).toBe(button);
+    button.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    press("click");
+
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(seen).toEqual(["pointerdown@button", "mousedown@button", "click@button"]);
+    cleanup();
+  });
+
+  it("揭示途中用触屏点按钮：只改投按下，抬起后的点击本来就落在真实元素上，不再拦", () => {
+    const { skip, seen, cleanup } = startRevealWithButton();
+
+    press("pointerdown", { pointerType: "touch" });
+    expect(skip).toHaveBeenCalledOnce();
+    expect(seen).toEqual(["pointerdown@button"]);
+    // 触屏的 click 若落到根元素（玩家点的就是空白处），照原样交给页面
+    press("click");
+    expect(seen).toEqual(["pointerdown@button", "click@html"]);
+    cleanup();
+  });
+
+  it("没有揭示在播时，落在根元素上的按压原样交给页面", async () => {
+    const { skip, seen, finish, cleanup } = startRevealWithButton();
+    finish();
+    await vi.waitFor(() =>
+      expect(document.documentElement.dataset.appearanceTransition).toBeUndefined()
+    );
+
+    press("pointerdown", { pointerType: "mouse" });
+    press("mousedown");
+    press("click");
+    expect(skip).not.toHaveBeenCalled();
+    expect(seen).toEqual(["pointerdown@html", "mousedown@html", "click@html"]);
+    cleanup();
   });
 
   it("玩家亲手切换主题时从按下处展开，结束后清掉圆心与标记", async () => {
