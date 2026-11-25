@@ -112,6 +112,13 @@
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.24 0 0 0 0 0.15 0.08 0 0 0 -0.03'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --tracking-normal: 0em;
   --leading-scale: 1;
+  /* 首页海报：像一张印好的牌面贴在纸上。四周露一圈卡面衬边，暗幕与胶囊上的字是暖褐墨，
+     胶囊是旧纸色的方正小签，神秘游戏的底是深褐墨色，不用纯白与冷色。 */
+  --poster-ink: oklch(0.24 0.028 58);
+  --poster-paper: oklch(0.9914 0.0098 87.4695);
+  --poster-blank: oklch(0.34 0.032 58);
+  --poster-pill-radius: 0.2rem;
+  --poster-mat: 0.3rem;
 }
 
 :where(.dark),

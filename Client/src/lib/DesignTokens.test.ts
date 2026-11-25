@@ -136,7 +136,8 @@ const requiredRatio = (theme: ThemeModeSpec, name: string) =>
 
 /**
  * 令牌全集按 index.css 的映射推出：`@theme inline` 里引用的每个变量（动效变量由脚本生成，除外），
- * 加上基础层直接引用的楷体栈与纸纹理。字体栈、圆角与档距、字距与行高倍率随主题不随明暗，只写在亮色块；
+ * 加上基础层直接引用的楷体栈与纸纹理。字体栈、圆角与档距、字距与行高倍率，以及首页海报的材料
+ * （海报在亮暗页面上是同一张图）随主题不随明暗，只写在亮色块；
  * 其余（颜色、阴影、纸纹理）随明暗变化，亮暗两块都必须写全。
  */
 const THEME_LEVEL_TOKENS = [
@@ -149,6 +150,11 @@ const THEME_LEVEL_TOKENS = [
   "radius-step",
   "tracking-normal",
   "leading-scale",
+  "poster-ink",
+  "poster-paper",
+  "poster-blank",
+  "poster-pill-radius",
+  "poster-mat",
 ] as const;
 
 function mappedTokens(): string[] {

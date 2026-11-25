@@ -51,6 +51,15 @@
   --color-bubble-self: var(--bubble-self);
   --color-bubble-self-foreground: var(--bubble-self-foreground);
 
+  /* 首页游戏海报的材料：海报是封面铺满的一张图，主题决定它像印在什么上。墨是自下而上的暗幕与胶囊上的字，
+     纸是暗幕上的字与胶囊底，留白是没有封面的神秘游戏的底色，衬边是海报四周露出的一圈卡面。
+     不随明暗变化：海报在亮暗页面上是同一张图。 */
+  --color-poster-ink: var(--poster-ink);
+  --color-poster-paper: var(--poster-paper);
+  --color-poster-blank: var(--poster-blank);
+  --radius-poster-pill: var(--poster-pill-radius);
+  --spacing-poster-mat: var(--poster-mat);
+
   /* 状态语义色。裁剪变体（`bg-success/10` 等）由 Tailwind 的透明度修饰符派生，
      不再逐个手写底色与边框，避免同一含义出现两套深浅。 */
   --color-success: var(--success);

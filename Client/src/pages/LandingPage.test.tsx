@@ -217,6 +217,29 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toBeInTheDocument();
   });
 
+  it("入口胶囊左端带玩法图标：开始、单人、多人、排位各一种，进不去的换成状态图标", () => {
+    renderLandingPage();
+
+    const iconOf = (element: HTMLElement) =>
+      [...(element.querySelector("svg")?.classList ?? [])].find(
+        (name) => name.startsWith("lucide-") && name !== "lucide-icon"
+      );
+    const song = screen.getByTestId("game-entry-songuessr");
+    const cee = screen.getByTestId("game-entry-animecharguessr");
+    expect(iconOf(screen.getByRole("link", { name: "Who is Faker 开始游戏" }))).toBe("lucide-play");
+    expect(iconOf(within(song).getByRole("link", { name: /单人模式/ }))).toBe("lucide-user-round");
+    expect(iconOf(within(song).getByRole("link", { name: /多人模式/ }))).toBe("lucide-users-round");
+    expect(iconOf(within(cee).getByRole("link", { name: /排位赛/ }))).toBe("lucide-medal");
+    expect(iconOf(within(screen.getByTestId("game-entry-mystery-1")).getByRole("button"))).toBe(
+      "lucide-play"
+    );
+    // 还没上线的锦标赛不画奖杯：色块换成虚线框里的时钟，和能进的入口一眼分开。
+    const tournament = within(cee)
+      .getByText("锦标赛", { selector: "span" })
+      .closest("[aria-disabled]");
+    expect(iconOf(tournament as HTMLElement)).toBe("lucide-clock");
+  });
+
   it("六款游戏排在同一面海报墙里，神秘游戏的海报与正式游戏一样", () => {
     renderLandingPage();
 

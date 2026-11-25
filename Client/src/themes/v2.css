@@ -102,6 +102,12 @@
   --paper-grain: none;
   --tracking-normal: 0em;
   --leading-scale: 1.08;
+  /* 首页海报：近黑暖墨的暗幕、象牙白胶囊，满圆胶囊，封面铺到边。 */
+  --poster-ink: oklch(0.17 0.006 85);
+  --poster-paper: oklch(0.993 0.003 88);
+  --poster-blank: oklch(0.285 0.022 295);
+  --poster-pill-radius: 9999px;
+  --poster-mat: 0px;
 }
 
 .dark[data-theme="v2"],
