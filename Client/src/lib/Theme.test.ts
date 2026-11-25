@@ -163,3 +163,86 @@ describe("theme", () => {
     expect(entryAt).toBeGreaterThan(scriptAt);
   });
 });
+
+describe("外观切换的揭示", () => {
+  /** 替身：回调同步执行，`finished` 交给用例手动结束，便于核对过渡期间与结束后的根元素状态。 */
+  const stubViewTransition = () => {
+    let finish = () => {};
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const start = vi.fn((update: () => void) => {
+      update();
+      return { finished, ready: Promise.resolve(), updateCallbackDone: Promise.resolve() };
+    });
+    Object.defineProperty(document, "startViewTransition", { configurable: true, value: start });
+    return { start, finish };
+  };
+
+  afterEach(() => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+    Reflect.deleteProperty(navigator, "userActivation");
+  });
+
+  it("玩家亲手切换主题时从按下处展开，结束后清掉圆心与标记", async () => {
+    stubMatchMedia(false);
+    const { start, finish } = stubViewTransition();
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { isActive: true },
+    });
+    const stop = initTheme();
+    window.dispatchEvent(new PointerEvent("pointerdown", { clientX: 40, clientY: 30 }));
+    const next = THEME_IDS.find((id) => id !== DEFAULT_THEME_ID);
+    if (!next) return stop();
+
+    setThemeId(next);
+    const root = document.documentElement;
+    expect(start).toHaveBeenCalledOnce();
+    expect(root.dataset.theme).toBe(next);
+    expect(root.dataset.appearanceTransition).toBe("");
+    expect(root.style.getPropertyValue("--appearance-reveal-x")).toBe("40px");
+    expect(root.style.getPropertyValue("--appearance-reveal-y")).toBe("30px");
+
+    finish();
+    await vi.waitFor(() => expect(root.dataset.appearanceTransition).toBeUndefined());
+    expect(root.style.getPropertyValue("--appearance-reveal-x")).toBe("");
+    stop();
+  });
+
+  it("偏好减弱动效、不是玩家触发或明暗看不出变化时直接落位", () => {
+    const { start } = stubViewTransition();
+    const root = document.documentElement;
+
+    // 减弱动效：stubMatchMedia(true) 让所有查询都命中，包括 prefers-reduced-motion。
+    stubMatchMedia(true);
+    const stop = initTheme();
+    setThemePreference("light");
+    expect(root.classList.contains("dark")).toBe(false);
+    expect(start).not.toHaveBeenCalled();
+    stop();
+
+    // 没有瞬时激活：程序或工具栏落位。
+    stubMatchMedia(false);
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { isActive: false },
+    });
+    const stopAgain = initTheme();
+    setThemePreference("dark");
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(start).not.toHaveBeenCalled();
+
+    // 系统是亮色、当前固定亮色时改成「跟随系统」，页面不变，不拍快照。
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { isActive: true },
+    });
+    setThemePreference("light");
+    start.mockClear();
+    setThemePreference("system");
+    expect(start).not.toHaveBeenCalled();
+    stopAgain();
+    window.localStorage.removeItem(THEME_STORAGE_KEY);
+  });
+});
