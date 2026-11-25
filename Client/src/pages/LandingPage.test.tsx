@@ -270,6 +270,23 @@ describe("LandingPage", () => {
     }
   });
 
+  it("点了神秘游戏马上打开设置，敬请期待的播报区仍对读屏可见", async () => {
+    const user = userEvent.setup();
+    renderLandingPage();
+
+    await user.click(screen.getByRole("button", { name: "神秘游戏1 开始游戏" }));
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    await screen.findByRole("dialog");
+
+    // 模态框把背后的页面设为对读屏隐藏，但会留下带 aria-live 的节点及其祖先；播报区不在任何被隐藏的子树里。
+    const live = screen.getByText("神秘游戏1敬请期待", { selector: "[aria-live]" });
+    expect(live.closest('[aria-hidden="true"]')).toBeNull();
+    // 只留播报区本身：海报与入口仍随页面一起被隐藏，不会出现在弹窗背后。
+    expect(
+      screen.getByTestId("game-entry-mystery-1").closest('[aria-hidden="true"]')
+    ).not.toBeNull();
+  });
+
   it("神秘游戏的开始游戏不导航，只在按钮上提示敬请期待，过一会儿换回来", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
