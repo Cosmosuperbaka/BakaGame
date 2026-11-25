@@ -236,13 +236,18 @@ test("长玩家名不会挤出两款游戏玩家栏中的分数", async ({ page 
     await expect(page).toHaveURL(new RegExp(`/${game}/room/\\d{4}$`));
     const score = page.getByLabel("0 分", { exact: true });
     await expect(score).toBeInViewport();
-    const visible = await score.evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      const x = rect.x + rect.width / 2;
-      const y = rect.y + rect.height / 2;
-      return element.contains(document.elementFromPoint(x, y));
-    });
-    expect(visible).toBe(true);
+    // 进房走跨页过渡：减弱动效下也要过几帧才结束，期间命中检测落在过渡伪元素所在的根节点上。
+    // 新页的 DOM 此时已在视口里，所以轮询等过渡收尾，而不是只取一次。
+    await expect
+      .poll(() =>
+        score.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const x = rect.x + rect.width / 2;
+          const y = rect.y + rect.height / 2;
+          return element.contains(document.elementFromPoint(x, y));
+        })
+      )
+      .toBe(true);
     // 姓名改用自定义浮层后不再有 title：直接按可见文本断言。
     // TeamPicker 的成员叠层是 aria-hidden 的头像，不含全名文本，不会撞车。
     await expect(page.getByText(name, { exact: true })).toBeVisible();
