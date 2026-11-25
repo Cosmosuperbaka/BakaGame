@@ -25,6 +25,13 @@ export const CLIENT_CHANNEL_PATHS = {
   desktopUpdate: "/api/client/desktop-update/:target/:arch/:currentVersion",
 } as const;
 
+/**
+ * macOS 安装包要求的最低系统版本，与 `Desktop/src-tauri/tauri.macos.conf.json` 的 `minimumSystemVersion`
+ * 同一个值（对账测试读配置核对）。低于它的系统装上新包也打不开：自动更新清单对它们回 204，
+ * 更新提醒也不再催下载。Windows 没设门槛。
+ */
+export const DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION = "14.0";
+
 /** 单个自检 id 的长度上限：壳超长截断后，服务端仍按冒号前的稳定前缀判定。 */
 export const CLIENT_SELF_CHECK_ID_MAX_LENGTH = 64;
 

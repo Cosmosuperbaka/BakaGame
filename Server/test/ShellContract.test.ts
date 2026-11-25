@@ -13,6 +13,7 @@ import {
   CLIENT_CHANNEL_PATHS,
   CLIENT_SELF_CHECK_ID_MAX_LENGTH,
   CLIENT_TICKET_REFRESH_MARGIN_MS,
+  DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION,
 } from "../src/infrastructure/ClientChannelContract";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
 import {
@@ -413,6 +414,17 @@ describe("票据时间常量", () => {
     const mobileCap = jsNumber(mobileBridge, "TICKET_TTL_SANITY_CAP_MS");
     expect(desktopCap).toBe(mobileCap);
     expect(desktopCap).toBeGreaterThanOrEqual(CLIENT_TICKET_TTL_MS);
+  });
+});
+
+describe("macOS 最低系统版本", () => {
+  // 服务端按它决定给不给旧系统的 Mac 下发自动更新；与安装包实际要求的版本不一致时，
+  // 要么把打不开的新包推给旧系统，要么把能装的系统挡在更新之外。
+  test("安装包配置的最低系统版本等于服务端的更新门槛", () => {
+    const config: unknown = JSON.parse(read("Desktop/src-tauri/tauri.macos.conf.json"));
+    const minimum = (config as { bundle?: { macOS?: { minimumSystemVersion?: unknown } } }).bundle
+      ?.macOS?.minimumSystemVersion;
+    expect(minimum).toBe(DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION);
   });
 });
 
