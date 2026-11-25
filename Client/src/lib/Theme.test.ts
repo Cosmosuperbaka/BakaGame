@@ -165,18 +165,18 @@ describe("theme", () => {
 });
 
 describe("外观切换的揭示", () => {
-  /** 替身：回调同步执行，`finished` 交给用例手动结束，便于核对过渡期间与结束后的根元素状态。 */
+  /** 替身：回调同步执行，每次过渡的 `finished` 交给用例手动结束，便于核对过渡期间与结束后的根元素状态。 */
   const stubViewTransition = () => {
-    let finish = () => {};
-    const finished = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const finishers: Array<() => void> = [];
     const start = vi.fn((update: () => void) => {
       update();
+      const finished = new Promise<void>((resolve) => {
+        finishers.push(resolve);
+      });
       return { finished, ready: Promise.resolve(), updateCallbackDone: Promise.resolve() };
     });
     Object.defineProperty(document, "startViewTransition", { configurable: true, value: start });
-    return { start, finish };
+    return { start, finishers, finish: () => finishers.forEach((resolve) => resolve()) };
   };
 
   afterEach(() => {
@@ -205,6 +205,37 @@ describe("外观切换的揭示", () => {
     expect(root.style.getPropertyValue("--appearance-reveal-y")).toBe("30px");
 
     finish();
+    await vi.waitFor(() => expect(root.dataset.appearanceTransition).toBeUndefined());
+    expect(root.style.getPropertyValue("--appearance-reveal-x")).toBe("");
+    stop();
+  });
+
+  it("上一次揭示还没播完又切换时，旧过渡收尾不清掉新过渡的圆心与标记", async () => {
+    stubMatchMedia(false);
+    const { start, finishers } = stubViewTransition();
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { isActive: true },
+    });
+    const stop = initTheme();
+    const [first, second] = THEME_IDS.filter((id) => id !== DEFAULT_THEME_ID);
+    if (!first || !second) return stop();
+    const root = document.documentElement;
+
+    window.dispatchEvent(new PointerEvent("pointerdown", { clientX: 40, clientY: 30 }));
+    setThemeId(first);
+    window.dispatchEvent(new PointerEvent("pointerdown", { clientX: 200, clientY: 120 }));
+    setThemeId(second);
+    expect(start).toHaveBeenCalledTimes(2);
+
+    // 浏览器在新过渡开始时跳过旧的那次，旧的 finished 随即结束
+    finishers[0]?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(root.dataset.appearanceTransition).toBe("");
+    expect(root.style.getPropertyValue("--appearance-reveal-x")).toBe("200px");
+
+    finishers[1]?.();
     await vi.waitFor(() => expect(root.dataset.appearanceTransition).toBeUndefined());
     expect(root.style.getPropertyValue("--appearance-reveal-x")).toBe("");
     stop();
