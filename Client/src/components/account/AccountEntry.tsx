@@ -79,6 +79,9 @@ function UnreadDot({ className }: { className?: string }) {
   );
 }
 
+/** 首页顶栏在窄屏只放得下一排图标：带文字的入口收成与图标钮同尺寸的方块，名称走 aria-label。 */
+const NARROW_ICON_ONLY = "max-sm:w-9 max-sm:px-0";
+
 /**
  * 主页右上角的账号入口：未登录为「账号」按钮（点了才谈登录），登录后为头像菜单
  * （资料、反馈、后台、退出）。账号服务不可用时入口照常可见，登录失败由接口给出提示；
@@ -198,35 +201,46 @@ export function AccountButton() {
           </AnimatePresence>
         </Popover.Root>
       ) : (
+        // 窄屏顶栏只放得下一排图标：名称收进 aria-label，按钮收成与设置、反馈同尺寸的方块。
         <Button
           data-agent-sensitive
           variant="ghost"
+          aria-label="账号"
           disabled={status === "loading"}
+          className={NARROW_ICON_ONLY}
           onClick={(event) => openDialog("login", originOfEvent(event))}
         >
-          <UserRound />
-          账号
+          <UserRound aria-hidden="true" />
+          <span className="max-sm:hidden">账号</span>
         </Button>
       )}
     </>
   );
 }
 
-/** 顶栏的反馈入口：始终可见；未登录也能提交匿名反馈。`compact` 只留图标，供房间顶栏这类窄位置使用。 */
-export function FeedbackButton({ compact = false }: { compact?: boolean }) {
+/**
+ * 顶栏的反馈入口：始终可见；未登录也能提交匿名反馈。
+ * `compact` 为 `true` 时处处只留图标，供房间顶栏这类窄位置使用；为 `"narrow"` 时只在窄屏收成图标，供首页顶栏使用。
+ */
+export function FeedbackButton({ compact = false }: { compact?: boolean | "narrow" }) {
   const unread = useAccountStore((state) => state.unreadFeedback);
+  const narrow = compact === "narrow";
   return (
     <Button
       data-agent-sensitive
       variant="ghost"
-      size={compact ? "icon" : "default"}
-      className="relative"
+      size={compact === true ? "icon" : "default"}
+      className={cn("relative", narrow && NARROW_ICON_ONLY)}
       aria-label={unread ? `反馈（${unread} 条新回复）` : "反馈"}
       onClick={(event) => openDialog("feedback", originOfEvent(event))}
     >
       <MessageSquareText aria-hidden="true" />
       {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
-      {compact ? null : <span className="[@media(max-height:680px)]:hidden">反馈</span>}
+      {compact === true ? null : (
+        <span className={cn("[@media(max-height:680px)]:hidden", narrow && "max-sm:hidden")}>
+          反馈
+        </span>
+      )}
       {unread ? <UnreadDot className="absolute right-1 top-1" /> : null}
     </Button>
   );
