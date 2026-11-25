@@ -14,7 +14,34 @@ function TooltipProvider(props: React.ComponentProps<typeof TooltipPrimitive.Pro
   );
 }
 
-const Tooltip = TooltipPrimitive.Root;
+/**
+ * 与 Radix 同名同参，开合状态统一托管在这里。
+ * Radix 打开提示时会广播一次「有提示打开了」让其它提示收起，而收起动画还没播完的同一个提示也还在听：
+ * 非受控时这一下会把刚重开的自己又关掉（收起途中移回触发元素或重新聚焦，提示打不开）。
+ * 受控时 Radix 拿新值与尚未提交的旧值比较，这次自关不会生效，重开就从当前的收起进度接着展开。
+ */
+function Tooltip({
+  open: openProp,
+  defaultOpen = false,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange]
+  );
+  return (
+    <TooltipPrimitive.Root
+      {...props}
+      open={openProp ?? uncontrolledOpen}
+      onOpenChange={handleOpenChange}
+    />
+  );
+}
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
 /** 浮层内容的可调参数，与 `TooltipContent` 的落位口径一致。 */

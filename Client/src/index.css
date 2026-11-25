@@ -249,37 +249,33 @@ html {
   }
 }
 
-@keyframes overlay-emerge {
-  from {
-    opacity: 0;
-    transform: scale(var(--motion-popover-enter-scale));
-  }
+/* 收起时的占位关键帧：不改任何样式，只让 Radix Presence 等它播完再卸载，真正的收起由过渡完成。 */
+@keyframes overlay-hold {
   to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes overlay-retract {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(var(--motion-popover-exit-scale));
+    visibility: visible;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  [data-radix-popper-content-wrapper] > [data-state="delayed-open"],
-  [data-radix-popper-content-wrapper] > [data-state="instant-open"],
-  [data-radix-popper-content-wrapper] > [data-state="open"] {
-    /* 与 popover 变体同取 spring.swift；缩放原点由 Select / Tooltip 内容元素按 Radix 落位给出。 */
-    animation: overlay-emerge var(--motion-spring-swift-duration) var(--motion-spring-swift);
+  /* 开合用过渡而不是关键帧：展开途中收起、收起途中重开时，从当前的不透明度与缩放接着走，不先跳满再收。
+     与 popover 变体同取 spring.swift；缩放原点由 Select / Tooltip 内容元素按 Radix 落位给出。 */
+  [data-radix-popper-content-wrapper] > [data-state] {
+    transition:
+      opacity var(--motion-spring-swift-duration) var(--motion-spring-swift),
+      scale var(--motion-spring-swift-duration) var(--motion-spring-swift);
+  }
+  @starting-style {
+    [data-radix-popper-content-wrapper] > [data-state] {
+      opacity: 0;
+      scale: var(--motion-popover-enter-scale);
+    }
   }
   [data-radix-popper-content-wrapper] > [data-state="closed"] {
-    animation: overlay-retract var(--motion-duration-instant) var(--motion-ease-in-out);
+    opacity: 0;
+    scale: var(--motion-popover-exit-scale);
+    transition-duration: var(--motion-duration-instant);
+    transition-timing-function: var(--motion-ease-in-out);
+    animation: overlay-hold var(--motion-duration-instant);
   }
 }
 
