@@ -217,6 +217,39 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toBeInTheDocument();
   });
 
+  it("即将上线一组列出三款神秘游戏，只占位不给入口", async () => {
+    const user = userEvent.setup();
+    renderLandingPage();
+
+    const upcoming = screen.getByRole("region", { name: "即将上线" });
+    const cards = within(upcoming).getAllByRole("listitem");
+    expect(cards.map((card) => card.textContent)).toEqual(["神秘游戏1", "神秘游戏2", "神秘游戏3"]);
+    for (const [index, card] of cards.entries()) {
+      expect(card).toBe(screen.getByTestId(`game-entry-mystery-${index + 1}`));
+      expect(card).toHaveAttribute("aria-disabled", "true");
+      // 不剧透也不引流：没有链接、按钮或图片，点了也不导航。
+      expect(within(card).queryByRole("link")).not.toBeInTheDocument();
+      expect(within(card).queryByRole("button")).not.toBeInTheDocument();
+      expect(card.querySelector("img")).toBeNull();
+    }
+    await user.click(cards[0]!);
+    expect(window.location.pathname).toBe("/");
+
+    // 能玩的三款排在前面的游戏列表里，神秘游戏不混进去。
+    const games = screen.getByRole("list", { name: "游戏" });
+    expect(within(games).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(games).queryByText(/神秘游戏/)).not.toBeInTheDocument();
+  });
+
+  it("顶栏的账号与反馈在窄屏只留图标时仍有可访问名", () => {
+    useAccountStore.setState({ status: "guest", profile: null, unreadFeedback: 0 });
+    renderLandingPage();
+
+    // 文字在窄屏收起，名称不能跟着丢：读屏与按名称查找都靠 aria-label。
+    expect(screen.getByRole("button", { name: "账号" })).toHaveAttribute("aria-label", "账号");
+    expect(screen.getByRole("button", { name: "反馈" })).toHaveAttribute("aria-label", "反馈");
+  });
+
   it("排位入口被服务端关掉后置灰标注暂时关闭，同卡其它入口照常", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(

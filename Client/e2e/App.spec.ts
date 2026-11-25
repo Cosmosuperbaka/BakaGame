@@ -96,6 +96,10 @@ test("landing page exposes three playable games and keeps placeholders disabled"
     page.getByTestId("game-entry-animecharguessr").getByRole("link", { name: /多人模式/ })
   ).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
+  // 即将上线的三款只占位：看得见名字，没有任何可点的入口。
+  const upcoming = page.getByRole("region", { name: "即将上线" });
+  await expect(upcoming.getByRole("listitem")).toHaveText(["神秘游戏1", "神秘游戏2", "神秘游戏3"]);
+  await expect(upcoming.getByRole("link")).toHaveCount(0);
   await page.getByRole("link", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
@@ -132,7 +136,7 @@ test("landing game entries stack cleanly and stay clear of the footer", async ({
 
     // 顶部不遮挡 header
     expect(resolvedBoxes[0]!.y).toBeGreaterThanOrEqual(headerBox!.y);
-    // 页脚固定在视口底部，矮视口下内容从它下面滚过。要守的是滚到底之后末张卡片整张露在页脚上方。
+    // 页脚排在内容之后、整页一起滚，矮视口下要守的是滚到底之后末张卡片整张露在页脚上方。
     await entries[2]!.hover();
     await page.mouse.wheel(0, 10_000);
     await expect
@@ -252,6 +256,41 @@ test("长玩家名不会挤出两款游戏玩家栏中的分数", async ({ page 
     // TeamPicker 的成员叠层是 aria-hidden 的头像，不含全名文本，不会撞车。
     await expect(page.getByText(name, { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${game}-default-avatar.png`) });
+  }
+});
+
+test("landing header and footer stay tidy on narrow phones", async ({ page }) => {
+  for (const width of [320, 360, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+
+    // 顶栏一行：站名在左、设置账号反馈三个图标钮在右，互不重叠，也不把页面撑出横向滚动。
+    const brand = await page.getByRole("heading", { name: "Baka Game" }).boundingBox();
+    const actions = await Promise.all(
+      [/^设置$/, /^账号$/, /^反馈/].map((name) => page.getByRole("button", { name }).boundingBox())
+    );
+    expect(brand).not.toBeNull();
+    for (const box of actions) {
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(brand!.x + brand!.width);
+      expect(Math.abs(box!.y + box!.height / 2 - (brand!.y + brand!.height / 2))).toBeLessThan(8);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width
+    );
+
+    // 页脚的友情链接名字完整显示，不被两栏挤成省略号。
+    const clipped = await page
+      .getByRole("navigation", { name: "友情链接" })
+      .getByRole("link")
+      .evaluateAll(
+        (links) =>
+          links.filter((link) => {
+            const label = link.querySelector("span");
+            return !label || label.scrollWidth > label.clientWidth;
+          }).length
+      );
+    expect(clipped).toBe(0);
   }
 });
 
