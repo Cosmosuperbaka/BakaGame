@@ -276,6 +276,10 @@ async fn run_round(app: &AppHandle) -> Round {
             .endpoints(vec![url])
             // 清单与下载请求都带客户端 UA（只用于诊断与统计）
             .and_then(|builder| builder.header("User-Agent", crate::user_agent::current()))
+            .map(|builder| {
+                let app = app.clone();
+                builder.on_before_exit(move || before_installer_exit(&app))
+            })
             .and_then(|builder| builder.timeout(CHECK_TIMEOUT).build())
             .map_err(|err| format!("更新器初始化失败：{err}"))
     }) {
@@ -316,6 +320,18 @@ async fn run_round(app: &AppHandle) -> Round {
             Round::Failed(format!("下载或校验新版失败：{err}"))
         }
     }
+}
+
+/// Windows 上插件拉起安装程序后直接结束进程（`std::process::exit`），不走正常退出：窗口状态插件只在
+/// 退出事件里落盘，等不到这一次，玩家这一轮挪过的位置与尺寸就丢了。所以先按同一组标志把窗口状态
+/// 写盘，再做插件默认钩子里的退出前清理（设了这个钩子就替换掉了默认的那一个）。清理会隐藏窗口，
+/// 必须排在写盘之后。macOS 走 `restart`，有正常的退出事件，插件不会调用这个钩子。
+fn before_installer_exit(app: &AppHandle) {
+    use tauri_plugin_window_state::AppHandleExt;
+    if let Err(err) = app.save_window_state(crate::window_fit::state_flags()) {
+        eprintln!("[baka-updater] 安装前保存窗口状态失败：{err}");
+    }
+    app.cleanup_before_exit();
 }
 
 /// 安装已就绪的更新并重启。只能装壳自己下载并校验过的那一份；没有就报错，不发任何请求。
