@@ -15,7 +15,8 @@
 
         <!--
           返回键交给页面（MainActivity 的 OnBackPressedCallback + 桥接），按 AndroidX 的口径接入，
-          打开预测式返回（targetSdk 36 起是默认行为）。首页返回也由壳拦截并退到后台，原因见 MainActivity。
+          打开预测式返回（targetSdk 36 起是默认行为）。首页且没人接手时交还系统播放回到桌面的动画，
+          系统要结束 Activity 时改成退到后台；内页整页跟手预演。见 Mobile/README.md 7.8。
         -->
         <activity
             android:name=".MainActivity"

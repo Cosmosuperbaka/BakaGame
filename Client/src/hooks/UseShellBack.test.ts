@@ -1,11 +1,22 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { SHELL_BACK_EVENT, useShellBack } from "./UseShellBack";
+import {
+  SHELL_BACK_CHANGE_EVENT,
+  SHELL_BACK_EVENT,
+  SHELL_BACK_PROBE_EVENT,
+  useShellBack,
+} from "./UseShellBack";
 
 const pressBack = () => {
   const event = new CustomEvent(SHELL_BACK_EVENT, { cancelable: true });
   window.dispatchEvent(event);
   return event;
+};
+
+const probe = () => {
+  const event = new CustomEvent(SHELL_BACK_PROBE_EVENT, { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
 };
 
 describe("useShellBack", () => {
@@ -37,5 +48,36 @@ describe("useShellBack", () => {
     renderHook(() => useShellBack(second));
     pressBack();
     expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
+  });
+
+  it("询问只回答会不会接手，不执行回调", () => {
+    const onBack = vi.fn();
+    const { rerender, unmount } = renderHook(({ enabled }) => useShellBack(onBack, enabled), {
+      initialProps: { enabled: true },
+    });
+    expect(probe()).toBe(true);
+    expect(onBack).not.toHaveBeenCalled();
+    rerender({ enabled: false });
+    expect(probe()).toBe(false);
+    rerender({ enabled: true });
+    unmount();
+    expect(probe()).toBe(false);
+  });
+
+  it("挂上与撤下接手方时提醒壳重新询问", () => {
+    const changes = vi.fn();
+    window.addEventListener(SHELL_BACK_CHANGE_EVENT, changes);
+    try {
+      const { rerender, unmount } = renderHook(({ enabled }) => useShellBack(vi.fn(), enabled), {
+        initialProps: { enabled: false },
+      });
+      expect(changes).not.toHaveBeenCalled();
+      rerender({ enabled: true });
+      expect(changes).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(changes).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener(SHELL_BACK_CHANGE_EVENT, changes);
+    }
   });
 });

@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -33,6 +34,9 @@ internal class SystemBarsController(private val activity: ComponentActivity) {
     private var webView: WebView? = null
     private var dark = false
     private var color = Color.TRANSPARENT
+
+    /** 预测式返回预演时背后的压暗比例（0..1），只作用于父容器，不改记下的页面底色。 */
+    private var backdropDim = 0f
 
     fun attach(target: WebView) {
         webView = target
@@ -66,6 +70,15 @@ internal class SystemBarsController(private val activity: ComponentActivity) {
         apply()
     }
 
+    /** 预测式返回预演时把页面背后（父容器）压暗；0 恢复原色。必须在主线程调用。 */
+    fun setBackdropDim(fraction: Float) {
+        backdropDim = fraction.coerceIn(0f, 1f)
+        container?.setBackgroundColor(backdropColor())
+    }
+
+    private fun backdropColor(): Int =
+        if (backdropDim <= 0f) color else ColorUtils.blendARGB(color, Color.BLACK, backdropDim)
+
     private fun apply() {
         // 状态栏只有图标、没有底色：底色由父容器的内边距区域铺出来。
         val status =
@@ -76,7 +89,7 @@ internal class SystemBarsController(private val activity: ComponentActivity) {
             if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
             else SystemBarStyle.light(Color.TRANSPARENT, LEGACY_NAV_SCRIM)
         activity.enableEdgeToEdge(status, navigation)
-        container?.setBackgroundColor(color)
+        container?.setBackgroundColor(backdropColor())
         webView?.setBackgroundColor(color)
     }
 

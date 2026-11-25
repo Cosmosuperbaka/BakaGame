@@ -8,7 +8,8 @@ import website.baka.game.MainActivity
 
 /**
  * 壳的界面能力：页面把自己的实际外观告诉原生，原生据此给系统栏配色；
- * 系统返回键交给页面处理，页面在首页时请原生把应用退到后台。
+ * 系统返回键交给页面处理，页面预先告诉原生这次返回会做什么（预测式返回据此决定拦不拦、预不预演），
+ * 页面在首页时请原生把应用退到后台。
  *
  * 只由 `Mobile/bridge/baka-bridge.js` 调用，不挂到页面可见的 `__BAKA_CHANNEL__` 上，
  * 与通道证明（BakaChannel）分开：这里只有界面，不涉及密钥与票据。
@@ -34,6 +35,26 @@ class BakaShellPlugin : Plugin() {
             return
         }
         host.applyPageAppearance(dark, ShellUiPolicy.parseOpaqueHex(call.getString("color")))
+        call.resolve()
+    }
+
+    /**
+     * `{ mode: "overlay" | "claim" | "navigate" | "root" }`：页面状态一变，桥接就报一次这次返回会做什么。
+     * root 时原生不再拦截，系统播放回到桌面的预测动画；navigate 时整页跟手预演。其余值拒收。
+     */
+    @PluginMethod
+    fun setBackMode(call: PluginCall) {
+        val mode = ShellUiPolicy.parseBackMode(call.getString("mode"))
+        if (mode == null) {
+            call.reject("BAKA_SHELL_BAD_ARGUMENT")
+            return
+        }
+        val host = activity as? MainActivity
+        if (host == null) {
+            call.reject("BAKA_SHELL_NO_WINDOW")
+            return
+        }
+        host.applyBackMode(mode)
         call.resolve()
     }
 

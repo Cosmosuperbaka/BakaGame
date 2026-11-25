@@ -63,7 +63,7 @@
 - 业务日期展示禁止无参 `toLocaleDateString()`，必须用 `Intl.DateTimeFormat` 显式锁定语言与基准时区；相对时间用原生 `Intl.RelativeTimeFormat`，抽到独立工具模块避免触发 Fast Refresh 规则；SSR/SSG 场景的相对时间节点标记 `suppressHydrationWarning`。
 - 信封 id 与追踪号不得假设存在 `crypto.randomUUID()`（HTTP 局域网等非安全上下文没有），降级用同样可用的 `crypto.getRandomValues` 生成符合 RFC 4122 v4 的值，不得抛 `TypeError` 阻断对局，也不用 `Math.random`。信封 id 要含时间戳、单调计数器与随机熵；命令的追踪号取当前活动跨度的追踪号，与同一跨度里的错误上报同号，没有活动跨度才自造。
 - 浏览器存储一律经 `lib/SafeStorage` 访问：存储被禁用时取 `localStorage` 本身就抛 `SecurityError`，写满与隐私模式也会抛，业务代码不各写 `try/catch`，也不直接碰 `window.localStorage`；读不到、写不进按返回值降级，不阻断对局。
-- **移动壳的系统返回键由页面接手**：桥接先关最上层浮层，再派发可取消的返回事件（`hooks/UseShellBack.ts`），没人接手才退回上一页、首页退到后台。会让玩家离开对局的页面（房间外壳、排位对局）必须用 `useShellBack` 接手并先弹确认，不得直接离开；顶栏的离开按钮是明确操作，照旧直接离开。壳内的系统栏、挖孔与键盘由原生让开，页面里的 `env(safe-area-inset-*)` 恒为 0，不要为壳另加安全区内边距（见 `Mobile/README.md` §7.7）。移动壳里（`<html data-surface="mobile">`）游戏界面默认不响应长按选字，输入框与可编辑区照常；玩家确实需要复制的内容（如聊天正文）加 `data-selectable` 放开。
+- **移动壳的系统返回键由页面接手**：桥接先关最上层浮层，再派发可取消的返回事件（`hooks/UseShellBack.ts`），没人接手才退回上一页、首页退到后台。会让玩家离开对局的页面（房间外壳、排位对局）必须用 `useShellBack` 接手并先弹确认，不得直接离开；顶栏的离开按钮是明确操作，照旧直接离开。预测式返回要在手势开始时就知道页面会不会接手，壳会提前询问：`useShellBack` 挂着且 `enabled` 为真即视为接手，是否接手只能由 `enabled` 表达，不得在回调里按条件放弃。壳内的系统栏、挖孔与键盘由原生让开，页面里的 `env(safe-area-inset-*)` 恒为 0，不要为壳另加安全区内边距（见 `Mobile/README.md` §7.7）。移动壳里（`<html data-surface="mobile">`）游戏界面默认不响应长按选字，输入框与可编辑区照常；玩家确实需要复制的内容（如聊天正文）加 `data-selectable` 放开。
 - 根据环境变量拼接服务端地址时先剥离基准地址末尾斜杠，避免 `//api`。
 - 接口基址的取值语义以 `Client/src/lib/ServerEndpoint.ts` 及其测试为准；同源还是跨域属部署口径，由构建注入的基址决定，不在前端代码里写死当前形态。改口径前先按 [Deployment](../../Agents/Deployment.md) 完成 WebSocket 完整链路验证。
 

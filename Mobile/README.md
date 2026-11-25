@@ -153,9 +153,11 @@ Mobile/
         │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17：只读 attestationSecurityLevel（仅展示）
         │   └── SelfCheck.kt             # P3.3 运行时检测
         ├── shell/
-        │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）、首页返回退到后台
+        │   ├── BakaShellPlugin.kt       # 壳界面能力：页面回报外观（系统栏配色）与返回模式、首页返回退到后台
         │   ├── SystemBarsController.kt  # 边到边、系统栏/挖孔/键盘避让与系统栏配色
-        │   ├── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距）
+        │   ├── ShellUiPolicy.kt         # 可单测的纯规则（颜色解析、内边距、返回模式）
+        │   ├── BackPreview.kt           # 应用内预测式返回：整页跟手预演
+        │   ├── BackPreviewPolicy.kt     # 预演形态与回弹曲线（可单测）
         │   └── ClientUserAgent.kt       # 壳的 User-Agent 段（WebView 追加、原生请求专用）
         └── update/
             ├── BakaHotUpdatePlugin.kt   # 下载 / sha256 校验 / 安全解压
@@ -411,7 +413,7 @@ Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真�
 - 主题继承昼夜主题（`AppTheme.NoActionBar` 覆盖 Capacitor 库里的暗色同名主题），WebView 据此给页面
   `prefers-color-scheme`；`configChanges` 保留 `uiMode`，切换系统深浅色不重建 Activity，页面原地跟随。
 
-### 7.8 系统返回键
+### 7.8 系统返回键与预测式返回
 
 `MainActivity` 用 AndroidX 的 `OnBackPressedCallback` 把返回键交给页面（`window.__BAKA_SHELL_BACK__`，
 桥接里实现），清单打开了 `enableOnBackInvokedCallback`：
@@ -422,9 +424,22 @@ Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真�
 3. 不在首页：退回上一页；冷启动落在深链上没有上一页时改写成首页并通知路由，不整页重载；
 4. 在首页：`BakaShell.moveToBack` 把应用退到后台，不结束 Activity。
 
-返回拦截在所有系统版本上一直开着。实测安卓 16 打开预测式返回后，首页不拦截时系统会结束 Activity
-（从启动器进入也一样），回来时页面重载、对局断开；安卓 7 到 11 的默认返回同样会结束它。代价是首页返回
-没有系统「回到桌面」的预测动画。页面没有桥接或脚本出错时原生直接退到后台，不会卡在按返回没反应的界面。
+预测式返回要在玩家**开始**滑动时就知道这次返回会做什么，松手再问页面就晚了。所以桥接在页面状态一变时
+（浮层开合、换页、接手方挂上或撤下）按同一顺序算出模式，经 `BakaShell.setBackMode` 预先告诉原生：
+`overlay`、`claim`、`navigate`、`root`。判断接手用只问不做的 `bakagame:shell-back-probe`，
+接手方挂上或撤下时页面派发 `bakagame:shell-back-change` 提醒重新询问（三个事件名都由脚本测试对账）。
+
+- `root`（首页、没有浮层、没人接手）：撤掉拦截，系统播放「回到桌面」的预测动画。系统随后只在从桌面启动、
+  且任务里只有这一个 Activity 时把任务退到后台，否则请求结束 Activity（从安装器、通知、其它应用或调试工具
+  打开时都是后者；安卓 7 到 11 的默认返回也一律结束），结束了回来就是整页重载、对局断开。所以返回交还系统
+  期间 `MainActivity.finish` 改成退到后台，退不到才照常结束。
+- `navigate`：整页跟着手势预演（`shell/BackPreview.kt`）：缩小、向手指一侧平移、圆角变大、背后压暗；
+  松手后页面退回上一页，卡片弹回原位；取消就原样弹回。SPA 的上一页不在屏幕外等着，所以不做「揭开上一页」。
+  系统关了动画时不预演。
+- `overlay`、`claim`：照常拦截、不预演，关浮层与弹确认都不是离开当前页。
+- 还不知道（页面没加载完、整页重新加载、旧页面不回报）：照常拦截，按上面的返回链兜底。
+  页面没有桥接或脚本出错时原生直接退到后台，不会卡在按返回没反应的界面。
+- 手势进行中不切换拦截开关，等松手或取消后再按最新模式生效。
 
 ### 7.9 User-Agent
 

@@ -19,6 +19,8 @@ const source = fs
 const shellHarness = ({ withShell = true, pathname = "/", historyIdx = 0 } = {}) => {
   const calls = [];
   const backCalls = [];
+  // 预先告诉原生的返回模式（BakaShell.setBackMode），按回报顺序
+  const modes = [];
   const navigation = [];
   const keydowns = [];
   const windowListeners = new Map();
@@ -36,6 +38,9 @@ const shellHarness = ({ withShell = true, pathname = "/", historyIdx = 0 } = {})
     },
     moveToBack: async () => {
       backCalls.push(["moveToBack"]);
+    },
+    setBackMode: async (args) => {
+      modes.push(args.mode);
     },
   };
   const location = { pathname };
@@ -154,6 +159,7 @@ const shellHarness = ({ withShell = true, pathname = "/", historyIdx = 0 } = {})
   return {
     calls,
     backCalls,
+    modes,
     navigation,
     keydowns,
     overlays,
@@ -161,6 +167,14 @@ const shellHarness = ({ withShell = true, pathname = "/", historyIdx = 0 } = {})
     history,
     back: () => sandbox.window.__BAKA_SHELL_BACK__(),
     claimBack: (handler) => sandbox.window.addEventListener("bakagame:shell-back", handler),
+    // 模拟 useShellBack 挂上：对询问只 preventDefault，再提醒桥接重新询问
+    answerProbe: () => {
+      sandbox.window.addEventListener("bakagame:shell-back-probe", (event) =>
+        event.preventDefault()
+      );
+      sandbox.window.dispatchEvent({ type: "bakagame:shell-back-change" });
+    },
+    navigate: (url) => sandbox.window.history.pushState({ idx: 1 }, "", url),
     classes,
     page,
     sandbox,
@@ -286,8 +300,60 @@ test("返回事件名与客户端钩子同一份契约", () => {
     "utf8"
   );
   const bridge = fs.readFileSync(path.resolve(here, "../bridge/baka-bridge.js"), "utf8");
-  const clientName = /SHELL_BACK_EVENT = "([^"]+)"/.exec(hook)?.[1];
-  const bridgeName = /var SHELL_BACK_EVENT = "([^"]+)"/.exec(bridge)?.[1];
-  assert.ok(clientName);
-  assert.equal(bridgeName, clientName);
+  for (const name of ["SHELL_BACK_EVENT", "SHELL_BACK_PROBE_EVENT", "SHELL_BACK_CHANGE_EVENT"]) {
+    const clientName = new RegExp(`export const ${name} = "([^"]+)"`).exec(hook)?.[1];
+    const bridgeName = new RegExp(`var ${name} = "([^"]+)"`).exec(bridge)?.[1];
+    assert.ok(clientName, `客户端缺 ${name}`);
+    assert.equal(bridgeName, clientName, name);
+  }
+});
+
+test("预测式返回：首页没有浮层时报 root，交还系统播放回到桌面", () => {
+  const h = shellHarness({ pathname: "/" });
+  h.flush();
+  assert.deepEqual(h.modes, ["root"]);
+});
+
+test("预测式返回：浮层开合时在 overlay 与 root 之间切换，状态没变不重复回报", () => {
+  const h = shellHarness({ pathname: "/" });
+  h.flush();
+  h.overlays.open = 1;
+  h.mutate();
+  h.mutate();
+  h.overlays.open = 0;
+  h.mutate();
+  assert.deepEqual(h.modes, ["root", "overlay", "root"]);
+  // 只看浮层相关的变化：节点挂载撤下与 data-state、role
+  const watcher = h.observers.find((observer) => observer.options.subtree);
+  assert.ok(watcher);
+  assert.equal(watcher.options.childList, true);
+  assert.deepEqual([...watcher.options.attributeFilter].sort(), ["data-state", "role"]);
+});
+
+test("预测式返回：换页（pushState 不发事件）后立刻重报", () => {
+  const h = shellHarness({ pathname: "/" });
+  h.flush();
+  h.navigate("/abouts");
+  assert.equal(h.location.pathname, "/abouts");
+  h.navigate("/");
+  assert.deepEqual(h.modes, ["root", "navigate", "root"]);
+});
+
+test("预测式返回：深链冷启动退回首页时同样重报", () => {
+  const h = shellHarness({ pathname: "/abouts", historyIdx: 0 });
+  h.flush();
+  h.back();
+  assert.deepEqual(h.modes, ["navigate", "root"]);
+});
+
+test("预测式返回：页面挂上接手方后报 claim，询问不会触发真返回", () => {
+  const h = shellHarness({ pathname: "/cee/room/1234", historyIdx: 2 });
+  h.flush();
+  let claimed = 0;
+  h.claimBack(() => {
+    claimed += 1;
+  });
+  h.answerProbe();
+  assert.deepEqual(h.modes, ["navigate", "claim"]);
+  assert.equal(claimed, 0, "询问只问不做，不能弹出离开确认");
 });
