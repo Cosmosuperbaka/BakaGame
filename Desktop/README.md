@@ -162,6 +162,8 @@ Mac 的打包作业读同一份凭据；页面与壳内请求在两个平台上�
 
 ### Windows
 
+安装界面只用简体中文，与站点语言一致（`tauri.conf.json` 的 NSIS 语言配置）；自动更新走被动模式，只有进度条。
+
 壳产物由 Windows Authenticode 签名，签名在打包**之后**做（Tauri 自己不签 Windows 制品）：
 
 - **安装包与主 exe 都要签**。只签安装包的话，安装后的 exe 没有签名，SmartScreen 与自检的模块白名单
