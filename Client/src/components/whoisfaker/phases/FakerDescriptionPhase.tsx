@@ -287,11 +287,8 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
             <Hint label={player.name}>
               <th
                 scope="row"
-                className={cn(
-                  "truncate px-3 py-2.5 text-left text-sm",
-                  // 本人那一行已有主色浅底，名字用正文色加粗，主色不作正文
-                  isMe ? "font-semibold text-foreground" : "font-medium"
-                )}
+                // 本人那一行靠主色浅底认出，名字与别人同一字重：玩家名是数据，留在正文层，与玩家栏同一款字
+                className="truncate px-3 py-2.5 text-left text-sm font-medium"
               >
                 {player.name}
               </th>
