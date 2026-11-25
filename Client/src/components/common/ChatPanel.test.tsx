@@ -121,6 +121,32 @@ describe("ChatPanel (Common)", () => {
     expect(within(bubble).queryByText("聊天仅增强版玩家可见")).not.toBeInTheDocument();
   });
 
+  it("一条消息都没有时给出空提示，有频道说明或第一条消息到达后让位", () => {
+    const props = { players: mockPlayers, myPlayerId: "p-me", onSendMessage: vi.fn() };
+    const { rerender } = render(<ChatPanel {...props} messages={[]} />);
+    expect(screen.getByText("还没有人说话")).toBeVisible();
+
+    rerender(<ChatPanel {...props} messages={[]} notice="聊天仅增强版玩家可见" />);
+    expect(screen.queryByText("还没有人说话")).not.toBeInTheDocument();
+
+    rerender(
+      <ChatPanel
+        {...props}
+        messages={[
+          {
+            id: "m-1",
+            playerId: "p-other",
+            playerName: "对手",
+            text: "来了",
+            createdAt: 1000,
+            system: false,
+          },
+        ]}
+      />
+    );
+    expect(screen.queryByText("还没有人说话")).not.toBeInTheDocument();
+  });
+
   it("保留本人和他人消息的发送者、正文与时间顺序", () => {
     const messages: ChatMessage[] = [
       {

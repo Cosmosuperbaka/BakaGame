@@ -163,6 +163,8 @@ export function ChatPanel({
             className="min-w-0 space-y-2 overflow-x-clip"
           >
             {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
+            {/* 一条都没有时给一句提示：整块空白像是没加载出来。第一条消息到达就让位。 */}
+            {!notice && messages.length === 0 ? <p className={SYSTEM_TEXT}>还没有人说话</p> : null}
             <AnimatePresence initial={false}>
               {messages.map((message) => {
                 const isMe = message.playerId === myPlayerId;
