@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { OPEN_SITE_FEATURES } from "@bakagame/shared/values";
 import { resetSiteFeaturesForTest } from "@/lib/SiteConfig";
+import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
 import LandingPage from "./LandingPage";
 
 /**
@@ -19,6 +20,16 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = { name: "默认" };
+
+/**
+ * 已登录且有未读回复：顶栏的账号入口换成头像，头像与反馈各带一枚红点。
+ * 窄屏顶栏三个入口同为图标钮，和站名排在同一行。
+ */
+export const SignedIn: Story = {
+  name: "已登录 · 有未读回复",
+  beforeEach: () =>
+    presetAccount({ status: "signedIn", profile: STORY_PROFILE, unreadFeedback: 2 }),
+};
 
 /**
  * 后台临时关掉部分模式：入口留在原位、置灰并标注「暂时关闭」。
