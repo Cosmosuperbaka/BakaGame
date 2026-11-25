@@ -224,7 +224,9 @@ function PillIcon({ icon: Icon, tone }: { icon: LucideIcon; tone?: string }) {
     <span
       aria-hidden="true"
       className={cn(pillIconClass, "text-poster-paper")}
-      style={{ backgroundColor: tone }}
+      // 主题色直接作底时，最亮的那款（Songuessr 的橙）压纸色图标只有约 2.7:1；
+      // 掺进 15% 墨色后三款主题色在三套主题下都不低于 3:1（非文字图形口径），也和海报底色拉开一层。
+      style={{ backgroundColor: `color-mix(in oklab, ${tone} 85%, var(--poster-ink))` }}
     >
       <Icon strokeWidth={2.5} className={Icon === Play ? "fill-current" : undefined} />
     </span>
