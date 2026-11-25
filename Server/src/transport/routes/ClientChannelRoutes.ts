@@ -211,6 +211,7 @@ export const clientChannelRoutes = (
           ? ""
           : ((await artifacts?.latestVersion(packagePlatform)) ?? "");
         // 系统低于新包最低要求的 Mac 不再催更新：下载下来的新包在这台机器上打不开。
+        // 硬提醒照旧（进不了反作弊房仍要说清），但带上 systemTooOld，让页面不给下载链接、改说先升级系统。
         // 读不出系统版本时照旧提醒，提醒本身不会弄坏任何东西。
         const systemTooOld =
           packagePlatform === "macos" &&
@@ -220,7 +221,7 @@ export const clientChannelRoutes = (
           !systemTooOld &&
           latestVersion.length > 0 &&
           compareDottedVersion(query.clientVersion, latestVersion) < 0;
-        return { minimumVersion, outdated, latestVersion, behindLatest };
+        return { minimumVersion, outdated, latestVersion, behindLatest, systemTooOld };
       },
       {
         // 查询串不锁 additionalProperties：多带一个排查用的参数不该让整条提醒失效。

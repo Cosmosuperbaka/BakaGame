@@ -53,6 +53,8 @@ interface ServerOptions {
   latest?: string;
   /** undefined = 发布信息读不到（503）；null 表示服务端说这个平台还没发包。 */
   packages?: unknown;
+  /** 服务端确知这台设备的系统低于新包要求。 */
+  systemTooOld?: boolean;
 }
 
 /**
@@ -76,6 +78,7 @@ const server = (options: ServerOptions = {}) => {
       minimumVersion: options.floor ?? "2.0.0",
       latestVersion,
       behindLatest: latestVersion.length > 0,
+      systemTooOld: options.systemTooOld ?? false,
     });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -420,6 +423,19 @@ describe("客户端更新提醒", () => {
     window.sessionStorage.clear();
     render(<first.ClientUpdateNotice />);
     expect(await screen.findByRole("button", { name: "重启更新" })).toBeInTheDocument();
+  });
+
+  it("系统低于新包要求的 Mac 照旧收到硬提醒，但不给下载链接，改说先升级系统", async () => {
+    shellAt("1.0.0", "desktop", "macos");
+    const { urls } = server({ floor: "2.0.0", systemTooOld: true, packages: [MACOS_PACKAGE] });
+    await mountNotice();
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("更新到 2.0.0 以上才能进反作弊房");
+    expect(notice).toHaveTextContent("需要先升级系统");
+    await waitFor(() => expect(urls.some((url) => url.includes("packages"))).toBe(true));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("制品还没推上去时不渲染下载按钮：宁可不给，也不给一个跳 404 的链接", async () => {
