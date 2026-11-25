@@ -106,7 +106,8 @@ export const RegisterEmpty: Story = {
     await userEvent.type(scope.getByLabelText("QQ 号"), "123456789");
     await userEvent.click(scope.getByRole("button", { name: "发送验证码" }));
     await scope.findByRole("button", { name: "注册并登录" });
-    await userEvent.type(scope.getByLabelText("验证码"), "123456");
+    // 底部按钮随发码结果立刻换字，验证码一步要等 QQ 号一步退场后才挂上，不能紧接着同步取。
+    await userEvent.type(await scope.findByLabelText("验证码"), "123456");
   },
 };
 
