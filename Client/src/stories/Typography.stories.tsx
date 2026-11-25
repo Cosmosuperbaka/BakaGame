@@ -19,7 +19,7 @@ function TypographySpecimen() {
           </p>
           <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">字体角色</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            正文、说明与表单使用楷体；标题、强调与操作标签使用衬线体；房间号、哈希与时间戳使用等宽体。
+            正文、说明与表单走正文层；标题、强调与列标题走标题层；按钮、标签页与徽章走控件层；房间号、哈希与时间戳走数据层。每层落到哪款字体由主题决定，切换主题对照着看。
           </p>
         </header>
 
@@ -28,10 +28,10 @@ function TypographySpecimen() {
           <p className="text-sm leading-6">
             这是一段普通正文，用来检查长句的阅读节奏与字距。段落里的
             <strong>关键结论</strong>
-            会切回衬线体，和周围的楷体形成层级；正文本身保持楷体的书写感，不靠加粗承担全部信息。
+            会切到标题层，和周围的正文形成层级；正文本身不靠加粗承担全部信息。
           </p>
           <p className="text-sm leading-6 text-muted-foreground">
-            说明文字、表单帮助与聊天内容都走同一层。遇到生僻字时回落到衬线体，不会掉到系统无衬线体。
+            说明文字、表单帮助与聊天内容都走正文层。字体栈里只有项目内置的字体，生僻字回落到同风格的中文字体，不会掉到系统字体。
           </p>
           <p className="text-lg leading-8">
             夜空に浮かぶ星たち、静寂を切り裂いていく。浮现在夜空中的群星点点，将这无尽的寂静一点点撕裂开来。
@@ -49,7 +49,7 @@ function TypographySpecimen() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-            <p>卡片标题用衬线体，描述与正文用楷体；操作按钮在底部保持衬线标签。</p>
+            <p>卡片标题走标题层，描述与正文走正文层；底部按钮走控件层。</p>
             <div className="flex flex-wrap gap-2">
               <Button size="sm">加入房间</Button>
               <Button size="sm" variant="outline">
@@ -82,7 +82,7 @@ function TypographySpecimen() {
           <div className="grid gap-2">
             <Label htmlFor="typography-nickname">昵称</Label>
             <Input id="typography-nickname" defaultValue="小布丁" />
-            <p className="text-xs text-muted-foreground">这个输入框和帮助文字使用楷体。</p>
+            <p className="text-xs text-muted-foreground">这个输入框和帮助文字走正文层。</p>
           </div>
           <Tabs defaultValue="body">
             <TabsList>
@@ -91,7 +91,7 @@ function TypographySpecimen() {
             </TabsList>
             <TabsContent value="body" className="pt-4">
               <p className="text-sm leading-6 text-muted-foreground">
-                标签页的标签在控件层使用衬线体，内容回到楷体正文。
+                标签页的标签走控件层，内容回到正文层。
               </p>
             </TabsContent>
             <TabsContent value="data" className="pt-4">
@@ -114,21 +114,23 @@ function TypographySpecimen() {
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-border/60">
-                  <td className="px-3 py-2">小布丁</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">12</td>
-                  <td className="px-3 py-2 text-right">平民</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2">海豹</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">9</td>
-                  <td className="px-3 py-2 text-right">卧底</td>
-                </tr>
+                {[
+                  { name: "小布丁", score: 12, role: "平民" },
+                  { name: "Kanade", score: 9, role: "卧底" },
+                ].map((row) => (
+                  <tr key={row.name} className="border-b border-border/60 last:border-b-0">
+                    <th scope="row" className="px-3 py-2 text-left font-medium">
+                      {row.name}
+                    </th>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{row.score}</td>
+                    <td className="px-3 py-2 text-right">{row.role}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
           <p className="text-xs text-muted-foreground">
-            表头使用衬线体，单元格文字用楷体，得分用等宽体。
+            列标题走标题层；行标题装的是玩家名，与单元格一样走正文层，拉丁名字不会比中文名字又大又重；得分走数据层。
           </p>
         </section>
 
@@ -138,7 +140,7 @@ function TypographySpecimen() {
             房间号 4821 · QQ 12345678 · v1.9.5 · d5cbfc43 · 2026-10-25 21:40
           </p>
           <p className="text-sm leading-6">
-            数据保持等宽体，正文里的时间与编号不会跟着楷体的书写节奏摆动。
+            数据走等宽的数据层，正文里的时间与编号不会跟着正文字体的节奏摆动。
           </p>
         </section>
       </div>
@@ -155,6 +157,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Roles: Story = {
-  name: "楷体正文与衬线标题",
+  name: "四层字体",
   render: () => <TypographySpecimen />,
 };

@@ -498,9 +498,11 @@ html {
   }
   /* 标题与行内强调回到衬线，正文与说明保持楷体。字重本身就是层级信号：写了 semibold 以上的
      都是标题、标签或强调，不靠标签名也落到衬线层，业务组件不用再逐处声明字体族。
+     表头只取列标题：行标题装的是玩家名、角色名这类数据，跟着字重走，不因为标签名被抬成标题层，
+     否则同一张表里拉丁名字换成标题衬线，比中文名字又大又重。
      :where() 不增加特异性，业务类（font-mono、font-sans 等）仍可覆盖。 */
   :where(h1, h2, h3, h4, h5, h6),
-  :where(th),
+  :where(th:not([scope="row"])),
   :where(strong, b),
   :where(.font-semibold, .font-bold) {
     font-family: var(--font-serif);
