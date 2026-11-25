@@ -379,6 +379,37 @@ html {
   }
 }
 
+/* 外观切换（lib/Theme 的 swapAppearance 写 data-appearance-transition 与圆心、半径）：
+   玩家换明暗或主题时，旧外观定格成快照不动，新外观从按下的那一点按圆形铺满整页，读作「是这一下把它换掉的」。
+   这里动的是 clip-path：整页快照是一张已合成的图，裁切不触发布局；缩放与透明度做不出「从一点铺开」，
+   淡入淡出又说不出成因。半径走 spring.settle，过冲只是让圆超出视口，看不出回弹。 */
+@keyframes appearance-reveal {
+  from {
+    clip-path: circle(0 at var(--appearance-reveal-x) var(--appearance-reveal-y));
+  }
+  to {
+    clip-path: circle(
+      var(--appearance-reveal-radius) at var(--appearance-reveal-x) var(--appearance-reveal-y)
+    );
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-appearance-transition]::view-transition-old(root) {
+    mix-blend-mode: normal;
+    z-index: auto;
+    animation: none;
+  }
+  :root[data-appearance-transition]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation: appearance-reveal var(--motion-spring-settle-duration) var(--motion-spring-settle)
+      both;
+  }
+  :root[data-appearance-transition]::view-transition-group(root) {
+    animation-duration: var(--motion-spring-settle-duration);
+  }
+}
+
 /* 进房编排（RoomShell 挂载后的 roomEntranceMs 内带 data-room-entering）：
    顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 lib/motion/ 生成。
    玩家栏、聊天栏自外侧边缘等比展开；顶栏与游戏区只显影，游戏区内容另由 phaseSwap 自后推入，两层不叠缩放。
