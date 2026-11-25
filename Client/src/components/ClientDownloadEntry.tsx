@@ -23,10 +23,13 @@ import type { OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
 
 /**
- * macOS 包没有经过苹果公证，首次打开会被系统拦下；只在 macOS 档、包确实可下载时提示怎么放行。
+ * 只在 macOS 档、包确实可下载时给出的两条安装提示：
+ * - 直接在 dmg 或下载目录里运行时，系统把 App 搬到只读的随机路径上跑，自动更新替换不了它，
+ *   所以先说拖进「应用程序」。
+ * - 包没有经过苹果公证，首次打开会被系统拦下，再说怎么放行。
  */
 const MACOS_FIRST_OPEN_HINT =
-  "首次打开若被系统拦下，到系统设置的「隐私与安全性」里点「仍要打开」。";
+  "打开 dmg 后先把 BakaGame 拖进「应用程序」再启动，否则收不到自动更新。首次打开若被系统拦下，到系统设置的「隐私与安全性」里点「仍要打开」。";
 
 const LABELS: Record<ClientPackagePlatform, string> = {
   windows: "Windows",
