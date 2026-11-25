@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Hint, TooltipProvider } from "@/components/ui/Tooltip";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { Hint, Tooltip, TooltipProvider, TooltipTrigger } from "@/components/ui/Tooltip";
 
 describe("Hint", () => {
   it("文案为空时只渲染原元素，不挂浮层", () => {
@@ -43,5 +44,27 @@ describe("Hint", () => {
 
     await user.hover(screen.getByText("触发元素"));
     await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("兜底文案"));
+  });
+
+  it("收起动画还没播完时重新聚焦，提示照常重开，不被自己的收起广播关掉", () => {
+    // jsdom 没有动画，Presence 收起即卸载；常驻挂载的内容等价于「收起动画还在播」的那一小段。
+    render(
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger>触发元素</TooltipTrigger>
+          <TooltipPrimitive.Portal forceMount>
+            <TooltipPrimitive.Content forceMount>说明</TooltipPrimitive.Content>
+          </TooltipPrimitive.Portal>
+        </Tooltip>
+      </TooltipProvider>
+    );
+    const trigger = screen.getByText("触发元素");
+
+    act(() => trigger.focus());
+    expect(trigger).toHaveAttribute("data-state", "instant-open");
+    act(() => trigger.blur());
+    expect(trigger).toHaveAttribute("data-state", "closed");
+    act(() => trigger.focus());
+    expect(trigger).toHaveAttribute("data-state", "instant-open");
   });
 });
