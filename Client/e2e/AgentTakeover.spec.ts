@@ -94,10 +94,12 @@ const pair = async (page: Page, agent: MockAgent): Promise<PageView> => {
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("switch", { name: "交给 Agent 操作" }).click();
   const code = await dialog.getByText(/^[A-Z2-9]{8}$/).textContent();
-  const claimed = await agent.call<{ view: PageView }>("control_page", { code });
+  await agent.call("control_page", { code });
   await expect(page.getByRole("button", { name: "收回控制" })).toBeVisible();
   await expect(dialog).toBeHidden();
-  return claimed.view;
+  // 认领时回来的画面可能拍在设置弹窗退场途中，那时页面其余部分还对读屏隐藏、Agent 也看不到；
+  // 弹窗收起后重读一次，拿到人类此刻看到的页面。
+  return (await view(agent)).view;
 };
 
 const release = (page: Page) => page.getByRole("button", { name: "收回控制" });
