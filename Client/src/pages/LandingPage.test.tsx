@@ -217,28 +217,62 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toBeInTheDocument();
   });
 
-  it("即将上线一组列出三款神秘游戏，只占位不给入口", async () => {
-    const user = userEvent.setup();
+  it("六款游戏排在同一张网格里，神秘游戏的卡片与正式游戏一样", () => {
     renderLandingPage();
 
-    const upcoming = screen.getByRole("region", { name: "即将上线" });
-    const cards = within(upcoming).getAllByRole("listitem");
-    expect(cards.map((card) => card.textContent)).toEqual(["神秘游戏1", "神秘游戏2", "神秘游戏3"]);
-    for (const [index, card] of cards.entries()) {
-      expect(card).toBe(screen.getByTestId(`game-entry-mystery-${index + 1}`));
-      expect(card).toHaveAttribute("aria-disabled", "true");
-      // 不剧透也不引流：没有链接、按钮或图片，点了也不导航。
-      expect(within(card).queryByRole("link")).not.toBeInTheDocument();
-      expect(within(card).queryByRole("button")).not.toBeInTheDocument();
-      expect(card.querySelector("img")).toBeNull();
-    }
-    await user.click(cards[0]!);
-    expect(window.location.pathname).toBe("/");
+    // 标题与计数和大厅的「房间列表」同一种写法；网格以标题为名。
+    expect(screen.getByRole("heading", { level: 2, name: "全部游戏" })).toBeInTheDocument();
+    const games = screen.getByRole("list", { name: "全部游戏" });
+    const cards = within(games).getAllByRole("listitem");
+    expect(cards.map((card) => card.dataset.testid)).toEqual([
+      "game-entry-whoisfaker",
+      "game-entry-songuessr",
+      "game-entry-animecharguessr",
+      "game-entry-mystery-1",
+      "game-entry-mystery-2",
+      "game-entry-mystery-3",
+    ]);
+    expect(within(games.parentElement as HTMLElement).getByText(String(cards.length))).toHaveClass(
+      "font-mono"
+    );
 
-    // 能玩的三款排在前面的游戏列表里，神秘游戏不混进去。
-    const games = screen.getByRole("list", { name: "游戏" });
-    expect(within(games).getAllByRole("listitem")).toHaveLength(3);
-    expect(within(games).queryByText(/神秘游戏/)).not.toBeInTheDocument();
+    for (const [index, card] of cards.slice(3).entries()) {
+      const title = `神秘游戏${index + 1}`;
+      // 和正式游戏同一种卡片：标题同级，入口是同尺寸的「开始游戏」，没有「即将上线」之类的另眼标记。
+      expect(within(card).getByRole("heading", { level: 3, name: title })).toBeInTheDocument();
+      const start = within(card).getByRole("button", { name: `${title} 开始游戏` });
+      expect(start).toBeEnabled();
+      expect(start).not.toHaveAttribute("data-agent-control");
+      expect(within(card).queryByText("即将上线")).not.toBeInTheDocument();
+      // 不剧透：没有封面图，也没有能带人离开首页的链接。
+      expect(card.querySelector("img")).toBeNull();
+      expect(within(card).queryByRole("link")).not.toBeInTheDocument();
+    }
+  });
+
+  it("神秘游戏的开始游戏不导航，只在按钮上提示敬请期待，过一会儿换回来", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderLandingPage();
+
+    const card = screen.getByTestId("game-entry-mystery-1");
+    const start = within(card).getByRole("button", { name: "神秘游戏1 开始游戏" });
+    await user.click(start);
+
+    expect(window.location.pathname).toBe("/");
+    expect(start).toHaveTextContent("敬请期待");
+    // 名字固定在按钮上，提示另走礼貌播报，读屏不会把两段文字连读。
+    expect(start).toHaveAccessibleName("神秘游戏1 开始游戏");
+    expect(screen.getByText("神秘游戏1敬请期待", { selector: "[aria-live]" })).toBeInTheDocument();
+    // 播报区整页一处，不放进按钮：模态框打开时它会把所在的按钮一起留在背后可读。
+    expect(card.querySelector("[aria-live]")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.queryByText("神秘游戏1敬请期待", { selector: "[aria-live]" })).toBeNull();
+    // 旧文案淡出要走完退场动画：等它离场，而不是同步断言。
+    await waitFor(() => expect(start).toHaveTextContent(/^开始游戏$/));
   });
 
   it("顶栏的账号与反馈在窄屏只留图标时仍有可访问名", () => {

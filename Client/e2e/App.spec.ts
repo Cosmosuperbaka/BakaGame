@@ -96,54 +96,72 @@ test("landing page exposes three playable games and keeps placeholders disabled"
     page.getByTestId("game-entry-animecharguessr").getByRole("link", { name: /多人模式/ })
   ).toBeVisible();
   await expect(page.locator('[aria-disabled="true"]').first()).toBeVisible();
-  // 即将上线的三款只占位：看得见名字，没有任何可点的入口。
-  const upcoming = page.getByRole("region", { name: "即将上线" });
-  await expect(upcoming.getByRole("listitem")).toHaveText(["神秘游戏1", "神秘游戏2", "神秘游戏3"]);
-  await expect(upcoming.getByRole("link")).toHaveCount(0);
+  // 六款游戏同一张网格：三款神秘游戏的卡片和正式游戏一样，「开始游戏」点了只提示敬请期待，不离开首页。
+  const games = page.getByRole("list", { name: "全部游戏" });
+  await expect(games.getByRole("listitem")).toHaveCount(6);
+  for (const index of [1, 2, 3])
+    await expect(games.getByRole("button", { name: `神秘游戏${index} 开始游戏` })).toBeVisible();
+  const mystery = games.getByRole("button", { name: "神秘游戏1 开始游戏" });
+  await mystery.click();
+  await expect(mystery).toContainText("敬请期待");
+  await expect(page).toHaveURL(/\/$/);
   await page.getByRole("link", { name: /Who is Faker/ }).click();
   await expect(page).toHaveURL(/\/whoisfaker$/);
   // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
 });
 
-test("landing game entries stack cleanly and stay clear of the footer", async ({ page }) => {
+test("landing game cards line up in a tidy grid and stay clear of the footer", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const viewport of [
-    { width: 2048, height: 1050 },
-    { width: 1024, height: 500 },
-    { width: 844, height: 390 },
+    { width: 2048, height: 1050, columns: 2 },
+    { width: 1024, height: 500, columns: 2 },
+    { width: 844, height: 390, columns: 2 },
+    { width: 390, height: 844, columns: 1 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
 
-    const entries = ["whoisfaker", "songuessr", "animecharguessr"].map((id) =>
-      page.getByTestId(`game-entry-${id}`)
+    const cards = page.getByRole("list", { name: "全部游戏" }).getByRole("listitem");
+    await expect(cards).toHaveCount(6);
+    const boxes = await cards.evaluateAll((items) =>
+      items.map((item) => {
+        const rect = item.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      })
     );
-    const boxes = await Promise.all(entries.map((entry) => entry.boundingBox()));
     const headerBox = await page.locator("header").boundingBox();
-    const footerBox = await page.locator("footer").boundingBox();
-
-    expect(boxes.every((box) => box !== null)).toBe(true);
     expect(headerBox).not.toBeNull();
-    expect(footerBox).not.toBeNull();
-    const resolvedBoxes = boxes.filter((box): box is NonNullable<typeof box> => box !== null);
 
-    // 竖排单列布局：Y 坐标按卡片顺序严格递增，X 坐标水平居中对齐
-    expect(resolvedBoxes[0]!.y).toBeLessThan(resolvedBoxes[1]!.y);
-    expect(resolvedBoxes[1]!.y).toBeLessThan(resolvedBoxes[2]!.y);
-    expect(Math.abs(resolvedBoxes[0]!.x - resolvedBoxes[1]!.x)).toBeLessThan(5);
-    expect(Math.abs(resolvedBoxes[1]!.x - resolvedBoxes[2]!.x)).toBeLessThan(5);
+    // 按网格位置逐张核对：同一行顶边对齐、等高，同一列左边对齐；行与行、列与列互不重叠。
+    const { columns } = viewport;
+    for (const [index, box] of boxes.entries()) {
+      const rowHead = boxes[index - (index % columns)]!;
+      const columnHead = boxes[index % columns]!;
+      expect(Math.abs(box.y - rowHead.y)).toBeLessThan(1);
+      expect(Math.abs(box.height - rowHead.height)).toBeLessThan(1);
+      expect(Math.abs(box.x - columnHead.x)).toBeLessThan(1);
+      if (index % columns > 0) {
+        const left = boxes[index - 1]!;
+        expect(box.x).toBeGreaterThanOrEqual(left.x + left.width);
+      }
+      if (index >= columns) {
+        const above = boxes[index - columns]!;
+        expect(box.y).toBeGreaterThanOrEqual(above.y + above.height);
+      }
+    }
 
     // 顶部不遮挡 header
-    expect(resolvedBoxes[0]!.y).toBeGreaterThanOrEqual(headerBox!.y);
+    expect(boxes[0]!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
     // 页脚排在内容之后、整页一起滚，矮视口下要守的是滚到底之后末张卡片整张露在页脚上方。
-    await entries[2]!.hover();
+    const last = cards.last();
+    await last.hover();
     await page.mouse.wheel(0, 10_000);
     await expect
       .poll(async () => {
-        const last = await entries[2]!.boundingBox();
+        const lastBox = await last.boundingBox();
         const footer = await page.locator("footer").boundingBox();
-        return footer!.y - (last!.y + last!.height);
+        return footer!.y - (lastBox!.y + lastBox!.height);
       })
       .toBeGreaterThanOrEqual(0);
   }
@@ -278,6 +296,17 @@ test("landing header and footer stay tidy on narrow phones", async ({ page }) =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width
     );
+
+    // 游戏卡上的游戏名与入口文字完整显示：两枚入口并排时，四个字的模式名不被挤成省略号。
+    const truncatedLabels = await page
+      .getByRole("list", { name: "全部游戏" })
+      .locator(".truncate")
+      .evaluateAll((labels) =>
+        labels
+          .filter((label) => label.scrollWidth > label.clientWidth)
+          .map((label) => label.textContent)
+      );
+    expect(truncatedLabels).toEqual([]);
 
     // 页脚的友情链接名字完整显示，不被两栏挤成省略号。
     const clipped = await page
