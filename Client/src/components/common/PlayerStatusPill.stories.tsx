@@ -77,27 +77,10 @@ export const Groups: Story = {
               host
               status={{ label: "出题", tone: "questioner" }}
             />
-            <PlayerRow
-              name={peach.name}
-              score={9}
-              status={{ label: "猜中", tone: "success" }}
-            />
-            <PlayerRow
-              name={me.name}
-              score={7}
-              me
-              status={{ label: "猜歌", tone: "warning" }}
-            />
-            <PlayerRow
-              name={longName.name}
-              score={6}
-              status={{ label: "猜中", tone: "success" }}
-            />
-            <PlayerRow
-              name={kanade.name}
-              score={3}
-              status={{ label: "猜歌", tone: "warning" }}
-            />
+            <PlayerRow name={peach.name} score={9} status={{ label: "猜中", tone: "success" }} />
+            <PlayerRow name={me.name} score={7} me status={{ label: "猜歌", tone: "warning" }} />
+            <PlayerRow name={longName.name} score={6} status={{ label: "猜中", tone: "success" }} />
+            <PlayerRow name={kanade.name} score={3} status={{ label: "猜歌", tone: "warning" }} />
             <PlayerRow
               name={azumi.name}
               score={0}

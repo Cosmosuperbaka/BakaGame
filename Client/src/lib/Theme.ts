@@ -192,8 +192,7 @@ export function setThemePreference(next: ThemePreference): void {
   if (next === preference.get()) return;
   // 「跟随系统」与当前明暗一致时页面不会变，不必拍快照播一段看不出变化的揭示。
   const visible =
-    resolveTheme(next, systemPrefersDark()) !==
-    resolveTheme(preference.get(), systemPrefersDark());
+    resolveTheme(next, systemPrefersDark()) !== resolveTheme(preference.get(), systemPrefersDark());
   preference.write(next);
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, next);

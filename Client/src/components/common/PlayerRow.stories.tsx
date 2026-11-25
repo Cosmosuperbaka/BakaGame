@@ -54,19 +54,8 @@ export const AllStates: Story = {
   name: "全部行内状态",
   render: () => (
     <div className="flex flex-col gap-px">
-      <PlayerRow
-        name={host.name}
-        score={12}
-        host
-        status={{ label: "准备", tone: "success" }}
-      />
-      <PlayerRow
-        name={me.name}
-        score={9}
-        me
-        host
-        status={{ label: "猜歌", tone: "warning" }}
-      />
+      <PlayerRow name={host.name} score={12} host status={{ label: "准备", tone: "success" }} />
+      <PlayerRow name={me.name} score={9} me host status={{ label: "猜歌", tone: "warning" }} />
       <PlayerRow
         name={peach.name}
         score={15}
@@ -79,17 +68,8 @@ export const AllStates: Story = {
         online={false}
         status={{ label: "等待", tone: "default" }}
       />
-      <PlayerRow
-        name={azumi.name}
-        score={6}
-        bot
-        status={{ label: "准备", tone: "success" }}
-      />
-      <PlayerRow
-        name={longName.name}
-        score={0}
-        status={{ label: "旁观", tone: "default" }}
-      />
+      <PlayerRow name={azumi.name} score={6} bot status={{ label: "准备", tone: "success" }} />
+      <PlayerRow name={longName.name} score={0} status={{ label: "旁观", tone: "default" }} />
     </div>
   ),
 };
@@ -99,23 +79,9 @@ export const PresenceHierarchy: Story = {
   name: "状态层级",
   render: () => (
     <div className="flex flex-col gap-px">
-      <PlayerRow
-        name={host.name}
-        score={12}
-        host
-        status={{ label: "准备", tone: "success" }}
-      />
-      <PlayerRow
-        name={me.name}
-        score={9}
-        me
-        status={{ label: "准备", tone: "success" }}
-      />
-      <PlayerRow
-        name={peach.name}
-        score={7}
-        status={{ label: "等待", tone: "default" }}
-      />
+      <PlayerRow name={host.name} score={12} host status={{ label: "准备", tone: "success" }} />
+      <PlayerRow name={me.name} score={9} me status={{ label: "准备", tone: "success" }} />
+      <PlayerRow name={peach.name} score={7} status={{ label: "等待", tone: "default" }} />
       <PlayerRow
         name={kanade.name}
         score={3}
