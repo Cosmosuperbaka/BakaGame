@@ -234,8 +234,10 @@ class SeedingStore implements CEERankedStore {
 }
 
 export interface RankedClientIdentity {
-  account?: PlayerAccount;
-  clientChannel?: ClientChannelProof;
+  /** `null` 表示游客连接（没有账号）。 */
+  account?: PlayerAccount | null;
+  /** 缺省是一份验过的桌面端证明；`null` 表示网页连接（没有通道证明）。 */
+  clientChannel?: ClientChannelProof | null;
   isAgent?: boolean;
 }
 
@@ -335,14 +337,18 @@ export function rankedHarness(options: RankedHarnessOptions = {}) {
     const sent: RankedClient["sent"] = [];
     const id = `${name}-${crypto.randomUUID()}`;
     const record = createTestConnection(id, {
-      account: identity.account ?? { userId, image: null },
+      account:
+        identity.account === null ? undefined : (identity.account ?? { userId, image: null }),
       clientIp: "127.0.0.1",
-      clientChannel: identity.clientChannel ?? {
-        clientId: `client-${name}`,
-        clientType: "desktop",
-        clientVersion: "9.9.9",
-        keyProtection: "hardware",
-      },
+      clientChannel:
+        identity.clientChannel === null
+          ? undefined
+          : (identity.clientChannel ?? {
+              clientId: `client-${name}`,
+              clientType: "desktop",
+              clientVersion: "9.9.9",
+              keyProtection: "hardware",
+            }),
       isAgent: identity.isAgent,
       send: (payload) => sent.push(structuredClone(payload) as RankedClient["sent"][number]),
       close: () => {
