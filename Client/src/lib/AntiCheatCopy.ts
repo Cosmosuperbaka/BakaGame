@@ -128,6 +128,12 @@ export const clientUpdateNoticeText = (
     ? `${CEE_CLIENT_TYPE_LABELS[clientType]}版本较旧，更新到 ${version} 以上才能进反作弊房；普通房间不受影响。`
     : `${CEE_CLIENT_TYPE_LABELS[clientType]}有新版本 ${version} 可用，建议更新到最新版。`;
 
+/**
+ * 壳报出的系统版本低于新版安装包要求时接在提醒后面：新包在这台设备上打不开，所以不给下载链接，
+ * 改说要先升级系统。服务端只在确知系统过旧时才这么判定。
+ */
+export const CLIENT_UPDATE_SYSTEM_TOO_OLD_TEXT = "这台设备的系统版本低于新版要求，需要先升级系统。";
+
 export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
 /**
  * 点了「下载最新版」之后短暂换上的确认：链接由壳交给系统浏览器在后台下载，客户端里本来什么都看不到，

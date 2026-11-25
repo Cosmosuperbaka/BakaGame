@@ -223,12 +223,30 @@ test("系统低于新包最低版本的 Mac 壳不再催更新；读不出系统
     `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ${macShellUa(osVersion)}`;
 
   expect(await check(app, query, webview(`${Number(major) - 1}.6`))).toMatchObject({
-    body: { latestVersion: "2.1.0", behindLatest: false },
+    body: { latestVersion: "2.1.0", behindLatest: false, systemTooOld: true },
   });
   expect(await check(app, query, webview(`${major}.0`))).toMatchObject({
-    body: { behindLatest: true },
+    body: { behindLatest: true, systemTooOld: false },
   });
-  expect(await check(app, query)).toMatchObject({ body: { behindLatest: true } });
+  expect(await check(app, query)).toMatchObject({
+    body: { behindLatest: true, systemTooOld: false },
+  });
+});
+
+test("低于硬门槛且系统过旧的 Mac 照旧收到硬提醒，同时被标出系统过旧，页面据此不给下载链接", async () => {
+  const app = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "3.0.0" })
+  );
+  const [major] = DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION.split(".");
+  const query = "clientType=desktop&clientVersion=2.0.0&platform=macos";
+
+  expect(await check(app, query, macShellUa(`${Number(major) - 1}.6`))).toMatchObject({
+    body: { minimumVersion: "3.0.0", outdated: true, systemTooOld: true },
+  });
+  // Windows 没设系统门槛：同样的版本只有硬提醒，不会被标成系统过旧
+  expect(
+    await check(app, "clientType=desktop&clientVersion=2.0.0&platform=windows", macShellUa("10.0"))
+  ).toMatchObject({ body: { outdated: true, systemTooOld: false } });
 });
 
 test("macOS 包没配（缺省空串）时 Mac 壳没有软提醒依据，不拿 Windows 的版本去催", async () => {

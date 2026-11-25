@@ -9,6 +9,7 @@ import {
   CLIENT_UPDATE_HANDED_OFF_LABEL,
   CLIENT_UPDATE_PREPARING_LABEL,
   CLIENT_UPDATE_RESTART_LABEL,
+  CLIENT_UPDATE_SYSTEM_TOO_OLD_TEXT,
   clientUpdateNoticeText,
 } from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
@@ -56,6 +57,8 @@ export interface ClientUpdateFloor {
   mode: "required" | "available";
   /** 要提示到的版本，非空串。 */
   version: string;
+  /** 服务端确知这台设备的系统低于新包要求：不给下载链接，改说先升级系统。 */
+  systemTooOld?: boolean;
 }
 
 /** 存档要区分「关了哪一档提醒」：同一版本从软提醒抬成硬门槛时必须重新说一次。 */
@@ -128,12 +131,18 @@ export function ClientUpdateNotice() {
           minimumVersion?: unknown;
           latestVersion?: unknown;
           behindLatest?: unknown;
+          systemTooOld?: unknown;
         };
         // 硬门槛优先：低于最低准入版本时，文案必须说清「进不了反作弊房」，
         // 不能降级成只说「有新版本可用」。服务端已按同一次读取给出两档。
         const next: ClientUpdateFloor | null =
           body.outdated === true && typeof body.minimumVersion === "string" && body.minimumVersion
-            ? { clientType, mode: "required", version: body.minimumVersion }
+            ? {
+                clientType,
+                mode: "required",
+                version: body.minimumVersion,
+                systemTooOld: body.systemTooOld === true,
+              }
             : body.behindLatest === true &&
                 typeof body.latestVersion === "string" &&
                 body.latestVersion
@@ -191,7 +200,7 @@ export function ClientUpdateNotice() {
     <ClientUpdateBanner
       open={shown}
       floor={floor}
-      downloadUrl={pkg?.available ? pkg.url : undefined}
+      downloadUrl={pkg?.available && !floor?.systemTooOld ? pkg.url : undefined}
       onRestart={restartReady ? restart : undefined}
       restarting={restarting}
       preparing={preparing}
@@ -252,6 +261,7 @@ export function ClientUpdateBanner({
           <Download className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-xs leading-snug">
             {clientUpdateNoticeText(floor.clientType, floor.version, floor.mode)}
+            {floor.systemTooOld && CLIENT_UPDATE_SYSTEM_TOO_OLD_TEXT}
           </span>
           {/* 壳已备好新版时只给「重启更新」；壳还在查或在下时给进行中；否则给下载链接，
               制品还没推上去时连链接也不给，不留一枚点了跳到 404 的下载按钮。 */}
