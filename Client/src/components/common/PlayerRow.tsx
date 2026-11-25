@@ -12,7 +12,11 @@ import {
   PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
 } from "@/components/common/PlayerListLayout";
-import { PlayerStatusIcon } from "@/components/common/PlayerStatusPill";
+import {
+  PlayerStatusIcon,
+  PlayerStatusTag,
+  type PlayerStatusTone,
+} from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, tappable } from "@/lib/motion/Feedback";
 import { listItem, playerRelayout, popover } from "@/lib/motion/Choreography";
@@ -39,11 +43,13 @@ export interface PlayerRowProps {
   bot?: boolean;
   /** 登录玩家的账号身份：显示账号头像，点击整行在浮层顶部展示资料卡；游客为空 */
   account?: PlayerAccount;
-  /** 已出局：名字加删除线，次行补一个图标 */
+  /** 已出局：名字加删除线，次行补一枚带字的标签 */
   eliminated?: boolean;
-  /** 次行的状态徽章（身份、准备、猜测中等），由各游戏传入 */
+  /** 本局状态（准备、猜歌、出题等），以图标加文字落在次行行首；由各游戏按阶段给出 */
+  status?: { label: string; tone: PlayerStatusTone } | null;
+  /** 首行名字之后的身份徽章（Agent、谁是卧底的身份），由各游戏传入 */
   badges?: ReactNode;
-  /** 次行徽章之后的补充文字，如「2 队 · 3/10 次」 */
+  /** 次行状态之后的补充文字，如「3/10 次」 */
   meta?: ReactNode;
   /** 第三行整行内容，如 CEE 的猜测进度 */
   detail?: ReactNode;
@@ -103,6 +109,7 @@ export function PlayerRow({
   bot = false,
   account,
   eliminated = false,
+  status,
   badges,
   meta,
   detail,
@@ -133,6 +140,7 @@ export function PlayerRow({
       bot={bot}
       account={account}
       eliminated={eliminated}
+      status={status}
       badges={badges}
       meta={meta}
       detail={detail}
@@ -228,7 +236,14 @@ const playerRowClass = ({ me, interactive }: { me: boolean; interactive: boolean
     interactive && "cursor-pointer focus-visible:-outline-offset-2"
   );
 
-/** 行内信息：头像、名字与房主标识、状态徽章与补充文字、可选第三行、右侧分数。 */
+/**
+ * 行内信息，按「谁 · 多少分 / 在干什么」两行排：
+ * - 首行是身份与分数：名字、房主冠、账号与身份徽章，分数钉在行尾。分数单独占行尾一格，
+ *   名字再长也只截断名字，分数不随徽章多少左右漂；
+ * - 次行是本局动态：状态标签（图标加字）、离线 / 出局 / 人机标记与补充文字。都没有时不占行，
+ *   单行的行在固定行高里垂直居中，不留半截空白；
+ * - 第三行是可选详情（逐次猜测记录）。
+ */
 function PlayerRowInfo({
   id,
   name,
@@ -239,6 +254,7 @@ function PlayerRowInfo({
   bot,
   account,
   eliminated,
+  status,
   badges,
   meta,
   detail,
@@ -252,23 +268,23 @@ function PlayerRowInfo({
   | "bot"
   | "account"
   | "eliminated"
+  | "status"
   | "badges"
   | "meta"
   | "detail"
 >) {
   const offline = !online && !bot;
+  const hasSecondLine = Boolean(status || meta || eliminated || bot || offline);
   return (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
-      <span id={id} className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {/* 首行是身份：名字、房主、账号徽章与当前状态。状态图标挨着名字读，
-            不必把视线甩到下一行去找「他到底准备好了没有」。 */}
+      <span id={id} className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex min-w-0 items-center gap-1.5">
           <Hint label={name}>
             <span
               className={cn(
-                "min-w-0 truncate font-medium",
+                "min-w-0 truncate font-medium leading-tight",
                 (eliminated || offline) && "text-muted-foreground",
                 eliminated && "line-through decoration-muted-foreground/60"
               )}
@@ -281,23 +297,6 @@ function PlayerRowInfo({
           ) : null}
           {account ? <PlayerBadges account={account} /> : null}
           {badges}
-        </span>
-        {/* 次行放补充信息与分数。分数挪到这里：首行已经排满身份，
-            再挤一枚状态图标就会把分数顶得忽左忽右；固定落在次行右缘反而更好扫。 */}
-        <span className="flex min-w-0 items-center gap-1.5">
-          {meta}
-          {eliminated ? (
-            <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
-          ) : null}
-          {bot ? (
-            <PlayerStatusIcon
-              label="测试人机"
-              tone="questioner"
-              icon={<Bot aria-hidden="true" />}
-            />
-          ) : offline ? (
-            <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
-          ) : null}
           <span
             aria-label={`${score} 分`}
             className="ml-auto flex shrink-0 items-baseline gap-0.5 pl-2 tabular-nums"
@@ -306,6 +305,24 @@ function PlayerRowInfo({
             <span className="font-sans text-2xs text-muted-foreground">分</span>
           </span>
         </span>
+        {hasSecondLine ? (
+          <span className="flex min-w-0 items-center gap-x-2.5">
+            {status ? <PlayerStatusTag label={status.label} tone={status.tone} /> : null}
+            {eliminated ? (
+              <PlayerStatusTag label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
+            ) : null}
+            {bot ? (
+              <PlayerStatusTag
+                label="测试人机"
+                tone="questioner"
+                icon={<Bot aria-hidden="true" />}
+              />
+            ) : offline ? (
+              <PlayerStatusTag label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
+            ) : null}
+            {meta}
+          </span>
+        ) : null}
         {detail}
       </span>
     </>

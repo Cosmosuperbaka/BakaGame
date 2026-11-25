@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { PlayerGroupTitle, PlayerListFrame } from "@/components/common/PlayerListLayout";
-import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import type { PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { TeamSection } from "@/components/common/TeamSection";
@@ -339,11 +339,11 @@ function CEEPlayerRow({
       host={snapshot.hostPlayerId === player.id}
       online={player.online}
       account={player.account}
+      status={status}
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
           {player.mcpControlled ? <McpControlledBadge /> : null}
-          {status ? <PlayerStatusIcon {...status} /> : null}
         </>
       }
       meta={

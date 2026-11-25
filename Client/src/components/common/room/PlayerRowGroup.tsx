@@ -44,7 +44,7 @@ export function PlayerTeamBlocks<P extends { team: number | null }>({
   renderTeam: (group: { team: number | null; members: P[] }) => ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <AnimatePresence initial={false}>{teamGroups(players).map(renderTeam)}</AnimatePresence>
     </div>
   );

@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import {
+  CheckCheck,
   CircleCheck,
   CircleHelp,
   CircleMinus,
+  CircleSlash,
   Clapperboard,
   Clock,
   Eye,
@@ -10,6 +12,7 @@ import {
   Headphones,
   Music,
   PenLine,
+  Search,
   Trophy,
   type LucideIcon,
 } from "lucide-react";
@@ -46,11 +49,16 @@ const PLAYER_STATUS_ICONS: Record<string, LucideIcon> = {
   主持: PenLine,
   猜歌: Music,
   猜番: Clapperboard,
+  猜测中: Search,
   听音: Headphones,
   观战: Eye,
   旁观: Eye,
   猜中: Trophy,
-  完成: Flag,
+  队伍猜中: Trophy,
+  队伍获胜: Trophy,
+  完成: CheckCheck,
+  已放弃: Flag,
+  次数用尽: CircleSlash,
   未猜中: CircleMinus,
 };
 
@@ -97,6 +105,38 @@ export function PlayerStatusIcon({
         <span className="sr-only">{label}</span>
       </span>
     </Hint>
+  );
+}
+
+/** 文字档只取色调文字色、不铺底块：玩家行本来就密，底块只会把一列状态排成一串彩砖。 */
+const PLAYER_STATUS_TAG_BASE =
+  "inline-flex shrink-0 items-center gap-1 font-serif text-2xs leading-none whitespace-nowrap [&_svg]:size-3 [&_svg]:shrink-0";
+
+/**
+ * 状态标签：图标加常驻可见的文字，落在玩家行的次行。
+ * 玩家栏要一眼读出「谁在干什么」，只给图标就得逐个悬停去猜它的意思；文字常驻后，
+ * 图标负责扫视，文字负责确认。无障碍名仍是 `aria-label`，与图标档同一口径（读屏与按名定位都靠它），
+ * 可见文字是同一份内容的展示，不再重复播报。
+ */
+export function PlayerStatusTag({
+  label,
+  tone,
+  icon,
+}: {
+  label: string;
+  tone: PlayerStatusTone;
+  icon?: ReactNode;
+}) {
+  const Glyph = PLAYER_STATUS_ICONS[label] ?? CircleHelp;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      className={cn(PLAYER_STATUS_TAG_BASE, PLAYER_STATUS_ICON_TONES[tone])}
+    >
+      {icon ?? <Glyph aria-hidden="true" />}
+      <span>{label}</span>
+    </span>
   );
 }
 

@@ -3,7 +3,7 @@ import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { SongRoundMarks } from "@/components/songuessr/layout/SongRoundMarks";
 import { PlayerGroupTitle, PlayerListFrame } from "@/components/common/PlayerListLayout";
-import { PlayerStatusIcon, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import type { PlayerStatusTone } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
 import {
@@ -231,11 +231,11 @@ function SongPlayerRow({
       online={player.online}
       bot={player.isBot}
       account={player.account}
+      status={status}
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
           {player.mcpControlled ? <McpControlledBadge /> : null}
-          {status ? <PlayerStatusIcon {...status} /> : null}
         </>
       }
       actions={actions}

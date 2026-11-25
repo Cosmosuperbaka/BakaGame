@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { CEEMarks } from "@/components/cee/CEEMarks";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
-import { hostActions, PlayerRow } from "./PlayerRow";
+import { hostActions, PlayerRow, type PlayerRowProps } from "./PlayerRow";
 import { PlayerStatusPill } from "./PlayerStatusPill";
 
 const [host, me, peach, azumi, kanade, , longName] = STORY_PLAYERS;
@@ -14,15 +14,16 @@ const [host, me, peach, azumi, kanade, , longName] = STORY_PLAYERS;
 /** 三个游戏在次行实际放的内容，用于核对同一行骨架承载不同信息的观感。 */
 const SECOND_LINE_CASES: Array<{
   name: string;
-  badges: ReactNode;
+  badges?: ReactNode;
+  status?: PlayerRowProps["status"];
   meta?: ReactNode;
   detail?: ReactNode;
 }> = [
   { name: "谁是卧底 · 局内", badges: <PlayerStatusPill label="平民" tone="default" /> },
-  { name: "猜歌 · 猜歌中", badges: <PlayerStatusPill label="猜歌" tone="warning" /> },
+  { name: "猜歌 · 猜歌中", status: { label: "猜歌", tone: "warning" } },
   {
     name: "CEE · 猜测中",
-    badges: <PlayerStatusPill label="猜测中" tone="warning" />,
+    status: { label: "猜测中", tone: "warning" },
     meta: (
       <span className="truncate font-sans text-2xs text-muted-foreground">
         2 队 · 3/10 次 · 已提交
@@ -57,37 +58,37 @@ export const AllStates: Story = {
         name={host.name}
         score={12}
         host
-        badges={<PlayerStatusPill label="准备" tone="success" />}
+        status={{ label: "准备", tone: "success" }}
       />
       <PlayerRow
         name={me.name}
         score={9}
         me
         host
-        badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+        status={{ label: "猜歌", tone: "warning" }}
       />
       <PlayerRow
         name={peach.name}
         score={15}
         eliminated
-        badges={<PlayerStatusPill label="完成" tone="default" />}
+        status={{ label: "完成", tone: "default" }}
       />
       <PlayerRow
         name={kanade.name}
         score={3}
         online={false}
-        badges={<PlayerStatusPill label="等待" tone="default" />}
+        status={{ label: "等待", tone: "default" }}
       />
       <PlayerRow
         name={azumi.name}
         score={6}
         bot
-        badges={<PlayerStatusPill label="准备" tone="success" />}
+        status={{ label: "准备", tone: "success" }}
       />
       <PlayerRow
         name={longName.name}
         score={0}
-        badges={<PlayerStatusPill label="旁观" tone="default" />}
+        status={{ label: "旁观", tone: "default" }}
       />
     </div>
   ),
@@ -102,24 +103,24 @@ export const PresenceHierarchy: Story = {
         name={host.name}
         score={12}
         host
-        badges={<PlayerStatusPill label="准备" tone="success" />}
+        status={{ label: "准备", tone: "success" }}
       />
       <PlayerRow
         name={me.name}
         score={9}
         me
-        badges={<PlayerStatusPill label="准备" tone="success" />}
+        status={{ label: "准备", tone: "success" }}
       />
       <PlayerRow
         name={peach.name}
         score={7}
-        badges={<PlayerStatusPill label="等待" tone="default" />}
+        status={{ label: "等待", tone: "default" }}
       />
       <PlayerRow
         name={kanade.name}
         score={3}
         online={false}
-        badges={<PlayerStatusPill label="等待" tone="default" />}
+        status={{ label: "等待", tone: "default" }}
       />
     </div>
   ),
@@ -137,6 +138,7 @@ export const PerGameSecondLine: Story = {
             score={12}
             host
             badges={game.badges}
+            status={game.status}
             meta={game.meta}
             detail={game.detail}
           />
@@ -156,7 +158,7 @@ export const ScoreWidths: Story = {
           key={score}
           name={longName.name}
           score={score}
-          badges={<PlayerStatusPill label="猜测中" tone="warning" />}
+          status={{ label: "猜测中", tone: "warning" }}
         />
       ))}
     </div>
@@ -228,13 +230,13 @@ function ScoringRows() {
           name={host.name}
           score={scores[0]}
           host
-          badges={<PlayerStatusPill label="猜中" tone="success" />}
+          status={{ label: "猜中", tone: "success" }}
         />
         <PlayerRow
           name={me.name}
           score={scores[1]}
           me
-          badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+          status={{ label: "猜歌", tone: "warning" }}
         />
       </div>
       <div className="flex gap-2">
