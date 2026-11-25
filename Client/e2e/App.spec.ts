@@ -111,13 +111,15 @@ test("landing page exposes three playable games and keeps placeholders disabled"
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
 });
 
-test("landing game cards line up in a tidy grid and stay clear of the footer", async ({ page }) => {
+test("landing game posters line up in a tidy grid and stay clear of the footer", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const viewport of [
-    { width: 2048, height: 1050, columns: 2 },
-    { width: 1024, height: 500, columns: 2 },
-    { width: 844, height: 390, columns: 2 },
-    { width: 390, height: 844, columns: 1 },
+    { width: 2048, height: 1050, columns: 3 },
+    { width: 1024, height: 500, columns: 3 },
+    { width: 844, height: 390, columns: 3 },
+    { width: 390, height: 844, columns: 2 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
@@ -297,16 +299,27 @@ test("landing header and footer stay tidy on narrow phones", async ({ page }) =>
       width
     );
 
-    // 游戏卡上的游戏名与入口文字完整显示：两枚入口并排时，四个字的模式名不被挤成省略号。
-    const truncatedLabels = await page
+    // 海报上的游戏名与入口胶囊完整显示：胶囊不越出海报边缘，文字也不被挤出胶囊。
+    const overflowing = await page
       .getByRole("list", { name: "全部游戏" })
-      .locator(".truncate")
-      .evaluateAll((labels) =>
-        labels
-          .filter((label) => label.scrollWidth > label.clientWidth)
-          .map((label) => label.textContent)
+      .getByRole("listitem")
+      .evaluateAll((posters) =>
+        posters.flatMap((poster) => {
+          const frame = poster.getBoundingClientRect();
+          return [...poster.querySelectorAll("h3, a, button, [aria-disabled='true']")]
+            .filter((element) => {
+              const box = element.getBoundingClientRect();
+              return (
+                box.left < frame.left ||
+                box.right > frame.right ||
+                box.top < frame.top ||
+                element.scrollWidth > element.clientWidth
+              );
+            })
+            .map((element) => element.textContent);
+        })
       );
-    expect(truncatedLabels).toEqual([]);
+    expect(overflowing).toEqual([]);
 
     // 页脚的友情链接名字完整显示，不被两栏挤成省略号。
     const clipped = await page

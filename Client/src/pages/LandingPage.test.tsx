@@ -217,11 +217,11 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("link", { name: /单人模式/ })).toBeInTheDocument();
   });
 
-  it("六款游戏排在同一张网格里，神秘游戏的卡片与正式游戏一样", () => {
+  it("六款游戏排在同一面海报墙里，神秘游戏的海报与正式游戏一样", () => {
     renderLandingPage();
 
-    // 标题与计数和大厅的「房间列表」同一种写法；网格以标题为名。
-    expect(screen.getByRole("heading", { level: 2, name: "全部游戏" })).toBeInTheDocument();
+    // 海报墙不放可见标题，标题只给读屏与地标导航用；网格以它为名。
+    expect(screen.getByRole("heading", { level: 2, name: "全部游戏" })).toHaveClass("sr-only");
     const games = screen.getByRole("list", { name: "全部游戏" });
     const cards = within(games).getAllByRole("listitem");
     expect(cards.map((card) => card.dataset.testid)).toEqual([
@@ -232,13 +232,10 @@ describe("LandingPage", () => {
       "game-entry-mystery-2",
       "game-entry-mystery-3",
     ]);
-    expect(within(games.parentElement as HTMLElement).getByText(String(cards.length))).toHaveClass(
-      "font-mono"
-    );
 
     for (const [index, card] of cards.slice(3).entries()) {
       const title = `神秘游戏${index + 1}`;
-      // 和正式游戏同一种卡片：标题同级，入口是同尺寸的「开始游戏」，没有「即将上线」之类的另眼标记。
+      // 和正式游戏同一种海报：标题同级，入口是同样的「开始游戏」胶囊，没有「即将上线」之类的另眼标记。
       expect(within(card).getByRole("heading", { level: 3, name: title })).toBeInTheDocument();
       const start = within(card).getByRole("button", { name: `${title} 开始游戏` });
       expect(start).toBeEnabled();
@@ -272,7 +269,8 @@ describe("LandingPage", () => {
     });
     expect(screen.queryByText("神秘游戏1敬请期待", { selector: "[aria-live]" })).toBeNull();
     // 旧文案淡出要走完退场动画：等它离场，而不是同步断言。
-    await waitFor(() => expect(start).toHaveTextContent(/^开始游戏$/));
+    await waitFor(() => expect(start).not.toHaveTextContent("敬请期待"));
+    expect(start).toHaveTextContent("开始游戏");
   });
 
   it("顶栏的账号与反馈在窄屏只留图标时仍有可访问名", () => {

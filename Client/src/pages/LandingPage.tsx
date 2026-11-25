@@ -4,11 +4,10 @@ import { listItem, listContainer } from "@/lib/motion/Choreography";
 import { iconTappable, pressable } from "@/lib/motion/Feedback";
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { usePageLinkClick, useSharedElementName } from "@/hooks/UsePageTransition";
-import { Activity, ArrowUpRight, CircleQuestionMark } from "lucide-react";
+import { Activity, ArrowUpRight, CirclePause, Clock, Play } from "lucide-react";
 import { BrandIcon } from "@/components/common/BrandIcon";
 import type { BrandIconName } from "@/data/BrandIconPaths";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import { SiteAgentPresence } from "@/components/common/SiteAgentPresence";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
@@ -28,6 +27,8 @@ import { aboutsTabHref } from "@/lib/AboutsTabs";
 interface GameSubMode {
   id: string;
   title: string;
+  /** 窄屏海报胶囊上的短名。 */
+  short: string;
   path?: string;
   available: boolean;
   /**
@@ -42,15 +43,19 @@ interface GameEntry {
   path?: string;
   /** 该游戏大厅的路径：卡片标题与大厅顶栏的游戏名是同一个跨页共享元素；未上线的游戏省略 */
   lobbyPath?: string;
-  /** 卡片封面；神秘游戏不剧透，省略后画一块问号。 */
+  /** 海报封面；神秘游戏不剧透，省略后画一个问号。 */
   icon?: string;
+  /** 低分辨率的像素动图：不铺满裁切，居中留白、按像素放大。 */
+  pixelated?: true;
+  /** 海报底色，取自封面的主色；封面留白处与加载前露出来的就是它。神秘游戏省略，用统一的墨色。 */
+  accent?: string;
   /** 条目主标题 */
   title: string;
   available: boolean;
   /** 单一入口游戏挂的服务端开关，语义同子模式的 `feature`。 */
   feature?: keyof SiteFeatures;
   subModes?: GameSubMode[];
-  /** 还没公开的游戏：卡片与正式游戏一样，「开始游戏」点了不导航，只在按钮上提示「敬请期待」。 */
+  /** 还没公开的游戏：海报与正式游戏一样，「开始游戏」点了不导航，只在胶囊上提示「敬请期待」。 */
   mystery?: true;
 }
 
@@ -60,6 +65,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
     path: GAME_ROUTES.faker.base,
     lobbyPath: GAME_ROUTES.faker.base,
     icon: "/assets/Faker.png",
+    accent: "#b3213a",
     title: "Who is Faker",
     available: true,
     feature: "fakerEntry",
@@ -68,12 +74,15 @@ const PLAYABLE_GAMES: GameEntry[] = [
     id: "songuessr",
     lobbyPath: GAME_ROUTES.song.base,
     icon: "/assets/SongGuessr.gif",
+    pixelated: true,
+    accent: "#ef7d1a",
     title: "Songuessr",
     available: true,
     subModes: [
       {
         id: "singleplayer",
         title: "单人模式",
+        short: "单人",
         path: `${GAME_ROUTES.song.base}/solo`,
         available: true,
         feature: "songSoloEntry",
@@ -81,6 +90,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "multiplayer",
         title: "多人模式",
+        short: "多人",
         path: GAME_ROUTES.song.base,
         available: true,
         feature: "songMultiplayerEntry",
@@ -92,12 +102,14 @@ const PLAYABLE_GAMES: GameEntry[] = [
     path: GAME_ROUTES.cee.base,
     lobbyPath: GAME_ROUTES.cee.base,
     icon: "/assets/CEE.png",
+    accent: "#3d5fc4",
     title: "那个游戏",
     available: true,
     subModes: [
       {
         id: "multiplayer",
         title: "多人模式",
+        short: "多人",
         path: GAME_ROUTES.cee.base,
         available: true,
         feature: "ceeMultiplayerEntry",
@@ -105,6 +117,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "ranked",
         title: "排位赛",
+        short: "排位",
         path: `${GAME_ROUTES.cee.base}/ranked`,
         available: true,
         feature: "ceeRankedEntry",
@@ -112,6 +125,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "tournament",
         title: "锦标赛",
+        short: "锦标赛",
         available: false,
       },
     ],
@@ -119,7 +133,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
 ];
 
 /**
- * 还没公开的游戏：和正式游戏排在同一张网格里、用同一种卡片，好提前看六款并列时的样子。
+ * 还没公开的游戏：和正式游戏排在同一面海报墙上、用同一种海报，好提前看六款并列时的样子。
  * 不剧透名字与封面；正式上线时换上真名、封面与入口，去掉 `mystery`。
  */
 const MYSTERY_GAMES: GameEntry[] = [1, 2, 3].map((n) => ({
@@ -158,49 +172,42 @@ const STATUS_PAGE_PATH = "/status";
 
 /**
  * 顶栏、游戏区与页脚共用的内容列：三段左右边缘对齐，分隔线铺满整页宽度。
- * 比大厅宽一档，宽屏的两列游戏卡才放得下入口按钮。
+ * 海报在宽屏排三列，比大厅宽两档才放得下。
  */
-const pageColumnClass = "mx-auto w-full max-w-4xl px-4 sm:px-6 md:px-10";
+const pageColumnClass = "mx-auto w-full max-w-5xl px-4 sm:px-6 md:px-10";
 
-function ComingSoonBadge() {
-  return (
-    <Badge variant="upcoming" size="xs" className="shrink-0 select-none">
-      即将上线
-    </Badge>
-  );
-}
-
-/** 后台临时关掉的入口：与「即将上线」同为不可用态，但原因不同，不能共用一句「即将上线」。 */
-function ClosedBadge() {
-  return (
-    <Badge variant="upcoming" size="xs" className="shrink-0 select-none">
-      暂时关闭
-    </Badge>
-  );
-}
-
-/**
- * 卡片里的一个入口：单一入口游戏的「开始游戏」与各子模式同一种按钮。
- * 窄屏两格一行铺满；`sm` 的单列卡片宽度富余，入口按固定宽度靠左排成一行，几张卡片按列对齐；
- * `md` 起卡片排成两列、内容区收窄，回到两格一行铺满。
- */
-const entrySizeClass = "h-9 w-full sm:w-28 md:w-full";
-
-/**
- * 不可用入口的占位格：虚线、降色、不可点，高度与可点的按钮一致，关掉入口不让卡片跳动。
- * 排成一行时至少与按钮同宽、按内容放宽，模式名加徽章不被截断。
- */
-const closedSlotClass = cn(
-  entrySizeClass,
-  "flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none sm:w-auto sm:min-w-28 md:w-full md:min-w-0"
-);
+/** 神秘游戏海报的底色：与几款正式游戏的主题色同一档深浅的墨色，问号与斜纹压在上面。 */
+const MYSTERY_ACCENT = "#2a2733";
 
 /** 神秘游戏点「开始游戏」后「敬请期待」停留的时长：给玩家读完提示，不参与任何业务时序。 */
 const MYSTERY_HINT_MS = 2_000;
 
+/**
+ * 海报上的入口胶囊：压在封面暗部上，白底深字是能进的入口，虚线降色是进不去的入口。
+ * 窄屏两列海报每张只有一百多像素宽，胶囊收紧内边距、只写短名；`sm` 起写全名并带播放图标。
+ */
+const pillClass =
+  "inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-9 sm:px-4 sm:text-sm";
+const openPillClass = cn(pillClass, "bg-white text-neutral-900 shadow-sm");
+const closedPillClass = cn(
+  pillClass,
+  "border border-dashed border-white/50 bg-black/40 font-medium text-white/80 select-none"
+);
+
+/** 整款还没上线的游戏挂在标题旁的标记；海报是深色底，不沿用页面上的徽章配色。 */
+function ComingSoonBadge() {
+  return (
+    <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-2xs font-medium text-white/80 select-none">
+      即将上线
+    </span>
+  );
+}
+
 interface GameEntryPoint {
   key: string;
   title: string;
+  /** 窄屏胶囊上的短名；与全名相同时只渲染一份。 */
+  short: string;
   path?: string;
   available: boolean;
   feature?: keyof SiteFeatures;
@@ -208,33 +215,14 @@ interface GameEntryPoint {
   agentControl: string;
 }
 
-/**
- * 两格一行时哪些入口独占一行：点不进去的格子（暂时关闭、即将上线）要放下模式名加徽章，半格放不下；
- * 能进的入口按原顺序两两并排，被占位格隔开或排到末尾而落单的那个也独占一行，不留半行空位。
- */
-function fullRowKeys(entries: GameEntryPoint[], canEnter: (entry: GameEntryPoint) => boolean) {
-  const full = new Set<string>();
-  let unpaired: string | null = null;
-  for (const entry of entries) {
-    if (canEnter(entry)) {
-      unpaired = unpaired ? null : entry.key;
-      continue;
-    }
-    if (unpaired) full.add(unpaired);
-    unpaired = null;
-    full.add(entry.key);
-  }
-  if (unpaired) full.add(unpaired);
-  return full;
-}
-
-/** 单一入口游戏的「开始游戏」与子模式统一成同一种入口，卡片只认一种排法。 */
+/** 单一入口游戏的「开始游戏」与子模式统一成同一种入口，海报只认一种排法。 */
 function entryPointsOf(game: GameEntry): GameEntryPoint[] {
   if (!game.subModes)
     return [
       {
         key: "start",
         title: "开始游戏",
+        short: "开始",
         path: game.path,
         available: game.available,
         feature: game.feature,
@@ -244,6 +232,7 @@ function entryPointsOf(game: GameEntry): GameEntryPoint[] {
   return game.subModes.map((mode) => ({
     key: mode.id,
     title: mode.title,
+    short: mode.short,
     path: mode.path,
     available: mode.available,
     feature: mode.feature,
@@ -252,35 +241,48 @@ function entryPointsOf(game: GameEntry): GameEntryPoint[] {
 }
 
 /**
- * 卡片左侧的封面：贴满卡片整高的一条竖幅，按卡片高度居中裁切，读作这款游戏的「盒封」。
- * 封面绝对定位铺满，不参与撑高卡片；神秘游戏没有封面，同一块底上画一个问号。
+ * 海报变窄时胶囊只放得下短名：两列手机（`sm` 以下）和三列平板（`md`–`lg`）都是窄海报。
+ * 入口的可访问名另由 aria-label 给全。
  */
-function GameCover({ game }: { game: GameEntry }) {
+const compactOnlyClass = "sm:max-md:hidden lg:hidden";
+const roomyOnlyClass = "max-sm:hidden md:max-lg:hidden";
+
+function EntryLabel({ title, short }: { title: string; short: string }) {
+  if (title === short) return <span>{title}</span>;
   return (
-    <div
-      aria-hidden="true"
-      className="relative grid w-20 shrink-0 place-items-center border-r border-border bg-foreground/8 text-muted-foreground max-[360px]:w-14 sm:w-24 lg:w-28"
-    >
-      {game.icon ? (
-        <img src={game.icon} alt="" className="absolute inset-0 size-full object-cover" />
-      ) : (
-        <CircleQuestionMark className="size-7 sm:size-8" />
-      )}
-    </div>
+    <>
+      <span className={compactOnlyClass}>{short}</span>
+      <span className={roomyOnlyClass}>{title}</span>
+    </>
   );
 }
 
-/** 卡片上的游戏名。它与大厅顶栏的游戏名是同一个跨页共享元素，只在两页互相过渡时命名。 */
-function GameTitle({ game }: { game: GameEntry }) {
-  const sharedName = useSharedElementName("game-title", game.lobbyPath ?? false);
+/**
+ * 海报的封面：铺满整张海报，悬停时轻推近一点。像素动图放大会糊，改成居中留白、按像素放大，铺在主题色上。
+ * 神秘游戏没有封面：斜纹底上一个大问号，位置偏上，给下面的游戏名与入口让出位置。
+ */
+function PosterArt({ game }: { game: GameEntry }) {
+  if (!game.icon)
+    return (
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 grid place-items-center bg-[repeating-linear-gradient(135deg,rgb(255_255_255/0.06)_0_10px,transparent_10px_20px)] pb-[38%]"
+      >
+        <span className="font-serif text-[7rem] leading-none font-black text-white/20 select-none sm:text-[9rem]">
+          ?
+        </span>
+      </div>
+    );
   return (
-    // 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放
-    <h3
-      className="w-fit max-w-full truncate whitespace-nowrap text-base font-semibold sm:text-lg"
-      style={{ viewTransitionName: sharedName }}
-    >
-      {game.title}
-    </h3>
+    <img
+      src={game.icon}
+      alt=""
+      aria-hidden="true"
+      className={cn(
+        "absolute inset-0 size-full transition-transform duration-(--motion-duration-base) group-hover:scale-105",
+        game.pixelated ? "object-contain p-[12%] [image-rendering:pixelated]" : "object-cover"
+      )}
+    />
   );
 }
 
@@ -288,16 +290,16 @@ function GameTitle({ game }: { game: GameEntry }) {
 type Announce = Dispatch<SetStateAction<string>>;
 
 /**
- * 神秘游戏的「开始游戏」：外形、尺寸与按压反馈都和正式入口一样，但不是链接，点了不导航；
- * 按钮上的字换成「敬请期待」停一会儿再换回来，两段文字在同一格里交叉，读屏经页面的播报区念出同一句。
+ * 神秘游戏的「开始游戏」：外形与按压反馈都和正式入口一样，但不是链接，点了不导航；
+ * 胶囊上的字换成「敬请期待」停一会儿再换回来，两段文字在同一格里交叉，读屏经页面的播报区念出同一句。
  */
 function MysteryEntryButton({
   gameTitle,
-  className,
+  entry,
   announce,
 }: {
   gameTitle: string;
-  className?: string;
+  entry: GameEntryPoint;
   announce: Announce;
 }) {
   const [hinting, setHinting] = useState(false);
@@ -317,15 +319,16 @@ function MysteryEntryButton({
   };
 
   return (
-    <Button
+    <motion.button
       type="button"
-      variant="outline"
       // 交替期间旧文案还在淡出，名字固定写在按钮上，读屏与按名查找都只得到当前这一份。
-      aria-label={`${gameTitle} 开始游戏`}
-      className={className}
+      aria-label={`${gameTitle} ${entry.title}`}
+      className={openPillClass}
       onClick={showHint}
+      {...pressable}
     >
-      <span className="relative flex min-w-0 justify-center overflow-hidden">
+      <Play aria-hidden="true" className="size-3 fill-current max-sm:hidden" />
+      <span className="relative flex overflow-hidden">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
             key={hinting ? "hint" : "idle"}
@@ -334,17 +337,23 @@ function MysteryEntryButton({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="truncate"
+            className="flex"
           >
-            {hinting ? "敬请期待" : "开始游戏"}
+            {hinting ? "敬请期待" : <EntryLabel title={entry.title} short={entry.short} />}
           </motion.span>
         </AnimatePresence>
       </span>
-    </Button>
+    </motion.button>
   );
 }
 
-function GameCard({
+/**
+ * 一款游戏一张海报：封面铺满，自下而上压一层暗幕，游戏名与入口胶囊落在暗幕上。
+ * 海报本身不可点（入口是里面的胶囊）；配色取各游戏自己的主题色，亮暗主题同一份。
+ * 比例只是下限：裁切用 `overflow-clip` 而不是 `overflow-hidden`，后者会让海报不再按内容撑高，
+ * 入口多的那张在矮横幅里会把游戏名顶出画面。
+ */
+function GamePoster({
   game,
   features,
   announce,
@@ -356,6 +365,8 @@ function GameCard({
   const linkClick = usePageLinkClick();
   // 只用来挡住重复点击：分块还在加载时旧页仍可点，第二次点击会往历史里再压一条同样的记录。
   const [enteringPath, setEnteringPath] = useState<string | null>(null);
+  // 游戏名与大厅顶栏的游戏名是同一个跨页共享元素，只在两页互相过渡时命名。
+  const sharedName = useSharedElementName("game-title", game.lobbyPath ?? false);
 
   // 入口是真链接（抓取器、中键与新标签页拿得到地址）；普通左键立即导航：
   // 旧页连同按下的入口一起定格成过渡快照向前退出，离开当前页读作这次点击的结果。
@@ -368,88 +379,85 @@ function GameCard({
 
   const isWholeGameDisabled = !game.available;
   const entries = entryPointsOf(game);
-  // 受控入口被后台关掉时**不隐藏**：格子留着、置灰、标注「暂时关闭」，
+  // 受控入口被后台关掉时**不隐藏**：胶囊留着、改成虚线、标注「暂时关闭」，
   // 让玩家看得出这个玩法存在但暂时不可进，而不是以为站点少了点什么。
   const isOpen = (entry: GameEntryPoint) =>
     !isWholeGameDisabled && entry.available && (!entry.feature || features[entry.feature]);
-  const hasOpenEntry = entries.some(isOpen);
-  // 神秘游戏的入口没有地址，但同样是一枚能按的按钮。
-  const canEnter = (entry: GameEntryPoint) =>
-    isOpen(entry) && (game.mystery === true || entry.path !== undefined);
-  const fullRow = fullRowKeys(entries, canEnter);
 
   return (
-    <motion.li data-testid={`game-entry-${game.id}`} variants={listItem} className="flex">
-      {/* 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给还有入口能进的卡片，读作「这一张能进」。
-          两列网格里同一行的卡片等高，入口贴着卡片底边，几张卡片的按钮落在同一条线上。 */}
+    <motion.li
+      data-testid={`game-entry-${game.id}`}
+      variants={listItem}
+      aria-disabled={isWholeGameDisabled ? "true" : undefined}
+      className="group relative isolate flex aspect-[3/4] flex-col justify-end place-self-stretch overflow-clip rounded-2xl text-white shadow-md md:aspect-[5/4]"
+      style={{ backgroundColor: game.accent ?? MYSTERY_ACCENT }}
+    >
+      <PosterArt game={game} />
       <div
-        aria-disabled={isWholeGameDisabled ? "true" : undefined}
-        className={cn(
-          "flex w-full overflow-hidden rounded-md border bg-card shadow-2xs transition-colors",
-          hasOpenEntry && "hover:border-primary/40"
-        )}
-      >
-        <GameCover game={game} />
-
-        {/* 比常见手机还窄时封面与留白各收一档，两枚并排的入口仍放得下四个字的模式名。 */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3 p-3.5 max-[360px]:p-3 sm:gap-4 sm:p-4">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <GameTitle game={game} />
-            {isWholeGameDisabled && <ComingSoonBadge />}
-          </div>
-
-          {/* 整款未上线的单一入口游戏没有可展示的入口，只留标题旁的「即将上线」。 */}
-          {isWholeGameDisabled && !game.subModes ? null : (
-            <div className="mt-auto grid grid-cols-2 gap-2 sm:flex sm:flex-wrap md:grid">
-              {entries.map((entry) => {
-                const spanClass = fullRow.has(entry.key) ? "col-span-2" : undefined;
-                const buttonClass = cn(
-                  entrySizeClass,
-                  "px-2 max-[360px]:px-1.5 sm:px-3",
-                  spanClass
-                );
-
-                if (game.mystery)
-                  return (
-                    <MysteryEntryButton
-                      key={entry.key}
-                      gameTitle={game.title}
-                      className={buttonClass}
-                      announce={announce}
-                    />
-                  );
-
-                const isClosed = !isWholeGameDisabled && entry.available && !isOpen(entry);
-                if (!canEnter(entry) || !entry.path) {
-                  return (
-                    <div
-                      key={entry.key}
-                      aria-disabled="true"
-                      className={cn(closedSlotClass, spanClass)}
-                    >
-                      <span className="truncate">{entry.title}</span>
-                      {isClosed ? <ClosedBadge /> : !isWholeGameDisabled && <ComingSoonBadge />}
-                    </div>
-                  );
-                }
-
-                return (
-                  <Button key={entry.key} asChild variant="outline" className={buttonClass}>
-                    <motion.a
-                      href={entry.path}
-                      aria-label={`${game.title} ${entry.title}`}
-                      data-agent-control={entry.agentControl}
-                      onClick={handleEnter(entry.path)}
-                      {...pressable}
-                    >
-                      <span className="truncate">{entry.title}</span>
-                    </motion.a>
-                  </Button>
-                );
-              })}
-            </div>
-          )}
+        aria-hidden="true"
+        className="absolute inset-0 bg-linear-to-t from-black/85 via-black/35 to-transparent"
+      />
+      <div className="relative flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
+          <h3
+            className="w-fit text-lg leading-tight font-black tracking-tight drop-shadow sm:text-2xl"
+            style={{ viewTransitionName: sharedName }}
+          >
+            {game.title}
+          </h3>
+          {isWholeGameDisabled && <ComingSoonBadge />}
         </div>
+
+        {/* 整款未上线的单一入口游戏没有可展示的入口，只留标题旁的「即将上线」。 */}
+        {isWholeGameDisabled && !game.subModes ? null : (
+          <div className="flex flex-wrap gap-1 sm:gap-1.5">
+            {entries.map((entry) => {
+              if (game.mystery)
+                return (
+                  <MysteryEntryButton
+                    key={entry.key}
+                    gameTitle={game.title}
+                    entry={entry}
+                    announce={announce}
+                  />
+                );
+
+              if (!isOpen(entry) || !entry.path) {
+                const isClosed = !isWholeGameDisabled && entry.available;
+                return (
+                  <span key={entry.key} aria-disabled="true" className={closedPillClass}>
+                    {/* 窄海报只放得下短名：状态换成图标，文字留给读屏。 */}
+                    {isClosed ? (
+                      <CirclePause aria-hidden="true" className={cn("size-3", compactOnlyClass)} />
+                    ) : (
+                      <Clock aria-hidden="true" className={cn("size-3", compactOnlyClass)} />
+                    )}
+                    <EntryLabel title={entry.title} short={entry.short} />
+                    <span className="text-white/60 max-sm:sr-only md:max-lg:sr-only">
+                      {isClosed ? "暂时关闭" : "即将上线"}
+                    </span>
+                  </span>
+                );
+              }
+
+              return (
+                <motion.a
+                  key={entry.key}
+                  href={entry.path}
+                  aria-label={`${game.title} ${entry.title}`}
+                  data-agent-control={entry.agentControl}
+                  onClick={handleEnter(entry.path)}
+                  className={openPillClass}
+                  {...pressable}
+                >
+                  <Play aria-hidden="true" className="size-3 fill-current max-sm:hidden" />
+                  <EntryLabel title={entry.title} short={entry.short} />
+                </motion.a>
+              );
+            })}
+          </div>
+        )}
       </div>
     </motion.li>
   );
@@ -638,29 +646,29 @@ export default function LandingPage() {
           </div>
         </header>
 
-        <main className={cn(pageColumnClass, "flex flex-1 flex-col gap-4 pt-5 pb-10 sm:pt-6")}>
+        <main className={cn(pageColumnClass, "flex flex-1 flex-col gap-4 pt-5 pb-10 sm:pt-8")}>
           {/* 客户端过旧的提醒落在游戏列表上方：底部那条浮层是网页新版本提醒的位置，
               两条「该更新了」叠在同一处会互相盖掉。壳没装或版本够新时整条不渲染。 */}
           <ClientUpdateNotice />
-          {/* 标题行与大厅的「房间列表」同一种写法：标题加一枚等宽计数。 */}
-          <div className="flex items-center gap-2">
-            <h2 id={gamesHeadingId} className="text-lg font-semibold">
-              全部游戏
-            </h2>
-            <Badge variant="subtle" className="font-mono">
-              {GAMES.length}
-            </Badge>
-          </div>
-          {/* 手机一列；`md` 起（平板、横屏手机与桌面）两列，六款游戏排成三行。 */}
+          {/* 海报自己说明了这是什么，标题只留给读屏与按名查找。 */}
+          <h2 id={gamesHeadingId} className="sr-only">
+            全部游戏
+          </h2>
+          {/* 手机两列竖幅海报排成三行；`md` 起（平板、横屏手机与桌面）三列横幅海报排成两行。 */}
           <motion.ul
             aria-labelledby={gamesHeadingId}
-            className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4"
+            className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-5"
             variants={listContainer(GAMES.length)}
             initial="initial"
             animate="animate"
           >
             {GAMES.map((game) => (
-              <GameCard key={game.id} game={game} features={features} announce={setMysteryNotice} />
+              <GamePoster
+                key={game.id}
+                game={game}
+                features={features}
+                announce={setMysteryNotice}
+              />
             ))}
           </motion.ul>
           {/* 整页只留这一处常驻播报区：模态框打开时，播报区的祖先不会被设成对读屏隐藏；
