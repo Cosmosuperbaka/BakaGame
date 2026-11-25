@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { readIndexCss, themeBlocks, tokensOf } from "@/test/ThemeCss";
+import { FAMILIES as LXGW_FAMILIES } from "../../scripts/font-subset-plan.mjs";
+
+import { readFontsCss, readIndexCss, themeBlocks, tokensOf } from "@/test/ThemeCss";
 import { THEMES } from "@/themes/Registry";
 
 /**
@@ -314,6 +320,54 @@ describe("状态色与次要文字令牌", () => {
           expect(luminanceOf(solid)).toBeLessThanOrEqual(luminanceOf(colorOf("primary")) + 0.0001);
         }
       });
+    });
+  }
+});
+
+/**
+ * 字体栈里能出现的具名族：样式表引入的 Fontsource 字体包里声明的族名，加上构建期生成子集的霞鹜文楷。
+ * 族名从包里实际的 `@font-face` 读，不抄进测试：换包或升级后族名变了，这里跟着变。
+ */
+function selfHostedFamilies(): Set<string> {
+  const require = createRequire(path.resolve(process.cwd(), "package.json"));
+  const families = new Set<string>(LXGW_FAMILIES.map((family) => family.family));
+  for (const css of [readIndexCss(), readFontsCss()]) {
+    for (const [, specifier] of css.matchAll(/@import\s+"(@fontsource[^"]+)"/g)) {
+      const entry = specifier.endsWith(".css") ? specifier : `${specifier}/index.css`;
+      const source = readFileSync(require.resolve(entry), "utf8");
+      for (const [, name] of source.matchAll(/font-family:\s*'([^']+)'/g)) families.add(name);
+    }
+  }
+  return families;
+}
+
+/** 链尾允许的通用族：只在网页字体到达前顶一下。 */
+const GENERIC_FAMILIES = new Set(["serif", "sans-serif", "monospace"]);
+/** 表情没有一种彩色格式能在各平台浏览器都画出来，交给系统；只许排在通用族之后。 */
+const EMOJI_FAMILIES = new Set(["Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"]);
+
+const FONT_TOKENS = ["font-kai", "font-sans", "font-serif", "font-ui", "font-mono"] as const;
+
+describe("字体栈只用自托管字体", () => {
+  const hosted = selfHostedFamilies();
+
+  for (const { id } of THEMES) {
+    it(`${id}：每层字体栈的具名族都随站点分发，不按本机安装的族名引用`, () => {
+      const tokens = tokensOf(themeBlocks(id).light);
+      for (const token of FONT_TOKENS) {
+        const value = tokens[token] ?? "";
+        // 引用别的字体令牌（`var(--font-kai)`）的层沿用被引用那层的栈，那一层自己会被核对。
+        if (/^var\(--font-[\w-]+\)$/.test(value)) continue;
+        const names = value.split(",").map((part) => part.trim().replace(/^"|"$/g, ""));
+        const genericAt = names.findIndex((name) => GENERIC_FAMILIES.has(name));
+        expect(genericAt, `${id} --${token} 缺少链尾通用族`).toBeGreaterThan(0);
+        for (const [index, name] of names.entries()) {
+          if (index < genericAt)
+            expect(hosted, `${id} --${token} 引用了未自托管的「${name}」`).toContain(name);
+          else if (index > genericAt)
+            expect(EMOJI_FAMILIES, `${id} --${token} 通用族之后只许接表情`).toContain(name);
+        }
+      }
     });
   }
 });

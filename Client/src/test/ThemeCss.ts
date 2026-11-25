@@ -34,6 +34,9 @@ function readFirst(relative: string): string {
 
 export const readIndexCss = (): string => readFirst("index.css");
 
+/** 非阻塞加载的字体样式表（中文字体与只属于某一款主题的拉丁字体）。 */
+export const readFontsCss = (): string => readFirst("fonts.css");
+
 export const readThemeCss = (id: string): string => readFirst(`themes/${id}.css`);
 
 /** `src/themes/` 目录里实际存在的主题样式表（去掉扩展名）。 */

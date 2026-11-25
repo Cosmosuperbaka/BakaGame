@@ -100,7 +100,7 @@ const pageStyle = () => `
     border: 2px solid var(--border);
     border-radius: 10px;
   }
-  .serif { font-family: "Libre Baskerville", "Noto Serif SC Variable", serif; }
+  .serif { font-family: "Libre Baskerville Variable", "Noto Serif SC Variable", serif; }
   .zh { font-family: "Noto Serif SC Variable", serif; }
   .muted { color: var(--muted-foreground); }
   .footer {
@@ -118,7 +118,7 @@ const pageStyle = () => `
 
 const shell = (body) => `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
-<link rel="stylesheet" href="${fileUrl(require.resolve("@fontsource/libre-baskerville/700.css"))}" />
+<link rel="stylesheet" href="${fileUrl(require.resolve("@fontsource-variable/libre-baskerville/index.css"))}" />
 <link rel="stylesheet" href="${fileUrl(require.resolve("@fontsource-variable/noto-serif-sc/index.css"))}" />
 <style>${pageStyle()}</style></head>
 <body><div class="frame"></div>${body}</body></html>`;

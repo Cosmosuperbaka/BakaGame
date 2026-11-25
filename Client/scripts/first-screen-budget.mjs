@@ -26,20 +26,23 @@ export const BUDGETS = {
   /**
    * 渲染阻塞样式表里的 @font-face 条数：中文字体声明已移到非阻塞的 fonts.css，这里只剩拉丁字体的少数几条。
    * 实测 17：衬线体 11 条，加 v1 等宽体 JetBrains Mono 的 6 条。
+   * Libre Baskerville 由 400/700 两套静态字体换成可变字体后少 2 条，实测 15。
    */
   entryFontFaceRules: 18,
   /**
    * 全部样式表里的 @font-face 条数：文楷两字重各 48 片加等宽 3 片、Noto Serif 101、拉丁 11，原实测 214；
    * v2 控件层改用自托管无衬线后加 Noto Sans SC 101 条与 Instrument Sans 2 条（都在非阻塞的 fonts.css），实测 323。
+   * v0 改用自托管的 Geist 与 Geist Mono（不再引用系统字体）加 11 条，Libre Baskerville 换可变字体少 2 条，实测 332。
    */
-  emittedFontFaceRules: 330,
+  emittedFontFaceRules: 340,
   /**
    * 产物里的 woff2 个数与总字节：实测 327 个 / 32.08MB；全量字符集分片，未命中分片不会加载。
    * 含 JetBrains Mono 的 6 个分片（字体不内联，见 vite.config.ts 的 assetsInlineLimit）。
    * v2 控件层的 Noto Sans SC 可变字体（101 片，约 4.5MB，一片含全部字重，比 400/500/600 三套静态分片小）
    * 与 Instrument Sans 可变字体（2 片，约 41KB）合计 +103 个 / +4.54MB；只有 v2 下界面小字命中的分片才下载。
+   * v0 的 Geist 与 Geist Mono 可变字体 +11 个，Libre Baskerville 换可变字体 −2 个，实测 332 个 / 32.11MB。
    */
-  emittedFontFiles: 330,
+  emittedFontFiles: 340,
   emittedFontBytes: 33_500_000,
   /**
    * 单个字体文件的字节：它就是「页面里冒出一个冷僻字要多下多少」的上限。
