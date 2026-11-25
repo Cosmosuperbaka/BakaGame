@@ -62,11 +62,21 @@ const DEFAULT_SETTLE_RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
 const HANDICAP_SEED_LIMIT = 600;
 /** 结算后结果页最长保留时长：超过就替还挂着的玩家离开，运行时不常驻内存。 */
 export const SETTLED_RETENTION_MS = 30 * 60_000;
-/** 这三条命令自带准入：其余命令必须已经绑定在该账号的排位连接上。 */
+/** 这三条命令自带准入：其余命令（只读查询除外）必须已经绑定在该账号的排位连接上。 */
 const ADMISSION_COMMANDS: readonly CEERankedCommand[] = [
   "cee.ranked.status",
   "cee.ranked.queue",
   "cee.ranked.playBot",
+];
+/**
+ * 只读查询：资料、战绩翻页与排行榜只读本账号的记录与全服榜单，不碰队列与系列赛，
+ * 所以只要求登录，不过客户端准入、也不绑定排位连接。网页端据此看自己的战绩与排行榜，
+ * 开始匹配仍走上面的准入命令。
+ */
+const VIEW_COMMANDS: readonly CEERankedCommand[] = [
+  "cee.ranked.profile",
+  "cee.ranked.history",
+  "cee.ranked.leaderboard",
 ];
 
 export interface CEERankedServiceOptions {
@@ -221,16 +231,7 @@ export class CEERankedService {
   ): Promise<CEERankedResponse<T>> {
     requireStore(this.ctx);
     requirePool(this.ctx);
-    const needsAdmission = ADMISSION_COMMANDS.includes(message.type);
-    if (needsAdmission) requireCEEClientAdmission(connection, "ranked");
-    const userId = connection.account?.userId;
-    if (userId === undefined) {
-      // 走到这里说明不是准入命令（准入已经拦下未登录），也就是没有绑定关系。
-      throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
-    }
-    if (needsAdmission) this.bind(userId, connection);
-    else if (this.ctx.attachment.get(userId) !== connection.id)
-      throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
+    const userId = this.authorize(connection, message.type);
     // 泛型 `T` 在函数体内不可解析，逐命令收窄只能在 `CEERankedMessage` 这一层做；
     // 两个方向都是「同一条命令的信封」，转换不改变运行时形状。
     const command = message as CEERankedMessage;
@@ -295,6 +296,29 @@ export class CEERankedService {
   }
 
   // ==================== 绑定与视图 ====================
+
+  /**
+   * 命令的三档门槛：准入命令过客户端准入并把这条连接设为排位连接；只读查询只要求登录；
+   * 其余命令要求调用连接就是该账号当前的排位连接。返回发起命令的账号。
+   */
+  private authorize(connection: ConnectionRecord, type: CEERankedCommand): string {
+    const needsAdmission = ADMISSION_COMMANDS.includes(type);
+    if (needsAdmission) requireCEEClientAdmission(connection, "ranked");
+    const userId = connection.account?.userId;
+    if (VIEW_COMMANDS.includes(type)) {
+      if (userId === undefined)
+        throw new AppError("LOGIN_REQUIRED", "登录后才能查看排位战绩与排行榜");
+      return userId;
+    }
+    if (userId === undefined) {
+      // 走到这里说明不是准入命令（准入已经拦下未登录），也就是没有绑定关系。
+      throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
+    }
+    if (needsAdmission) this.bind(userId, connection);
+    else if (this.ctx.attachment.get(userId) !== connection.id)
+      throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
+    return userId;
+  }
 
   /** 设定该账号的排位连接；旧连接收一帧 idle 后不再收推送，重连则恢复在线。 */
   private bind(userId: string, connection: ConnectionRecord): void {

@@ -127,11 +127,85 @@ describe("排位战绩翻页", () => {
     expect(profile.recentHasMore).toBe(false);
   });
 
-  test("没绑定排位连接时翻页被拒", async () => {
-    const harness = rankedHarness();
+  test("翻页是只读查询：没绑定排位连接也能翻", async () => {
+    const store = new InMemoryCEERankedStore();
+    await store.saveSettlement(settlement("s0", "u-甲", "甲", RANKED_START_MS - 60_000));
+    const harness = rankedHarness({ store });
     const client = harness.connect("甲");
-    await expect(harness.send(client, "cee.ranked.history", { before: 1 })).rejects.toMatchObject({
+
+    const page = await harness.send(client, "cee.ranked.history", { before: RANKED_START_MS });
+    expect(page.entries.map((entry) => entry.seriesId)).toEqual(["s0"]);
+  });
+});
+
+describe("网页端只读查看排位", () => {
+  test("没有通道证明的已登录连接能取资料、翻战绩、看排行榜", async () => {
+    const store = new InMemoryCEERankedStore();
+    await store.saveSettlement(
+      settlement("s0", "u-甲", "甲", RANKED_START_MS - 60_000, [
+        rating("u-甲", 1610.4, CEE_RANKED_PLACEMENT_SERIES + 3),
+      ])
+    );
+    const harness = rankedHarness({ store });
+    const web = harness.connect("甲", { clientChannel: null });
+
+    const profile = await harness.send(web, "cee.ranked.profile", {});
+    expect(profile.rating).toBe(1610);
+    expect(profile.recent.map((entry) => entry.seriesId)).toEqual(["s0"]);
+    const page = await harness.send(web, "cee.ranked.history", { before: RANKED_START_MS });
+    expect(page.entries.map((entry) => entry.seriesId)).toEqual(["s0"]);
+    const board = await harness.send(web, "cee.ranked.leaderboard", {});
+    expect(board.self).toEqual({ rank: 1, rating: 1610 });
+  });
+
+  test("开始匹配、主动人机与状态查询仍要客户端，动作命令仍要排位连接", async () => {
+    const harness = rankedHarness();
+    const web = harness.connect("甲", { clientChannel: null });
+
+    for (const type of ["cee.ranked.status", "cee.ranked.queue", "cee.ranked.playBot"] as const)
+      await expect(harness.send(web, type, {})).rejects.toMatchObject({ code: "CLIENT_REQUIRED" });
+    await expect(harness.send(web, "cee.ranked.cancel", {})).rejects.toMatchObject({
       code: "RANKED_NOT_ATTACHED",
+    });
+    await expect(harness.send(web, "cee.ranked.guess", { characterId: 11 })).rejects.toMatchObject({
+      code: "RANKED_NOT_ATTACHED",
+    });
+  });
+
+  test("只读查询不接管排位连接：客户端那条照常收推送、照常能操作", async () => {
+    const harness = rankedHarness();
+    const shell = harness.connect("甲");
+    const web = harness.connect("甲-网页", {
+      account: { userId: shell.userId, image: null },
+      clientChannel: null,
+    });
+    // 已定级才进真人队列；定级中排队会直接开人机局。
+    harness.seedRated(shell.userId);
+    await harness.send(shell, "cee.ranked.queue", {});
+    expect(harness.latest(shell).status).toBe("queued");
+    const pushedBefore = shell.sent.length;
+
+    await harness.send(web, "cee.ranked.profile", {});
+    await harness.send(web, "cee.ranked.leaderboard", {});
+
+    // 被接管的旧连接会收到一帧 idle；只读查询不该触发这一帧。
+    expect(shell.sent).toHaveLength(pushedBefore);
+    expect(web.sent).toHaveLength(0);
+    await harness.send(shell, "cee.ranked.cancel", {});
+  });
+
+  test("游客连接查看资料、战绩与排行榜都要求先登录", async () => {
+    const harness = rankedHarness();
+    const guest = harness.connect("游客", { account: null, clientChannel: null });
+
+    await expect(harness.send(guest, "cee.ranked.profile", {})).rejects.toMatchObject({
+      code: "LOGIN_REQUIRED",
+    });
+    await expect(harness.send(guest, "cee.ranked.history", { before: 1 })).rejects.toMatchObject({
+      code: "LOGIN_REQUIRED",
+    });
+    await expect(harness.send(guest, "cee.ranked.leaderboard", {})).rejects.toMatchObject({
+      code: "LOGIN_REQUIRED",
     });
   });
 });
