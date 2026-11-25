@@ -25,7 +25,7 @@ const listItemEnter = { opacity: 0, scale: 0.94 };
 export const listItemExit: TargetAndTransition = {
   opacity: 0,
   scale: 0.965,
-  pointerEvents: "none",
+  ...exitInert,
   transition: { duration: duration.instant },
 };
 
@@ -127,7 +127,13 @@ export const phaseSwap: Variants = {
     scale: 1,
     transition: { ...spring.swift, restDelta: 0.0005, restSpeed: 0.0005 },
   },
-  exit: { opacity: 0, scale: 1.03, transition: { duration: duration.quick, ease: ease.inOut } },
+  // 阶段内容里有按钮与输入框：退场的这一小段不再接收指针，不让人点到已经过去的那一阶段。
+  exit: {
+    opacity: 0,
+    scale: 1.03,
+    ...exitInert,
+    transition: { duration: duration.quick, ease: ease.inOut },
+  },
 };
 
 /**

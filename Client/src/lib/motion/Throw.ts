@@ -1,5 +1,5 @@
 import type { Transition, Variants } from "framer-motion";
-import { spring, ease, duration, type SpringToken } from "@/lib/motion/Transitions";
+import { spring, ease, duration, exitInert, type SpringToken } from "@/lib/motion/Transitions";
 
 // ==================== 抛掷物理 ====================
 // 标签推移与聊天发送各自成套、互不引用对方的参数，只共用同一套物理：位移与形变都由二阶弹簧阻尼驱动，不做淡入淡出。
@@ -60,7 +60,7 @@ export const tabPushSwap: Variants = {
       ? {
           x: `${-direction * tabPush.travel}%`,
           scaleY: tabPush.squash,
-          pointerEvents: "none",
+          ...exitInert,
           transition: {
             x: springWithVelocity(spring.push, tabPush.launch, 0, -direction * tabPush.travel),
             scaleY: spring.wobble,
