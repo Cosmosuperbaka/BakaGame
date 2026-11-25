@@ -336,6 +336,34 @@ test("landing header and footer stay tidy on narrow phones", async ({ page }) =>
   }
 });
 
+test("明暗揭示还在播时点设置里的另一款主题，弹窗不关、这一下照常生效", async ({ page }) => {
+  await page.goto("/");
+  // 拉长揭示，让下一次点击一定落在播放途中，不随机器快慢时有时无
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty("--motion-spring-settle-duration", "4s")
+  );
+  await page.getByRole("button", { name: /^设置$/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const themes = dialog.getByRole("radiogroup", { name: "主题" });
+  const other = themes.getByRole("radio", { checked: false }).first();
+  const otherId = await other.getAttribute("value");
+  // 原生 radio 视觉隐藏，点的是包着它的那颗选项
+  const label = other.locator("xpath=..");
+  await label.click({ trial: true });
+  const box = await label.boundingBox();
+  expect(box).not.toBeNull();
+
+  await dialog.getByRole("radiogroup", { name: "明暗" }).getByText("深色", { exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance-transition", "");
+  // 不用 locator.click：它会等命中检测回到元素上（揭示播完）才点，测不到播放途中这一下
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", otherId ?? "");
+  await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
+});
+
 test("landing and lobby stay within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");

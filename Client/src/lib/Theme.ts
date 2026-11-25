@@ -55,6 +55,86 @@ const prefersReducedMotion = (): boolean => {
 let activeReveal: ViewTransition | null = null;
 
 /**
+ * 被打断的那一次鼠标按压：按下时还停在快照上，浏览器把它判给了 `<html>`，随后的 mousedown 与 click
+ * 也跟着落到 `<html>`（click 取按下与抬起两处的公共祖先），要改投给真正落点。
+ */
+let interruptedPress: { target: Element; releasedOn: Element | null } | null = null;
+
+/** 改投出去的事件：它们同样经过 window 的捕获监听，要认得出来、不再处理。 */
+const retargeted = new WeakSet<Event>();
+
+/** 把截下的原事件按原样（坐标、按键、修饰键）投给真实落点；返回值同 `dispatchEvent`，被取消时为 false。 */
+function redispatch(target: Element, event: MouseEvent): boolean {
+  const copy =
+    event instanceof PointerEvent
+      ? new PointerEvent(event.type, event)
+      : new MouseEvent(event.type, event);
+  retargeted.add(copy);
+  return target.dispatchEvent(copy);
+}
+
+const FOCUSABLE =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex], [contenteditable]:not([contenteditable="false"])';
+
+/** 两个元素的最近公共祖先：浏览器按同一规则决定 click 落在哪。 */
+function commonAncestor(a: Element, b: Element): Element {
+  for (let node: Element | null = a; node; node = node.parentElement) {
+    if (node.contains(b)) return node;
+  }
+  return document.documentElement;
+}
+
+/**
+ * 揭示途中整页快照盖在最上层，浏览器把指针一律判给 `<html>`：点在设置弹窗里的按钮会被当成点在弹窗外，
+ * 弹窗随即关掉，点哪儿都不生效。玩家这时按下指针，是要接着操作页面：揭示立刻走完余下的部分，
+ * 这一下改投给它真正落在的元素。跳过是同步的，跳过之后的命中检测已经回到真实页面。
+ * 鼠标与触控笔的 mousedown、click 随按下一起判给了 `<html>`，由下面的监听接着改投；
+ * 触屏的兼容鼠标事件与 click 在抬起后才命中，跳过之后自然落到真实元素，只需改投按下本身。
+ */
+function interruptReveal(event: PointerEvent): void {
+  // 改投出去的那一份同样会经过这里，不能让它把刚记下的按压清掉
+  if (retargeted.has(event)) return;
+  interruptedPress = null;
+  const root = document.documentElement;
+  if (!activeReveal || event.target !== root) return;
+  activeReveal.skipTransition();
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  if (!target || target === root) return;
+  event.stopImmediatePropagation();
+  if (event.pointerType !== "touch") interruptedPress = { target, releasedOn: null };
+  void redispatch(target, event);
+}
+
+/** 被打断那次鼠标按压的 mousedown 与 click：截下判给 `<html>` 的原事件，按原样投给真正落点。 */
+function retargetInterruptedPress(event: MouseEvent): void {
+  const press = interruptedPress;
+  if (!press || retargeted.has(event)) return;
+  if (event.type === "mouseup") {
+    press.releasedOn = event.target instanceof Element ? event.target : null;
+    return;
+  }
+  if (event.target !== document.documentElement) return;
+  event.stopImmediatePropagation();
+  if (event.type === "mousedown") {
+    // 原事件的默认动作会把焦点从弹窗里移走：拦下它，按真实落点补上聚焦
+    event.preventDefault();
+    if (redispatch(press.target, event))
+      press.target.closest<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
+    return;
+  }
+  interruptedPress = null;
+  const target = press.releasedOn ? commonAncestor(press.target, press.releasedOn) : press.target;
+  void redispatch(target, event);
+}
+
+const PRESS_EVENTS = ["mousedown", "mouseup", "click"] as const;
+
+const onPointerDown = (event: PointerEvent) => {
+  recordPointer(event);
+  interruptReveal(event);
+};
+
+/**
  * 玩家亲手换明暗或主题时，新外观从触发处按圆形铺满整页（View Transitions 的整页快照，形态见 `index.css`
  * 的「外观切换」）：旧外观定格不动，新外观从按下的那一点长出来，读作「是这一下把它换掉的」。
  * 浏览器不支持、偏好减弱动效或不是玩家亲手触发时直接落位；系统主题变化与其它标签页的同步走不到这里，同样直接落位。
@@ -82,6 +162,8 @@ function swapAppearance(apply: () => void): void {
   root.dataset.appearanceTransition = "";
   const transition = document.startViewTransition(apply);
   activeReveal = transition;
+  // 被跳过（连着再切一次、揭示途中被按下打断）时 ready 以 AbortError 拒绝：这是预期的收尾，不能冒成未处理的拒绝
+  transition.ready.catch(() => {});
   void transition.finished.finally(() => {
     // 连点时浏览器跳过上一次过渡，它的收尾晚于新过渡开场：标记与圆心已归新过渡，旧的不能清
     if (activeReveal !== transition) return;
@@ -183,12 +265,17 @@ export function initTheme(): () => void {
   };
   media?.addEventListener("change", onSystemChange);
   window.addEventListener("storage", onStorage);
-  window.addEventListener("pointerdown", recordPointer, { capture: true, passive: true });
+  // 捕获阶段挂在 window 上：揭示途中判给 `<html>` 的按压要赶在弹窗的「点在外面」检测之前截下
+  window.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
+  for (const type of PRESS_EVENTS)
+    window.addEventListener(type, retargetInterruptedPress, { capture: true });
 
   const teardown = () => {
     media?.removeEventListener("change", onSystemChange);
     window.removeEventListener("storage", onStorage);
-    window.removeEventListener("pointerdown", recordPointer, { capture: true });
+    window.removeEventListener("pointerdown", onPointerDown, { capture: true });
+    for (const type of PRESS_EVENTS)
+      window.removeEventListener(type, retargetInterruptedPress, { capture: true });
     if (activeTeardown === teardown) activeTeardown = null;
   };
   activeTeardown = teardown;
