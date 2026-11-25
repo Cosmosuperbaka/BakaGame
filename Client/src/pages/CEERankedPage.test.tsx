@@ -61,7 +61,7 @@ describe("CEERankedPage", () => {
     expect(screen.getByLabelText("全部战绩")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "排行榜" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始匹配" })).toBeDisabled();
-    expect(screen.getByText("排位对局需要在 BakaGame 客户端里进行")).toBeInTheDocument();
+    expect(screen.getByText("排位对局需要在客户端里进行")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载客户端" })).toBeEnabled();
   });
 

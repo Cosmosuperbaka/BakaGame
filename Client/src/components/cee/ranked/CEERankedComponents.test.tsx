@@ -149,7 +149,7 @@ describe("CEERankedHome", () => {
     expect(screen.getByRole("tab", { name: "排行榜" })).toBeEnabled();
     const start = screen.getByRole("button", { name: "开始匹配" });
     expect(start).toBeDisabled();
-    expect(start).toHaveAccessibleDescription("排位对局需要在 BakaGame 客户端里进行");
+    expect(start).toHaveAccessibleDescription("排位对局需要在客户端里进行");
     await userEvent.click(start);
     expect(onQueue).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "下载客户端" }));
@@ -161,7 +161,7 @@ describe("CEERankedHome", () => {
       <CEERankedHome {...props} profile={rankedProfile("rated")} state={RANKED_IDLE_STATE} />
     );
 
-    expect(screen.queryByText("排位对局需要在 BakaGame 客户端里进行")).not.toBeInTheDocument();
+    expect(screen.queryByText("排位对局需要在客户端里进行")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下载客户端" })).not.toBeInTheDocument();
   });
 

@@ -166,14 +166,16 @@ function ClientRequiredHint({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
   const { origin, capture } = useOriginTracker();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
       <p id={id} className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
-        排位对局需要在 BakaGame 客户端里进行
+        排位对局需要在客户端里进行
       </p>
+      {/* 手机宽度下说明与按钮放不进一行：按钮换到下一行铺满，不留半截空白 */}
       <Button
         variant="outline"
         size="sm"
+        className="w-full sm:w-auto"
         onClick={(event) => {
           capture(event);
           setOpen(true);
