@@ -418,6 +418,70 @@ describe("排位状态同步", () => {
   });
 });
 
+describe("网页端只读查看", () => {
+  const attachView = () => {
+    release = useCEERankedStore.getState().attach("view");
+    return release;
+  };
+
+  it("连上即就绪，不发状态请求，资料照常取", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(command === "cee.ranked.profile" ? profileFixture : {})
+    );
+    attachView();
+    await settle();
+
+    expect(useCEERankedStore.getState()).toMatchObject({ ready: true, state: null });
+    expect(callsOf("cee.ranked.status")).toHaveLength(0);
+    await useCEERankedStore.getState().loadProfile();
+    expect(useCEERankedStore.getState().profile).toEqual(profileFixture);
+  });
+
+  it("没连上时不就绪，连上后才就绪；断线不撤回就绪", async () => {
+    socket.setLink(false);
+    attachView();
+    await settle();
+    expect(useCEERankedStore.getState().ready).toBe(false);
+
+    socket.emitStatus(true);
+    await settle();
+    expect(useCEERankedStore.getState().ready).toBe(true);
+
+    socket.emitStatus(false);
+    await settle();
+    expect(useCEERankedStore.getState().ready).toBe(true);
+    socket.emitStatus(true);
+    await settle();
+    expect(callsOf("cee.ranked.status")).toHaveLength(0);
+  });
+
+  it("不订阅排位推送：收到状态帧也不装进本地状态", async () => {
+    attachView();
+    await settle();
+
+    socket.emit(fullFrame(1, queuedState));
+    await settle();
+    expect(useCEERankedStore.getState().state).toBeNull();
+  });
+
+  it("离开页面清掉就绪、资料与榜单", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(command === "cee.ranked.profile" ? profileFixture : {})
+    );
+    attachView();
+    await settle();
+    await useCEERankedStore.getState().loadProfile();
+
+    release?.();
+    release = null;
+    expect(useCEERankedStore.getState()).toMatchObject({
+      ready: false,
+      profile: null,
+      leaderboard: null,
+    });
+  });
+});
+
 describe("状态请求失败与重试", () => {
   /** 状态请求按次序应答：给出的每一项依次用掉，用完后重复最后一项。 */
   const statusReplies = (...replies: Array<() => Promise<unknown>>) => {

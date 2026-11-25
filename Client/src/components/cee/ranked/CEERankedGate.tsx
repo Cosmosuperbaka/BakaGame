@@ -1,19 +1,13 @@
-import { Download, LogIn, MonitorSmartphone } from "lucide-react";
+import { LogIn, MonitorSmartphone } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/Button";
-import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 
 /**
- * 排位的门槛说明：网页端只说明「需要客户端」并给下载入口，客户端未登录时引导登录。
+ * 排位的登录门槛：战绩与排位分记在账号上，未登录时只引导登录。
+ * 网页端登录后能查看自己的战绩与排行榜、但对局要在客户端里打，说明里一并交代。
  * 这里只是展示，真正的准入由服务端判定。
  */
-export function CEERankedGate({
-  reason,
-  onLogin,
-}: {
-  reason: "client" | "login";
-  onLogin: () => void;
-}) {
+export function CEERankedGate({ client, onLogin }: { client: boolean; onLogin: () => void }) {
   return (
     <section
       aria-label="排位赛准入"
@@ -21,27 +15,18 @@ export function CEERankedGate({
     >
       <MonitorSmartphone className="size-8 text-muted-foreground" aria-hidden="true" />
       <h2 className="font-serif text-xl font-semibold">
-        {reason === "client" ? "排位赛只在客户端开放" : "登录后参加排位赛"}
+        {client ? "登录后参加排位赛" : "登录后查看排位战绩"}
       </h2>
       <p className="text-sm text-muted-foreground">
-        {reason === "client"
-          ? "排位需要使用 BakaGame 客户端并登录账号，下载安装后从客户端进入。"
-          : "排位分与战绩记在账号上，登录后即可开始定级赛。"}
+        {client
+          ? "排位分与战绩记在账号上，登录后即可开始定级赛。"
+          : "排位分与战绩记在账号上，登录后可以查看自己的战绩与排行榜；参加排位需要使用 BakaGame 客户端。"}
       </p>
       <div className="flex flex-wrap justify-center gap-2">
-        {reason === "client" ? (
-          <Button asChild>
-            <a href={BAKA_CLIENT_DOWNLOAD_URL} rel="noopener">
-              <Download aria-hidden="true" />
-              下载客户端
-            </a>
-          </Button>
-        ) : (
-          <Button onClick={onLogin}>
-            <LogIn aria-hidden="true" />
-            登录
-          </Button>
-        )}
+        <Button onClick={onLogin}>
+          <LogIn aria-hidden="true" />
+          登录
+        </Button>
         <Button variant="outline" asChild>
           <Link to="/cee" viewTransition>
             返回多人模式

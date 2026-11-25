@@ -72,21 +72,21 @@ describe("排位读数格式", () => {
 });
 
 describe("CEERankedGate", () => {
-  it("网页端口径只说需要客户端，并给出下载入口", () => {
-    withProviders(<CEERankedGate reason="client" onLogin={vi.fn()} />);
+  it("网页端未登录时引导登录查看战绩，并说明对局要用客户端", async () => {
+    const onLogin = vi.fn();
+    withProviders(<CEERankedGate client={false} onLogin={onLogin} />);
 
-    expect(screen.getByRole("heading", { name: "排位赛只在客户端开放" })).toBeInTheDocument();
-    expect(screen.getByText(/排位需要使用 BakaGame 客户端并登录账号/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /下载客户端/ })).toHaveAttribute(
-      "href",
-      expect.stringContaining("http")
-    );
+    expect(screen.getByRole("heading", { name: "登录后查看排位战绩" })).toBeInTheDocument();
+    expect(screen.getByText(/登录后可以查看自己的战绩与排行榜/)).toBeInTheDocument();
+    expect(screen.getByText(/参加排位需要使用 BakaGame 客户端/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "返回多人模式" })).toHaveAttribute("href", "/cee");
+    await userEvent.click(screen.getByRole("button", { name: /登录/ }));
+    expect(onLogin).toHaveBeenCalledOnce();
   });
 
   it("客户端未登录时引导登录", async () => {
     const onLogin = vi.fn();
-    withProviders(<CEERankedGate reason="login" onLogin={onLogin} />);
+    withProviders(<CEERankedGate client onLogin={onLogin} />);
 
     expect(screen.getByRole("heading", { name: "登录后参加排位赛" })).toBeInTheDocument();
     expect(screen.getByText(/排位分与战绩记在账号上/)).toBeInTheDocument();
@@ -129,6 +129,40 @@ describe("CEERankedHome", () => {
     expect(screen.queryByText(/人机计分/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始匹配" })).toBeEnabled();
     expect(screen.queryByText(/定级赛的对手都是人机/)).not.toBeInTheDocument();
+  });
+
+  it("网页端照常展示分数与名次，只把开始按钮置灰并给出下载入口", async () => {
+    const onQueue = vi.fn();
+    withProviders(
+      <CEERankedHome
+        {...props}
+        onQueue={onQueue}
+        profile={rankedProfile("rated")}
+        leaderboard={rankedLeaderboard()}
+        state={RANKED_IDLE_STATE}
+        clientRequired
+      />
+    );
+
+    expect(screen.getByText("1532")).toBeInTheDocument();
+    expect(screen.getByLabelText("全服第 4 名")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "排行榜" })).toBeEnabled();
+    const start = screen.getByRole("button", { name: "开始匹配" });
+    expect(start).toBeDisabled();
+    expect(start).toHaveAccessibleDescription("排位对局需要在 BakaGame 客户端里进行");
+    await userEvent.click(start);
+    expect(onQueue).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "下载客户端" }));
+    expect(await screen.findByRole("dialog", { name: "下载客户端" })).toBeInTheDocument();
+  });
+
+  it("客户端不出现下载说明", () => {
+    withProviders(
+      <CEERankedHome {...props} profile={rankedProfile("rated")} state={RANKED_IDLE_STATE} />
+    );
+
+    expect(screen.queryByText("排位对局需要在 BakaGame 客户端里进行")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载客户端" })).not.toBeInTheDocument();
   });
 
   it("定级中只给进度，按钮写作开始定级赛", () => {

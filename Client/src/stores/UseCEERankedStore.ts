@@ -38,8 +38,17 @@ export function clearCEERankedQueryCache() {
 export type CEERankedAction =
   "queue" | "cancel" | "playBot" | "guess" | "surrender" | "exit" | "leave";
 
+/**
+ * 进入排位页的方式：`play` 是客户端，取排位状态并接收推送；`view` 是网页端只读查看，
+ * 只发资料、战绩与排行榜这类只读查询，不发状态请求、不占用账号的排位连接。
+ */
+export type CEERankedAttachMode = "play" | "view";
+
 export interface CEERankedStore {
-  /** 已从服务端拿到过一次排位状态。 */
+  /**
+   * 已从服务端拿到过一次排位状态。只读查看没有排位状态可取，本页连上过一次服务端就算就绪，
+   * 之后断线同样保留页面只读展示。
+   */
   ready: boolean;
   /**
    * 连接一直在、状态请求却失败了，且还没就绪：页面据此给失败说明与重试入口。
@@ -60,8 +69,9 @@ export interface CEERankedStore {
   /**
    * 进入排位页时调用：连接可用时发 `cee.ranked.status`（没连上就等连上再发），之后服务端推送 `cee.ranked.state`。
    * 断线不必释放，重连自动重取。返回释放函数（离开页面时调用，停止响应推送并清理本地状态）。
+   * `view` 模式（网页端）不发状态请求也不订阅推送，只在连上后标记就绪，资料与榜单由页面照常取。
    */
-  attach: () => () => void;
+  attach: (mode?: CEERankedAttachMode) => () => void;
   /** 状态请求失败后由玩家触发：再发一次 `cee.ranked.status`，已有请求在途时不重复发。 */
   retryStatus: () => Promise<void>;
   queue: () => Promise<void>;
@@ -208,6 +218,12 @@ function handleRankedMessage(generation: number, message: ServerMessage): void {
   installState(result.state, result.revision);
 }
 
+/** 只读查看：没有排位状态可同步，连上一次就让页面就绪；断线只由顶栏提示，不撤回就绪。 */
+function handleViewStatus(generation: number, connected: boolean): void {
+  if (!attached(generation) || !connected) return;
+  useCEERankedStore.setState({ ready: true });
+}
+
 function handleRankedStatus(generation: number, connected: boolean): void {
   if (!attached(generation)) return;
   if (!connected) {
@@ -279,15 +295,21 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
     leaderboard: null,
     leaderboardLoading: false,
     pending: {},
-    attach: () => {
+    attach: (mode = "play") => {
       const generation = commandGeneration;
       attachCount += 1;
-      if (!unsubscribeMessage)
-        unsubscribeMessage = ws.onMessage((message) => handleRankedMessage(generation, message));
-      // 已连接时 onStatus 注册即回调「已连上」并取状态；没连上就等真正连上再取，
-      // 不发一条注定以「未连接」失败的请求，免得页面先闪一次失败说明。
-      if (!unsubscribeStatus)
-        unsubscribeStatus = ws.onStatus((connected) => handleRankedStatus(generation, connected));
+      // 只读查看的连接不是排位连接，服务端不会推排位状态，也不能发状态请求（它要过客户端准入）。
+      if (mode === "view") {
+        if (!unsubscribeStatus)
+          unsubscribeStatus = ws.onStatus((connected) => handleViewStatus(generation, connected));
+      } else {
+        if (!unsubscribeMessage)
+          unsubscribeMessage = ws.onMessage((message) => handleRankedMessage(generation, message));
+        // 已连接时 onStatus 注册即回调「已连上」并取状态；没连上就等真正连上再取，
+        // 不发一条注定以「未连接」失败的请求，免得页面先闪一次失败说明。
+        if (!unsubscribeStatus)
+          unsubscribeStatus = ws.onStatus((connected) => handleRankedStatus(generation, connected));
+      }
       return () => {
         attachCount = Math.max(0, attachCount - 1);
         if (attachCount > 0) return;
