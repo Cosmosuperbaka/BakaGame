@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
 import { PlayerAvatar } from "./PlayerAvatar";
 import { PlayerRow } from "./PlayerRow";
-import { PlayerStatusPill } from "./PlayerStatusPill";
 
 const meta = {
   title: "公共组件/PlayerAvatar",
@@ -47,18 +46,18 @@ export const WithName: Story = {
           name={host.name}
           score={12}
           host
-          badges={<PlayerStatusPill label="准备" tone="success" />}
+          status={{ label: "准备", tone: "success" }}
         />
         <PlayerRow
           name={me.name}
           score={9}
           me
-          badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+          status={{ label: "猜歌", tone: "warning" }}
         />
         <PlayerRow
           name={longName.name}
           score={0}
-          badges={<PlayerStatusPill label="旁观" tone="default" />}
+          status={{ label: "旁观", tone: "default" }}
         />
       </div>
     </div>

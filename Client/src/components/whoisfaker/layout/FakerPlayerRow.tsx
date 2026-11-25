@@ -2,7 +2,6 @@ import type { Ref } from "react";
 import { motion } from "framer-motion";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
-import { PlayerStatusIcon } from "@/components/common/PlayerStatusPill";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { tappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
@@ -84,6 +83,7 @@ export function PlayerRow(props: PlayerRowProps) {
       bot={player.isBot}
       account={player.account}
       eliminated={eliminated}
+      status={status}
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
@@ -93,7 +93,6 @@ export function PlayerRow(props: PlayerRowProps) {
           ) : mark !== "unknown" ? (
             <FakerRoleBadge role={mark} predicted />
           ) : null}
-          {status ? <PlayerStatusIcon tone={status.tone} label={status.label} /> : null}
         </>
       }
       embedded={embedded}

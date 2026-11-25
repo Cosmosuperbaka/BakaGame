@@ -40,7 +40,8 @@ export function PlayerAvatar({
       aria-hidden="true"
       className={cn(
         base,
-        me ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+        // 中性底取前景色淡档而不是 muted：暗色的 muted 比面板还暗，一枚小方块落在面板上会读成一个黑洞。
+        me ? "bg-primary/10 text-primary" : "bg-foreground/8 text-muted-foreground",
         className
       )}
     >
