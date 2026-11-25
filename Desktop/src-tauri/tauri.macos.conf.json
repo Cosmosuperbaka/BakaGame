@@ -9,7 +9,7 @@
       "icons/icon.icns"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "14.0",
       "signingIdentity": "-"
     }
   }

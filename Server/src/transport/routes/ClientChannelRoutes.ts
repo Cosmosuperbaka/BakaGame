@@ -11,7 +11,9 @@ import {
   CLIENT_CHANNEL_PATHS,
   CLIENT_CHANNEL_PATH_PREFIX,
   CLIENT_SELF_CHECK_ID_MAX_LENGTH,
+  DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION,
 } from "../../infrastructure/ClientChannelContract";
+import { parseClientUserAgent } from "../../shared/ClientUserAgent";
 import { compareDottedVersion } from "../../shared/ModelValues";
 import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
@@ -59,6 +61,15 @@ const updaterPlatformOf = (target: string, arch: string): UpdaterPlatform | unde
   if (target === "windows" && arch === "x86_64") return "windows";
   if (target === "darwin" && (arch === "aarch64" || arch === "x86_64")) return "macos";
   return undefined;
+};
+/**
+ * 这台 Mac 的系统够不够新安装包的最低版本：取壳请求头里客户端段报的系统版本；
+ * 读不出（不是 Mac 壳、旧壳不带客户端段、版本不是点分数字）返回 undefined，由调用方决定从严还是从宽。
+ */
+const macSystemMeetsMinimum = (userAgent: string | null | undefined): boolean | undefined => {
+  const ua = parseClientUserAgent(userAgent);
+  if (ua?.osName !== "macOS" || !/^\d+(\.\d+)*$/.test(ua.osVersion)) return undefined;
+  return compareDottedVersion(ua.osVersion, DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION) >= 0;
 };
 /**
  * 壳上报版本号的唯一口径：壳把项目文件里的 version 原样送来，这里放宽或收紧都会让
@@ -185,7 +196,7 @@ export const clientChannelRoutes = (
     )
     .get(
       CLIENT_CHANNEL_PATHS.updateCheck,
-      async ({ query, set }) => {
+      async ({ query, request, set }) => {
         // 比对只用服务端这一份 compareDottedVersion：前端再实现一遍，两端对「够不够新」
         // 的判断迟早各自漂移。这里读回的最低版本也只用于提醒，拦人仍在 requireAdmission。
         set.headers["cache-control"] = "no-store";
@@ -199,8 +210,14 @@ export const clientChannelRoutes = (
         const latestVersion = outdated
           ? ""
           : ((await artifacts?.latestVersion(packagePlatform)) ?? "");
+        // 系统低于新包最低要求的 Mac 不再催更新：下载下来的新包在这台机器上打不开。
+        // 读不出系统版本时照旧提醒，提醒本身不会弄坏任何东西。
+        const systemTooOld =
+          packagePlatform === "macos" &&
+          macSystemMeetsMinimum(request.headers.get("user-agent")) === false;
         const behindLatest =
           !outdated &&
+          !systemTooOld &&
           latestVersion.length > 0 &&
           compareDottedVersion(query.clientVersion, latestVersion) < 0;
         return { minimumVersion, outdated, latestVersion, behindLatest };
@@ -256,17 +273,25 @@ export const clientChannelRoutes = (
     )
     .get(
       CLIENT_CHANNEL_PATHS.desktopUpdate,
-      async ({ params, set }) => {
+      async ({ params, request, set }) => {
         // Tauri 更新器的动态清单：有新版回 200 + 版本、地址、签名，没有就回 204。
         // 地址指向对象存储/CDN，安装包字节不经过源站；签名由壳用编进二进制的公钥校验，
         // 这里只是把发布流水线写下的 .sig 原样转交，服务端被篡改也换不来能装上的包。
         // 与 update-check 不同，这里不涉及准入门槛，可以短时缓存。
-        const cacheControl = "public, max-age=60";
-        set.headers["cache-control"] = cacheControl;
         const platform = updaterPlatformOf(params.target, params.arch);
-        const release = platform ? await artifacts?.updaterRelease(platform) : undefined;
+        // macOS 的答复取决于请求头里的系统版本，只许端上缓存，免得共享缓存把一台机器的答复给了另一台
+        const cacheControl = platform === "macos" ? "private, max-age=60" : "public, max-age=60";
+        const headers: Record<string, string> = { "cache-control": cacheControl };
+        if (platform === "macos") headers.vary = "User-Agent";
+        Object.assign(set.headers, headers);
+        // 更新器装完就重启，新包打不开时玩家手上就只剩一个起不来的壳，所以这里从严：
+        // 系统版本读不出（不带客户端段的旧壳）也不给，留给页面提醒引导手动下载。
+        const systemBlocked =
+          platform === "macos" && macSystemMeetsMinimum(request.headers.get("user-agent")) !== true;
+        const release =
+          platform && !systemBlocked ? await artifacts?.updaterRelease(platform) : undefined;
         if (!release || compareDottedVersion(params.currentVersion, release.version) >= 0) {
-          return new Response(null, { status: 204, headers: { "cache-control": cacheControl } });
+          return new Response(null, { status: 204, headers });
         }
         return {
           version: release.version,

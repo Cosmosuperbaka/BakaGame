@@ -6,6 +6,7 @@ import {
   ClientChannel,
   InMemoryClientChannelStore,
 } from "../src/infrastructure/ClientChannel";
+import { DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION } from "../src/infrastructure/ClientChannelContract";
 import { ClientWebBundle } from "../src/infrastructure/ClientWebBundle";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
 
@@ -18,9 +19,11 @@ const appAt = (desktopMinimum: string) =>
     })
   );
 
-async function check(app: ReturnType<typeof appAt>, search: string) {
+async function check(app: ReturnType<typeof appAt>, search: string, userAgent?: string) {
   const response = await app.handle(
-    new Request(`http://localhost/api/client/update-check?${search}`)
+    new Request(`http://localhost/api/client/update-check?${search}`, {
+      headers: userAgent ? { "user-agent": userAgent } : {},
+    })
   );
   return {
     status: response.status,
@@ -28,6 +31,10 @@ async function check(app: ReturnType<typeof appAt>, search: string) {
     body: await response.json().catch(() => null),
   };
 }
+
+/** 壳原生请求只带客户端段；Mac 壳按自己的系统版本填，WebView 则在默认串后面追加同一段。 */
+const macShellUa = (osVersion: string, client = "2.0.0") =>
+  `BakaGame/${client} (macOS ${osVersion}; arm64; desktop) Game/unknown`;
 
 test("注册与领挑战按来源限流：同一来源超额 429，换来源照常，读回接口不受影响", async () => {
   const app = appAt("2.0.0");
@@ -198,6 +205,32 @@ test("桌面壳按自报平台比对最新版：macOS 看 macOS 的包，没带�
   });
 });
 
+test("系统低于新包最低版本的 Mac 壳不再催更新；读不出系统版本时照旧提醒", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: { macos: "https://cdn.test/files/BakaGame-latest-universal.dmg" },
+    fetcher: (async (url: string) =>
+      String(url).endsWith(".version")
+        ? ({ ok: true, text: async () => "2.1.0" } as unknown as Response)
+        : ({ ok: true, headers: new Headers() } as unknown as Response)) as unknown as typeof fetch,
+  });
+  const app = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "" }),
+    artifacts
+  );
+  const [major] = DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION.split(".");
+  const query = "clientType=desktop&clientVersion=2.0.0&platform=macos";
+  const webview = (osVersion: string) =>
+    `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ${macShellUa(osVersion)}`;
+
+  expect(await check(app, query, webview(`${Number(major) - 1}.6`))).toMatchObject({
+    body: { latestVersion: "2.1.0", behindLatest: false },
+  });
+  expect(await check(app, query, webview(`${major}.0`))).toMatchObject({
+    body: { behindLatest: true },
+  });
+  expect(await check(app, query)).toMatchObject({ body: { behindLatest: true } });
+});
+
 test("macOS 包没配（缺省空串）时 Mac 壳没有软提醒依据，不拿 Windows 的版本去催", async () => {
   const artifacts = new ClientArtifacts({
     urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe", macos: "" },
@@ -230,14 +263,18 @@ test("缺版本号时拒绝：没有版本就没有提醒的依据", async () =>
 });
 
 /** 桌面壳自动更新清单：按更新器替换好的平台、架构与当前版本提问。 */
-async function desktopUpdate(path: string, artifacts?: ClientArtifacts) {
+async function desktopUpdate(path: string, artifacts?: ClientArtifacts, userAgent?: string) {
+  const ua = userAgent ?? (path.startsWith("darwin/") ? macShellUa("26.1") : undefined);
   const response = await clientChannelRoutes(undefined, artifacts).handle(
-    new Request(`http://localhost/api/client/desktop-update/${path}`)
+    new Request(`http://localhost/api/client/desktop-update/${path}`, {
+      headers: ua ? { "user-agent": ua } : {},
+    })
   );
   const text = await response.text();
   return {
     status: response.status,
     cacheControl: response.headers.get("cache-control"),
+    vary: response.headers.get("vary"),
     body: text ? (JSON.parse(text) as Record<string, unknown>) : null,
   };
 }
@@ -298,6 +335,32 @@ test("自动更新清单：macOS 两种芯片都拿通用包，版本按 macOS �
   }
   // Windows 已经发到 2.5.0 也不影响 Mac 壳：2.1.0 的 Mac 壳就是最新
   expect((await desktopUpdate("darwin/aarch64/2.1.0", artifacts)).status).toBe(204);
+});
+
+test("自动更新清单：系统低于新包最低版本、或读不出系统版本的 Mac 不给新包，答复只许端上缓存", async () => {
+  const { artifacts } = updaterArtifacts();
+  const [major] = DESKTOP_MACOS_MINIMUM_SYSTEM_VERSION.split(".");
+  const below = `${Number(major) - 1}.6`;
+  const allowed = await desktopUpdate("darwin/aarch64/2.0.0", artifacts, macShellUa(`${major}.0`));
+  expect(allowed.status).toBe(200);
+  expect(allowed.cacheControl).toBe("private, max-age=60");
+  expect(allowed.vary).toBe("User-Agent");
+  for (const ua of [
+    macShellUa(below),
+    macShellUa("unknown"),
+    // 旧壳的更新请求只带插件自己的 UA，看不出系统版本
+    "tauri-plugin-updater/2.14.1",
+    "",
+  ]) {
+    const result = await desktopUpdate("darwin/aarch64/2.0.0", artifacts, ua);
+    expect(result.status, ua).toBe(204);
+    expect(result.cacheControl, ua).toBe("private, max-age=60");
+  }
+  // Windows 不看系统版本，照旧可以共享缓存
+  const windows = await desktopUpdate("windows/x86_64/2.0.0", artifacts, macShellUa(below));
+  expect(windows.status).toBe(200);
+  expect(windows.cacheControl).toBe("public, max-age=60");
+  expect(windows.vary).toBeNull();
 });
 
 test("自动更新清单：已是最新、平台没有发布或没配制品时回 204", async () => {
