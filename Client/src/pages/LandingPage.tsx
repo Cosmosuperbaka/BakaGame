@@ -4,7 +4,18 @@ import { listItem, listContainer } from "@/lib/motion/Choreography";
 import { iconTappable, pressable } from "@/lib/motion/Feedback";
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { usePageLinkClick, useSharedElementName } from "@/hooks/UsePageTransition";
-import { Activity, ArrowUpRight, CirclePause, Clock, Play } from "lucide-react";
+import {
+  Activity,
+  ArrowUpRight,
+  CirclePause,
+  Clock,
+  Medal,
+  Play,
+  Trophy,
+  UserRound,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 import { BrandIcon } from "@/components/common/BrandIcon";
 import type { BrandIconName } from "@/data/BrandIconPaths";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +38,8 @@ import { aboutsTabHref } from "@/lib/AboutsTabs";
 interface GameSubMode {
   id: string;
   title: string;
+  /** 入口胶囊左端的玩法图标：一人、多人、排位、锦标赛各一种，所有主题同一套。 */
+  icon: LucideIcon;
   /** 窄屏海报胶囊上的短名。 */
   short: string;
   path?: string;
@@ -82,6 +95,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "singleplayer",
         title: "单人模式",
+        icon: UserRound,
         short: "单人",
         path: `${GAME_ROUTES.song.base}/solo`,
         available: true,
@@ -90,6 +104,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "multiplayer",
         title: "多人模式",
+        icon: UsersRound,
         short: "多人",
         path: GAME_ROUTES.song.base,
         available: true,
@@ -109,6 +124,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "multiplayer",
         title: "多人模式",
+        icon: UsersRound,
         short: "多人",
         path: GAME_ROUTES.cee.base,
         available: true,
@@ -117,6 +133,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "ranked",
         title: "排位赛",
+        icon: Medal,
         short: "排位",
         path: `${GAME_ROUTES.cee.base}/ranked`,
         available: true,
@@ -125,6 +142,7 @@ const PLAYABLE_GAMES: GameEntry[] = [
       {
         id: "tournament",
         title: "锦标赛",
+        icon: Trophy,
         short: "锦标赛",
         available: false,
       },
@@ -176,28 +194,47 @@ const STATUS_PAGE_PATH = "/status";
  */
 const pageColumnClass = "mx-auto w-full max-w-5xl px-4 sm:px-6 md:px-10";
 
-/** 神秘游戏海报的底色：与几款正式游戏的主题色同一档深浅的墨色，问号与斜纹压在上面。 */
-const MYSTERY_ACCENT = "#2a2733";
-
 /** 神秘游戏点「开始游戏」后「敬请期待」停留的时长：给玩家读完提示，不参与任何业务时序。 */
 const MYSTERY_HINT_MS = 2_000;
 
 /**
- * 海报上的入口胶囊：压在封面暗部上，白底深字是能进的入口，虚线降色是进不去的入口。
- * 窄屏两列海报每张只有一百多像素宽，胶囊收紧内边距、只写短名；`sm` 起写全名并带播放图标。
+ * 海报上的入口胶囊：压在封面暗部上，纸底墨字是能进的入口，虚线降色是进不去的入口。
+ * 左端嵌一枚玩法图标的色块，胶囊只在左侧留一圈窄边贴住它，同心的两层轮廓读作一枚按钮；
+ * 色块取游戏的主题色，把入口和海报连成一件东西。轮廓与颜色都取海报令牌，各主题自己定材料。
  */
 const pillClass =
-  "inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-9 sm:px-4 sm:text-sm";
-const openPillClass = cn(pillClass, "bg-white text-neutral-900 shadow-sm");
+  "inline-flex h-8 shrink-0 items-center gap-1 rounded-poster-pill pr-2.5 pl-1 text-xs font-bold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-poster-paper sm:h-9 sm:gap-1.5 sm:pr-3.5 sm:text-sm";
+const openPillClass = cn(pillClass, "bg-poster-paper text-poster-ink shadow-sm");
 const closedPillClass = cn(
   pillClass,
-  "border border-dashed border-white/50 bg-black/40 font-medium text-white/80 select-none"
+  "border border-dashed border-poster-paper/50 bg-poster-ink/40 font-medium text-poster-paper/80 select-none"
 );
+const pillIconClass =
+  "grid size-6 shrink-0 place-items-center rounded-poster-pill sm:size-7 [&_svg]:size-3.5 sm:[&_svg]:size-4";
 
-/** 整款还没上线的游戏挂在标题旁的标记；海报是深色底，不沿用页面上的徽章配色。 */
+/** 胶囊左端的图标色块：实心的是能进的入口；进不去的只画一圈虚线框，里面换成状态图标。 */
+function PillIcon({ icon: Icon, tone }: { icon: LucideIcon; tone?: string }) {
+  if (!tone)
+    return (
+      <span aria-hidden="true" className={cn(pillIconClass, "border border-dashed border-current")}>
+        <Icon />
+      </span>
+    );
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(pillIconClass, "text-poster-paper")}
+      style={{ backgroundColor: tone }}
+    >
+      <Icon strokeWidth={2.5} className={Icon === Play ? "fill-current" : undefined} />
+    </span>
+  );
+}
+
+/** 整款还没上线的游戏挂在标题旁的标记：和进不去的入口同一种虚线降色，海报是深色底，不沿用页面上的徽章配色。 */
 function ComingSoonBadge() {
   return (
-    <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-2xs font-medium text-white/80 select-none">
+    <span className="shrink-0 rounded-poster-pill border border-dashed border-poster-paper/50 bg-poster-ink/40 px-2 py-0.5 text-2xs font-medium text-poster-paper/80 select-none">
       即将上线
     </span>
   );
@@ -206,6 +243,7 @@ function ComingSoonBadge() {
 interface GameEntryPoint {
   key: string;
   title: string;
+  icon: LucideIcon;
   /** 窄屏胶囊上的短名；与全名相同时只渲染一份。 */
   short: string;
   path?: string;
@@ -222,6 +260,7 @@ function entryPointsOf(game: GameEntry): GameEntryPoint[] {
       {
         key: "start",
         title: "开始游戏",
+        icon: Play,
         short: "开始",
         path: game.path,
         available: game.available,
@@ -232,6 +271,7 @@ function entryPointsOf(game: GameEntry): GameEntryPoint[] {
   return game.subModes.map((mode) => ({
     key: mode.id,
     title: mode.title,
+    icon: mode.icon,
     short: mode.short,
     path: mode.path,
     available: mode.available,
@@ -268,7 +308,7 @@ function PosterArt({ game }: { game: GameEntry }) {
         aria-hidden="true"
         className="absolute inset-0 grid place-items-center bg-[repeating-linear-gradient(135deg,rgb(255_255_255/0.06)_0_10px,transparent_10px_20px)] pb-[38%]"
       >
-        <span className="font-serif text-[7rem] leading-none font-black text-white/20 select-none sm:text-[9rem]">
+        <span className="font-serif text-[7rem] leading-none font-black text-poster-paper opacity-20 select-none sm:text-[9rem]">
           ?
         </span>
       </div>
@@ -296,10 +336,12 @@ type Announce = Dispatch<SetStateAction<string>>;
 function MysteryEntryButton({
   gameTitle,
   entry,
+  tone,
   announce,
 }: {
   gameTitle: string;
   entry: GameEntryPoint;
+  tone: string;
   announce: Announce;
 }) {
   const [hinting, setHinting] = useState(false);
@@ -327,7 +369,7 @@ function MysteryEntryButton({
       onClick={showHint}
       {...pressable}
     >
-      <Play aria-hidden="true" className="size-3 fill-current max-sm:hidden" />
+      <PillIcon icon={entry.icon} tone={tone} />
       <span className="relative flex overflow-hidden">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -349,9 +391,10 @@ function MysteryEntryButton({
 
 /**
  * 一款游戏一张海报：封面铺满，自下而上压一层暗幕，游戏名与入口胶囊落在暗幕上。
- * 海报本身不可点（入口是里面的胶囊）；配色取各游戏自己的主题色，亮暗主题同一份。
+ * 海报本身不可点（入口是里面的胶囊）；底色取各游戏自己的主题色，暗幕、字与胶囊的材料取主题的海报令牌，
+ * 亮暗页面上是同一张图。
  * 比例只是下限：裁切用 `overflow-clip` 而不是 `overflow-hidden`，后者会让海报不再按内容撑高，
- * 入口多的那张在矮横幅里会把游戏名顶出画面。
+ * 入口多的那张在矮横幅里会把游戏名顶出画面；同一行的海报再一起拉到最高那张的高度。
  */
 function GamePoster({
   game,
@@ -384,80 +427,86 @@ function GamePoster({
   const isOpen = (entry: GameEntryPoint) =>
     !isWholeGameDisabled && entry.available && (!entry.feature || features[entry.feature]);
 
+  // 色块与海报同色：神秘游戏没有主题色，取主题给的留白色。
+  const tone = game.accent ?? "var(--poster-blank)";
+
   return (
     <motion.li
       data-testid={`game-entry-${game.id}`}
       variants={listItem}
       aria-disabled={isWholeGameDisabled ? "true" : undefined}
-      className="group relative isolate flex aspect-[3/4] flex-col justify-end place-self-stretch overflow-clip rounded-2xl text-white shadow-md md:aspect-[5/4]"
-      style={{ backgroundColor: game.accent ?? MYSTERY_ACCENT }}
+      // 外层是卡面：衬边为零的主题里被封面盖满，有衬边的主题在封面四周露出一圈。
+      className="group flex aspect-[3/4] flex-col place-self-stretch rounded-xl bg-card p-poster-mat shadow-md md:aspect-[5/4]"
     >
-      <PosterArt game={game} />
       <div
-        aria-hidden="true"
-        className="absolute inset-0 bg-linear-to-t from-black/85 via-black/35 to-transparent"
-      />
-      <div className="relative flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
-          <h3
-            className="w-fit text-lg leading-tight font-black tracking-tight drop-shadow sm:text-2xl"
-            style={{ viewTransitionName: sharedName }}
-          >
-            {game.title}
-          </h3>
-          {isWholeGameDisabled && <ComingSoonBadge />}
-        </div>
-
-        {/* 整款未上线的单一入口游戏没有可展示的入口，只留标题旁的「即将上线」。 */}
-        {isWholeGameDisabled && !game.subModes ? null : (
-          <div className="flex flex-wrap gap-1 sm:gap-1.5">
-            {entries.map((entry) => {
-              if (game.mystery)
-                return (
-                  <MysteryEntryButton
-                    key={entry.key}
-                    gameTitle={game.title}
-                    entry={entry}
-                    announce={announce}
-                  />
-                );
-
-              if (!isOpen(entry) || !entry.path) {
-                const isClosed = !isWholeGameDisabled && entry.available;
-                return (
-                  <span key={entry.key} aria-disabled="true" className={closedPillClass}>
-                    {/* 窄海报只放得下短名：状态换成图标，文字留给读屏。 */}
-                    {isClosed ? (
-                      <CirclePause aria-hidden="true" className={cn("size-3", compactOnlyClass)} />
-                    ) : (
-                      <Clock aria-hidden="true" className={cn("size-3", compactOnlyClass)} />
-                    )}
-                    <EntryLabel title={entry.title} short={entry.short} />
-                    <span className="text-white/60 max-sm:sr-only md:max-lg:sr-only">
-                      {isClosed ? "暂时关闭" : "即将上线"}
-                    </span>
-                  </span>
-                );
-              }
-
-              return (
-                <motion.a
-                  key={entry.key}
-                  href={entry.path}
-                  aria-label={`${game.title} ${entry.title}`}
-                  data-agent-control={entry.agentControl}
-                  onClick={handleEnter(entry.path)}
-                  className={openPillClass}
-                  {...pressable}
-                >
-                  <Play aria-hidden="true" className="size-3 fill-current max-sm:hidden" />
-                  <EntryLabel title={entry.title} short={entry.short} />
-                </motion.a>
-              );
-            })}
+        className="relative isolate flex flex-1 flex-col justify-end overflow-clip rounded-[calc(var(--radius)+2*var(--radius-step)-var(--poster-mat))] text-poster-paper"
+        style={{ backgroundColor: tone }}
+      >
+        <PosterArt game={game} />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-linear-to-t from-poster-ink/85 via-poster-ink/35 to-transparent"
+        />
+        <div className="relative flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
+            <h3
+              className="w-fit text-lg leading-tight font-black tracking-tight drop-shadow sm:text-2xl"
+              style={{ viewTransitionName: sharedName }}
+            >
+              {game.title}
+            </h3>
+            {isWholeGameDisabled && <ComingSoonBadge />}
           </div>
-        )}
+
+          {/* 整款未上线的单一入口游戏没有可展示的入口，只留标题旁的「即将上线」。 */}
+          {/* 手机两列的海报只有一百多像素宽，两枚胶囊并不排，入口按行竖排、每行铺满海报宽度。 */}
+          {isWholeGameDisabled && !game.subModes ? null : (
+            <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-1.5">
+              {entries.map((entry) => {
+                if (game.mystery)
+                  return (
+                    <MysteryEntryButton
+                      key={entry.key}
+                      gameTitle={game.title}
+                      entry={entry}
+                      tone={tone}
+                      announce={announce}
+                    />
+                  );
+
+                if (!isOpen(entry) || !entry.path) {
+                  const isClosed = !isWholeGameDisabled && entry.available;
+                  return (
+                    <span key={entry.key} aria-disabled="true" className={closedPillClass}>
+                      {/* 进不去的入口，色块里换成状态图标；窄海报只放得下短名，状态文字留给读屏。 */}
+                      <PillIcon icon={isClosed ? CirclePause : Clock} />
+                      <EntryLabel title={entry.title} short={entry.short} />
+                      <span className="opacity-70 max-sm:sr-only md:max-lg:sr-only">
+                        {isClosed ? "暂时关闭" : "即将上线"}
+                      </span>
+                    </span>
+                  );
+                }
+
+                return (
+                  <motion.a
+                    key={entry.key}
+                    href={entry.path}
+                    aria-label={`${game.title} ${entry.title}`}
+                    data-agent-control={entry.agentControl}
+                    onClick={handleEnter(entry.path)}
+                    className={openPillClass}
+                    {...pressable}
+                  >
+                    <PillIcon icon={entry.icon} tone={tone} />
+                    <EntryLabel title={entry.title} short={entry.short} />
+                  </motion.a>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </motion.li>
   );
