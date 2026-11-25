@@ -113,12 +113,28 @@ export const Narrow: Story = {
   globals: { viewport: { value: "mobile", isRotated: false } },
 };
 
-/** 准入说明：网页端与未登录各一张。 */
-export const GateClient: Story = {
-  name: "网页端准入说明",
-  render: () => <CEERankedGate reason="client" onLogin={fn()} />,
+/** 网页端只读查看：分数、战绩与排行榜照常，开始按钮置灰并给下载入口。 */
+export const WebViewOnly: Story = {
+  name: "网页端 · 只读查看",
+  args: { clientRequired: true },
+};
+export const WebViewOnlyPlacement: Story = {
+  name: "网页端 · 定级中",
+  args: { clientRequired: true, profile: rankedProfile("placement") },
+};
+export const WebViewOnlyNarrow: Story = {
+  name: "网页端 · 窄屏",
+  tags: ["mobile"],
+  args: { clientRequired: true },
+  globals: { viewport: { value: "mobile", isRotated: false } },
+};
+
+/** 登录引导：网页端与客户端各一张。 */
+export const GateWeb: Story = {
+  name: "网页端未登录",
+  render: () => <CEERankedGate client={false} onLogin={fn()} />,
 };
 export const GateLogin: Story = {
   name: "客户端未登录",
-  render: () => <CEERankedGate reason="login" onLogin={fn()} />,
+  render: () => <CEERankedGate client onLogin={fn()} />,
 };

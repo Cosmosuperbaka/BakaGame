@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { AnimatePresence, motion } from "framer-motion";
 import { CircleAlert, RotateCw } from "lucide-react";
+import type { CEERankedState } from "@bakagame/shared";
 import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
 import { ConnectionIssue } from "@/components/common/room/ConnectionIssue";
@@ -94,8 +95,17 @@ function RankedSeriesStage() {
   );
 }
 
-/** 排位首页：分数、匹配、全部战绩与排行榜；首页与系列赛之间由服务端推来的状态切换。 */
-function RankedHomeStage() {
+/**
+ * 网页端没有排位连接，也就没有服务端推来的排位状态：首页按空闲态展示，
+ * 开始按钮由 `clientRequired` 置灰，排队与系列赛都只在客户端里出现。
+ */
+const VIEW_ONLY_STATE: Extract<CEERankedState, { status: "idle" }> = { status: "idle" };
+
+/**
+ * 排位首页：分数、匹配、全部战绩与排行榜；首页与系列赛之间由服务端推来的状态切换。
+ * 网页端（`viewOnly`）只读查看自己的战绩与排行榜，开始按钮置灰并给下载入口。
+ */
+function RankedHomeStage({ viewOnly }: { viewOnly: boolean }) {
   const state = useCEERankedStore((store) => store.state);
   const profile = useCEERankedStore((store) => store.profile);
   const pending = useCEERankedStore((store) => store.pending);
@@ -107,12 +117,13 @@ function RankedHomeStage() {
     // 分数区挂全服名次，进首页就取一次；切到排行榜标签再现取。
     void store.loadLeaderboard();
   }, []);
-  if (!state || state.status === "series") return null;
+  const home = viewOnly ? VIEW_ONLY_STATE : state;
+  if (!home || home.status === "series") return null;
   const store = useCEERankedStore.getState();
   return (
     <CEERankedHome
       profile={profile}
-      state={state}
+      state={home}
       placementTotal={CEE_RANKED_PLACEMENT_SERIES}
       pending={pending}
       historyLoading={historyLoading}
@@ -122,13 +133,14 @@ function RankedHomeStage() {
       onPlayBot={() => void store.playBot()}
       onLoadMoreHistory={() => void store.loadMoreHistory()}
       onOpenLeaderboard={() => void store.loadLeaderboard()}
+      clientRequired={viewOnly}
     />
   );
 }
 
 /**
- * 排位赛页。网页端只给客户端下载说明；客户端未登录引导登录；
- * 其余由服务端推送的排位状态驱动（空闲 / 排队 / 系列赛），页面不自行推断准入。
+ * 排位赛页。未登录引导登录；网页端登录后只读查看自己的战绩与排行榜，开始按钮置灰并给下载入口；
+ * 客户端由服务端推送的排位状态驱动（空闲 / 排队 / 系列赛），页面不自行推断准入。
  */
 export default function CEERankedPage() {
   const navigate = usePageNavigate();
@@ -139,12 +151,13 @@ export default function CEERankedPage() {
   // 赛季徽章跟着资料走：服务端说没有进行中的赛季就不挂，页面不自行按本地时间推断。
   const season = useCEERankedStore((state) => state.profile?.season ?? null);
   const client = isBakaClient();
-  const eligible = client && accountStatus === "signedIn";
+  const signedIn = accountStatus === "signedIn";
   // 挂着就一直挂着：断线不释放，上一份状态留着只读展示，重连由 store 自动重取全量。
+  // 网页端只读查看：不发状态请求（它要过客户端准入），只取资料、战绩与排行榜。
   useEffect(() => {
-    if (!eligible) return;
-    return useCEERankedStore.getState().attach();
-  }, [eligible]);
+    if (!signedIn) return;
+    return useCEERankedStore.getState().attach(client ? "play" : "view");
+  }, [signedIn, client]);
 
   return (
     <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto">
@@ -171,7 +184,7 @@ export default function CEERankedPage() {
           </h1>
           <div className="ml-auto flex shrink-0 items-center">
             {/* 还没就绪时正文的连接中占位已经说明了，断线提示只陪着保留下来的那份状态出现。 */}
-            <ConnectionIssue text={eligible && ready && !connected ? CONNECTION_LOST_TEXT : null} />
+            <ConnectionIssue text={signedIn && ready && !connected ? CONNECTION_LOST_TEXT : null} />
             <SettingsEntry />
           </div>
         </div>
@@ -249,7 +262,7 @@ function RankedSyncSlot() {
   );
 }
 
-/** 正文按准入与连接状态分支：门槛说明、连接中或失败占位、首页或系列赛。 */
+/** 正文按登录与连接状态分支：登录引导、连接中或失败占位、首页或系列赛。 */
 function RankedBody({
   client,
   accountStatus,
@@ -264,9 +277,8 @@ function RankedBody({
   connected: boolean;
 }) {
   const promptLogin = () => useCEEStore.getState().promptLogin();
-  if (!client) return <CEERankedGate reason="client" onLogin={promptLogin} />;
   if (accountStatus === "loading") return null;
-  if (accountStatus !== "signedIn") return <CEERankedGate reason="login" onLogin={promptLogin} />;
+  if (accountStatus !== "signedIn") return <CEERankedGate client={client} onLogin={promptLogin} />;
   if (!ready) return <RankedSyncSlot />;
   return (
     <AnimatePresence initial={false} mode="popLayout">
@@ -281,7 +293,7 @@ function RankedBody({
       >
         {/* 刷新或重连后直接落在系列赛里时整块是首屏那一项：边界让之后换上的局分标记照常入场 */}
         <PresenceBoundary>
-          {inSeries ? <RankedSeriesStage /> : <RankedHomeStage />}
+          {inSeries ? <RankedSeriesStage /> : <RankedHomeStage viewOnly={!client} />}
         </PresenceBoundary>
       </motion.div>
     </AnimatePresence>

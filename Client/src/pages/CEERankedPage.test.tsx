@@ -45,12 +45,50 @@ afterEach(() => {
 });
 
 describe("CEERankedPage", () => {
-  it("网页端只给客户端下载说明，不自行推断准入", () => {
+  it("网页端已登录时照常展示分数、战绩与排行榜，只把开始按钮置灰并给下载入口", () => {
     useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    useCEERankedStore.setState({
+      ready: true,
+      state: null,
+      profile: rankedProfile("rated"),
+      loadProfile: vi.fn(async () => {}),
+      loadLeaderboard: vi.fn(async () => {}),
+    });
     renderPage();
 
     expect(screen.getByRole("heading", { level: 1, name: /^排位赛/ })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "排位赛只在客户端开放" })).toBeInTheDocument();
+    expect(screen.getByText("1532")).toBeInTheDocument();
+    expect(screen.getByLabelText("全部战绩")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "排行榜" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始匹配" })).toBeDisabled();
+    expect(screen.getByText("排位对局需要在 BakaGame 客户端里进行")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载客户端" })).toBeEnabled();
+  });
+
+  it("网页端进入排位页按只读方式挂上，不走客户端那套状态同步", () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const attach = vi.fn(() => () => {});
+    useCEERankedStore.setState({ attach });
+    renderPage();
+
+    expect(attach).toHaveBeenCalledWith("view");
+  });
+
+  it("客户端进入排位页按对局方式挂上", () => {
+    installShell();
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const attach = vi.fn(() => () => {});
+    useCEERankedStore.setState({ attach });
+    renderPage();
+
+    expect(attach).toHaveBeenCalledWith("play");
+  });
+
+  it("网页端未登录时引导登录查看战绩", () => {
+    useAccountStore.setState({ status: "guest", profile: null });
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: "登录后查看排位战绩" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /开始匹配/ })).not.toBeInTheDocument();
   });
 
@@ -67,7 +105,7 @@ describe("CEERankedPage", () => {
     useAccountStore.setState({ status: "loading", profile: null });
     renderPage();
 
-    expect(screen.queryByRole("heading", { name: /登录后参加排位赛|排位赛只在客户端开放/ })).toBe(
+    expect(screen.queryByRole("heading", { name: /登录后参加排位赛|登录后查看排位战绩/ })).toBe(
       null
     );
     expect(screen.queryByText("正在连接排位…")).not.toBeInTheDocument();
@@ -333,8 +371,8 @@ describe("CEERankedPage 的离页导航", () => {
     expect(startViewTransition).toHaveBeenCalled();
   });
 
-  it("准入页的返回多人模式经统一的页面过渡换页", async () => {
-    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+  it("登录引导的返回多人模式经统一的页面过渡换页", async () => {
+    useAccountStore.setState({ status: "guest", profile: null });
     const startViewTransition = renderInRouter();
 
     fireEvent.click(screen.getByRole("link", { name: "返回多人模式" }));

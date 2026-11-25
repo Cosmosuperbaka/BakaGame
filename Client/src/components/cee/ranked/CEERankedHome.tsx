@@ -1,11 +1,21 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useRef, useState } from "react";
-import { Bot, Crown, History, ListOrdered, Search } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import {
+  Bot,
+  Crown,
+  Download,
+  History,
+  ListOrdered,
+  MonitorSmartphone,
+  Search,
+} from "lucide-react";
 import type { CEERankedLeaderboard, CEERankedProfile, CEERankedState } from "@bakagame/shared";
+import { ClientDownloadDialog } from "@/components/ClientDownloadEntry";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
+import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { useSecondsLeft, useSecondsSince } from "@/hooks/UseSecondsLeft";
 import { dropIn, readoutTick } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
@@ -149,8 +159,38 @@ function QueuePanel({
 }
 
 /**
+ * 网页端的开赛说明：开始按钮置灰的原因写在按钮下面，旁边就是下载入口。
+ * 下载走与首页同一个平台选择弹窗，手机上默认停在安卓档，不把人直接带去 Windows 安装包。
+ */
+function ClientRequiredHint({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const { origin, capture } = useOriginTracker();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md bg-muted/40 px-3 py-2">
+      <p id={id} className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
+        排位对局需要在 BakaGame 客户端里进行
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={(event) => {
+          capture(event);
+          setOpen(true);
+        }}
+      >
+        <Download aria-hidden="true" />
+        下载客户端
+      </Button>
+      <ClientDownloadDialog open={open} onOpenChange={setOpen} origin={origin} />
+    </div>
+  );
+}
+
+/**
  * 排位首页：左边是分数与匹配，右边是「战绩 / 排行榜」两个标签页。
  * 空闲态给「开始匹配」（定级中写作「开始定级赛」，对手都是人机），排队态原地换成排队读数。
+ * 网页端（`clientRequired`）照常看分数、战绩与排行榜，只把开始按钮置灰并给出下载入口。
  */
 export function CEERankedHome({
   profile,
@@ -164,6 +204,7 @@ export function CEERankedHome({
   onPlayBot,
   onLoadMoreHistory = () => {},
   onOpenLeaderboard = () => {},
+  clientRequired = false,
 }: {
   profile: CEERankedProfile | null;
   state: Extract<CEERankedState, { status: "idle" | "queued" }>;
@@ -177,12 +218,15 @@ export function CEERankedHome({
   onLoadMoreHistory?: () => void;
   /** 切到排行榜标签时调用：服务端有短缓存，每次切过去都现取一次。 */
   onOpenLeaderboard?: () => void;
+  /** 网页端：对局只在客户端开放，开始按钮置灰并说明原因。 */
+  clientRequired?: boolean;
 }) {
   const placing = profile?.rating === null;
   // 赛季以资料为准：没有进行中的赛季时排队与打人机都置灰，并写一行原因。
   const seasonClosed = profile !== null && profile.season === null;
   const [tab, setTab] = useState("history");
   const tabRef = useRef(tab);
+  const clientHintId = useId();
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
       <section
@@ -238,10 +282,12 @@ export function CEERankedHome({
                 className="w-full"
                 onClick={onQueue}
                 loading={Boolean(pending.queue)}
-                disabled={!profile || seasonClosed}
+                disabled={!profile || seasonClosed || clientRequired}
+                aria-describedby={clientRequired ? clientHintId : undefined}
               >
                 {placing ? "开始定级赛" : "开始匹配"}
               </Button>
+              {clientRequired ? <ClientRequiredHint id={clientHintId} /> : null}
               {seasonClosed ? (
                 <p className="text-xs text-muted-foreground">
                   {profile?.nextSeason
