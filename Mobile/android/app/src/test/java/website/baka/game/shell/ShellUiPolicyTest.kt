@@ -1,8 +1,11 @@
 package website.baka.game.shell
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import website.baka.game.shell.ShellUiPolicy.BackMode
 
 class ShellUiPolicyTest {
     @Test fun parsesOpaqueHexOnly() {
@@ -34,4 +37,31 @@ class ShellUiPolicyTest {
         )
     }
 
+    @Test fun parsesOnlyTheFourBackModes() {
+        assertEquals(BackMode.OVERLAY, ShellUiPolicy.parseBackMode("overlay"))
+        assertEquals(BackMode.CLAIM, ShellUiPolicy.parseBackMode("claim"))
+        assertEquals(BackMode.NAVIGATE, ShellUiPolicy.parseBackMode(" navigate "))
+        assertEquals(BackMode.ROOT, ShellUiPolicy.parseBackMode("root"))
+        for (bad in listOf(null, "", "ROOT", "home", "back")) {
+            assertNull("不该接受 $bad", ShellUiPolicy.parseBackMode(bad))
+        }
+    }
+
+    @Test fun onlyRootHandsBackToTheSystem() {
+        // 只有首页且没人接手时撤掉拦截，系统才播放回到桌面的动画
+        assertFalse(ShellUiPolicy.interceptsBack(BackMode.ROOT))
+        for (mode in listOf(BackMode.OVERLAY, BackMode.CLAIM, BackMode.NAVIGATE)) {
+            assertTrue("$mode 要拦截", ShellUiPolicy.interceptsBack(mode))
+        }
+        // 还不知道页面状态（没加载完、旧页面不回报）时照常拦截，交给页面兜底
+        assertTrue(ShellUiPolicy.interceptsBack(null))
+    }
+
+    @Test fun onlyNavigationIsPreviewed() {
+        assertTrue(ShellUiPolicy.previewsBack(BackMode.NAVIGATE))
+        // 关浮层、弹确认都不会离开当前页；首页交给系统自己的动画
+        for (mode in listOf(BackMode.OVERLAY, BackMode.CLAIM, BackMode.ROOT, null)) {
+            assertFalse("$mode 不预演", ShellUiPolicy.previewsBack(mode))
+        }
+    }
 }

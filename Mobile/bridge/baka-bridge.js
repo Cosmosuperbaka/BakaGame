@@ -655,7 +655,13 @@
   //   3. 不在首页：退回上一页（应用内没有上一页时回首页）；
   //   4. 在首页：请原生把应用退到后台（不销毁，回来时对局与连接都还在）。
   // 事件名与 Client/src/hooks/UseShellBack.ts 是同一份契约。
+  //
+  // 预测式返回要在玩家**开始**滑动时就知道这次返回会做什么，所以页面状态一变就把上面四种情况
+  // 预先告诉原生（BakaShell.setBackMode）：overlay / claim / navigate / root。原生在 root 时
+  // 不再拦截，系统播放回到桌面的动画；navigate 时整页跟手预演；其余两种照常拦截、不预演。
   var SHELL_BACK_EVENT = "bakagame:shell-back";
+  var SHELL_BACK_PROBE_EVENT = "bakagame:shell-back-probe";
+  var SHELL_BACK_CHANGE_EVENT = "bakagame:shell-back-change";
   var OPEN_OVERLAY_SELECTOR =
     '[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"],' +
     '[role="menu"][data-state="open"],[role="listbox"][data-state="open"]';
@@ -674,14 +680,23 @@
     return location.pathname === "/" || location.pathname === "";
   }
 
-  function pageClaimsBack() {
+  function dispatchCancelable(type) {
     try {
-      var claim = new CustomEvent(SHELL_BACK_EVENT, { cancelable: true });
+      var claim = new CustomEvent(type, { cancelable: true });
       window.dispatchEvent(claim);
       return claim.defaultPrevented;
     } catch (e) {
       return false;
     }
+  }
+
+  function pageClaimsBack() {
+    return dispatchCancelable(SHELL_BACK_EVENT);
+  }
+
+  // 只问不做：接手方对询问事件只 preventDefault，不弹确认。旧页面不认识它，视为不接手。
+  function pageWouldClaimBack() {
+    return dispatchCancelable(SHELL_BACK_PROBE_EVENT);
   }
 
   // 应用内有上一页就后退（React Router 在 history.state.idx 里记着第几页）；
@@ -735,4 +750,55 @@
   }
 
   window.__BAKA_SHELL_BACK__ = handleBack;
+
+  // 与 handleBack 同一套判断顺序，只是不执行：这次返回会关浮层、交给页面、后退还是离开应用。
+  function backMode() {
+    if (openOverlayCount() > 0) return "overlay";
+    if (pageWouldClaimBack()) return "claim";
+    if (!atHome()) return "navigate";
+    return "root";
+  }
+
+  var reportedBackMode = "";
+  function reportBackMode() {
+    var mode = backMode();
+    if (mode === reportedBackMode) return;
+    reportedBackMode = mode;
+    callShell("setBackMode", { mode: mode });
+  }
+
+  // 路由用 history.pushState / replaceState 换页，不发事件；包一层，换页后立刻重报。
+  function watchHistory(name) {
+    var history = window.history;
+    if (!history || typeof history[name] !== "function") return;
+    var original = history[name];
+    history[name] = function () {
+      var result = original.apply(this, arguments);
+      reportBackMode();
+      return result;
+    };
+  }
+
+  function watchBackMode() {
+    reportBackMode();
+    watchHistory("pushState");
+    watchHistory("replaceState");
+    listenWindow("popstate", reportBackMode);
+    listenWindow(SHELL_BACK_CHANGE_EVENT, reportBackMode);
+    // 浮层开合：Radix 挂载或撤下节点、切换 data-state；只看这两类变化，判断本身只是一次选择器查询。
+    if (typeof MutationObserver === "function" && document.body) {
+      new MutationObserver(reportBackMode).observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-state", "role"],
+      });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchBackMode, false);
+  } else {
+    watchBackMode();
+  }
 })();

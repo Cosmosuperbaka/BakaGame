@@ -33,4 +33,33 @@ internal object ShellUiPolicy {
             maxOf(bottom, imeBottom).coerceAtLeast(0),
         )
 
+    /**
+     * 页面预先告诉壳「这次返回会做什么」（桥接 `BakaShell.setBackMode`，与桥接的处理顺序一一对应）。
+     * 预测式返回要在玩家开始滑动时就决定拦不拦、预不预演，等松手再问页面就来不及了。
+     */
+    enum class BackMode(val wire: String) {
+        /** 有打开的浮层，返回先关它。 */
+        OVERLAY("overlay"),
+
+        /** 页面接手返回（房间页弹离开确认、排位弹判负确认），不会离开当前页。 */
+        CLAIM("claim"),
+
+        /** 退回上一页。 */
+        NAVIGATE("navigate"),
+
+        /** 首页且没人接手：返回就是离开应用。 */
+        ROOT("root"),
+    }
+
+    /** 只认四个约定值；别的一律 null，调用方按「还不知道」处理（照常拦截、不预演）。 */
+    fun parseBackMode(raw: String?): BackMode? = BackMode.entries.firstOrNull { it.wire == raw?.trim() }
+
+    /**
+     * 只有 ROOT 交还系统：系统才会播放「回到桌面」的预测动画。还不知道页面状态（null，页面没加载完、
+     * 旧页面不回报）时照常拦截，交给页面的返回链兜底。
+     */
+    fun interceptsBack(mode: BackMode?): Boolean = mode != BackMode.ROOT
+
+    /** 只有退回上一页才整页跟手预演；关浮层、弹确认都不是离开当前页，预演离开会误导。 */
+    fun previewsBack(mode: BackMode?): Boolean = mode == BackMode.NAVIGATE
 }

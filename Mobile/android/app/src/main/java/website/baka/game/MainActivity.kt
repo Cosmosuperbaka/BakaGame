@@ -1,5 +1,6 @@
 package website.baka.game
 
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -7,6 +8,7 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.webkit.ProxyConfig
@@ -21,8 +23,11 @@ import org.json.JSONObject
 import website.baka.game.channel.BakaChannelPlugin
 import website.baka.game.network.DnsProxyServer
 import website.baka.game.network.HttpDns
+import website.baka.game.shell.BackPreview
 import website.baka.game.shell.BakaShellPlugin
 import website.baka.game.shell.ClientUserAgent
+import website.baka.game.shell.ShellUiPolicy
+import website.baka.game.shell.ShellUiPolicy.BackMode
 import website.baka.game.shell.SystemBarsController
 import website.baka.game.update.BakaHotUpdatePlugin
 import website.baka.game.update.HotUpdateStore
@@ -32,7 +37,7 @@ import java.util.concurrent.Executor
 /**
  * Capacitor 壳主 Activity：装载内嵌前端、注册通道插件、放行跨站 Cookie、
  * 开启 WebAuthn 并放行接口请求，外加启动画面、系统栏/挖孔/软键盘的避让（SystemBarsController），
- * 以及把系统返回键交给页面。
+ * 以及把系统返回键交给页面、接上预测式返回。
  * 不含任何业务 UI（UI 全部来自内嵌的 Client 构建产物）。
  *
  * 窗口级防截屏不在这里：它按房间开关，见 BakaChannelPlugin.setSecureScreen。
@@ -54,18 +59,44 @@ class MainActivity : BridgeActivity() {
 
     private var systemBars: SystemBarsController? = null
 
+    /** 页面预先报来的「这次返回会做什么」（BakaShell.setBackMode）；null 表示还不知道。 */
+    private var backMode: BackMode? = null
+
+    /** 一次预测式返回手势正在进行：期间不切换拦截开关，免得把正在跟手的回调从系统那里撤掉。 */
+    private var backGestureActive = false
+
+    private var backPreview: BackPreview? = null
+
     /**
      * 系统返回键交给页面（`window.__BAKA_SHELL_BACK__`，见 Mobile/bridge/baka-bridge.js）：
      * 关浮层、房间页弹离开确认、退回上一页，首页再退到后台。
      *
-     * 所有系统版本上一直拦截。实测安卓 16 打开预测式返回后，首页不拦截时系统会结束 Activity
-     * （即使从启动器进入），回来时页面重载、对局断开；安卓 7 到 11 的默认返回同样会结束它。
-     * 代价是首页返回没有系统「回到桌面」的预测动画，换来的是退到后台后页面与连接都还在。
+     * 预测式返回：页面在首页且没人接手（BackMode.ROOT）时撤掉拦截，系统播放「回到桌面」的预测动画；
+     * 系统随后若要结束 Activity，由 [finish] 改成退到后台（原因见那里）。退回上一页（NAVIGATE）时
+     * 整页跟着手势预演（BackPreview）；关浮层、弹确认照常拦截、不预演。
      */
     private val backToPage =
         object : OnBackPressedCallback(true) {
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                backGestureActive = true
+                if (ShellUiPolicy.previewsBack(backMode)) backPreview?.start(backEvent)
+            }
+
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                backPreview?.progress(backEvent)
+            }
+
+            override fun handleOnBackCancelled() {
+                backGestureActive = false
+                backPreview?.release()
+                syncBackIntercept()
+            }
+
             override fun handleOnBackPressed() {
+                backGestureActive = false
+                backPreview?.release()
                 dispatchBackToPage()
+                syncBackIntercept()
             }
         }
 
@@ -114,7 +145,9 @@ class MainActivity : BridgeActivity() {
             webView.settings.userAgentString = webView.settings.userAgentString + " " + userAgent
         }
         // 边到边与插图避让；同时给 WebView 铺上与启动画面同一档的底色（默认白底会在暗色下白闪）。
-        systemBars = SystemBarsController(this).also { it.attach(webView) }
+        val bars = SystemBarsController(this).also { it.attach(webView) }
+        systemBars = bars
+        backPreview = BackPreview(webView) { bars.setBackdropDim(it) }
         // 页面 origin 是 https://localhost（未配置 server.hostname 时），接口在公网域名上 ——
         // 会话 Cookie 属于跨站 Cookie。Capacitor 自己没有设置这个开关，不同 WebView 版本默认值
         // 不一致；显式打开，否则登录态在壳内时有时无（表现为昵称读不到、验证码发不出、WS 是游客）。
@@ -132,7 +165,13 @@ class MainActivity : BridgeActivity() {
         // server.hostname 把内嵌资源挂到站点域名后，/api/* 也落在该域名下：Capacitor 的本地
         // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
         // 仍走本地服务（SPA 深链刷新才不会 404）。
-        bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge) { pageVisible = true })
+        bridge.setWebViewClient(
+            ApiPassthroughWebViewClient(
+                bridge,
+                onPageLoadStarted = { resetBackMode() },
+                onFirstVisible = { pageVisible = true },
+            )
+        )
 
         onBackPressedDispatcher.addCallback(this, backToPage)
     }
@@ -145,6 +184,37 @@ class MainActivity : BridgeActivity() {
     /** 首页返回：退到后台，不结束 Activity（安卓 7 到 11 的默认返回会结束它并断开对局）。 */
     fun moveToBackground() {
         runOnUiThread { moveTaskToBack(true) }
+    }
+
+    /** 页面报来的返回模式（BakaShell.setBackMode，插件线程调用）。 */
+    internal fun applyBackMode(mode: BackMode) {
+        runOnUiThread {
+            backMode = mode
+            syncBackIntercept()
+        }
+    }
+
+    /** 整页重新加载（热更新切换、白屏重试）时旧页面报的模式作废，回到「还不知道」：照常拦截。 */
+    private fun resetBackMode() {
+        backMode = null
+        syncBackIntercept()
+    }
+
+    private fun syncBackIntercept() {
+        if (backGestureActive) return
+        backToPage.isEnabled = ShellUiPolicy.interceptsBack(backMode)
+    }
+
+    /**
+     * 首页交还系统处理返回后，系统播完「回到桌面」动画会让 Activity 自己决定去留：只有从桌面启动、
+     * 且是任务里唯一的那个 Activity 时系统才把任务退到后台，否则请求结束它（从安装器、通知、
+     * 其它应用或调试工具打开时都是后者；安卓 7 到 11 的默认返回也一律结束）。结束了回来就是整页重载、
+     * 对局断开，所以在「返回已交还系统」期间把结束改成退到后台。只有这一种情况会被改写：
+     * 拦截开着时系统根本不会因返回来结束它；退不到后台时照常结束，不让玩家卡在返回没反应的界面。
+     */
+    override fun finish() {
+        if (!backToPage.isEnabled && isTaskRoot && moveTaskToBack(true)) return
+        super.finish()
     }
 
     /**
@@ -160,6 +230,16 @@ class MainActivity : BridgeActivity() {
         webView.evaluateJavascript(BACK_SCRIPT) { result ->
             if (result != "\"ok\"") moveTaskToBack(true)
         }
+    }
+
+    override fun onStop() {
+        // 手势进行中被切走或锁屏、系统又没送来取消时，别让拦截开关一直停在手势开始前的状态。
+        if (backGestureActive) {
+            backGestureActive = false
+            backPreview?.release()
+            syncBackIntercept()
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -255,8 +335,14 @@ class MainActivity : BridgeActivity() {
 
 private class ApiPassthroughWebViewClient(
     bridge: Bridge,
+    private val onPageLoadStarted: () -> Unit,
     private val onFirstVisible: () -> Unit,
 ) : BridgeWebViewClient(bridge) {
+    override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+        super.onPageStarted(view, url, favicon)
+        onPageLoadStarted()
+    }
+
     override fun onPageCommitVisible(view: WebView, url: String) {
         super.onPageCommitVisible(view, url)
         onFirstVisible()
