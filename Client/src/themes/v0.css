@@ -1,6 +1,7 @@
 /*
  * 主题 v0：shadcn/ui 默认样式（new-york · neutral），项目最早上线时的样子。
- * 中性灰白、无纸纹理、无暖色；系统无衬线字体，标题层与正文层同一栈；阴影取 Tailwind 默认档，
+ * 中性灰白、无纸纹理、无暖色；一副自托管的无衬线（中文 Noto Sans SC，拉丁字母取 shadcn 与 v0 默认的 Geist），
+ * 正文、标题与控件同一副面孔；阴影取 Tailwind 默认档，
  * 层级主要靠一层浅灰描边。核心令牌沿用 shadcn 官方取值，项目扩展令牌按同一气质补齐。
  *
  * 与官方取值的偏离只为过本项目的对比度与层序口径（DesignTokens.test.ts）：
@@ -59,20 +60,23 @@
   --info-foreground: oklch(0.985 0 0);
   --questioner: oklch(0.5 0.2 293);
   --questioner-foreground: oklch(0.985 0 0);
-  /* 字体：一套系统无衬线，中文落系统 CJK 黑体；标题层与正文层同栈，层级只靠字号与字重。
-     等宽沿用 Tailwind 默认的系统等宽栈，中文同样落系统黑体。三层都不下载网页字体。 */
+  /* 字体：一副无衬线管全部层级，层级只靠字号与字重。中文是 Noto Sans SC，拉丁字母是 shadcn 与 v0 默认的 Geist，
+     两者都是可变字体，任意字重中西文一起变，不会出现「英文粗、中文细」。
+     正文层以中文字体打头：Geist 带着拉丁形态的省略号、引号与间隔号，排在前面会把中文里的「……」「“”」
+     换成贴底线的半角字形；正文的拉丁字母因此取 Noto Sans SC 自带的那套。标题与控件层是短标签，
+     由 Geist 打头，让「Baka Game」、游戏名这类拉丁标题有 Geist 的字面。
+     等宽是同一家族的 Geist Mono，中文回落 Noto Sans SC。全部自托管，各平台看到的是同一副字；
+     链尾的通用族只在字体到达前顶一下，表情交给系统。 */
   --font-kai:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
-    "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Noto Sans SC Variable", "Geist Variable", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji";
   --font-sans: var(--font-kai);
-  --font-serif: var(--font-kai);
+  --font-serif:
+    "Geist Variable", "Noto Sans SC Variable", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji";
   /* 控件层：按钮、标签页、分段控件与徽章，与标题层同栈。 */
   --font-ui: var(--font-serif);
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  --font-mono: "Geist Mono Variable", "Noto Sans SC Variable", monospace;
   --radius: 0.625rem;
   --radius-step: 2px;
   /* Tailwind 默认阴影档：纯黑低透明度、自上而下，不偏移。 */

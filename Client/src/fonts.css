@@ -4,8 +4,11 @@
    Storybook 的预览入口同样引入本文件。 */
 @import "@fontsource-variable/noto-serif-sc";
 @import "@fontsource-variable/noto-sans-sc";
-/* Instrument Sans 只有 v2 的控件层用到，放这里不占渲染阻塞样式表的 @font-face 预算。 */
+/* 只属于某一款主题的拉丁字体放这里，不占渲染阻塞样式表的 @font-face 预算：
+   Instrument Sans 是 v2 的控件层，Geist 与 Geist Mono 是 v0 的全部三层。 */
 @import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 /* 霞鹜文楷的 @font-face 由 Vite 插件在 dev / build 启动时注入，生成器见 scripts/build-fonts.mjs。 */
 /* __LXGW_WENKAI_FONT_FACES__ */

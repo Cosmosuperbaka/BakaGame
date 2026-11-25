@@ -81,26 +81,21 @@
   --questioner-foreground: oklch(1 0 0);
   /* 字体角色：正文、说明与表单用楷体；标题与强调用衬线体；数据用等宽体。
      `font-sans` 是历史工具类名，保留为楷体别名，避免业务组件大面积改类名。
-     楷体缺字先回落到 Noto Serif SC，再交给系统 CJK，不落到系统无衬线体。 */
+     全部自托管：楷体缺字回落到 Noto Serif SC，不经过任何系统字体；链尾的通用族只在字体到达前顶一下，表情交给系统。 */
   --font-kai:
-    "LXGW WenKai", -apple-system, BlinkMacSystemFont, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Segoe UI", "Helvetica Neue", Helvetica, "Noto Serif SC Variable",
-    "Noto Serif SC", "PingFang SC", HarmonyOS_Regular, "Hiragino Sans GB", "Microsoft YaHei",
-    "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", Arial, sans-serif;
+    "LXGW WenKai", "Noto Serif SC Variable", serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji";
   --font-sans: var(--font-kai);
+  /* 标题层：拉丁字母 Libre Baskerville，中文 Noto Serif SC。两者都取可变字体：静态的 Baskerville
+     只有 400 与 700 两档，`font-semibold` 的拉丁会被就近换成 700、中文却是真 600，同一行标题中西文粗细不一。 */
   --font-serif:
-    "Libre Baskerville", "Lora Variable", "Lora", Georgia, "Noto Serif SC Variable",
-    "Noto Serif SC", STZhongsong, STSong, "Noto Serif CJK SC", "Noto Serif CJK",
-    "Source Han Serif SC", PMingLiu, SimSun, "WenQuanYi Bitmap Song", "Times New Roman", Times,
-    serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    "Libre Baskerville Variable", "Noto Serif SC Variable", serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Noto Color Emoji";
   /* 等宽体：拉丁字母与数字用自托管的 JetBrains Mono（房间号、哈希、时间戳逐位清楚），
      它不含中文，中文字符回落霞鹜文楷 Mono，再回落霞鹜文楷，不落到系统黑体。 */
   /* 控件层：按钮、标签页、分段控件与徽章，与标题层同栈。 */
   --font-ui: var(--font-serif);
-  --font-mono:
-    "JetBrains Mono Variable", "LXGW WenKai Mono", "LXGW WenKai", ui-monospace, "SF Mono",
-    SFMono-Regular, "Cascadia Code", "Segoe UI Mono", "Source Code Pro", Menlo, Consolas,
-    "Liberation Mono", monospace;
+  --font-mono: "JetBrains Mono Variable", "LXGW WenKai Mono", "LXGW WenKai", monospace;
   --radius: 0.25rem;
   --radius-step: 2px;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
