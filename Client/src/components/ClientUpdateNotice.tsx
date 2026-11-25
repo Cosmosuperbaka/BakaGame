@@ -36,6 +36,10 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
  * 壳还在查新版或在下载时按钮进入进行中（读状态本身会促使壳提前复查，见 `DesktopUpdate`）；
  * 壳没有新版可装、不支持或安装失败时照旧给「下载最新版」链接兜底。链接由壳交给系统浏览器下载，
  * 客户端里本来看不到任何动静，所以点下去后按钮短暂换成确认文案，不让点击看起来毫无反应。
+ *
+ * 关掉的提醒只在这次启动里不再出现。以前关过的这一档，桌面壳后台下好新版时还要回来：壳不在退出时
+ * 安装，「重启更新」只有提醒这一个入口，关掉就等于把已经下好的包扔在那里，直到下一版发布。
+ * 其余情况（没下好、网页与移动壳）关过就不再打扰。
  */
 
 /** 点了下载链接后确认文案停留多久；之后换回「下载最新版」，玩家还能再点一次。 */
@@ -43,6 +47,8 @@ const DOWNLOAD_HANDOFF_FEEDBACK_MS = 5_000;
 
 /** 存档记的是「已经关掉过哪一档提醒」，服务端换档或抬版本后提醒会重新出现。 */
 const DISMISS_KEY = "bakagame:client-update-dismissed";
+/** 这次启动里关掉过哪一档：会话存储随壳退出清空，下次启动时只剩上面那份长期记录。 */
+const SESSION_DISMISS_KEY = "bakagame:client-update-dismissed-session";
 
 export interface ClientUpdateFloor {
   clientType: Exclude<BakaClientType, "web">;
@@ -55,18 +61,23 @@ export interface ClientUpdateFloor {
 /** 存档要区分「关了哪一档提醒」：同一版本从软提醒抬成硬门槛时必须重新说一次。 */
 const dismissKeyOf = (floor: ClientUpdateFloor): string => `${floor.mode}:${floor.version}`;
 
-/** 隐私模式下 localStorage 会抛错：读不到就当没关过，提醒照常出现。 */
-const readDismissed = (): string => {
+type DismissScope = "local" | "session";
+
+/** 隐私模式下存储会抛错（取存储对象本身也可能抛）：读不到就当没关过，提醒照常出现。 */
+const readDismissed = (scope: DismissScope): string => {
   try {
-    return window.localStorage.getItem(DISMISS_KEY) ?? "";
+    return scope === "local"
+      ? (window.localStorage.getItem(DISMISS_KEY) ?? "")
+      : (window.sessionStorage.getItem(SESSION_DISMISS_KEY) ?? "");
   } catch {
     return "";
   }
 };
 
-const writeDismissed = (key: string): void => {
+const writeDismissed = (scope: DismissScope, key: string): void => {
   try {
-    window.localStorage.setItem(DISMISS_KEY, key);
+    if (scope === "local") window.localStorage.setItem(DISMISS_KEY, key);
+    else window.sessionStorage.setItem(SESSION_DISMISS_KEY, key);
   } catch {
     // 存不下只是这条提示下次还会出现，不影响首页。
   }
@@ -76,6 +87,8 @@ const writeDismissed = (key: string): void => {
 interface PendingNotice {
   floor: ClientUpdateFloor;
   packagePlatform: ClientPackagePlatform;
+  /** 以前关过这一档：先不露面，等桌面壳报「已就绪」再出来。 */
+  untilReady: boolean;
 }
 
 export function ClientUpdateNotice() {
@@ -126,8 +139,13 @@ export function ClientUpdateNotice() {
                 body.latestVersion
               ? { clientType, mode: "available", version: body.latestVersion }
               : null;
-        if (!next || readDismissed() === dismissKeyOf(next)) return;
-        setNotice({ floor: next, packagePlatform });
+        if (!next) return;
+        const key = dismissKeyOf(next);
+        if (readDismissed("session") === key) return;
+        const dismissedBefore = readDismissed("local") === key;
+        // 关过的提醒只有桌面壳可能因「已下好新版」回来；网页与移动壳没有这一说，关过就到此为止
+        if (dismissedBefore && clientType !== "desktop") return;
+        setNotice({ floor: next, packagePlatform, untilReady: dismissedBefore });
       } catch {
         // 门槛读不到就不提醒：这条是便利，不该拦住首页，也不该反复重试。
       }
@@ -138,19 +156,22 @@ export function ClientUpdateNotice() {
 
   const dismiss = () => {
     if (!floor) return;
-    writeDismissed(dismissKeyOf(floor));
+    const key = dismissKeyOf(floor);
+    writeDismissed("local", key);
+    writeDismissed("session", key);
     // 只收起、不清门槛：退场动画期间这条还得用自己的文字收尾。
     setHidden(true);
   };
 
+  // 只有桌面壳会自己下载更新；提醒在场或在等壳下好新版时才去问它
+  const desktop = useDesktopUpdateStatus(floor?.clientType === "desktop" && !hidden);
+  const shown = Boolean(floor) && !hidden && (!notice?.untilReady || desktop?.state === "ready");
   // 更新要给的是「自己那一档」的包：安卓壳点开的应当是 APK，Mac 壳点开的应当是 Mac 的包，
-  // 都不是 Windows 的 exe；本平台没发布时按钮整颗不出现。提醒只在有门槛可提醒时才去问一次发布信息。
-  const { state } = useClientPackages(Boolean(floor) && !hidden);
+  // 都不是 Windows 的 exe；本平台没发布时按钮整颗不出现。提醒露面时才去问一次发布信息。
+  const { state } = useClientPackages(shown);
   const pkg = notice
     ? state?.packages.find((item) => item.platform === notice.packagePlatform)
     : undefined;
-  // 只有桌面壳会自己下载更新；提醒在场时才去问它
-  const desktop = useDesktopUpdateStatus(floor?.clientType === "desktop" && !hidden);
   const restartReady = desktop?.state === "ready" && !restartFailed;
   // 壳正在查或在下：给进行中，不给下载链接，免得玩家另下一份和壳自己下的那份撞车
   const preparing =
@@ -168,7 +189,7 @@ export function ClientUpdateNotice() {
 
   return (
     <ClientUpdateBanner
-      open={!hidden}
+      open={shown}
       floor={floor}
       downloadUrl={pkg?.available ? pkg.url : undefined}
       onRestart={restartReady ? restart : undefined}

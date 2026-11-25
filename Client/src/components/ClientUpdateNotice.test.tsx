@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const DISMISS_KEY = "bakagame:client-update-dismissed";
+const SESSION_DISMISS_KEY = "bakagame:client-update-dismissed-session";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -101,6 +102,7 @@ afterEach(() => {
   delete window.__TAURI_INTERNALS__;
   vi.unstubAllGlobals();
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 /**
@@ -344,6 +346,80 @@ describe("客户端更新提醒", () => {
     render(<Notice />);
     expect(await screen.findByRole("status")).toHaveTextContent("2.1.0");
     expect(raised.checks()).toHaveLength(1);
+  });
+
+  it("关过的提醒在桌面壳下好新版时回来：先不露面，壳报已就绪后给「重启更新」", async () => {
+    window.localStorage.setItem(DISMISS_KEY, "available:1.0.1");
+    shellAt("1.0.0");
+    server({ floor: "", outdated: false, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    // 只假装定时器：提醒要在假时钟里第一次入场，动画帧也被接管的话，切回真时钟时动画库还在等那一帧，
+    // 后面用例的退场动画就永远走不完
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const invoke = desktopShell([
+        { state: "downloading", version: "1.0.1" },
+        { state: "ready", version: "1.0.1" },
+      ]);
+      await mountNotice();
+
+      // 壳还在下：玩家关过这一档，不拿进行中按钮去打扰
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith("baka_update_status"));
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByRole("button", { name: "重启更新" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("关过的提醒在壳没有下好新版时不露面，壳不支持自动更新时同样不露面", async () => {
+    window.localStorage.setItem(DISMISS_KEY, "available:1.0.1");
+    shellAt("1.0.0");
+    const { checks } = server({
+      floor: "",
+      outdated: false,
+      latest: "1.0.1",
+      packages: [WINDOWS_PACKAGE],
+    });
+    const invoke = desktopShell([{ state: "none" }]);
+    const first = await mountNotice();
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("baka_update_status"));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    // 旧版壳没有读状态的命令：当作永远等不到「已就绪」
+    first.unmount();
+    delete window.__TAURI_INTERNALS__;
+    render(<first.ClientUpdateNotice />);
+    await waitFor(() => expect(checks()).toHaveLength(2));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("壳已下好时关掉的提醒这次启动里不再出现，下次启动时回来", async () => {
+    shellAt("1.0.0");
+    server({ floor: "", outdated: false, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    desktopShell([{ state: "ready", version: "1.0.1" }]);
+    const first = await mountNotice();
+
+    await screen.findByRole("button", { name: "重启更新" });
+    await userEvent.click(screen.getByRole("button", { name: "暂不提醒" }));
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(window.sessionStorage.getItem(SESSION_DISMISS_KEY)).toBe("available:1.0.1");
+
+    // 同一次启动里回到首页：说过不要提醒就不再出现
+    first.unmount();
+    const again = render(<first.ClientUpdateNotice />);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    // 壳重启后会话存储清空，只剩长期记录：壳又下好了，提醒带着「重启更新」回来
+    again.unmount();
+    window.sessionStorage.clear();
+    render(<first.ClientUpdateNotice />);
+    expect(await screen.findByRole("button", { name: "重启更新" })).toBeInTheDocument();
   });
 
   it("制品还没推上去时不渲染下载按钮：宁可不给，也不给一个跳 404 的链接", async () => {
