@@ -51,6 +51,9 @@ const prefersReducedMotion = (): boolean => {
   }
 };
 
+/** 正在播放的揭示过渡：只有它的收尾才清根元素上的标记与圆心。 */
+let activeReveal: ViewTransition | null = null;
+
 /**
  * 玩家亲手换明暗或主题时，新外观从触发处按圆形铺满整页（View Transitions 的整页快照，形态见 `index.css`
  * 的「外观切换」）：旧外观定格不动，新外观从按下的那一点长出来，读作「是这一下把它换掉的」。
@@ -78,7 +81,11 @@ function swapAppearance(apply: () => void): void {
   root.style.setProperty("--appearance-reveal-radius", `${radius}px`);
   root.dataset.appearanceTransition = "";
   const transition = document.startViewTransition(apply);
+  activeReveal = transition;
   void transition.finished.finally(() => {
+    // 连点时浏览器跳过上一次过渡，它的收尾晚于新过渡开场：标记与圆心已归新过渡，旧的不能清
+    if (activeReveal !== transition) return;
+    activeReveal = null;
     delete root.dataset.appearanceTransition;
     for (const name of ["x", "y", "radius"])
       root.style.removeProperty(`--appearance-reveal-${name}`);
