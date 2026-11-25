@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { OPEN_SITE_FEATURES } from "@bakagame/shared/values";
-import { resetSiteFeaturesForTest } from "@/lib/SiteConfig";
+import { resetSiteFeaturesForTest, type SiteFeatures } from "@/lib/SiteConfig";
 import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
 import LandingPage from "./LandingPage";
 
@@ -19,6 +19,26 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * 静态 Storybook 没有后端：只桩站点配置这一个接口，其余请求照常放行。
+ * 返回值在全开的基础上叠加 `patch`，故事结束时还原 fetch 与配置缓存。
+ */
+function stubSiteFeatures(patch: Partial<SiteFeatures> = {}): () => void {
+  resetSiteFeaturesForTest();
+  const original = window.fetch.bind(window);
+  window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (!url.includes("/api/site/config")) return original(input, init);
+    return new Response(JSON.stringify({ ...OPEN_SITE_FEATURES, ...patch }), {
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return () => {
+    window.fetch = original;
+    resetSiteFeaturesForTest();
+  };
+}
+
 export const Default: Story = { name: "默认" };
 
 /**
@@ -27,35 +47,23 @@ export const Default: Story = { name: "默认" };
  */
 export const SignedIn: Story = {
   name: "已登录 · 有未读回复",
-  beforeEach: () =>
-    presetAccount({ status: "signedIn", profile: STORY_PROFILE, unreadFeedback: 2 }),
-};
-
-/**
- * 后台临时关掉部分模式：入口留在原位、置灰并标注「暂时关闭」。
- * 这里只桩站点配置一个接口，其余请求照常放行。
- */
-export const ModesClosed: Story = {
-  name: "部分模式暂时关闭",
   beforeEach: () => {
-    resetSiteFeaturesForTest();
-    const original = window.fetch.bind(window);
-    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : String(input);
-      if (!url.includes("/api/site/config")) return original(input, init);
-      const body = {
-        ...OPEN_SITE_FEATURES,
-        fakerEntry: false,
-        songSoloEntry: false,
-        ceeRankedEntry: false,
-      };
-      return new Response(JSON.stringify(body), {
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch;
+    const restoreAccount = presetAccount({
+      status: "signedIn",
+      profile: STORY_PROFILE,
+      unreadFeedback: 2,
+    });
+    const restoreFeatures = stubSiteFeatures();
     return () => {
-      window.fetch = original;
-      resetSiteFeaturesForTest();
+      restoreFeatures();
+      restoreAccount();
     };
   },
+};
+
+/** 后台临时关掉部分模式：入口留在原位、置灰并标注「暂时关闭」。 */
+export const ModesClosed: Story = {
+  name: "部分模式暂时关闭",
+  beforeEach: () =>
+    stubSiteFeatures({ fakerEntry: false, songSoloEntry: false, ceeRankedEntry: false }),
 };
