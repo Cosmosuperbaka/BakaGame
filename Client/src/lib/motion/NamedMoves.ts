@@ -3,6 +3,7 @@ import {
   spring,
   ease,
   duration,
+  exitInert,
   type SpringToken,
   springReachMs,
   springToCss,
@@ -298,6 +299,7 @@ export const toastItem: Variants = {
     opacity: 0,
     x: 24,
     scale: 0.97,
+    ...exitInert,
     transition: { duration: duration.quick, ease: ease.inOut },
   },
 };
@@ -310,6 +312,7 @@ export const bannerRise: Variants = {
     opacity: 0,
     y: 16,
     scale: 0.96,
+    ...exitInert,
     transition: { duration: duration.quick, ease: ease.inOut },
   },
 };
@@ -318,7 +321,13 @@ export const bannerRise: Variants = {
 export const dropIn: Variants = {
   initial: { opacity: 0, y: -8, scale: 0.98 },
   animate: { opacity: 1, y: 0, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, y: -6, scale: 0.98, transition: { duration: duration.instant } },
+  exit: {
+    opacity: 0,
+    y: -6,
+    scale: 0.98,
+    ...exitInert,
+    transition: { duration: duration.instant },
+  },
 };
 
 /** 日出图标自下升起，纵向位移本身就是「天亮」的语义（§2.2 允许的单元素位移）。 */

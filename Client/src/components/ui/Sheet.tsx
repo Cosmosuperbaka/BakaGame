@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
+import { useExitSafeDismiss } from "@/hooks/UseExitSafeDismiss";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
 import { sheetSlide, type SheetSide } from "@/lib/motion/Choreography";
@@ -57,6 +58,8 @@ export function Sheet({
   // 打开一瞬间仍在焦点上的元素（触发抽屉的依赖行）。关闭时显式把焦点还给它：
   // 抽屉经 AnimatePresence 延迟卸载，Radix 的默认恢复会被退场期间的重排打断。
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  // 退场途中按下的那一下（比如立刻再点触发按钮重开）不算点在外面，见 useExitSafeDismiss
+  const handleInteractOutside = useExitSafeDismiss(open);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -71,6 +74,7 @@ export function Sheet({
               forceMount
               asChild
               aria-describedby={undefined}
+              onInteractOutside={handleInteractOutside}
               onOpenAutoFocus={() => {
                 const active = document.activeElement;
                 restoreFocusRef.current = active instanceof HTMLElement ? active : null;

@@ -52,6 +52,13 @@ export const duration = {
   hold: 2.2,
 } as const;
 
+/**
+ * 退场即不再接收指针：浮层、遮罩、抽屉、提示条播退场动画的这一小段仍盖在页面上，
+ * 不能吃掉玩家紧接着点向底下的那一下（关掉弹窗马上点别处、再点一次触发按钮重开）。
+ * 退场被打断、元素重新入场时，framer-motion 会把它还原成样式表里的原值，不用在入场里写回。
+ */
+export const exitInert = { pointerEvents: "none" } as const;
+
 export type SpringToken = (typeof spring)[keyof typeof spring];
 
 /** 弹性判定静止的阈值：位移与速度都以 0→1 的进度为单位。 */

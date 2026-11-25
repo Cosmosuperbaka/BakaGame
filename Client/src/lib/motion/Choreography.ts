@@ -1,5 +1,5 @@
 import type { TargetAndTransition, Transition, Variants } from "framer-motion";
-import { spring, ease, duration } from "@/lib/motion/Transitions";
+import { spring, ease, duration, exitInert } from "@/lib/motion/Transitions";
 
 // ==================== 编舞 ====================
 
@@ -142,7 +142,7 @@ export const skeletonFade = {
 export const backdrop: Variants = {
   initial: { opacity: 0 },
   animate: { opacity: 1, transition: { duration: duration.quick } },
-  exit: { opacity: 0, transition: { duration: duration.quick } },
+  exit: { opacity: 0, ...exitInert, transition: { duration: duration.quick } },
 };
 
 /** 侧边抽屉的滑入方向。 */
@@ -158,6 +158,7 @@ export const sheetSlide: Variants = {
   animate: { x: 0, transition: spring.swift },
   exit: (side: SheetSide) => ({
     x: side === "right" ? "100%" : "-100%",
+    ...exitInert,
     transition: { duration: duration.quick, ease: ease.inOut },
   }),
 };
@@ -169,7 +170,12 @@ export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
 export const popover: Variants = {
   initial: { opacity: 0, scale: popoverScale.enter },
   animate: { opacity: 1, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, scale: popoverScale.exit, transition: { duration: duration.instant } },
+  exit: {
+    opacity: 0,
+    scale: popoverScale.exit,
+    ...exitInert,
+    transition: { duration: duration.instant },
+  },
 };
 
 /** 从属元素跟随主体的延迟：回执卡内的对勾、折叠区的显影都晚主体这一拍。 */
