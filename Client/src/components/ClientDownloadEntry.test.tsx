@@ -207,14 +207,14 @@ describe("ClientDownloadEntry", () => {
     expect(screen.getByRole("radio", { name: "Windows" })).toBeChecked();
   });
 
-  it("macOS 档在包可下载时提示首次打开怎么放行，其它档与未发布时不提示", async () => {
+  it("macOS 档在包可下载时提示先拖进「应用程序」与首次打开怎么放行，其它档与未发布时不提示", async () => {
     pretendDevice(MAC_AGENT);
     await renderWithPackages([WINDOWS, MACOS, ANDROID]);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "下载客户端" }));
 
     await screen.findByRole("link", { name: "下载 macOS 安装包" });
-    expect(screen.getByText(/隐私与安全性/)).toBeInTheDocument();
+    expect(screen.getByText(/隐私与安全性/)).toHaveTextContent("拖进「应用程序」");
     await user.click(screen.getByRole("radio", { name: "Windows" }));
     expect(screen.queryByText(/隐私与安全性/)).not.toBeInTheDocument();
   });
