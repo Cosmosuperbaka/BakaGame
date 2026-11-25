@@ -270,12 +270,23 @@ html {
       scale: var(--motion-popover-enter-scale);
     }
   }
+  /* 收起中不再接收指针（DesignGuide §8）；Radix 给模态层内联了 pointer-events，只能用 !important 盖过。 */
   [data-radix-popper-content-wrapper] > [data-state="closed"] {
     opacity: 0;
     scale: var(--motion-popover-exit-scale);
     transition-duration: var(--motion-duration-instant);
     transition-timing-function: var(--motion-ease-in-out);
     animation: overlay-hold var(--motion-duration-instant);
+    pointer-events: none !important;
+  }
+  [data-radix-popper-content-wrapper]:has(> [data-state="closed"]) {
+    pointer-events: none !important;
+  }
+  /* 下拉选择收起的这一小段仍是 Radix「禁用外部指针」的层，body 与它底下的弹窗被内联成不接收指针，
+     紧接着的点击会被整页吞掉。只在它收起期间放开，卸载后 Radix 的内联值照旧生效。 */
+  :root:has(> body > [data-radix-popper-content-wrapper] > [role="listbox"][data-state="closed"])
+    :is(body, [role="dialog"]:not([data-state="closed"])) {
+    pointer-events: auto !important;
   }
 }
 

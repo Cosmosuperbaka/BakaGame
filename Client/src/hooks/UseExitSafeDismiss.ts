@@ -9,7 +9,8 @@ type OutsideEvent = CustomEvent<{ originalEvent: Event }>;
  * 刚被重开的浮层随即又被关掉，玩家看到的是「点了没反应」。
  *
  * 以浮层最近一次重新在场（`present` 由假变真）的时刻为界：原事件早于它的「在外面操作」发生在退场途中，
- * 不再关闭任何东西。返回值交给 Radix Content 的 `onInteractOutside`，调用处自己的处理照常执行。
+ * 不再关闭任何东西。返回值交给 Radix Content 的 `onInteractOutside`（下拉选择是 `onPointerDownOutside`），
+ * 调用处自己的处理照常执行。
  * `present` 在 AnimatePresence 的子树里取 `useIsPresent()`，在持有开合状态的组件里直接传 `open`。
  */
 export function useExitSafeDismiss<E extends OutsideEvent>(

@@ -2,10 +2,35 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { motion } from "framer-motion";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { useExitSafeDismiss } from "@/hooks/UseExitSafeDismiss";
 import { headerTappable } from "@/lib/motion/Feedback";
 import { cn } from "@/lib/Utils";
 
-const Select = SelectPrimitive.Root;
+/** 下拉当前是否展开。Radix 不对外暴露，由 `Select` 托管后交给内容区分辨「收起途中的按压」。 */
+const SelectOpenContext = React.createContext(false);
+
+/** 与 Radix 同名同参，开合状态统一托管在这里，供 `SelectContent` 读取。 */
+function Select({
+  open: openProp,
+  defaultOpen = false,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const open = openProp ?? uncontrolledOpen;
+  return (
+    <SelectOpenContext.Provider value={open}>
+      <SelectPrimitive.Root
+        {...props}
+        open={open}
+        onOpenChange={(next) => {
+          setUncontrolledOpen(next);
+          props.onOpenChange?.(next);
+        }}
+      />
+    </SelectOpenContext.Provider>
+  );
+}
+
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
@@ -63,34 +88,55 @@ SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayNam
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
-        "relative z-popover max-h-96 min-w-32 overflow-hidden floating-surface text-foreground shadow-md",
-        // 开合动画在 index.css；原点取 Radix 按实际落位给出的方向，读作从触发框里展开。
-        position === "popper" &&
-          "origin-(--radix-select-content-transform-origin) data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-        className
-      )}
-      position={position}
-      {...props}
-    >
-      <SelectScrollUpButton />
-      <SelectPrimitive.Viewport
-        className={cn(
-          "scrollbar-hidden p-1",
-          position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
-        )}
-      >
-        {children}
-      </SelectPrimitive.Viewport>
-      <SelectScrollDownButton />
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
-));
+>(
+  (
+    { className, children, position = "popper", onPointerDownOutside, onCloseAutoFocus, ...props },
+    ref
+  ) => {
+    // 收起动画播放的这一小段，内容仍是 Radix 的可关闭层：这时再按触发框重开，紧随其后的「按在外面」会把它又关掉。
+    // 收起中的内容不接指针、也不挡页面上其它点击，见 index.css。
+    const handlePointerDownOutside = useExitSafeDismiss(
+      React.useContext(SelectOpenContext),
+      onPointerDownOutside
+    );
+    // Radix 卸载后把焦点还给触发框；收起途中玩家已经点进别处（输入框、按钮）时焦点留在那里，不被拉回。
+    const handleCloseAutoFocus = (event: Event) => {
+      onCloseAutoFocus?.(event);
+      const active = document.activeElement;
+      if (active && active !== document.body) event.preventDefault();
+    };
+    return (
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Content
+          ref={ref}
+          className={cn(
+            "relative z-popover max-h-96 min-w-32 overflow-hidden floating-surface text-foreground shadow-md",
+            // 开合动画在 index.css；原点取 Radix 按实际落位给出的方向，读作从触发框里展开。
+            position === "popper" &&
+              "origin-(--radix-select-content-transform-origin) data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+            className
+          )}
+          position={position}
+          {...props}
+          onPointerDownOutside={handlePointerDownOutside}
+          onCloseAutoFocus={handleCloseAutoFocus}
+        >
+          <SelectScrollUpButton />
+          <SelectPrimitive.Viewport
+            className={cn(
+              "scrollbar-hidden p-1",
+              position === "popper" &&
+                "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            )}
+          >
+            {children}
+          </SelectPrimitive.Viewport>
+          <SelectScrollDownButton />
+        </SelectPrimitive.Content>
+      </SelectPrimitive.Portal>
+    );
+  }
+);
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<

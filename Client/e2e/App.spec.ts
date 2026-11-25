@@ -364,6 +364,47 @@ test("明暗揭示还在播时点设置里的另一款主题，弹窗不关、�
   await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
 });
 
+test("下拉收起途中点别处照常生效、再点触发框能重开", async ({ page }) => {
+  await page.goto("/abouts");
+  // 拉长收起，让紧接着的点击一定落在收起途中
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty("--motion-duration-instant", "3s")
+  );
+  // 展开时 Radix 给页面其余部分挂 aria-hidden，按角色找不到触发框，改按它指向的标签找
+  const trigger = page.locator('[role="combobox"][aria-labelledby="credits-license-label"]');
+  const search = page.getByRole("searchbox", { name: "搜索依赖" });
+  const listbox = page.locator("[data-radix-popper-content-wrapper] > [role=listbox]");
+  const center = async (locator: typeof trigger) => {
+    const box = await locator.boundingBox();
+    expect(box).not.toBeNull();
+    return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+  };
+  await trigger.scrollIntoViewIfNeeded();
+  const at = await center(trigger);
+  const searchAt = await center(search);
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(listbox).toHaveAttribute("data-state", "closed");
+  // 不用 locator.click：收起途中它会等命中检测落回元素上，测不到这一下
+  await page.mouse.click(searchAt.x, searchAt.y);
+  await expect(search).toBeFocused();
+  await page.keyboard.type("react");
+  await expect(search).toHaveValue("react");
+  // 收起播完后焦点也不被拉回触发框
+  await expect(listbox).toHaveCount(0);
+  await expect(search).toBeFocused();
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(listbox).toHaveAttribute("data-state", "closed");
+  await page.mouse.click(at.x, at.y);
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(listbox).toHaveAttribute("data-state", "open");
+});
+
 test("landing and lobby stay within a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
