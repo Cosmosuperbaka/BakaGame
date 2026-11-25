@@ -1,11 +1,13 @@
-//! 只监听回环地址的 HTTPS 转发隧道：WebView2 的请求经这里按域名分流。
+//! 只监听回环地址的 HTTPS 转发隧道：WebView（Windows 的 WebView2、macOS 的 WKWebView）
+//! 的请求经这里按域名分流。
 //!
 //! 受管域名先问 HTTPDNS（失败则系统 DNS，并标降级），其它域名直接走系统 DNS。
 //! 这里只做 CONNECT 隧道，TLS 由 WebView 端到端完成——证书校验和 SNI 仍然是原域名，
 //! 代理看不到明文，也不提供任何「忽略证书错误」的开关。
 //!
-//! 单独起一个回环端口并把 WebView2 的 proxy 指过来，是为了让 hosts 被污染时页面本身
-//! 也能打开，而不只是壳自己的三趟通道证明请求。
+//! 单独起一个回环端口并把 WebView 的 proxy 指过来，是为了让 hosts 被污染时页面本身
+//! 也能打开，而不只是壳自己的三趟通道证明请求。macOS 上指代理靠 Tauri 的 `macos-proxy`
+//! 特性（WKWebView 的代理配置要求 macOS 14+）。
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};

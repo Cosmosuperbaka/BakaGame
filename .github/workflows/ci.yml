@@ -1026,6 +1026,11 @@ jobs:
     if: ${{ needs.macos-release-plan.outputs.publish == 'true' }}
     permissions:
       contents: read
+    env:
+      # 与 Windows 构建同一份 HTTPDNS 凭据，只在构建期读取；三项都为空时壳自动保持系统 DNS。
+      BAKA_HTTPDNS_APP_ID: ${{ secrets.BAKA_HTTPDNS_APP_ID }}
+      BAKA_HTTPDNS_SECRET_KEY: ${{ secrets.BAKA_HTTPDNS_SECRET_KEY }}
+      BAKA_HTTPDNS_TOKEN: ${{ secrets.BAKA_HTTPDNS_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

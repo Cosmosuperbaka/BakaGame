@@ -1,6 +1,6 @@
 [package]
 name = "bakagame-desktop"
-version = "0.2.2"
+version = "0.2.3"
 description = "BakaGame 桌面壳：远程 URL 窗口 + 设备密钥签名 + 原生自检"
 authors = ["BakaGame"]
 edition = "2021"
@@ -17,8 +17,10 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# WebView2 + 窗口 + IPC；不打包前端，壳只加载远程 URL
-tauri = { version = "2", features = [] }
+# WebView2 + 窗口 + IPC；不打包前端，壳只加载远程 URL。
+# `macos-proxy` 让 macOS 的 WKWebView 也能指向 HTTPDNS 回环隧道（`proxy_url`）：它链接 macOS 14 才有的
+# Network 框架接口，所以 tauri.macos.conf.json 的最低系统版本不能低于 14；Windows 上不参与编译。
+tauri = { version = "2", features = ["macos-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 设备密钥对：Ed25519 私钥签名服务端 challenge。

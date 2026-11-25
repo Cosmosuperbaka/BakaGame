@@ -35,22 +35,12 @@ const MAX_TTL_SECS: u32 = 3600;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 const CACHE_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
-/// 本平台不启用 HTTPDNS 的原因；`None` 表示按构建期凭据决定。
-///
-/// macOS：WebView 改走回环隧道要靠 Tauri 的 `macos-proxy` 特性，且只支持 macOS 14+，第一版不接。
-/// 只关隧道、壳内请求照用 HTTPDNS 会让两条路径的解析口径不一致，所以整个 HTTPDNS 一起关，
-/// 页面与壳内请求都走系统 DNS（与 Windows 未配凭据时同一形态）。
-const PLATFORM_DISABLED_REASON: Option<&str> = if cfg!(target_os = "macos") {
-    Some("macos-webview-proxy-unsupported")
-} else {
-    None
-};
-
-/// 构建期注入的凭据。本平台不启用 HTTPDNS 时一律当没配，凭据也就不编进这个平台的二进制
+/// 构建期注入的凭据，没注入就是空串。Windows 与 macOS 同一口径：是否启用只看凭据，不按平台整体关闭
+/// （macOS 的 WebView 经 Tauri 的 `macos-proxy` 特性走同一条回环隧道，见 `dnsproxy`）。
 const fn build_value(value: Option<&'static str>) -> &'static str {
     match value {
-        Some(value) if PLATFORM_DISABLED_REASON.is_none() => value,
-        _ => "",
+        Some(value) => value,
+        None => "",
     }
 }
 
@@ -651,10 +641,6 @@ static SHARED: OnceLock<Option<Arc<HttpDnsResolver>>> = OnceLock::new();
 pub fn shared() -> Option<Arc<HttpDnsResolver>> {
     SHARED
         .get_or_init(|| {
-            if let Some(reason) = PLATFORM_DISABLED_REASON {
-                eprintln!("[baka-httpdns] disabled reason={reason}");
-                return None;
-            }
             let config = Config::from_build()?;
             eprintln!(
                 "[baka-httpdns] enabled domains={} mode={} endpoint={}",
@@ -675,17 +661,11 @@ mod tests {
 
     const KEY: &str = "0123456789abcdef";
 
-    /// 只有 macOS 整个关掉 HTTPDNS，而且关掉时构建期凭据也不进二进制；其余平台照旧按凭据决定
+    /// 构建期凭据在每个平台都原样生效：macOS 不再整体关掉 HTTPDNS
     #[test]
-    fn platform_gate_disables_httpdns_only_on_macos() {
-        let macos = cfg!(target_os = "macos");
-        assert_eq!(PLATFORM_DISABLED_REASON.is_some(), macos);
-        let expected = if macos { "" } else { "secret" };
-        assert_eq!(build_value(Some("secret")), expected);
+    fn build_credentials_apply_on_every_platform() {
+        assert_eq!(build_value(Some("secret")), "secret");
         assert_eq!(build_value(None), "");
-        if macos {
-            assert!(shared().is_none(), "macOS 上不得启用 HTTPDNS");
-        }
     }
 
     #[test]

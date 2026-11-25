@@ -468,8 +468,8 @@ fn within_site(url: &str, base: &str) -> bool {
 
 /// 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
 /// 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
-/// macOS 上 `httpdns::shared` 恒为空（WebView 改走代理要 `macos-proxy` 特性且只支持 14+），
-/// 所以这里不起隧道，页面与壳内请求都走系统 DNS。
+/// Windows 与 macOS 同一条路径：macOS 的 `proxy_url` 由 Tauri 的 `macos-proxy` 特性提供，
+/// 要求 macOS 14+，与 `tauri.macos.conf.json` 的最低系统版本一致。
 ///
 /// 应在设备引导线程启动之前调用：隧道直连目标、不读任何代理设置，启用后壳自己发的
 /// 注册、领挑战与换票请求也要直连（见 `http::mark_webview_tunnel_active`），
