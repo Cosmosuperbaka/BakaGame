@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
 import { OverlayPanelTitleBar } from "@/components/ui/Sheet";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
+import { useExitSafeDismiss } from "@/hooks/UseExitSafeDismiss";
 import { sheetSlide } from "@/lib/motion/Choreography";
 import { cn } from "@/lib/Utils";
 
@@ -39,6 +40,8 @@ export function RoomDrawer({
   children: ReactNode;
 }) {
   const restoreFallback = useRef(false);
+  // 退场途中按下的那一下（比如立刻再点触发按钮重开）不算点在外面，见 useExitSafeDismiss
+  const handleInteractOutside = useExitSafeDismiss(open);
   useCloseFrom(
     open,
     (next) => {
@@ -60,6 +63,7 @@ export function RoomDrawer({
               forceMount
               asChild
               aria-describedby={undefined}
+              onInteractOutside={handleInteractOutside}
               onOpenAutoFocus={() => {
                 restoreFallback.current = false;
               }}

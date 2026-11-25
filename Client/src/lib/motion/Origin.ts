@@ -1,5 +1,5 @@
 import type { Variants } from "framer-motion";
-import { spring, ease, duration } from "@/lib/motion/Transitions";
+import { spring, ease, duration, exitInert } from "@/lib/motion/Transitions";
 
 // ==================== 浮层来源锚定 ====================
 
@@ -27,6 +27,7 @@ export const emergeFromOrigin: Variants = {
   exit: {
     opacity: 0,
     scale: 0.93,
+    ...exitInert,
     transition: {
       duration: duration.quick,
       ease: ease.inOut,

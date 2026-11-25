@@ -1,8 +1,9 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useIsPresent } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { OverlayBackdrop } from "@/components/ui/OverlayBackdrop";
+import { useExitSafeDismiss } from "@/hooks/UseExitSafeDismiss";
 import { useOriginStyle } from "@/hooks/UseOriginStyle";
 import { useScrollFade } from "@/hooks/UseScrollFade";
 import { emergeFromOrigin, type OriginPoint } from "@/lib/motion/Origin";
@@ -48,8 +49,10 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<
 }
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
-  ({ className, bodyClassName, children, ...props }, ref) => {
+  ({ className, bodyClassName, children, onInteractOutside, ...props }, ref) => {
     const origin = React.useContext(DialogOriginContext);
+    // 退场途中按下的那一下（比如立刻再点触发按钮重开）不算点在外面，见 useExitSafeDismiss
+    const handleInteractOutside = useExitSafeDismiss(useIsPresent(), onInteractOutside);
     const [, bodyRef] = useScrollFade<HTMLDivElement>("y");
     // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（DesignGuide §8）。
     // 原点在节点挂上时测量：Portal 首帧不挂子树，要等节点真正出现。
@@ -72,7 +75,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           <DialogPrimitive.Overlay asChild>
             <OverlayBackdrop placement="viewport" />
           </DialogPrimitive.Overlay>
-          <DialogPrimitive.Content asChild {...props}>
+          <DialogPrimitive.Content asChild {...props} onInteractOutside={handleInteractOutside}>
             <motion.div
               ref={setRefs}
               variants={emergeFromOrigin}
