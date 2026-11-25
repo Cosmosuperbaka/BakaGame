@@ -199,37 +199,26 @@ const MYSTERY_HINT_MS = 2_000;
 
 /**
  * 海报上的入口胶囊：压在封面暗部上，纸底墨字是能进的入口，虚线降色是进不去的入口。
- * 左端嵌一枚玩法图标的色块，胶囊只在左侧留一圈窄边贴住它，同心的两层轮廓读作一枚按钮；
- * 色块取游戏的主题色，把入口和海报连成一件东西。轮廓与颜色都取海报令牌，各主题自己定材料。
+ * 玩法图标是字里的一个字形：与文字同色、按字号缩放、左右留白对称，胶囊仍然只有一个视觉焦点。
+ * 不给图标另垫色块：色块会在一枚按钮里造出第二个焦点，又与海报底色重复，入口反而像标签不像按钮。
+ * 轮廓与颜色都取海报令牌，各主题自己定材料。
  */
 const pillClass =
-  "inline-flex h-8 shrink-0 items-center gap-1 rounded-poster-pill pr-2.5 pl-1 text-xs font-bold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-poster-paper sm:h-9 sm:gap-1.5 sm:pr-3.5 sm:text-sm";
+  "inline-flex h-8 shrink-0 items-center gap-0.5 rounded-poster-pill px-2 text-xs font-bold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-poster-paper sm:h-9 sm:gap-1.5 sm:px-4 sm:text-sm";
 const openPillClass = cn(pillClass, "bg-poster-paper text-poster-ink shadow-sm");
 const closedPillClass = cn(
   pillClass,
   "border border-dashed border-poster-paper/50 bg-poster-ink/40 font-medium text-poster-paper/80 select-none"
 );
-const pillIconClass =
-  "grid size-6 shrink-0 place-items-center rounded-poster-pill sm:size-7 [&_svg]:size-3.5 sm:[&_svg]:size-4";
 
-/** 胶囊左端的图标色块：实心的是能进的入口；进不去的只画一圈虚线框，里面换成状态图标。 */
-function PillIcon({ icon: Icon, tone }: { icon: LucideIcon; tone?: string }) {
-  if (!tone)
-    return (
-      <span aria-hidden="true" className={cn(pillIconClass, "border border-dashed border-current")}>
-        <Icon />
-      </span>
-    );
+/** 入口名前的玩法图标；进不去的入口换成状态图标（暂时关闭、即将上线）。播放三角是实心字形，其余是线性图标。 */
+function PillIcon({ icon: Icon }: { icon: LucideIcon }) {
   return (
-    <span
+    <Icon
       aria-hidden="true"
-      className={cn(pillIconClass, "text-poster-paper")}
-      // 主题色直接作底时，最亮的那款（Songuessr 的橙）压纸色图标只有约 2.7:1；
-      // 掺进 15% 墨色后三款主题色在三套主题下都不低于 3:1（非文字图形口径），也和海报底色拉开一层。
-      style={{ backgroundColor: `color-mix(in oklab, ${tone} 85%, var(--poster-ink))` }}
-    >
-      <Icon strokeWidth={2.5} className={Icon === Play ? "fill-current" : undefined} />
-    </span>
+      strokeWidth={2.25}
+      className={cn("size-[1.1em] shrink-0", Icon === Play && "size-[0.9em] fill-current")}
+    />
   );
 }
 
@@ -338,12 +327,10 @@ type Announce = Dispatch<SetStateAction<string>>;
 function MysteryEntryButton({
   gameTitle,
   entry,
-  tone,
   announce,
 }: {
   gameTitle: string;
   entry: GameEntryPoint;
-  tone: string;
   announce: Announce;
 }) {
   const [hinting, setHinting] = useState(false);
@@ -371,7 +358,7 @@ function MysteryEntryButton({
       onClick={showHint}
       {...pressable}
     >
-      <PillIcon icon={entry.icon} tone={tone} />
+      <PillIcon icon={entry.icon} />
       <span className="relative flex overflow-hidden">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -429,7 +416,7 @@ function GamePoster({
   const isOpen = (entry: GameEntryPoint) =>
     !isWholeGameDisabled && entry.available && (!entry.feature || features[entry.feature]);
 
-  // 色块与海报同色：神秘游戏没有主题色，取主题给的留白色。
+  // 神秘游戏没有主题色，取主题给的留白色。
   const tone = game.accent ?? "var(--poster-blank)";
 
   return (
@@ -449,7 +436,7 @@ function GamePoster({
           aria-hidden="true"
           className="absolute inset-0 bg-linear-to-t from-poster-ink/85 via-poster-ink/35 to-transparent"
         />
-        <div className="relative flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-4">
+        <div className="relative flex flex-col gap-2.5 p-2.5 sm:gap-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-2">
             {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
             <h3
@@ -462,9 +449,8 @@ function GamePoster({
           </div>
 
           {/* 整款未上线的单一入口游戏没有可展示的入口，只留标题旁的「即将上线」。 */}
-          {/* 手机两列的海报只有一百多像素宽，两枚胶囊并不排，入口按行竖排、每行铺满海报宽度。 */}
           {isWholeGameDisabled && !game.subModes ? null : (
-            <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-1.5">
+            <div className="flex flex-wrap gap-1 sm:gap-1.5">
               {entries.map((entry) => {
                 if (game.mystery)
                   return (
@@ -472,7 +458,6 @@ function GamePoster({
                       key={entry.key}
                       gameTitle={game.title}
                       entry={entry}
-                      tone={tone}
                       announce={announce}
                     />
                   );
@@ -481,7 +466,7 @@ function GamePoster({
                   const isClosed = !isWholeGameDisabled && entry.available;
                   return (
                     <span key={entry.key} aria-disabled="true" className={closedPillClass}>
-                      {/* 进不去的入口，色块里换成状态图标；窄海报只放得下短名，状态文字留给读屏。 */}
+                      {/* 进不去的入口换成状态图标；窄海报只放得下短名，状态文字留给读屏。 */}
                       <PillIcon icon={isClosed ? CirclePause : Clock} />
                       <EntryLabel title={entry.title} short={entry.short} />
                       <span className="opacity-70 max-sm:sr-only md:max-lg:sr-only">
@@ -501,7 +486,7 @@ function GamePoster({
                     className={openPillClass}
                     {...pressable}
                   >
-                    <PillIcon icon={entry.icon} tone={tone} />
+                    <PillIcon icon={entry.icon} />
                     <EntryLabel title={entry.title} short={entry.short} />
                   </motion.a>
                 );
