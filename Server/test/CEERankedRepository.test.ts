@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { CEE_RANKED_HANDICAP_MAX_PLAYER_RD } from "../src/application/CEERankedHandicap";
 import type {
   CEERankedGuessRecord,
   CEERankedSettlementRecord,
@@ -320,16 +321,16 @@ describe("排位审计仓储（连接桩）", () => {
     expect(query.params).toEqual(["u1", 50]);
   });
 
-  test("校准样本只取现行规则版本的计分人机局、按结束时间倒序，limit 夹到 1000 并跳过缺列的旧行", async () => {
+  test("校准样本只取现行规则版本的计分人机局、在库里先筛掉定级与偏差过大的真人再限量，按结束时间倒序，limit 夹到 1000 并跳过缺列的旧行", async () => {
     const stub = createDrizzleStub();
     const repository = new CEERankedRepository(stub.database);
     stub.reply([
-      tupleOf("aiga", 1480, "u1", false, 1500, 220, 1),
+      tupleOf("aiga", 1480, "u1", false, 1500, 120, 1),
       // 旧数据没有强度列：这一行不可能是有效样本，必须被丢掉而不是算成 0 分。
-      tupleOf("rush", null, "u1", false, 1500, 220, 0),
+      tupleOf("rush", null, "u1", false, 1500, 120, 0),
       // 账号已注销：没法限制单个账号的权重，不收。
-      tupleOf("rush", 1150, null, false, 1500, 220, 0),
-      tupleOf("rush", 1150, "u2", true, 1200, 250, 0.5),
+      tupleOf("rush", 1150, null, false, 1500, 120, 0),
+      tupleOf("rush", 1150, "u2", false, 1200, 140, 0.5),
     ]);
 
     const samples = await repository.listRecentBotSamples(9999);
@@ -339,16 +340,16 @@ describe("排位审计仓储（连接桩）", () => {
         userId: "u1",
         placement: false,
         playerRating: 1500,
-        playerRd: 220,
+        playerRd: 120,
         strengthRating: 1480,
         score: 1,
       },
       {
         group: "regular",
         userId: "u2",
-        placement: true,
+        placement: false,
         playerRating: 1200,
-        playerRd: 250,
+        playerRd: 140,
         strengthRating: 1150,
         score: 0.5,
       },
@@ -359,12 +360,15 @@ describe("排位审计仓储（连接桩）", () => {
     expect(query.statement).toContain("`cee_ranked_series`.`bot` = ?");
     expect(query.statement).toContain("`cee_ranked_series`.`rated` = ?");
     expect(query.statement).toContain("`cee_ranked_series`.`ruleset` = ?");
+    expect(query.statement).toContain("`cee_ranked_series_player`.`placement` = ?");
+    expect(query.statement).toContain("`cee_ranked_series_player`.`rd_before` <= ?");
     expect(query.statement).toContain("`cee_ranked_series`.`ended_at` desc");
-    expect(query.params).toEqual([true, true, CEE_RANKED_RULESET, 1000]);
+    const filters = [true, true, CEE_RANKED_RULESET, false, CEE_RANKED_HANDICAP_MAX_PLAYER_RD];
+    expect(query.params).toEqual([...filters, 1000]);
 
     stub.reset();
     await repository.listRecentBotSamples(0);
-    expect(stub.queryAt(0).params).toEqual([true, true, CEE_RANKED_RULESET, 1]);
+    expect(stub.queryAt(0).params).toEqual([...filters, 1]);
   });
 
   test("审计明细分四张表读回；系列赛不存在时只查一次", async () => {

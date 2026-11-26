@@ -230,7 +230,7 @@ describe("排位审计内存实现", () => {
     ]);
   });
 
-  test("校准样本只取计分的人机局：真人局、不计分、缺强度列的都跳过", async () => {
+  test("校准样本只取计分的人机局：真人局、不计分、缺强度列、定级中与偏差过大的都跳过", async () => {
     const store = new InMemoryCEERankedStore();
     const botOf = (overrides: Partial<CEERankedSeriesPlayerRecord> = {}) =>
       playerOf(1, {
@@ -273,7 +273,7 @@ describe("排位审计内存实现", () => {
           botEntry: "placement",
           ruleset: CEE_RANKED_RULESET,
         }),
-        players: [playerOf(0), botOf({ botPersona: "aiga" })],
+        players: [playerOf(0, { rdBefore: 120 }), botOf({ botPersona: "aiga" })],
       })
     );
     // 旧数据没有强度列：凑不出样本。
@@ -295,9 +295,29 @@ describe("排位审计内存实现", () => {
           botEntry: "manual",
           ruleset: CEE_RANKED_RULESET,
         }),
-        players: [playerOf(0, { points: 0, score: 0 }), botOf({ points: 3, score: 1 })],
+        players: [
+          playerOf(0, { points: 0, score: 0, rdBefore: 120 }),
+          botOf({ points: 3, score: 1 }),
+        ],
       })
     );
+    // 更晚的两场：定级中、偏差过大的真人。校准窗口不收，先筛掉再计入条数上限。
+    for (const [id, overrides] of [
+      ["s-placement", { placement: true, rdBefore: 120 }],
+      ["s-loose", { rdBefore: 200 }],
+    ] as const) {
+      const endedAt = T0 + (id === "s-placement" ? 4500 : 4600);
+      await store.saveSettlement(
+        settlementOf(id, endedAt, {
+          series: seriesOf(id, endedAt, {
+            bot: true,
+            botEntry: "manual",
+            ruleset: CEE_RANKED_RULESET,
+          }),
+          players: [playerOf(0, overrides), botOf()],
+        })
+      );
+    }
     // 旧规则版本的强度分口径不同：结束得再晚也不进样本。
     await store.saveSettlement(
       settlementOf("s-r2", T0 + 5000, {
@@ -311,7 +331,7 @@ describe("排位审计内存实现", () => {
       userId: "u1",
       placement: false,
       playerRating: 1200,
-      playerRd: 250,
+      playerRd: 120,
       strengthRating: 1150,
       score,
     });
@@ -319,7 +339,7 @@ describe("排位审计内存实现", () => {
       sampleOf("regular", 0),
       sampleOf("aiga", 1),
     ]);
-    expect(await store.listRecentBotSamples(1)).toHaveLength(1);
+    expect(await store.listRecentBotSamples(1)).toEqual([sampleOf("regular", 0)]);
     // 下界夹到 1：0 条不会把整个校准窗口清空。
     expect(await store.listRecentBotSamples(0)).toHaveLength(1);
   });

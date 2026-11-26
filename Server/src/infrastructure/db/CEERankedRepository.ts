@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,
@@ -16,7 +17,10 @@ import { alias } from "drizzle-orm/mysql-core";
 
 import { CEE_RANKED_RULESET } from "../../shared/CEERanked";
 import type { CEEGuessClientType } from "../../application/CEEAntiCheatSignals";
-import type { CEERankedBotSample } from "../../application/CEERankedHandicap";
+import {
+  CEE_RANKED_HANDICAP_MAX_PLAYER_RD,
+  type CEERankedBotSample,
+} from "../../application/CEERankedHandicap";
 import type {
   CEERankedGameRecord,
   CEERankedGuessRecord,
@@ -412,7 +416,10 @@ export class CEERankedRepository implements CEERankedStore {
           isNotNull(opponent.botPersona),
           isNotNull(opponent.botStrengthRating),
           isNotNull(ceeRankedSeriesPlayer.ratingBefore),
-          isNotNull(ceeRankedSeriesPlayer.rdBefore)
+          isNotNull(ceeRankedSeriesPlayer.rdBefore),
+          // 校准窗口不收的样本在库里先筛掉再限量：否则最新的一批里定级局一多，窗口就攒不满。
+          eq(ceeRankedSeriesPlayer.placement, false),
+          lte(ceeRankedSeriesPlayer.rdBefore, CEE_RANKED_HANDICAP_MAX_PLAYER_RD)
         )
       )
       .orderBy(desc(ceeRankedSeries.endedAt))
