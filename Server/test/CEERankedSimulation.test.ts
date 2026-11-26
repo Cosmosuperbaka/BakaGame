@@ -186,7 +186,7 @@ const timing: CEERankedSimTiming = {
 const bot = (id: CEERankedPersonaId, rating: number): CEERankedSimBot => ({
   persona: personaOf(id),
   strength: strengthOf(rating),
-  opponentRating: rating,
+  paceRating: rating,
 });
 const buildInput = (
   random: () => number,
@@ -263,7 +263,7 @@ describe("CEE 排位赛跑模拟", () => {
     const brain = createCEERankedBot({
       persona: personaOf("awen"),
       strength: strengthOf(2000),
-      opponentRating: 2000,
+      paceRating: 2000,
       pool,
       random,
     });
@@ -351,7 +351,7 @@ describe("CEE 排位赛跑模拟", () => {
     const brain = createCEERankedBot({
       persona: personaOf("kaoju"),
       strength: strengthOf(1400),
-      opponentRating: 1400,
+      paceRating: 1400,
       pool,
       random,
     });

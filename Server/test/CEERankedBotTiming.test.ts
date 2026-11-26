@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { ceeRankedAigaThinkMs, ceeRankedBotThinkMs } from "../src/domain/CEERankedBotTiming";
+import {
+  CEE_RANKED_AIGA_RATING_RANGE,
+  CEE_RANKED_AIGA_THINK_CURVE,
+  ceeRankedAigaThinkMs,
+  ceeRankedBotThinkMs,
+} from "../src/domain/CEERankedBotTiming";
 import {
   type CEERankedBotStrength,
   type CEERankedPersona,
@@ -18,7 +23,7 @@ describe("CEE 排位人机思考时长", () => {
     strength: CEERankedBotStrength,
     persona: CEERankedPersona
   ): CEERankedBotBrain =>
-    createCEERankedBot({ persona, strength, opponentRating: 1500, pool, random: seeded(21) });
+    createCEERankedBot({ persona, strength, paceRating: 1500, pool, random: seeded(21) });
 
   it("结果夹在 2500 到 90000 毫秒之间", () => {
     const awen = personaOf("awen");
@@ -104,31 +109,29 @@ describe("CEE 排位人机思考时长", () => {
 });
 
 describe("CEE 排位人机爱噶", () => {
-  it("思考时长只看对手分数：按锚点插值，且随分数单调递减", () => {
-    // 锚点 800/1100/1400/1700/2000/2300 → 113/96/53/32/15/10 秒；1500 落在 1400 与 1700 的三分之一处。
-    expect(ceeRankedAigaThinkMs(1400, scripted(FLAT_Z))).toBe(53000);
-    expect(ceeRankedAigaThinkMs(1500, scripted(FLAT_Z))).toBe(46000);
-    expect(ceeRankedAigaThinkMs(500, scripted(FLAT_Z))).toBe(
-      ceeRankedAigaThinkMs(800, scripted(FLAT_Z))
+  it("思考时长只看节奏分：按曲线插值，两端夹住，且随分数单调递减", () => {
+    // 1500 落在 1400（92 秒）与 1550（60 秒）之间的三分之二处。
+    expect(ceeRankedAigaThinkMs(1400, scripted(FLAT_Z))).toBe(92000);
+    expect(ceeRankedAigaThinkMs(1500, scripted(FLAT_Z))).toBe(70667);
+    expect(ceeRankedAigaThinkMs(800, scripted(FLAT_Z))).toBe(
+      ceeRankedAigaThinkMs(CEE_RANKED_AIGA_RATING_RANGE.min, scripted(FLAT_Z))
     );
-    expect(ceeRankedAigaThinkMs(2400, scripted(FLAT_Z))).toBe(
-      ceeRankedAigaThinkMs(2300, scripted(FLAT_Z))
+    expect(ceeRankedAigaThinkMs(3000, scripted(FLAT_Z))).toBe(
+      ceeRankedAigaThinkMs(CEE_RANKED_AIGA_RATING_RANGE.max, scripted(FLAT_Z))
     );
-    const samples = [800, 1000, 1500, 1900, 2300].map((rating) =>
-      ceeRankedAigaThinkMs(rating, scripted(FLAT_Z))
+    const samples = CEE_RANKED_AIGA_THINK_CURVE.map((point) =>
+      ceeRankedAigaThinkMs(point.rating, scripted(FLAT_Z))
     );
-    expect(samples[0]).toBe(113000);
-    expect(samples[2]).toBe(46000);
-    expect(samples[4]).toBe(10000);
+    expect(samples).toEqual(CEE_RANKED_AIGA_THINK_CURVE.map((point) => point.medianMs));
     samples.forEach((value, index) => {
       if (index > 0) expect(value).toBeLessThan(samples[index - 1]);
     });
   });
 
-  it("爱噶的上限放宽到 120 秒：低分段的长尾不再被 60 秒夹平", () => {
-    // z ≈ 7.43 的极端抽样：按旧上限会落在 60000，新上限下 2000 分能给出超过 60 秒的间隔。
-    expect(ceeRankedAigaThinkMs(2000, scripted([1e-12, 0, 0.999]))).toBeGreaterThan(60000);
-    expect(ceeRankedAigaThinkMs(2000, scripted([1e-12, 0, 0.999]))).toBeLessThan(120000);
-    expect(ceeRankedAigaThinkMs(800, scripted([1e-12, 0, 0.999]))).toBe(120000);
+  it("爱噶的上限是 120 秒：低分段的长尾不被普通人机的上限夹平", () => {
+    // z ≈ 7.43 的极端抽样：1750 分的中位数 26 秒放大到一百一十多秒，仍在上限内。
+    expect(ceeRankedAigaThinkMs(1750, scripted([1e-12, 0, 0.999]))).toBeGreaterThan(90000);
+    expect(ceeRankedAigaThinkMs(1750, scripted([1e-12, 0, 0.999]))).toBeLessThan(120000);
+    expect(ceeRankedAigaThinkMs(1150, scripted([1e-12, 0, 0.999]))).toBe(120000);
   });
 });

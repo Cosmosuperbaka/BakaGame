@@ -1,7 +1,7 @@
 import type { CEERankedBotBrain } from "./CEERankedBot";
 import { clamp, type CEERankedTempo } from "./CEERankedBotProfile";
 
-// 排位人机的思考时长：普通人格按强度档与节奏，爱噶只看对手分数。
+// 排位人机的思考时长：普通人格按强度档与节奏，爱噶只看她自己的节奏分。
 
 const THINK_FLOOR_MS = 2500;
 /** 普通人格的间隔上限：真人 p90 的相邻间隔约 1 分钟，留出发呆的余量。 */
@@ -22,27 +22,37 @@ const logNormalMs = (
   clamp(Math.round(median * Math.exp(sigma * gaussian(random))), THINK_FLOOR_MS, ceiling);
 
 /**
- * 爱噶每手思考间隔的中位数，只按对手分数插值。她的推理固定且完美（基本 2～3 手猜中），
- * 难度全靠速度：每个锚点让她对同分基线人机的系列赛胜率在七成五左右（标定脚本「爱噶对齐」一节），
- * 比同分普通人机难缠但打得过。她比标称分强出的部分记在计分上（见 `CEERankedHandicap` 的先验）。
+ * 爱噶每手思考间隔的中位数，按她这场的实战分插值。她的推理固定且完美（基本 2～3 手猜中），
+ * 难度全靠速度：曲线上每个点的 `rating` 是她按该间隔出手时的实战分，与普通人机锚点的
+ * `rating` 同一尺度（标定脚本「爱噶曲线」一节按对基线人机的系列赛得分拟合）。
  */
 export const CEE_RANKED_AIGA_THINK_CURVE: ReadonlyArray<{ rating: number; medianMs: number }> = [
-  { rating: 800, medianMs: 113000 },
-  { rating: 1100, medianMs: 96000 },
-  { rating: 1400, medianMs: 53000 },
-  { rating: 1700, medianMs: 32000 },
-  { rating: 2000, medianMs: 15000 },
-  { rating: 2300, medianMs: 10000 },
+  { rating: 1150, medianMs: 120000 },
+  { rating: 1400, medianMs: 92000 },
+  { rating: 1550, medianMs: 60000 },
+  { rating: 1650, medianMs: 38000 },
+  { rating: 1750, medianMs: 26000 },
+  { rating: 1850, medianMs: 14000 },
+  { rating: 1950, medianMs: 10200 },
+  { rating: 2100, medianMs: 7400 },
+  { rating: 2250, medianMs: 4900 },
+  { rating: 2450, medianMs: 3600 },
 ];
 const AIGA_CURVE = CEE_RANKED_AIGA_THINK_CURVE;
 const AIGA_SIGMA = 0.2;
 
-/** 爱噶的思考时长：只看对手分数。 */
-export function ceeRankedAigaThinkMs(opponentRating: number, random: () => number): number {
+/** 爱噶能达到的实战分范围：想要的分数超出时只能夹到两端。 */
+export const CEE_RANKED_AIGA_RATING_RANGE = {
+  min: AIGA_CURVE[0].rating,
+  max: AIGA_CURVE[AIGA_CURVE.length - 1].rating,
+} as const;
+
+/** 爱噶的思考时长：只看她的节奏分。 */
+export function ceeRankedAigaThinkMs(paceRating: number, random: () => number): number {
   const bounded = clamp(
-    opponentRating,
-    AIGA_CURVE[0].rating,
-    AIGA_CURVE[AIGA_CURVE.length - 1].rating
+    paceRating,
+    CEE_RANKED_AIGA_RATING_RANGE.min,
+    CEE_RANKED_AIGA_RATING_RANGE.max
   );
   let segment = 0;
   while (segment + 1 < AIGA_CURVE.length && bounded > AIGA_CURVE[segment + 1].rating) segment += 1;
@@ -68,7 +78,7 @@ export function ceeRankedBotThinkMs(
   candidatesLeft: number,
   random: () => number
 ): number {
-  if (brain.persona.id === "aiga") return ceeRankedAigaThinkMs(brain.opponentRating, random);
+  if (brain.persona.id === "aiga") return ceeRankedAigaThinkMs(brain.paceRating, random);
   const phase = candidatesLeft <= 3 ? 0.6 : 1;
   const sigma = brain.strength.thinkSigma + (brain.persona.tempo === "erratic" ? 0.3 : 0);
   const base = brain.step === 0 ? brain.strength.firstGuessMedianMs : brain.strength.thinkMedianMs;

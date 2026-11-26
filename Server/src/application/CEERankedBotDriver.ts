@@ -59,8 +59,8 @@ function ensureBrain(
   const brain = createCEERankedBot({
     persona: spec.persona,
     strength: spec.strength,
-    // 爱噶的思考节奏按开赛时定下的强度分（已扣校准偏差），整场不变，与审计记录一致。
-    opponentRating: spec.strengthRating,
+    // 爱噶的思考节奏按开赛时定下的强度分（她的实战分，已扣校准偏差），整场不变，与审计记录一致。
+    paceRating: spec.strengthRating,
     pool: runtime.pool.candidates,
     random: ctx.random,
   });

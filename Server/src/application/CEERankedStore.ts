@@ -1,3 +1,4 @@
+import { CEE_RANKED_RULESET } from "../shared/CEERanked";
 import type { CEEGuessClientType } from "./CEEAntiCheatSignals";
 import type { CEERankedBotSample } from "./CEERankedHandicap";
 
@@ -276,7 +277,9 @@ export class InMemoryCEERankedStore implements CEERankedStore {
     const capped = Math.min(Math.max(limit, 1), 1_000);
     const rows: CEERankedBotSample[] = [];
     for (const item of this.byEndedAtDesc()) {
-      if (!item.series.bot || !item.series.rated) continue;
+      // 强度分的口径随规则版本变，旧版本的样本不能拿来推现在的偏差。
+      if (!item.series.bot || !item.series.rated || item.series.ruleset !== CEE_RANKED_RULESET)
+        continue;
       const sample = ceeRankedBotSampleOf(item.players);
       if (!sample) continue;
       rows.push(sample);
@@ -305,18 +308,21 @@ const copySettlement = (record: CEERankedSettlementRecord): CEERankedSettlementR
 /**
  * 从一场人机系列赛的两个席位还原校准样本。
  *
- * 校准要的是「赛前分 vs 实际战绩」，缺赛前 μ/φ 或旧数据没有强度列的行一律不参与。
+ * 校准要的是「赛前分 vs 实际战绩」，缺赛前 μ/φ、旧数据没有强度列或账号已注销的行一律不参与。
+ * 定级与偏差的筛选在校准窗口里统一做（`ceeRankedHandicapAccepts`）。
  */
 export function ceeRankedBotSampleOf(
   players: readonly CEERankedSeriesPlayerRecord[]
 ): CEERankedBotSample | null {
   const bot = players.find((player) => player.userId === null);
   const human = players.find((player) => player.userId !== null);
-  if (!bot || !human || bot.botPersona === null) return null;
+  if (!bot || !human || human.userId === null || bot.botPersona === null) return null;
   if (human.ratingBefore === null || human.rdBefore === null || bot.botStrengthRating === null)
     return null;
   return {
     group: bot.botPersona === "aiga" ? "aiga" : "regular",
+    userId: human.userId,
+    placement: human.placement,
     playerRating: human.ratingBefore,
     playerRd: human.rdBefore,
     strengthRating: bot.botStrengthRating,

@@ -1,6 +1,9 @@
 import type { CEECharacterView, CEEFeedback, CEESettings } from "../shared/CEE";
 import {
   CEE_RANKED_AIGA_OPENING_ID,
+  CEE_RANKED_AIGA_OPENING_TOP_K,
+  CEE_RANKED_AIGA_SIGNATURE_RATE,
+  ceeRankedKnownCount,
   clamp,
   type CEERankedBotStrength,
   type CEERankedPersona,
@@ -26,8 +29,8 @@ import { AppError } from "./Errors";
 export interface CEERankedBotBrain {
   persona: CEERankedPersona;
   strength: CEERankedBotStrength;
-  /** 爱噶的猜测间隔按对手分数决定。 */
-  opponentRating: number;
+  /** 爱噶按这个实战分取思考节奏（就是她这场的强度分）；普通人格不看。 */
+  paceRating: number;
   known: Set<number>;
   observations: CEERankedObservation[];
   guessed: Set<number>;
@@ -107,13 +110,13 @@ const takeRandom = (
   return taken;
 };
 
-/** 按 knowledge × 题库大小（至少 1 个）以热度为权重无放回抽取认识的角色。 */
+/** 按 `ceeRankedKnownCount` 的个数以热度为权重无放回抽取认识的角色。 */
 const drawKnown = (
   knowledge: number,
   pool: readonly CEERankedCandidate[],
   random: () => number
 ): Set<number> => {
-  const target = Math.min(pool.length, Math.max(1, Math.round(knowledge * pool.length)));
+  const target = ceeRankedKnownCount(knowledge, pool.length);
   const rest = [...pool];
   const known = new Set<number>();
   while (known.size < target && rest.length) {
@@ -127,7 +130,7 @@ const drawKnown = (
 export function createCEERankedBot(input: {
   persona: CEERankedPersona;
   strength: CEERankedBotStrength;
-  opponentRating: number;
+  paceRating: number;
   pool: readonly CEERankedCandidate[];
   random: () => number;
 }): CEERankedBotBrain {
@@ -150,7 +153,7 @@ export function createCEERankedBot(input: {
   return {
     persona: input.persona,
     strength,
-    opponentRating: input.opponentRating,
+    paceRating: input.paceRating,
     known,
     observations: [],
     guessed: new Set(),
@@ -167,6 +170,12 @@ export function recordCEERankedBotFeedback(
   brain.guessed.add(guess.id);
   brain.step += 1;
 }
+
+/** 题库里还有没猜过的角色：没有了才算真的无棋可走（认识的猜完了还能硬想）。 */
+export const ceeRankedBotHasMove = (
+  brain: CEERankedBotBrain,
+  pool: readonly CEERankedCandidate[]
+): boolean => pool.some((item) => !brain.guessed.has(item.character.id));
 
 /** 该人格此刻还能猜的题库候选：没猜过，且要么认识、要么是爱噶（整个题库都认识）。 */
 export const ceeRankedBotEligible = (
@@ -235,6 +244,27 @@ const recallConsistent = (
   const recalled = pickWeighted(remembered, (item) => item.character.popularity + 1, random);
   brain.known.add(recalled.character.id);
   return consistentFor(brain, [...eligible, recalled], recall, settings);
+};
+
+/**
+ * 认识的角色都猜过了：从没猜过的陌生角色里挑与已知反馈矛盾最少的，按热度「硬想」起一个并记为
+ * 认识。不这么做的话人机会在本局剩余时间里停手，弱档的局大量拖成双方都没猜中的平局。
+ */
+const recallStranger = (
+  brain: CEERankedBotBrain,
+  pool: readonly CEERankedCandidate[],
+  settings: CEESettings,
+  random: () => number
+): number => {
+  const strangers = pool.filter((item) => !brain.guessed.has(item.character.id));
+  if (!strangers.length) throw new AppError("RANKED_NO_CANDIDATE", "人机已没有可猜的角色");
+  const recalled = pickWeighted(
+    fewestViolations(brain, strangers, settings),
+    (item) => item.character.popularity + 1,
+    random
+  );
+  brain.known.add(recalled.character.id);
+  return recalled.character.id;
 };
 
 const fewestViolations = (
@@ -362,12 +392,27 @@ const strategyGuess = (
   return scoredGuess(brain, guesses, consistent, settings, random);
 };
 
+/** 爱噶的第一手：三成局打招牌丰川祥子，其余从本场开局谱切分最好的前几个里等概率挑。 */
+const aigaOpening = (
+  brain: CEERankedBotBrain,
+  openings: ReadonlyArray<CEERankedOpening>,
+  random: () => number
+): number => {
+  if (random() < CEE_RANKED_AIGA_SIGNATURE_RATE) return CEE_RANKED_AIGA_OPENING_ID;
+  const best = openings
+    .filter((entry) => !brain.guessed.has(entry.id))
+    .slice(0, CEE_RANKED_AIGA_OPENING_TOP_K);
+  return best.length ? pickTied(best, random).id : CEE_RANKED_AIGA_OPENING_ID;
+};
+
 const aigaGuess = (
   brain: CEERankedBotBrain,
   pool: readonly CEERankedCandidate[],
-  settings: CEESettings
+  openings: ReadonlyArray<CEERankedOpening>,
+  settings: CEESettings,
+  random: () => number
 ): number => {
-  if (brain.step === 0) return CEE_RANKED_AIGA_OPENING_ID;
+  if (brain.step === 0) return aigaOpening(brain, openings, random);
   const pending = ceeRankedBotEligible(brain, pool);
   const consistent = filterCEECandidates(
     pending,
@@ -389,7 +434,7 @@ const regularGuess = (
   random: () => number
 ): number => {
   const eligible = ceeRankedBotEligible(brain, pool);
-  if (!eligible.length) throw new AppError("RANKED_NO_CANDIDATE", "人机已没有可猜的已知角色");
+  if (!eligible.length) return recallStranger(brain, pool, settings, random);
   if (brain.step === 0) return openingGuess(brain, eligible, openings, random);
   const recall = drawRecall(brain, random);
   let consistent = consistentFor(brain, eligible, recall, settings);
@@ -412,7 +457,7 @@ export function nextCEERankedBotGuess(
   settings: CEESettings,
   random: () => number
 ): number {
-  // 爱噶的出手是固定规则，不消耗 random；random 只用于她的思考时长。
-  if (brain.persona.id === "aiga") return aigaGuess(brain, pool, settings);
+  // 爱噶只在第一手用 random（挑开局），之后的出手是固定规则。
+  if (brain.persona.id === "aiga") return aigaGuess(brain, pool, openings, settings, random);
   return regularGuess(brain, pool, openings, settings, random);
 }

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
   CEE_RANKED_AIGA_OPENING_ID,
+  CEE_RANKED_AIGA_OPENING_TOP_K,
+  CEE_RANKED_AIGA_SIGNATURE_RATE,
   type CEERankedBotStrength,
   type CEERankedPersona,
 } from "../src/domain/CEERankedBotProfile";
 import {
+  ceeRankedBotHasMove,
   createCEERankedBot,
   nextCEERankedBotGuess,
   recordCEERankedBotFeedback,
@@ -16,6 +19,7 @@ import {
   type CEERankedCandidate,
   type CEERankedDimension,
   type CEERankedObservation,
+  countCEEViolations,
   evaluateCEEGuess,
   filterCEECandidates,
 } from "../src/domain/CEERankedSolver";
@@ -43,19 +47,37 @@ describe("CEE 排位人机爱噶", () => {
     createCEERankedBot({
       persona: personaOf("aiga"),
       strength: anchorStrength(2300),
-      opponentRating: 1500,
+      paceRating: 1500,
       pool,
       random,
     });
 
-  it("第一手恒为丰川祥子，即使题库里没有她", () => {
-    const brain = createAiga(seeded(5));
+  it("第一手三成走招牌丰川祥子（即使题库里没有她），其余在开局谱前三里等概率挑", () => {
     expect(poolIds).not.toContain(CEE_RANKED_AIGA_OPENING_ID);
+    const first = (values: number[]): number =>
+      nextCEERankedBotGuess(createAiga(seeded(5)), pool, openings, settings, scripted(values));
+    expect(first([CEE_RANKED_AIGA_SIGNATURE_RATE - 0.01])).toBe(CEE_RANKED_AIGA_OPENING_ID);
+    const top = openings.slice(0, CEE_RANKED_AIGA_OPENING_TOP_K).map((entry) => entry.id);
+    expect(first([CEE_RANKED_AIGA_SIGNATURE_RATE, 0])).toBe(top[0]);
+    expect(first([0.99, 0.99])).toBe(top[top.length - 1]);
+    // 抽样足够多时三种开局都出现，祥子的占比贴近三成。
     const random = seeded(6);
-    expect(nextCEERankedBotGuess(brain, pool, openings, settings, random)).toBe(
-      CEE_RANKED_AIGA_OPENING_ID
+    const counts = new Map<number, number>();
+    for (let index = 0; index < 3000; index += 1) {
+      const id = nextCEERankedBotGuess(createAiga(seeded(index)), pool, openings, settings, random);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    expect([...counts.keys()].sort()).toEqual([CEE_RANKED_AIGA_OPENING_ID, ...top].sort());
+    expect((counts.get(CEE_RANKED_AIGA_OPENING_ID) ?? 0) / 3000).toBeCloseTo(
+      CEE_RANKED_AIGA_SIGNATURE_RATE,
+      1
     );
-    expect(nextCEERankedBotGuess(brain, pool, openings, settings, random)).toBe(
+  });
+
+  it("开局谱里的都猜过了就回到招牌开局", () => {
+    const brain = createAiga(seeded(5));
+    for (const entry of openings) brain.guessed.add(entry.id);
+    expect(nextCEERankedBotGuess(brain, pool, openings, settings, scripted([0.99]))).toBe(
       CEE_RANKED_AIGA_OPENING_ID
     );
   });
@@ -91,8 +113,9 @@ describe("CEE 排位人机爱噶", () => {
     expect(brain.guessed.has(answer.id)).toBe(true);
   });
 
-  it("猜测序列完全不依赖 random", () => {
-    const first = playGuesses(createAiga(seeded(1)), 108, seeded(2));
+  it("开局定下之后，猜测序列完全不依赖 random", () => {
+    // 两条随机源的第一个值都落在招牌概率内：同样以祥子开局，此后的每一手都一样。
+    const first = playGuesses(createAiga(seeded(1)), 108, scripted([0.1, 0.4, 0.7]));
     const second = playGuesses(createAiga(seeded(9)), 108, scripted([0.01, 0.99, 0.5]));
     expect(first.length).toBeGreaterThan(2);
     expect(first).toEqual(second);
@@ -109,7 +132,7 @@ describe("CEE 排位人机爱噶", () => {
         numericReliability: 0,
         evidenceReliability: 0,
       },
-      opponentRating: 1000,
+      paceRating: 1000,
       pool,
       random: seeded(1),
     });
@@ -126,7 +149,7 @@ describe("CEE 排位人机出手规则", () => {
     const brain = createCEERankedBot({
       persona: dango,
       strength: { ...anchorStrength(2300), knowledge: 1 },
-      opponentRating: 2300,
+      paceRating: 2300,
       pool,
       random: seeded(11),
     });
@@ -137,11 +160,78 @@ describe("CEE 排位人机出手规则", () => {
     expect(guesses[guesses.length - 1]).toBe(106);
   });
 
+  it("认识的角色都猜过了就从陌生角色里硬想一个，直到题库猜空都不停手", () => {
+    const brain = createCEERankedBot({
+      persona: dango,
+      strength: { ...anchorStrength(800), knowledge: 0 },
+      paceRating: 800,
+      pool,
+      random: seeded(31),
+    });
+    expect(brain.known.size).toBe(1);
+    const answer = viewOf(poolIds[poolIds.length - 1]);
+    const guesses: number[] = [];
+    const random = seeded(32);
+    while (ceeRankedBotHasMove(brain, pool)) {
+      const id = nextCEERankedBotGuess(brain, pool, [], settings, random);
+      expect(brain.known.has(id)).toBe(true);
+      guesses.push(id);
+      const picked = viewOf(id);
+      recordCEERankedBotFeedback(brain, picked, buildCEEFeedback(picked, answer, settings));
+      if (id === answer.id) break;
+    }
+    expect(new Set(guesses).size).toBe(guesses.length);
+    expect(guesses).toContain(answer.id);
+    expect(guesses.length).toBeGreaterThan(1);
+  });
+
+  it("硬想时优先与已有反馈矛盾最少的陌生角色", () => {
+    const brain = createCEERankedBot({
+      persona: dango,
+      strength: { ...anchorStrength(800), knowledge: 0, dims: CEE_RANKED_ALL_DIMENSIONS },
+      paceRating: 800,
+      pool,
+      random: seeded(33),
+    });
+    const [knownId] = [...brain.known];
+    const answer = viewOf(poolIds.find((id) => id !== knownId) ?? knownId);
+    recordCEERankedBotFeedback(
+      brain,
+      viewOf(knownId),
+      buildCEEFeedback(viewOf(knownId), answer, settings)
+    );
+    const strangers = pool.filter((item) => !brain.guessed.has(item.character.id));
+    const fewest = Math.min(
+      ...strangers.map((item) =>
+        countCEEViolations(item.character, brain.observations, brain.strength.dims, settings)
+      )
+    );
+    const id = nextCEERankedBotGuess(brain, pool, [], settings, seeded(34));
+    expect(countCEEViolations(viewOf(id), brain.observations, brain.strength.dims, settings)).toBe(
+      fewest
+    );
+  });
+
+  it("题库全部猜过才报没有候选", () => {
+    const brain = createCEERankedBot({
+      persona: dango,
+      strength: anchorStrength(800),
+      paceRating: 800,
+      pool,
+      random: seeded(35),
+    });
+    for (const id of poolIds) brain.guessed.add(id);
+    expect(ceeRankedBotHasMove(brain, pool)).toBe(false);
+    expect(() => nextCEERankedBotGuess(brain, pool, [], settings, seeded(36))).toThrow(
+      "人机已没有可猜的角色"
+    );
+  });
+
   it("一致候选不超过 lockThreshold 时直接押权重最高的", () => {
     const locking = createCEERankedBot({
       persona: dango,
       strength: { ...anchorStrength(2300), lockThreshold: 99, mistakeRate: 0 },
-      opponentRating: 2300,
+      paceRating: 2300,
       pool,
       random: seeded(13),
     });
@@ -178,7 +268,7 @@ describe("CEE 排位人机出手规则", () => {
         mistakeRate: 0,
         noise: 0,
       },
-      opponentRating: 2300,
+      paceRating: 2300,
       pool,
       random: seeded(15),
     });
@@ -217,7 +307,7 @@ describe("CEE 排位人机出手规则", () => {
           numericReliability: 1,
           evidenceReliability: 1,
         },
-        opponentRating: 800,
+        paceRating: 800,
         pool,
         random: seeded(16),
       });
@@ -261,7 +351,7 @@ describe("CEE 排位人机开局", () => {
     createCEERankedBot({
       persona,
       strength: { ...strength, knowledge: 1 },
-      opponentRating: 2300,
+      paceRating: 2300,
       pool,
       random: seeded(seed),
     });
@@ -371,7 +461,7 @@ describe("CEE 排位人机不完美推理", () => {
         recallRate: 0,
         openingTopK: 0,
       },
-      opponentRating: 2300,
+      paceRating: 2300,
       pool,
       random: seeded(301),
     });
@@ -460,7 +550,7 @@ describe("CEE 排位人机不完美推理", () => {
         numericReliability: 0,
         evidenceReliability: 0,
       },
-      opponentRating: 1000,
+      paceRating: 1000,
       pool,
       random: seeded(1),
     });

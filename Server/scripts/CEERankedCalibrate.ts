@@ -1,6 +1,9 @@
 /**
- * 排位人机标定：只读本地数据集，把五档答案池、人机对目标曲线的贴合度、锚点对战矩阵与爱噶胜率
- * 打成 Markdown 打到标准输出；`--tune` 模式在 d1 档搜索锚点参数。
+ * 排位人机标定：只读本地数据集，把五档答案池、人机对目标曲线的贴合度、锚点实战分阶梯、人格偏移
+ * 与爱噶曲线打成 Markdown 打到标准输出；`--tune` 模式在 d1 档搜索锚点参数。
+ *
+ * 实战分一律与计分同一尺度（`expectedCEESeriesScore` 对最大偏差人机的口径），在 d3 题库上用
+ * 基线人格互打拟合，以 1400 档为公共参照（改锚点时它保持不动，历史换算靠它对齐）。
  *
  * 用法：`bun run scripts/CEERankedCalibrate.ts [dbPath] [--seed N] [--tune]`
  * 数据集缺省为 `Server/data/bangumi.sqlite`。离线工具，不进 CI：数字只用于人工核对
@@ -11,11 +14,18 @@ import { fileURLToPath } from "node:url";
 import {
   CEE_RANKED_AIGA_OPENING_ID,
   CEE_RANKED_BOT_ANCHORS,
+  CEE_RANKED_PERSONA_OFFSET_LEVELS,
   CEE_RANKED_PERSONAS,
+  ceeRankedBotLevelOfRating,
+  ceeRankedBotRatingOfLevel,
+  ceeRankedBotStrength,
+  ceeRankedPersonaOffset,
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
 } from "../src/domain/CEERankedBotProfile";
+import { CEE_RANKED_AIGA_THINK_CURVE } from "../src/domain/CEERankedBotTiming";
+import { CEE_RANKED_BOT_RD, expectedCEESeriesScore } from "../src/domain/CEERankedRating";
 import {
   CEE_RANKED_ALL_DIMENSIONS,
   evaluateCEEGuess,
@@ -53,28 +63,27 @@ const SERIES_GAMES = 200;
 const TUNE_GAMES = 300;
 /** 实测值与目标的相对误差上限。 */
 const TOLERANCE = 0.15;
-/** 爱噶对同分基线人格的系列赛胜率目标：比普通人机难缠，但四局里输一局。 */
-const AIGA_TARGET_WIN_RATE = 0.75;
-/** Elo style 胜率曲线的斜率与跨度，与 `shared/CEERanked` 的计分口径一致。 */
-const EXPECTED_WIN_K = 1.5;
-const EXPECTED_WIN_SPAN = 400;
+/** 实战分拟合的参照档位：它的实战分取表内值，其余档位相对它拟合。 */
+const REFERENCE_LEVEL = 1400;
+/** 实战分阶梯与人格偏移用的参考题库，与 `CEE_RANKED_KNOWLEDGE_REFERENCE_POOL` 的取值对应。 */
+const REFERENCE_TIER: CEERankedTierId = "d3";
 
 /**
  * 目标曲线（d1 入门档）：猜中率、猜中局的中位步数与中位用时都含加时。
  * 依据线上真人对局分布，1500 分对应真人中位，1100 / 1900 大致对应 p10 / p90。
  */
 const TARGETS: ReadonlyArray<{
-  rating: number;
+  level: number;
   solveRate: number;
   medianAttempts: number;
   medianTimeMs: number;
 }> = [
-  { rating: 800, solveRate: 0.2, medianAttempts: 7, medianTimeMs: 190000 },
-  { rating: 1100, solveRate: 0.35, medianAttempts: 6, medianTimeMs: 140000 },
-  { rating: 1400, solveRate: 0.5, medianAttempts: 4.5, medianTimeMs: 100000 },
-  { rating: 1700, solveRate: 0.65, medianAttempts: 3.5, medianTimeMs: 70000 },
-  { rating: 2000, solveRate: 0.78, medianAttempts: 3, medianTimeMs: 50000 },
-  { rating: 2300, solveRate: 0.88, medianAttempts: 2.5, medianTimeMs: 35000 },
+  { level: 800, solveRate: 0.2, medianAttempts: 7, medianTimeMs: 190000 },
+  { level: 1100, solveRate: 0.35, medianAttempts: 6, medianTimeMs: 140000 },
+  { level: 1400, solveRate: 0.5, medianAttempts: 4.5, medianTimeMs: 100000 },
+  { level: 1700, solveRate: 0.65, medianAttempts: 3.5, medianTimeMs: 70000 },
+  { level: 2000, solveRate: 0.78, medianAttempts: 3, medianTimeMs: 50000 },
+  { level: 2300, solveRate: 0.88, medianAttempts: 2.5, medianTimeMs: 35000 },
 ];
 
 /**
@@ -144,10 +153,22 @@ const BASELINE_PERSONA: CEERankedPersona = {
   idleRate: 0,
   tempo: "steady",
   openingStyle: "ranked",
+  ratingOffsets: [0, 0, 0],
 };
 
-const expectedWinRate = (ratingHigh: number, ratingLow: number): number =>
-  1 / (1 + 10 ** ((ratingLow - ratingHigh) * (EXPECTED_WIN_K / EXPECTED_WIN_SPAN)));
+/** 计分口径下，实战分 high 对 low（按最大偏差人机计）的系列赛期望得分。 */
+const expectedScore = (high: number, low: number): number =>
+  expectedCEESeriesScore(
+    { rating: high, rd: CEE_RANKED_BOT_RD },
+    { rating: low, rd: CEE_RANKED_BOT_RD }
+  );
+/** 期望得分对分差的斜率：分差 d 时 logit(期望得分) = SCORE_SLOPE × d。 */
+const SCORE_SLOPE = Math.log(expectedScore(100, 0) / (1 - expectedScore(100, 0))) / 100;
+/** 实测得分折成分差：夹到 0.5%～99.5%，满分对局不至于折出无穷大。 */
+const gapOfScore = (score: number): number => {
+  const bounded = Math.min(0.995, Math.max(0.005, score));
+  return Math.log(bounded / (1 - bounded)) / SCORE_SLOPE;
+};
 
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const fixed = (value: number, digits: number): string => value.toFixed(digits);
@@ -258,7 +279,7 @@ const runSoloMetrics = (
   pool: TierPool,
   persona: CEERankedPersona,
   strength: CEERankedBotStrength,
-  opponentRating: number,
+  paceRating: number,
   random: () => number,
   games: number
 ): SoloMetrics => {
@@ -275,8 +296,8 @@ const runSoloMetrics = (
       timing: timingOf(pool.settings),
       random,
       bots: [
-        { persona, strength, opponentRating },
-        { persona: shell, strength: shellStrength(strength), opponentRating: 1200 },
+        { persona, strength, paceRating },
+        { persona: shell, strength: shellStrength(strength), paceRating: 1200 },
       ],
     });
     if (result.winner !== 0) continue;
@@ -288,29 +309,6 @@ const runSoloMetrics = (
     medianAttempts: median(attempts),
     medianTimeMs: median(times),
   };
-};
-
-const runSeriesWinRate = (
-  pool: TierPool,
-  left: CEERankedSimInput["bots"][number],
-  right: CEERankedSimInput["bots"][number],
-  random: () => number
-): number => {
-  let points = 0;
-  for (let match = 0; match < SERIES_GAMES; match += 1) {
-    const series = simulateCEERankedSeries({
-      pool: pool.candidates,
-      openings: pool.openings,
-      settings: pool.settings,
-      extraViews: pool.extraViews,
-      timing: timingOf(pool.settings),
-      random,
-      bots: [left, right],
-    });
-    // 只有触到加赛上限仍同分才是平局，按 0.5 计，与积分口径一致。
-    points += series.winner === null ? 0.5 : series.winner === 0 ? 1 : 0;
-  }
-  return points / SERIES_GAMES;
 };
 
 /** 解析 `[dbPath] [--seed N] [--tune]`：位置参数与 `--seed` 的取值都不当作数据集路径。 */
@@ -424,18 +422,18 @@ const curveSection = (pools: TierPool[], random: () => number): string[] => {
     const pool = tierPoolOf(pools, tierId);
     if (!pool) continue;
     for (const target of TARGETS) {
-      const anchor = CEE_RANKED_BOT_ANCHORS.find((item) => item.rating === target.rating);
+      const anchor = CEE_RANKED_BOT_ANCHORS.find((item) => item.level === target.level);
       if (!anchor) continue;
       const metrics = runSoloMetrics(
         pool,
         BASELINE_PERSONA,
         anchor.strength,
-        target.rating,
+        anchor.rating,
         random,
         SOLO_GAMES
       );
       lines.push(
-        `| ${tierId} | ${target.rating} | ${percent(target.solveRate)} | ${percent(
+        `| ${tierId} | ${target.level} | ${percent(target.solveRate)} | ${percent(
           metrics.solveRate
         )} | ${fixed(target.medianAttempts, 1)} | ${fixed(metrics.medianAttempts, 1)} | ${seconds(
           target.medianTimeMs
@@ -446,91 +444,216 @@ const curveSection = (pools: TierPool[], random: () => number): string[] => {
     }
   }
   lines.push("");
-  lines.push("d3、d5 用同一组目标只作对照：同一锚点在更难的档位应当更难。");
+  lines.push("d3、d5 用同一组目标只作对照：知识面按题库大小折算，同一锚点在更大的题库里应当更难。");
   return lines;
 };
 
-const matrixSection = (pools: TierPool[], random: () => number): string[] => {
+/** 拟合用的一组对局结果：高下标一方对低下标一方的系列赛得分。 */
+interface PairResult {
+  high: number;
+  low: number;
+  score: number;
+  games: number;
+}
+
+/** 对第 index 档做一步牛顿更新：只看它参与的对局，其余档位暂时当作已知。 */
+const newtonStep = (ratings: number[], index: number, results: readonly PairResult[]): void => {
+  let gradient = 0;
+  let curvature = 0;
+  for (const { high, low, score, games } of results) {
+    if (high !== index && low !== index) continue;
+    const expected = 1 / (1 + Math.exp(-SCORE_SLOPE * (ratings[high] - ratings[low])));
+    gradient += (high === index ? 1 : -1) * games * (score - expected);
+    curvature += games * SCORE_SLOPE * expected * (1 - expected);
+  }
+  if (curvature > 0) ratings[index] += gradient / curvature;
+};
+
+/**
+ * 按计分口径最大似然拟合各档实战分：逐坐标牛顿迭代，参照档位固定为表内值。
+ * 只有相邻与隔一档的对局，信息足够把整条阶梯串起来。
+ */
+const fitLadder = (count: number, results: readonly PairResult[], fixed: number, value: number) => {
+  const ratings = new Array<number>(count).fill(0);
+  for (let round = 0; round < 500; round += 1) {
+    for (let index = 0; index < count; index += 1)
+      if (index !== fixed) newtonStep(ratings, index, results);
+  }
+  const shift = value - ratings[fixed];
+  return ratings.map((rating) => rating + shift);
+};
+
+/** 某档位的基线人格：每场系列赛按档位重新生成一份强度，离散字段的偏移照线上口径抽。 */
+const baselineAt = (level: number, random: () => number): CEERankedSimInput["bots"][number] => ({
+  persona: BASELINE_PERSONA,
+  strength: ceeRankedBotStrength(level, random),
+  paceRating: ceeRankedBotRatingOfLevel(level),
+});
+
+const runSeriesScore = (
+  pool: TierPool,
+  left: () => CEERankedSimInput["bots"][number],
+  right: () => CEERankedSimInput["bots"][number],
+  random: () => number,
+  games: number
+): number => {
+  let points = 0;
+  for (let match = 0; match < games; match += 1) {
+    const series = simulateCEERankedSeries({
+      pool: pool.candidates,
+      openings: pool.openings,
+      settings: pool.settings,
+      extraViews: pool.extraViews,
+      timing: timingOf(pool.settings),
+      random,
+      bots: [left(), right()],
+    });
+    // 只有触到加赛上限仍同分才是平局，按 0.5 计，与积分口径一致。
+    points += series.winner === null ? 0.5 : series.winner === 0 ? 1 : 0;
+  }
+  return points / games;
+};
+
+const ladderSection = (pools: TierPool[], random: () => number): string[] => {
   const lines: string[] = [
     "",
-    `## 三、锚点对战矩阵（d3，相邻锚点各 ${SERIES_GAMES} 场系列赛，双方都用阿稳）`,
+    `## 三、实战分阶梯（${REFERENCE_TIER}，基线人格相邻与隔一档各 ${SERIES_GAMES} 场系列赛，${REFERENCE_LEVEL} 档为参照）`,
     "",
-    "| 高分 | 低分 | 实际胜率 | 期望胜率 | 差值 |",
-    "| --- | --- | --- | --- | --- |",
   ];
-  const d3 = tierPoolOf(pools, "d3");
-  if (!d3) return lines;
-  const awen = personaOf("awen");
-  for (let index = 1; index < CEE_RANKED_BOT_ANCHORS.length; index += 1) {
-    const high = CEE_RANKED_BOT_ANCHORS[index];
-    const low = CEE_RANKED_BOT_ANCHORS[index - 1];
-    const actual = runSeriesWinRate(
-      d3,
-      { persona: awen, strength: high.strength, opponentRating: low.rating },
-      { persona: awen, strength: low.strength, opponentRating: high.rating },
-      random
-    );
-    const expected = expectedWinRate(high.rating, low.rating);
+  const pool = tierPoolOf(pools, REFERENCE_TIER);
+  const fixedIndex = CEE_RANKED_BOT_ANCHORS.findIndex((anchor) => anchor.level === REFERENCE_LEVEL);
+  if (!pool || fixedIndex < 0) return lines;
+  const results: PairResult[] = [];
+  const pairLines: string[] = [];
+  for (let low = 0; low < CEE_RANKED_BOT_ANCHORS.length; low += 1) {
+    for (const step of [1, 2]) {
+      const high = low + step;
+      if (high >= CEE_RANKED_BOT_ANCHORS.length) continue;
+      const highAnchor = CEE_RANKED_BOT_ANCHORS[high];
+      const lowAnchor = CEE_RANKED_BOT_ANCHORS[low];
+      const score = runSeriesScore(
+        pool,
+        () => baselineAt(highAnchor.level, random),
+        () => baselineAt(lowAnchor.level, random),
+        random,
+        SERIES_GAMES
+      );
+      results.push({ high, low, score, games: SERIES_GAMES });
+      pairLines.push(
+        `| ${highAnchor.level} | ${lowAnchor.level} | ${percent(score)} | ${percent(
+          expectedScore(highAnchor.rating, lowAnchor.rating)
+        )} |`
+      );
+    }
+  }
+  const fitted = fitLadder(
+    CEE_RANKED_BOT_ANCHORS.length,
+    results,
+    fixedIndex,
+    CEE_RANKED_BOT_ANCHORS[fixedIndex].rating
+  );
+  lines.push("| 档位 | 表内实战分 | 拟合实战分 | 差 |", "| --- | --- | --- | --- |");
+  for (const [index, anchor] of CEE_RANKED_BOT_ANCHORS.entries())
     lines.push(
-      `| ${high.rating} | ${low.rating} | ${percent(actual)} | ${percent(expected)} | ${fixed(
-        actual - expected,
-        3
+      `| ${anchor.level} | ${anchor.rating} | ${fixed(fitted[index], 0)} | ${fixed(
+        fitted[index] - anchor.rating,
+        0
       )} |`
     );
+  lines.push(
+    "",
+    "| 高档 | 低档 | 实际得分 | 按表内实战分的期望 |",
+    "| --- | --- | --- | --- |",
+    ...pairLines,
+    "",
+    "差值超出抽样误差（每对约 ±25 分）时，把拟合值写回锚点的 `rating`；参照档位保持不动。"
+  );
+  return lines;
+};
+
+const personaSection = (pools: TierPool[], random: () => number): string[] => {
+  const games = SERIES_GAMES * 2;
+  const lines: string[] = [
+    "",
+    `## 四、人格偏移（${REFERENCE_TIER}，各人格对同档基线人格各 ${games} 场系列赛）`,
+    "",
+    `| 人格 | ${CEE_RANKED_PERSONA_OFFSET_LEVELS.map((level) => `${level} 实测 / 表内`).join(" | ")} |`,
+    `| --- | ${CEE_RANKED_PERSONA_OFFSET_LEVELS.map(() => "---").join(" | ")} |`,
+  ];
+  const pool = tierPoolOf(pools, REFERENCE_TIER);
+  if (!pool) return lines;
+  for (const persona of CEE_RANKED_PERSONAS) {
+    if (persona.id === "aiga") continue;
+    const cells = CEE_RANKED_PERSONA_OFFSET_LEVELS.map((level) => {
+      const score = runSeriesScore(
+        pool,
+        () => ({ ...baselineAt(level, random), persona }),
+        () => baselineAt(level, random),
+        random,
+        games
+      );
+      return `${fixed(gapOfScore(score), 0)} / ${fixed(ceeRankedPersonaOffset(persona, level), 0)}`;
+    });
+    lines.push(`| ${persona.name} | ${cells.join(" | ")} |`);
   }
+  lines.push("", "实测与表内差得多时，把实测值写回人格的 `ratingOffsets`。");
   return lines;
 };
 
 const aigaSection = (pools: TierPool[], random: () => number): string[] => {
   const lines: string[] = [
     "",
-    `## 四、爱噶对齐（爱噶 opponentRating = R，对 R 锚点强度的基线人格，各 ${SERIES_GAMES} 场系列赛；d1 目标 ${percent(
-      AIGA_TARGET_WIN_RATE
-    )}）`,
+    `## 五、爱噶曲线（${REFERENCE_TIER}，爱噶按曲线上的实战分出手，对同实战分的基线人格各 ${SERIES_GAMES} 场系列赛；期望 50%）`,
     "",
-    "| 档 | R | 爱噶胜率 |",
-    "| --- | --- | --- |",
+    "| 曲线实战分 | 中位间隔 | 对手档位 | 爱噶得分 | 折算实战分 |",
+    "| --- | --- | --- | --- | --- |",
   ];
+  const pool = tierPoolOf(pools, REFERENCE_TIER);
+  if (!pool) return lines;
   const aiga = personaOf("aiga");
-  for (const tierId of ["d1", "d3", "d5"] as CEERankedTierId[]) {
-    const pool = tierPoolOf(pools, tierId);
-    if (!pool) continue;
-    for (const anchor of CEE_RANKED_BOT_ANCHORS) {
-      // 爱噶不看强度表，两边传同一份锚点强度即可；她的速度只跟 opponentRating 走。
-      const winRate = runSeriesWinRate(
-        pool,
-        { persona: aiga, strength: anchor.strength, opponentRating: anchor.rating },
-        { persona: BASELINE_PERSONA, strength: anchor.strength, opponentRating: anchor.rating },
-        random
-      );
-      lines.push(`| ${tierId} | ${anchor.rating} | ${percent(winRate)} |`);
-    }
+  for (const point of CEE_RANKED_AIGA_THINK_CURVE) {
+    // 对手夹在普通人机能达到的范围里，折算时按对手的实际实战分加上分差。
+    const level = ceeRankedBotLevelOfRating(point.rating);
+    const opponentRating = ceeRankedBotRatingOfLevel(level);
+    const score = runSeriesScore(
+      pool,
+      () => ({ ...baselineAt(level, random), persona: aiga, paceRating: point.rating }),
+      () => baselineAt(level, random),
+      random,
+      SERIES_GAMES
+    );
+    lines.push(
+      `| ${point.rating} | ${seconds(point.medianMs)} | ${fixed(level, 0)} | ${percent(score)} | ${fixed(
+        opponentRating + gapOfScore(score),
+        0
+      )} |`
+    );
   }
-  lines.push("");
   lines.push(
-    "她比同分人机强出的部分按 `CEE_RANKED_BOT_BIAS_PRIOR.aiga` 记在计分上；上线后由自动校准按真人战绩修正。"
+    "",
+    "折算值与曲线差得多时，调整该点的中位间隔。她比玩家高出的部分见 `CEE_RANKED_AIGA_EDGE`，计分按她的实战分算。"
   );
   return lines;
 };
 
-/** 爱噶的用时：她的间隔只跟对手分数走，这里列出各分数下的猜中率与中位用时供核对。 */
+/** 爱噶的用时：她的间隔只跟自己的实战分走，这里列出各点的猜中率与中位用时供核对。 */
 const aigaTimingSection = (pools: TierPool[], random: () => number): string[] => {
   const lines: string[] = [
     "",
-    `## 五、爱噶用时对照（d1，基线人格当空壳陪跑她，每格 ${SOLO_GAMES} 局）`,
+    `## 六、爱噶用时对照（d1，基线人格当空壳陪跑她，每格 ${SOLO_GAMES} 局）`,
     "",
-    "| 对手分数 | 她的中位用时 | 她的猜中率 |",
+    "| 她的实战分 | 她的中位用时 | 她的猜中率 |",
     "| --- | --- | --- |",
   ];
   const d1 = tierPoolOf(pools, "d1");
   if (!d1) return lines;
   const aiga = personaOf("aiga");
-  for (const target of TARGETS) {
-    // 爱噶自己不看强度表，陪跑空壳用 d1 锚点的强度即可；她的间隔只跟对手分数走。
+  for (const point of CEE_RANKED_AIGA_THINK_CURVE) {
+    // 爱噶自己不看强度表，陪跑空壳用最低档的强度即可。
     const strength = CEE_RANKED_BOT_ANCHORS[0].strength;
-    const metrics = runSoloMetrics(d1, aiga, strength, target.rating, random, SOLO_GAMES);
+    const metrics = runSoloMetrics(d1, aiga, strength, point.rating, random, SOLO_GAMES);
     lines.push(
-      `| ${target.rating} | ${seconds(metrics.medianTimeMs)} | ${percent(metrics.solveRate)} |`
+      `| ${point.rating} | ${seconds(metrics.medianTimeMs)} | ${percent(metrics.solveRate)} |`
     );
   }
   return lines;
@@ -547,7 +670,7 @@ interface TuneChoice {
 }
 
 interface TuneResult {
-  rating: number;
+  level: number;
   choice: TuneChoice;
   strength: CEERankedBotStrength;
   metrics: SoloMetrics;
@@ -604,7 +727,7 @@ const tuneAnchor = (
       pool,
       BASELINE_PERSONA,
       strengthOf(anchor.strength, choice),
-      target.rating,
+      anchor.rating,
       createRandom(seed),
       TUNE_GAMES
     );
@@ -630,7 +753,7 @@ const tuneAnchor = (
   for (const think of range(floor.think, THINK_LEVELS.length)) consider({ ...choice, think });
   searchKnowledge();
   return {
-    rating: anchor.rating,
+    level: anchor.level,
     choice,
     strength: strengthOf(anchor.strength, choice),
     metrics: best.metrics,
@@ -652,7 +775,7 @@ const tuneSection = (pool: TierPool, seed: number): string[] => {
     results.push(result);
     const { strength, metrics } = result;
     lines.push(
-      `| ${result.rating} | ${fixed(strength.knowledge, 2)} | ${fixed(strength.recallRate, 2)} | L${
+      `| ${result.level} | ${fixed(strength.knowledge, 2)} | ${fixed(strength.recallRate, 2)} | L${
         result.choice.reasoning
       } | ${strength.firstGuessMedianMs} | ${strength.thinkMedianMs} | ${percent(
         metrics.solveRate
@@ -676,7 +799,7 @@ const tuneSection = (pool: TierPool, seed: number): string[] => {
     const target = TARGETS[index];
     const { strength, metrics } = result;
     lines.push(
-      `// ${result.rating}：目标 ${percent(target.solveRate)} / ${fixed(
+      `// ${result.level}：目标 ${percent(target.solveRate)} / ${fixed(
         target.medianAttempts,
         1
       )} 步 / ${seconds(target.medianTimeMs)}；实测 ${percent(metrics.solveRate)} / ${fixed(
@@ -727,7 +850,8 @@ const main = async (): Promise<void> => {
       ...header,
       ...overviewSection(pools),
       ...curveSection(pools, random),
-      ...matrixSection(pools, random),
+      ...ladderSection(pools, random),
+      ...personaSection(pools, random),
       ...aigaSection(pools, random),
       ...aigaTimingSection(pools, random),
     ].join("\n")
