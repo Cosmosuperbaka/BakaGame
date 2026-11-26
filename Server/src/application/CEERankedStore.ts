@@ -1,6 +1,6 @@
 import { CEE_RANKED_RULESET } from "../shared/CEERanked";
 import type { CEEGuessClientType } from "./CEEAntiCheatSignals";
-import type { CEERankedBotSample } from "./CEERankedHandicap";
+import { ceeRankedHandicapAccepts, type CEERankedBotSample } from "./CEERankedHandicap";
 
 /**
  * 排位审计的存储端口：一场系列赛（三局两胜）结算后的全部流水。
@@ -281,7 +281,8 @@ export class InMemoryCEERankedStore implements CEERankedStore {
       if (!item.series.bot || !item.series.rated || item.series.ruleset !== CEE_RANKED_RULESET)
         continue;
       const sample = ceeRankedBotSampleOf(item.players);
-      if (!sample) continue;
+      // 与 MySQL 适配同口径：校准窗口不收的样本先筛掉，再计入条数上限。
+      if (!sample || !ceeRankedHandicapAccepts(sample)) continue;
       rows.push(sample);
       if (rows.length === capped) break;
     }
