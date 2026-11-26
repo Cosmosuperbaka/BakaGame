@@ -6,6 +6,7 @@ import {
   CEE_RANKED_BOT_RATING_RANGE,
   CEE_RANKED_KNOWLEDGE_REFERENCE_POOL,
   CEE_RANKED_PERSONA_OFFSET_LEVELS,
+  CEE_RANKED_PERSONAS,
   ceeRankedBotLevelOfRating,
   ceeRankedBotRatingOfLevel,
   ceeRankedKnownCount,
@@ -70,15 +71,33 @@ describe("排位人机知识量随题库缩放", () => {
 describe("排位人格偏移", () => {
   it("在偏移档位之间线性插值，两端之外取端点值", () => {
     const awen = personaOf("awen");
-    const [low, mid, high] = CEE_RANKED_PERSONA_OFFSET_LEVELS;
-    expect(ceeRankedPersonaOffset(awen, low)).toBe(awen.ratingOffsets[0]);
-    expect(ceeRankedPersonaOffset(awen, high)).toBe(awen.ratingOffsets[2]);
-    expect(ceeRankedPersonaOffset(awen, (low + mid) / 2)).toBeCloseTo(
-      (awen.ratingOffsets[0] + awen.ratingOffsets[1]) / 2,
+    const levels = CEE_RANKED_PERSONA_OFFSET_LEVELS;
+    const offsets = awen.ratingOffsets;
+    expect(offsets.length).toBe(levels.length);
+    levels.forEach((level, index) => {
+      expect(ceeRankedPersonaOffset(awen, level)).toBe(offsets[index]);
+    });
+    expect(ceeRankedPersonaOffset(awen, (levels[0] + levels[1]) / 2)).toBeCloseTo(
+      (offsets[0] + offsets[1]) / 2,
       9
     );
-    expect(ceeRankedPersonaOffset(awen, low - 600)).toBe(awen.ratingOffsets[0]);
-    expect(ceeRankedPersonaOffset(awen, high + 600)).toBe(awen.ratingOffsets[2]);
+    expect(ceeRankedPersonaOffset(awen, levels[0] - 600)).toBe(offsets[0]);
+    expect(ceeRankedPersonaOffset(awen, levels[levels.length - 1] + 600)).toBe(
+      offsets[offsets.length - 1]
+    );
+  });
+
+  it("每个人格的强度分随档位严格递增：开局才能按想要的分数反查唯一的档位", () => {
+    const first = CEE_RANKED_BOT_ANCHORS[0].level;
+    const last = CEE_RANKED_BOT_ANCHORS[CEE_RANKED_BOT_ANCHORS.length - 1].level;
+    for (const persona of CEE_RANKED_PERSONAS) {
+      let previous = Number.NEGATIVE_INFINITY;
+      for (let level = first; level <= last; level += 25) {
+        const strength = ceeRankedBotRatingOfLevel(level) + ceeRankedPersonaOffset(persona, level);
+        expect(strength).toBeGreaterThan(previous);
+        previous = strength;
+      }
+    }
   });
 
   it("爱噶不走强度表，偏移恒为 0", () => {
@@ -108,7 +127,7 @@ describe("排位人机开局定强度", () => {
   it("普通人格在范围内时：强度分 = 档位实战分 + 人格偏移，计分分 = 标称分", () => {
     for (const id of ["dango", "awen", "kaoju", "mangmang", "yemao"] as const) {
       const persona = personaOf(id);
-      for (const nominal of [1300, 1600, 1900]) {
+      for (const nominal of [1300, 1600, 1900, 2600, 3500, 4300]) {
         const plan = planCEERankedBot({ persona, nominal, bias: 0 });
         expect(plan.strengthRating).toBeCloseTo(
           ceeRankedBotRatingOfLevel(plan.level) + ceeRankedPersonaOffset(persona, plan.level),
@@ -130,8 +149,8 @@ describe("排位人机开局定强度", () => {
 
   it("想要的分数超出范围时强度分与计分分停在顶（底），不再跟着标称分走", () => {
     const persona = personaOf("dango");
-    const top = planCEERankedBot({ persona, nominal: 3200, bias: 0 });
-    const higher = planCEERankedBot({ persona, nominal: 3600, bias: 0 });
+    const top = planCEERankedBot({ persona, nominal: 8000, bias: 0 });
+    const higher = planCEERankedBot({ persona, nominal: 9000, bias: 0 });
     expect(top).toEqual(higher);
     expect(top.level).toBe(CEE_RANKED_BOT_ANCHORS[CEE_RANKED_BOT_ANCHORS.length - 1].level);
     expect(top.targetRating).toBeLessThan(CEE_RANKED_BOT_RATING_RANGE.max + 100);
@@ -145,7 +164,7 @@ describe("排位人机开局定强度", () => {
     const plan = planCEERankedBot({ persona: aiga, nominal: 1690, bias: -40 });
     expect(plan.strengthRating).toBe(1730);
     expect(plan.targetRating).toBe(1690);
-    const capped = planCEERankedBot({ persona: aiga, nominal: 3000, bias: 0 });
+    const capped = planCEERankedBot({ persona: aiga, nominal: 9000, bias: 0 });
     expect(capped.strengthRating).toBe(CEE_RANKED_AIGA_RATING_RANGE.max);
     expect(capped.targetRating).toBe(CEE_RANKED_AIGA_RATING_RANGE.max);
     const floor = planCEERankedBot({ persona: aiga, nominal: 600, bias: 0 });

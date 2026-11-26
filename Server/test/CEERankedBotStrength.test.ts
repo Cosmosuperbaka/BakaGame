@@ -118,15 +118,18 @@ describe("CEE 排位人机锚点表单调", () => {
   const strengthOf = (index: number): CEERankedBotStrength =>
     CEE_RANKED_BOT_ANCHORS[index].strength;
 
-  it("分数越高知道得越多、回忆更勤、记得更多、两条可靠度更高", () => {
+  it("分数越高知道得越多、回忆更勤、记得更多、两条可靠度更高（到 1 为止）", () => {
     for (let index = 1; index < CEE_RANKED_BOT_ANCHORS.length; index += 1) {
       const previous = strengthOf(index - 1);
       const next = strengthOf(index);
       expect(next.knowledge).toBeGreaterThanOrEqual(previous.knowledge);
       expect(next.recallRate).toBeGreaterThanOrEqual(previous.recallRate);
       expect(next.memory).toBeGreaterThanOrEqual(previous.memory);
-      expect(next.numericReliability).toBeGreaterThan(previous.numericReliability);
-      expect(next.evidenceReliability).toBeGreaterThan(previous.evidenceReliability);
+      // 可靠度一路严格升到 1，到顶以后保持 1：顶端几档只靠出手速度继续变强。
+      for (const key of ["numericReliability", "evidenceReliability"] as const) {
+        if (previous[key] < 1) expect(next[key]).toBeGreaterThan(previous[key]);
+        else expect(next[key]).toBe(1);
+      }
     }
   });
 
