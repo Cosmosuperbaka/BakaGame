@@ -44,6 +44,9 @@ export interface CEERankedBotStrength {
  * （按 `expectedCEESeriesScore` 对最大偏差人机的口径，由标定脚本在参考题库上互打拟合）。
  * 开局按想要的实战分反查档位，计分按档位换回的实战分算，两者不再混用：档位分差与实战分差
  * 并不成比例，混用会让高分段人机名不副实。
+ *
+ * 4100 档起推理基本完美（认识最大题库的全部角色、不犯错、线索几乎全用上），再往上只靠出手越来越快
+ * 变强；表的顶端远高于任何真人能到的分数，高分玩家碰不到人机的上限。
  */
 export const CEE_RANKED_BOT_ANCHORS: ReadonlyArray<{
   level: number;
@@ -218,6 +221,195 @@ export const CEE_RANKED_BOT_ANCHORS: ReadonlyArray<{
       firstGuessMedianMs: 3000,
     },
   },
+  {
+    level: 3200,
+    rating: 2491,
+    strength: {
+      knowledge: 0.75,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0.002,
+      lockThreshold: 3,
+      thinkMedianMs: 4200,
+      thinkSigma: 0.55,
+      openingTopK: 1,
+      recallRate: 0.35,
+      memory: 16,
+      numericReliability: 0.99,
+      evidenceReliability: 0.95,
+      firstGuessMedianMs: 2600,
+    },
+  },
+  {
+    level: 3500,
+    rating: 2727,
+    strength: {
+      knowledge: 0.95,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0.001,
+      lockThreshold: 3,
+      thinkMedianMs: 3500,
+      thinkSigma: 0.5,
+      openingTopK: 1,
+      recallRate: 0.45,
+      memory: 20,
+      numericReliability: 0.995,
+      evidenceReliability: 0.98,
+      firstGuessMedianMs: 2250,
+    },
+  },
+  {
+    level: 3800,
+    rating: 3080,
+    strength: {
+      knowledge: 1.15,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0.0005,
+      lockThreshold: 3,
+      thinkMedianMs: 2900,
+      thinkSigma: 0.47,
+      openingTopK: 1,
+      recallRate: 0.6,
+      memory: 24,
+      numericReliability: 0.998,
+      evidenceReliability: 0.99,
+      firstGuessMedianMs: 1950,
+    },
+  },
+  {
+    level: 4100,
+    rating: 3396,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 2400,
+      thinkSigma: 0.45,
+      openingTopK: 1,
+      recallRate: 0.75,
+      memory: 30,
+      numericReliability: 0.999,
+      evidenceReliability: 0.995,
+      firstGuessMedianMs: 1700,
+    },
+  },
+  {
+    level: 4400,
+    rating: 3773,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 2000,
+      thinkSigma: 0.42,
+      openingTopK: 1,
+      recallRate: 0.85,
+      memory: 30,
+      numericReliability: 0.9995,
+      evidenceReliability: 0.998,
+      firstGuessMedianMs: 1450,
+    },
+  },
+  {
+    level: 4700,
+    rating: 4146,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 1650,
+      thinkSigma: 0.4,
+      openingTopK: 1,
+      recallRate: 0.95,
+      memory: 30,
+      numericReliability: 0.9998,
+      evidenceReliability: 0.999,
+      firstGuessMedianMs: 1250,
+    },
+  },
+  {
+    level: 5000,
+    rating: 4565,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 1350,
+      thinkSigma: 0.37,
+      openingTopK: 1,
+      recallRate: 1,
+      memory: 30,
+      numericReliability: 1,
+      evidenceReliability: 1,
+      firstGuessMedianMs: 1050,
+    },
+  },
+  {
+    level: 5300,
+    rating: 4970,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 1100,
+      thinkSigma: 0.35,
+      openingTopK: 1,
+      recallRate: 1,
+      memory: 30,
+      numericReliability: 1,
+      evidenceReliability: 1,
+      firstGuessMedianMs: 900,
+    },
+  },
+  {
+    level: 5600,
+    rating: 5343,
+    strength: {
+      knowledge: 1.4,
+      dims: [...CEE_RANKED_ALL_DIMENSIONS],
+      strategy: "optimal",
+      noise: 0,
+      sampleSize: 0,
+      mistakeRate: 0,
+      lockThreshold: 3,
+      thinkMedianMs: 900,
+      thinkSigma: 0.33,
+      openingTopK: 1,
+      recallRate: 1,
+      memory: 30,
+      numericReliability: 1,
+      evidenceReliability: 1,
+      firstGuessMedianMs: 750,
+    },
+  },
 ];
 
 const FIRST_ANCHOR = CEE_RANKED_BOT_ANCHORS[0];
@@ -345,7 +537,7 @@ export interface CEERankedPersona {
 }
 
 /** 人格偏移的取样档位：`ratingOffsets` 与它一一对应，之外夹到两端。 */
-export const CEE_RANKED_PERSONA_OFFSET_LEVELS: readonly number[] = [1400, 2000, 2600];
+export const CEE_RANKED_PERSONA_OFFSET_LEVELS: readonly number[] = [1400, 2000, 2600, 3800, 5000];
 
 /** 某人格在某档位下比基线人格强多少实战分。 */
 export function ceeRankedPersonaOffset(persona: CEERankedPersona, level: number): number {
@@ -370,7 +562,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0,
     tempo: "steady",
     openingStyle: "ranked",
-    ratingOffsets: [0, 0, 0],
+    ratingOffsets: [0, 0, 0, 0, 0],
   },
   {
     id: "dango",
@@ -382,7 +574,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0.05,
     tempo: "steady",
     openingStyle: "popular",
-    ratingOffsets: [34, 24, 17],
+    ratingOffsets: [34, 24, 17, 98, 74],
   },
   {
     id: "awen",
@@ -394,7 +586,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0.03,
     tempo: "steady",
     openingStyle: "ranked",
-    ratingOffsets: [-60, -101, -107],
+    ratingOffsets: [-60, -101, -107, -183, -262],
   },
   {
     id: "kaoju",
@@ -406,7 +598,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0.06,
     tempo: "steady",
     openingStyle: "ranked",
-    ratingOffsets: [-16, -28, -70],
+    ratingOffsets: [-16, -28, -70, -79, -149],
   },
   {
     id: "mangmang",
@@ -418,7 +610,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0.04,
     tempo: "erratic",
     openingStyle: "popular",
-    ratingOffsets: [-34, -44, -56],
+    ratingOffsets: [-34, -44, -56, -76, -76],
   },
   {
     id: "yemao",
@@ -430,7 +622,7 @@ export const CEE_RANKED_PERSONAS: readonly CEERankedPersona[] = [
     idleRate: 0.1,
     tempo: "warmup",
     openingStyle: "ranked",
-    ratingOffsets: [-72, -68, -190],
+    ratingOffsets: [-72, -68, -190, -562, -653],
   },
 ];
 

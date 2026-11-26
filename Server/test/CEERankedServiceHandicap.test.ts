@@ -8,7 +8,11 @@ import {
 } from "../src/application/CEERankedHandicap";
 import { InMemoryCEERankedStore } from "../src/application/CEERankedStore";
 import { AppError } from "../src/domain/Errors";
-import { CEE_RANKED_PERSONAS, type CEERankedPersona } from "../src/domain/CEERankedBotProfile";
+import {
+  CEE_RANKED_BOT_ANCHORS,
+  CEE_RANKED_PERSONAS,
+  type CEERankedPersona,
+} from "../src/domain/CEERankedBotProfile";
 import { CEE_RANKED_AIGA_EDGE, planCEERankedBot } from "../src/domain/CEERankedBotPlan";
 import { createCEERating, rateCEEBotSeries } from "../src/domain/CEERankedRating";
 import type { CEERankedSeriesPlayerRecord } from "../src/application/CEERankedStore";
@@ -138,25 +142,28 @@ describe("排位人机校准接线", () => {
   });
 
   test("碰顶：玩家分数高出人机能达到的上限时，计分分停在顶档实力上，不再跟着玩家分数走", async () => {
+    // 顶档远高于真人能到的分数，这里用一个虚构的极端分数把它顶出来。
+    const extreme = 8000;
     const harness = rankedHarness({ store: new SampleStore([]), randomValue: 0.5 });
-    harness.seedRated("u-甲", { rating: 3200, rd: 50 });
+    harness.seedRated("u-甲", { rating: extreme, rd: 50 });
     await flushSeed();
     const client = harness.connect("甲");
 
     await startBotSeries(harness, client);
     const audit = await exitAndAudit(harness, client);
     const bot = audit.players[1];
-    const plan = planCEERankedBot({ persona: personaOf(bot), nominal: 3200, bias: 0 });
+    const plan = planCEERankedBot({ persona: personaOf(bot), nominal: extreme, bias: 0 });
     expect(bot?.botTargetRating).toBe(plan.targetRating);
-    expect(plan.targetRating).toBeLessThan(2400);
-    // 输给碰顶的人机按它的真实实力结算：比按 3200 结算掉得多得多。
-    const prior = { rating: 3200, rd: 50, lastPlayedAt: null };
+    expect(plan.level).toBe(CEE_RANKED_BOT_ANCHORS[CEE_RANKED_BOT_ANCHORS.length - 1].level);
+    expect(plan.targetRating).toBeLessThan(extreme - 1000);
+    // 输给碰顶的人机按它的真实实力结算：比按玩家自己的分数结算掉得多得多。
+    const prior = { rating: extreme, rd: 50, lastPlayedAt: null };
     const capped = rateCEEBotSeries(prior, plan.targetRating, 0, audit.series.endedAt);
-    const naive = rateCEEBotSeries(prior, 3200, 0, audit.series.endedAt);
+    const naive = rateCEEBotSeries(prior, extreme, 0, audit.series.endedAt);
     const rating = await harness.store.getRating(client.userId);
     if (!rating) throw new Error("结算后读不到账号 甲 的评级");
     expect(rating.rating).toBeCloseTo(capped.rating, 6);
-    expect(3200 - capped.rating).toBeGreaterThan(2 * (3200 - naive.rating));
+    expect(extreme - capped.rating).toBeGreaterThan(2 * (extreme - naive.rating));
   });
 
   test("普通人格样本不足 30 条时不加偏差：强度分与计分分相同", async () => {

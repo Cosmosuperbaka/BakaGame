@@ -25,7 +25,7 @@ describe("CEE 排位人机思考时长", () => {
   ): CEERankedBotBrain =>
     createCEERankedBot({ persona, strength, paceRating: 1500, pool, random: seeded(21) });
 
-  it("结果夹在 2500 到 90000 毫秒之间", () => {
+  it("结果不超过 90000 毫秒；下限常规是 2500，快档按中位数七成放低，最低 600", () => {
     const awen = personaOf("awen");
     const stepped = (brain: CEERankedBotBrain): CEERankedBotBrain => {
       recordCEERankedBotFeedback(
@@ -42,7 +42,15 @@ describe("CEE 排位人机思考时长", () => {
     const tiny = stepped(
       brainWith({ ...anchorStrength(2300), thinkMedianMs: 10, thinkSigma: 0 }, awen)
     );
-    expect(ceeRankedBotThinkMs(tiny, 10, scripted(FLAT_Z))).toBe(2500);
+    expect(ceeRankedBotThinkMs(tiny, 10, scripted(FLAT_Z))).toBe(600);
+    // z ≈ -7.43 的极端抽样：常规档位落到 2500，快档落到它自己中位数的七成。
+    const low = [1e-12, 0.5, 0.999];
+    const regular = stepped(brainWith({ ...anchorStrength(2300), thinkSigma: 1 }, awen));
+    expect(ceeRankedBotThinkMs(regular, 10, scripted(low))).toBe(2500);
+    const fast = stepped(
+      brainWith({ ...anchorStrength(2300), thinkMedianMs: 2000, thinkSigma: 1 }, awen)
+    );
+    expect(ceeRankedBotThinkMs(fast, 10, scripted(low))).toBe(1400);
   });
 
   it("第一手用 firstGuessMedianMs，第二手起换回 thinkMedianMs", () => {
@@ -116,7 +124,7 @@ describe("CEE 排位人机爱噶", () => {
     expect(ceeRankedAigaThinkMs(800, scripted(FLAT_Z))).toBe(
       ceeRankedAigaThinkMs(CEE_RANKED_AIGA_RATING_RANGE.min, scripted(FLAT_Z))
     );
-    expect(ceeRankedAigaThinkMs(3000, scripted(FLAT_Z))).toBe(
+    expect(ceeRankedAigaThinkMs(9000, scripted(FLAT_Z))).toBe(
       ceeRankedAigaThinkMs(CEE_RANKED_AIGA_RATING_RANGE.max, scripted(FLAT_Z))
     );
     const samples = CEE_RANKED_AIGA_THINK_CURVE.map((point) =>

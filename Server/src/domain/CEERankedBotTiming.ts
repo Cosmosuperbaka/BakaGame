@@ -4,6 +4,15 @@ import { clamp, type CEERankedTempo } from "./CEERankedBotProfile";
 // 排位人机的思考时长：普通人格按强度档与节奏，爱噶只看她自己的节奏分。
 
 const THINK_FLOOR_MS = 2500;
+/**
+ * 快档的下限按中位数的比例放低：固定的下限会把最快的几档压成同一个速度，顶端就没法再变强。
+ * 比例取得让中位数不低于约 3.6 秒的档位下限仍是 `THINK_FLOOR_MS`。
+ */
+const THINK_FLOOR_RATIO = 0.7;
+/** 再快也留的最短间隔：至少像是看过一眼上一手的反馈。 */
+const THINK_HARD_FLOOR_MS = 600;
+const floorOf = (medianMs: number): number =>
+  clamp(medianMs * THINK_FLOOR_RATIO, THINK_HARD_FLOOR_MS, THINK_FLOOR_MS);
 /** 普通人格的间隔上限：真人 p90 的相邻间隔约 1 分钟，留出发呆的余量。 */
 const THINK_CEILING_MS = 90000;
 /** 爱噶的间隔上限：低分段她的中位数接近两分钟，再低会把曲线夹平。 */
@@ -19,7 +28,7 @@ const logNormalMs = (
   ceiling: number,
   random: () => number
 ): number =>
-  clamp(Math.round(median * Math.exp(sigma * gaussian(random))), THINK_FLOOR_MS, ceiling);
+  clamp(Math.round(median * Math.exp(sigma * gaussian(random))), floorOf(median), ceiling);
 
 /**
  * 爱噶每手思考间隔的中位数，按她这场的实战分插值。她的推理固定且完美（基本 2～3 手猜中），
@@ -37,6 +46,13 @@ export const CEE_RANKED_AIGA_THINK_CURVE: ReadonlyArray<{ rating: number; median
   { rating: 2100, medianMs: 7400 },
   { rating: 2250, medianMs: 4900 },
   { rating: 2450, medianMs: 3600 },
+  { rating: 2600, medianMs: 3000 },
+  { rating: 2930, medianMs: 2500 },
+  { rating: 3330, medianMs: 2000 },
+  { rating: 3740, medianMs: 1600 },
+  { rating: 4170, medianMs: 1300 },
+  { rating: 4610, medianMs: 1050 },
+  { rating: 5035, medianMs: 850 },
 ];
 const AIGA_CURVE = CEE_RANKED_AIGA_THINK_CURVE;
 const AIGA_SIGMA = 0.2;
@@ -86,5 +102,5 @@ export function ceeRankedBotThinkMs(
     base * brain.persona.thinkFactor * phase * tempoFactor(brain.persona.tempo, brain.step);
   const value = median * Math.exp(sigma * gaussian(random));
   const idle = random() < brain.persona.idleRate ? 10000 + random() * 10000 : 0;
-  return clamp(Math.round(value + idle), THINK_FLOOR_MS, THINK_CEILING_MS);
+  return clamp(Math.round(value + idle), floorOf(brain.strength.thinkMedianMs), THINK_CEILING_MS);
 }

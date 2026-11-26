@@ -8,6 +8,7 @@
 // 想要的分数超出人机能达到的范围时，强度分与计分分都停在顶（底）上，不再跟着玩家分数走，
 // 玩家分数因此有稳定点，不会靠反复赢碰顶的人机一直涨。
 import {
+  CEE_RANKED_BOT_ANCHORS,
   ceeRankedBotLevelOfRating,
   ceeRankedBotRatingOfLevel,
   ceeRankedPersonaOffset,
@@ -23,8 +24,8 @@ export const CEE_RANKED_BOT_NOMINAL_SPREAD = 120;
  * 两成五。强出的部分是真快出来的，计分按实力算，不另加溢价。
  */
 export const CEE_RANKED_AIGA_EDGE = 190;
-/** 人格偏移随档位变，反查档位时的迭代次数。 */
-const OFFSET_ROUNDS = 3;
+/** 反查档位的二分次数：档位跨度几千，四十次后误差远小于 1 分。 */
+const LEVEL_SEARCH_ROUNDS = 40;
 
 export interface CEERankedBotPlan {
   /** 强度表档位：生成强度用。爱噶不走强度表，这里只是与她实战分对应的档位。 */
@@ -67,12 +68,28 @@ export function planCEERankedBot(input: {
       targetRating: rating + bias,
     };
   }
-  // 人格偏移随档位变，档位又要先扣偏移才找得到：从基线档位出发迭代几次，偏移变化很平缓，
-  // 两三次就稳定。
-  const wanted = nominal - bias;
-  let level = ceeRankedBotLevelOfRating(wanted);
-  for (let round = 0; round < OFFSET_ROUNDS; round += 1)
-    level = ceeRankedBotLevelOfRating(wanted - ceeRankedPersonaOffset(persona, level));
-  const strengthRating = ceeRankedBotRatingOfLevel(level) + ceeRankedPersonaOffset(persona, level);
+  const level = levelFor(persona, nominal - bias);
+  const strengthRating = strengthAt(persona, level);
   return { level, strengthRating, targetRating: strengthRating + bias };
 }
+
+/** 某人格在某档位的强度分：档位换回的实战分加人格偏移。 */
+const strengthAt = (persona: CEERankedPersona, level: number): number =>
+  ceeRankedBotRatingOfLevel(level) + ceeRankedPersonaOffset(persona, level);
+
+/**
+ * 反查强度分等于 wanted 的档位，超出范围夹到两端。人格偏移随档位变化得比实战分平缓，强度分随
+ * 档位严格递增，二分即可；高档的偏移变化可以很陡（慢人格在快档吃亏更多），不能靠简单迭代收敛。
+ */
+const levelFor = (persona: CEERankedPersona, wanted: number): number => {
+  let low = CEE_RANKED_BOT_ANCHORS[0].level;
+  let high = CEE_RANKED_BOT_ANCHORS[CEE_RANKED_BOT_ANCHORS.length - 1].level;
+  if (wanted <= strengthAt(persona, low)) return low;
+  if (wanted >= strengthAt(persona, high)) return high;
+  for (let round = 0; round < LEVEL_SEARCH_ROUNDS; round += 1) {
+    const middle = (low + high) / 2;
+    if (strengthAt(persona, middle) < wanted) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+};
