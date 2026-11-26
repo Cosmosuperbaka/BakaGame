@@ -218,3 +218,33 @@ test("去重状态归实例：两个实例互不可见，clear 之后清空", as
   await one.run(input);
   expect(runs).toBe(3);
 });
+
+test("失败的命令把业务错误码带进操作日志；非业务异常记为内部错误", async () => {
+  const logged: Array<{ status?: number; errorCode?: string }> = [];
+  const recording = {
+    logOperation: (event: { status?: number; errorCode?: string }) => logged.push(event),
+    error: () => {},
+    warn: () => {},
+  } as unknown as EventLogger;
+  const dedup = createCommandDeduplicator({ ...options, logger: recording });
+  const { ws } = createSocket();
+  await dedup.run({
+    ws,
+    connectionId: "c1",
+    parsed: message("m1"),
+    startTime: 0,
+    execute: async () => {
+      throw new AppError("ROOM_FULL", "房间已满");
+    },
+  });
+  await dedup.run({
+    ws,
+    connectionId: "c1",
+    parsed: message("m2"),
+    startTime: 0,
+    execute: async () => {
+      throw new Error("意外");
+    },
+  });
+  expect(logged.map((event) => event.errorCode)).toEqual(["ROOM_FULL", "INTERNAL_ERROR"]);
+});

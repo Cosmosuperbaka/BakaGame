@@ -253,6 +253,34 @@ test("成功操作默认不落盘，慢操作与失败操作进入文件与控�
   expect(output[1]).toContain("实时命令失败 room.join");
 });
 
+test("失败操作带上业务错误码：日志记录写 error.type，没有错误码时不写", () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    undefined,
+    { sinks: [sink] }
+  );
+  logger.logOperation({
+    action: "WS cee.ranked.queue",
+    status: 400,
+    durationMs: 5,
+    errorCode: "RANKED_NOT_ELIGIBLE",
+  });
+  logger.logOperation({
+    action: "WS room.join",
+    status: 500,
+    level: "ERROR",
+    durationMs: 5,
+    errorCode: "INTERNAL_ERROR",
+  });
+  logger.logOperation({ action: "WS room.leave", status: 400, durationMs: 5 });
+  expect(records[0]!.attributes).toMatchObject({ "error.type": "RANKED_NOT_ELIGIBLE" });
+  expect(records[1]!.attributes).toMatchObject({ "error.type": "INTERNAL_ERROR" });
+  expect(records[2]!.attributes).not.toHaveProperty("error.type");
+});
+
 /**
  * 「状态类别 → 级别」口径：调用方的错记信息级（仍进文件，失败是排障线索），
  * 服务端的错记错误级，WARN 只留给显式的安全事件，操作日志本身不产生告警。

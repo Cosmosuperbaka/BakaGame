@@ -290,6 +290,11 @@ test("操作日志：每一类 HTTP 路由都记一条，未注册路径落固�
       expect(entry.identifier).toBeTruthy();
       expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     }
+    // 经统一错误出口失败的请求带上业务错误码，成功的不带：只看状态码分不清正常拒绝与新问题。
+    const entryOf = (action: string) =>
+      operations.mock.calls.map(([entry]) => entry).find((entry) => entry.action === action);
+    expect(entryOf(UNROUTED_HTTP_ACTION)?.errorCode).toBe("NOT_FOUND");
+    expect(entryOf("HTTP GET /livez")?.errorCode).toBeUndefined();
   } finally {
     await server.stop();
   }

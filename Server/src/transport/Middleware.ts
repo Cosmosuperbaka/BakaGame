@@ -42,7 +42,10 @@ export const globalMiddleware = ({
   isShuttingDown,
   getRoutes,
 }: GlobalMiddlewareOptions) => {
-  const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
+  const requests = new WeakMap<
+    Request,
+    { traceId: string; startedAt: number; clientIp: string; errorCode?: string }
+  >();
   // 路由表在应用装配完成时定形，模板索引到首个请求才惰性编译一次。
   let routeTemplates: readonly RouteTemplate[] | undefined;
   return (
@@ -137,6 +140,7 @@ export const globalMiddleware = ({
           identifier: context.clientIp,
           action,
           traceId: context.traceId,
+          ...(context.errorCode ? { errorCode: context.errorCode } : {}),
           // 级别由状态码口径决定；互联网扫描命中的未注册路径是背景噪音，只留指标计数。
           ...(action === UNROUTED_HTTP_ACTION && statusCode === 404
             ? { level: "DEBUG" as const }
@@ -144,7 +148,8 @@ export const globalMiddleware = ({
         });
       })
       .onError(({ code, error, set, path, request }) => {
-        const traceId = requests.get(request)?.traceId ?? crypto.randomUUID();
+        const context = requests.get(request);
+        const traceId = context?.traceId ?? crypto.randomUUID();
         set.headers["x-trace-id"] = traceId;
         let statusCode = 500;
         let errorCode = "INTERNAL_ERROR";
@@ -170,6 +175,7 @@ export const globalMiddleware = ({
           message = "请求资源不存在";
         }
         set.status = statusCode;
+        if (context) context.errorCode = errorCode;
         if (statusCode >= 500)
           logger.error(`HTTP 500 异常 [${path}]`, { ...describeError(error), traceId });
         return { error: { code: errorCode, message, traceId } };
