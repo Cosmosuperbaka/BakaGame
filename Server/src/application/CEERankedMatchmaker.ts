@@ -24,6 +24,7 @@ import {
   pickCEERankedPersona,
   type CEERankedPersonaId,
 } from "../domain/CEERankedBotProfile";
+import { ceeRankedBotNominal, planCEERankedBot } from "../domain/CEERankedBotPlan";
 import type { CEERankedCandidate } from "../domain/CEERankedSolver";
 import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
 import type { CEERankedBotGroup } from "./CEERankedHandicap";
@@ -398,14 +399,12 @@ export class CEERankedMatchmaker {
       return;
     }
     const persona = pickCEERankedPersona(this.ctx.random, this.ctx.lastPersona.get(userId)?.id);
-    // 爱噶的标称分就是玩家自己的分数，其余人格在 ±120 内浮动。
-    const nominal =
-      persona.id === "aiga" ? rating.rating : rating.rating + (this.ctx.random() * 240 - 120);
-    const bias = this.ctx.handicap.bias(botGroupOf(persona.id));
-    // 普通人格：按校准偏差回退后才生成强度，计分用标称分，真人对它的期望得分因此回到标称。
-    // 爱噶：她有意比同分人机强，强度只跟玩家分数走；偏差加到计分用的分数上，赢她多涨、输给她少掉。
-    const strengthRating = persona.id === "aiga" ? nominal : nominal - bias;
-    const targetRating = persona.id === "aiga" ? nominal + bias : nominal;
+    // 档位、强度分与计分分的口径见 planCEERankedBot：碰顶时计分分停在顶档的实力上。
+    const plan = planCEERankedBot({
+      persona,
+      nominal: ceeRankedBotNominal(persona, rating.rating, this.ctx.random),
+      bias: this.ctx.handicap.bias(botGroupOf(persona.id)),
+    });
     const name = await this.displayName(userId);
     if (attempt.revoked) return;
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [
@@ -430,9 +429,9 @@ export class CEERankedMatchmaker {
       botEntry,
       botSpec: {
         persona,
-        targetRating,
-        strengthRating,
-        strength: ceeRankedBotStrength(strengthRating, this.ctx.random),
+        targetRating: plan.targetRating,
+        strengthRating: plan.strengthRating,
+        strength: ceeRankedBotStrength(plan.level, this.ctx.random),
       },
     });
     this.ctx.lastPersona.set(userId, { id: persona.id, at: this.ctx.now() });

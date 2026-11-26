@@ -50,9 +50,9 @@ export interface CEERankedSeatRuntime {
 /** 人机席位的整场常量：目标分用于结算，抽定后不再变。 */
 export interface CEERankedBotSpec {
   persona: CEERankedPersona;
-  /** 计分用的对手 μ：普通人格为标称分，爱噶为标称分加该组校准偏差。 */
+  /** 计分用的对手 μ：强度分加该组校准偏差，即估计的真实实力（见 `planCEERankedBot`）。 */
   targetRating: number;
-  /** 生成 `strength` 与爱噶思考节奏时真正喂进去的分数：普通人格为标称分减偏差，爱噶为标称分。 */
+  /** 模型给出的实战分（已夹到能达到的范围）：校准样本按它记，爱噶按它取思考节奏。 */
   strengthRating: number;
   strength: CEERankedBotStrength;
 }

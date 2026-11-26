@@ -9,6 +9,7 @@ import type {
   CEERankedSettlementRecord,
 } from "../src/application/CEERankedStore";
 import { InMemoryCEERankedStore } from "../src/application/CEERankedStore";
+import { CEE_RANKED_RULESET } from "../src/shared/CEERanked";
 
 const T0 = Date.parse("2026-01-02T03:04:05.678Z");
 
@@ -259,6 +260,7 @@ describe("排位审计内存实现", () => {
           rated: false,
           unratedReason: "bot_daily_limit",
           botEntry: "auto",
+          ruleset: CEE_RANKED_RULESET,
         }),
         players: [playerOf(0), botOf()],
       })
@@ -266,28 +268,56 @@ describe("排位审计内存实现", () => {
     // 计分人机（爱噶）：真人赛前 μ/φ 与强度分都在。
     await store.saveSettlement(
       settlementOf("s-aiga", T0 + 2000, {
-        series: seriesOf("s-aiga", T0 + 2000, { bot: true, botEntry: "placement" }),
+        series: seriesOf("s-aiga", T0 + 2000, {
+          bot: true,
+          botEntry: "placement",
+          ruleset: CEE_RANKED_RULESET,
+        }),
         players: [playerOf(0), botOf({ botPersona: "aiga" })],
       })
     );
     // 旧数据没有强度列：凑不出样本。
     await store.saveSettlement(
       settlementOf("s-legacy", T0 + 3000, {
-        series: seriesOf("s-legacy", T0 + 3000, { bot: true, botEntry: "auto" }),
+        series: seriesOf("s-legacy", T0 + 3000, {
+          bot: true,
+          botEntry: "auto",
+          ruleset: CEE_RANKED_RULESET,
+        }),
         players: [playerOf(0), botOf({ botStrengthRating: null })],
       })
     );
     // 最新一场计分人机（普通人格）：倒序后应当排第一。
     await store.saveSettlement(
       settlementOf("s-regular", T0 + 4000, {
-        series: seriesOf("s-regular", T0 + 4000, { bot: true, botEntry: "manual" }),
+        series: seriesOf("s-regular", T0 + 4000, {
+          bot: true,
+          botEntry: "manual",
+          ruleset: CEE_RANKED_RULESET,
+        }),
         players: [playerOf(0, { points: 0, score: 0 }), botOf({ points: 3, score: 1 })],
       })
     );
+    // 旧规则版本的强度分口径不同：结束得再晚也不进样本。
+    await store.saveSettlement(
+      settlementOf("s-r2", T0 + 5000, {
+        series: seriesOf("s-r2", T0 + 5000, { bot: true, botEntry: "manual", ruleset: "r2" }),
+        players: [playerOf(0), botOf()],
+      })
+    );
 
+    const sampleOf = (group: "aiga" | "regular", score: 0 | 1) => ({
+      group,
+      userId: "u1",
+      placement: false,
+      playerRating: 1200,
+      playerRd: 250,
+      strengthRating: 1150,
+      score,
+    });
     expect(await store.listRecentBotSamples(10)).toEqual([
-      { group: "regular", playerRating: 1200, playerRd: 250, strengthRating: 1150, score: 0 },
-      { group: "aiga", playerRating: 1200, playerRd: 250, strengthRating: 1150, score: 1 },
+      sampleOf("regular", 0),
+      sampleOf("aiga", 1),
     ]);
     expect(await store.listRecentBotSamples(1)).toHaveLength(1);
     // 下界夹到 1：0 条不会把整个校准窗口清空。

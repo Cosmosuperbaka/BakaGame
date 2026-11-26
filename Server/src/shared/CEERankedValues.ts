@@ -5,7 +5,7 @@ import { createDefaultCEESettings } from "./CEEDefaults";
 import type { CEESettings } from "./CEE";
 
 /** 排位规则版本：写进对局记录；下面任何规则或难度档变化都要换新版本号。 */
-export const CEE_RANKED_RULESET = "r2";
+export const CEE_RANKED_RULESET = "r3";
 /**
  * 三局两胜：先拿到 2 局者赢下系列赛。一局双方都没猜中不算分，加赛一局，直到有人拿满 2 局；
  * 系列赛因此没有平局（只有触到加赛上限仍同分这一道安全阀）。

@@ -4,6 +4,7 @@ import {
   CEE_RANKED_BOT_ANCHORS,
   CEE_RANKED_PERSONAS,
   ceeRankedBotStrength,
+  ceeRankedKnownCount,
   pickCEERankedPersona,
   type CEERankedBotStrength,
   type CEERankedPersonaId,
@@ -16,7 +17,7 @@ import { scripted, seeded } from "./support/Random";
 describe("CEE 排位人机强度", () => {
   it("锚点处的数值与锚点表完全一致", () => {
     for (const anchor of CEE_RANKED_BOT_ANCHORS)
-      expect(ceeRankedBotStrength(anchor.rating, scripted([0.5]))).toEqual(anchor.strength);
+      expect(ceeRankedBotStrength(anchor.level, scripted([0.5]))).toEqual(anchor.strength);
   });
 
   it("1250 分（1100 与 1400 正中间）的数值在相邻锚点间线性插值", () => {
@@ -45,7 +46,7 @@ describe("CEE 排位人机强度", () => {
 
   it("离散字段整体取自最近锚点或其相邻锚点", () => {
     for (let rating = 800; rating <= 2300; rating += 17) {
-      const distances = CEE_RANKED_BOT_ANCHORS.map((anchor) => Math.abs(anchor.rating - rating));
+      const distances = CEE_RANKED_BOT_ANCHORS.map((anchor) => Math.abs(anchor.level - rating));
       const nearest = distances.indexOf(Math.min(...distances));
       const allowed = [nearest - 1, nearest, nearest + 1]
         .filter((index) => index >= 0 && index < CEE_RANKED_BOT_ANCHORS.length)
@@ -94,17 +95,17 @@ describe("CEE 排位人机人格", () => {
     const kaoju = createCEERankedBot({
       persona: personaOf("kaoju"),
       strength: numeric,
-      opponentRating: 1000,
+      paceRating: 1000,
       pool,
       random: seeded(1),
     });
     expect([...kaoju.strength.dims].sort()).toEqual([...CEE_RANKED_ALL_DIMENSIONS].sort());
-    expect(kaoju.known.size).toBe(Math.round(numeric.knowledge * poolIds.length));
+    expect(kaoju.known.size).toBe(ceeRankedKnownCount(numeric.knowledge, poolIds.length));
     expect(kaoju.strength.knowledge).toBe(numeric.knowledge);
     const aiga = createCEERankedBot({
       persona: personaOf("aiga"),
       strength: numeric,
-      opponentRating: 1000,
+      paceRating: 1000,
       pool,
       random: seeded(1),
     });

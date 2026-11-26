@@ -3,6 +3,7 @@ import { ceeRankedBotThinkMs } from "./CEERankedBotTiming";
 import {
   type CEERankedBotBrain,
   ceeRankedBotEligible,
+  ceeRankedBotHasMove,
   createCEERankedBot,
   nextCEERankedBotGuess,
   recordCEERankedBotFeedback,
@@ -19,7 +20,8 @@ import {
 export interface CEERankedSimBot {
   persona: CEERankedPersona;
   strength: CEERankedBotStrength;
-  opponentRating: number;
+  /** 爱噶的节奏分（她的强度分）；普通人格不看。 */
+  paceRating: number;
 }
 export interface CEERankedSimTiming {
   countdownMs: number;
@@ -81,7 +83,7 @@ export function simulateCEERankedGame(
     brain: createCEERankedBot({
       persona: input.bots[index].persona,
       strength: input.bots[index].strength,
-      opponentRating: input.bots[index].opponentRating,
+      paceRating: input.bots[index].paceRating,
       pool,
       random,
     }),
@@ -93,7 +95,7 @@ export function simulateCEERankedGame(
   const runners: [Runner, Runner] = [makeRunner(0), makeRunner(1)];
   const schedule = (runner: Runner, from: number): void => {
     runner.nextAt =
-      runner.used >= runner.quota || !ceeRankedBotEligible(runner.brain, pool).length
+      runner.used >= runner.quota || !ceeRankedBotHasMove(runner.brain, pool)
         ? Number.POSITIVE_INFINITY
         : from + ceeRankedBotThinkMs(runner.brain, consistentCount(runner.brain), random);
   };

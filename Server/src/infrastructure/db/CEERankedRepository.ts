@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 
+import { CEE_RANKED_RULESET } from "../../shared/CEERanked";
 import type { CEEGuessClientType } from "../../application/CEEAntiCheatSignals";
 import type { CEERankedBotSample } from "../../application/CEERankedHandicap";
 import type {
@@ -385,6 +386,8 @@ export class CEERankedRepository implements CEERankedStore {
       .select({
         botPersona: opponent.botPersona,
         botStrengthRating: opponent.botStrengthRating,
+        userId: ceeRankedSeriesPlayer.userId,
+        placement: ceeRankedSeriesPlayer.placement,
         playerRating: ceeRankedSeriesPlayer.ratingBefore,
         playerRd: ceeRankedSeriesPlayer.rdBefore,
         score: ceeRankedSeriesPlayer.score,
@@ -402,6 +405,8 @@ export class CEERankedRepository implements CEERankedStore {
         and(
           eq(ceeRankedSeries.bot, true),
           eq(ceeRankedSeries.rated, true),
+          // 强度分的口径随规则版本变，旧版本的样本不能拿来推现在的偏差。
+          eq(ceeRankedSeries.ruleset, CEE_RANKED_RULESET),
           isNotNull(ceeRankedSeriesPlayer.userId),
           isNull(opponent.userId),
           isNotNull(opponent.botPersona),
@@ -414,10 +419,13 @@ export class CEERankedRepository implements CEERankedStore {
       .limit(capped);
     const samples: CEERankedBotSample[] = [];
     for (const row of rows) {
-      const { playerRating, playerRd, botStrengthRating } = row;
-      if (playerRating === null || playerRd === null || botStrengthRating === null) continue;
+      const { userId, playerRating, playerRd, botStrengthRating } = row;
+      if (userId === null || playerRating === null || playerRd === null) continue;
+      if (botStrengthRating === null) continue;
       samples.push({
         group: row.botPersona === "aiga" ? "aiga" : "regular",
+        userId,
+        placement: row.placement,
         playerRating,
         playerRd,
         strengthRating: botStrengthRating,

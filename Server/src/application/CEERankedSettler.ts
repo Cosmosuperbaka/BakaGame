@@ -113,17 +113,18 @@ export class CEERankedSettler {
     return { written: true, results: settlementResults(runtime, rating) };
   }
 
-  /** 记一笔人机校准样本，每组每满 20 条打一次当前偏差。 */
+  /**
+   * 记一笔人机校准样本，每组本进程每收满 20 条打一次当前偏差。按累计数判断：窗口满了以后
+   * 窗口内样本数恒定，拿它取模会每场都打。
+   */
   private rememberBotSample(players: readonly CEERankedSeriesPlayerRecord[]): void {
     const sample = ceeRankedBotSampleOf(players);
-    if (sample === null) return;
-    this.ctx.handicap.add(sample);
-    const samples = this.ctx.handicap.count(sample.group);
-    if (samples % HANDICAP_LOG_EVERY !== 0) return;
+    if (sample === null || !this.ctx.handicap.add(sample)) return;
+    if (this.ctx.handicap.total(sample.group) % HANDICAP_LOG_EVERY !== 0) return;
     this.ctx.logger?.info("排位人机校准", {
       group: sample.group,
       bias: this.ctx.handicap.bias(sample.group),
-      samples,
+      samples: this.ctx.handicap.count(sample.group),
     });
   }
 

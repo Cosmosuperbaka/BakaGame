@@ -407,7 +407,10 @@ export const ceeRankedSeriesPlayer = mysqlTable(
     clientVersion: varchar("client_version", { length: 32 }),
     botPersona: varchar("bot_persona", { length: 16 }),
     botTargetRating: double("bot_target_rating"),
-    /** 生成人机强度时真正喂进去的分数：校准偏差使它不同于用于计分的 `bot_target_rating`。 */
+    /**
+     * 人机的强度分。r3 起是模型给出的实战分（已夹到人机能达到的范围），计分分等于它加校准偏差；
+     * r2 是喂进强度表的分数（未夹取，口径不同），按规则版本区分。
+     */
     botStrengthRating: double("bot_strength_rating"),
     queueWaitMs: int("queue_wait_ms"),
     points: double("points").notNull(),
