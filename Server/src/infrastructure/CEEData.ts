@@ -74,4 +74,6 @@ export interface CEEDataOptions {
   meilisearch?: BangumiSearchOptions;
   /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
   search?: BangumiSearchIndex;
+  /** 不阻塞请求的后台工作（如取图后的索引同步）失败时的出口；不传则只吞掉、下次再试。 */
+  onBackgroundError?: (message: string, error: unknown) => void;
 }

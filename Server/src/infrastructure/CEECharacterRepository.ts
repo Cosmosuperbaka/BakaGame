@@ -39,6 +39,7 @@ export class CEECharacterRepository implements CEEDataProvider {
   private readonly picker: CEEQuestionPicker;
   private readonly tags: CEETagStore;
   private readonly indexSync: CEEIndexSync;
+  private readonly onBackgroundError?: (message: string, error: unknown) => void;
   private closed = false;
 
   constructor(options: CEEDataOptions) {
@@ -50,6 +51,7 @@ export class CEECharacterRepository implements CEEDataProvider {
       throw error;
     }
     this.now = options.now ?? Date.now;
+    this.onBackgroundError = options.onBackgroundError;
     this.search =
       options.search ??
       (options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined);
@@ -197,7 +199,11 @@ export class CEECharacterRepository implements CEEDataProvider {
     if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id))
       return undefined;
     const imageUrl = await this.enrichment.resolveCharacterImage(id, size);
-    await this.indexSync.syncCharacterIndexOnce(id);
+    // 索引同步只为把补全的中文名与别名写进检索，取图不必等它：Meilisearch 任务落定要数百毫秒到
+    // 数秒，排位结果页逐张取图时这段等待会全压在玩家身上。失败不记为已同步，下次取图再试。
+    this.indexSync
+      .syncCharacterIndexOnce(id)
+      .catch((error: unknown) => this.onBackgroundError?.("角色检索索引同步失败", error));
     return imageUrl;
   }
 

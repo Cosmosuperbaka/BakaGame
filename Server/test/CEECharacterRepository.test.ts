@@ -406,3 +406,33 @@ test("角色图请求只触发一次索引同步：图片命中的重复请求�
     update.mockRestore();
   }
 });
+
+test("取图不等索引同步：检索任务卡住时图片照常返回，同步失败走后台出口且下次取图重试", async () => {
+  const initialize = spyOn(BangumiSearchIndex.prototype, "initialize").mockResolvedValue(
+    undefined as never
+  );
+  const update = spyOn(BangumiSearchIndex.prototype, "updateCharacter").mockImplementation(
+    () => new Promise<never>(() => undefined)
+  );
+  const failures: string[] = [];
+  try {
+    const { repository } = create({
+      meilisearch: { client: { index: () => ({}) } as never },
+      onBackgroundError: (message) => failures.push(message),
+    });
+    await repository.initialize();
+    // 检索任务永远不落定：取图仍然直接返回（夹具没有图源，结果为空；要等同步的话这里会挂到超时）。
+    expect(await repository.resolveCharacterImage(1)).toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(1);
+
+    update.mockImplementation(() => Promise.reject(new Error("检索服务不可用")));
+    await repository.resolveCharacterImage(2);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(failures).toEqual(["角色检索索引同步失败"]);
+    await repository.resolveCharacterImage(2);
+    expect(update).toHaveBeenCalledTimes(3);
+  } finally {
+    initialize.mockRestore();
+    update.mockRestore();
+  }
+});
