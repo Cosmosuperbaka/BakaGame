@@ -258,6 +258,8 @@ interface OperationEvent {
   level: LogLevel;
   createdAt: number;
   traceId?: string;
+  /** 失败时的业务错误码：同一个 400 可能是正常的准入拒绝，也可能是新问题，只看状态码分不清。 */
+  errorCode?: string;
 }
 
 interface OperationText {
@@ -299,6 +301,7 @@ const operationAttributes = ({
   identifier,
   scope,
   replay,
+  errorCode,
 }: {
   action: string;
   status: number;
@@ -306,6 +309,7 @@ const operationAttributes = ({
   identifier: string;
   scope: string;
   replay: boolean;
+  errorCode?: string;
 }): Record<string, unknown> => {
   const { isHttp, isWs, target } = operationTarget(action);
   const command = replay ? target.slice(0, -" (replay)".length) : target;
@@ -317,6 +321,7 @@ const operationAttributes = ({
     "operation.status": status,
     duration_ms: durationMs,
     ...(replay ? { "operation.replay": true } : {}),
+    ...(errorCode ? { "error.type": errorCode } : {}),
   };
   if (isHttp) {
     const [method, ...path] = command.split(" ");
@@ -452,7 +457,16 @@ export class EventLogger {
 
   /** 日志记录：本地文件与 OTLP 的过滤相互独立，记录只按真实级别构造一次，各出口各自判断是否收。 */
   private writeOperationLog(
-    { action, status, durationMs, identifier, level, createdAt, traceId }: OperationEvent,
+    {
+      action,
+      status,
+      durationMs,
+      identifier,
+      level,
+      createdAt,
+      traceId,
+      errorCode,
+    }: OperationEvent,
     { body, scope, replay }: OperationText
   ): void {
     const slow = durationMs >= this.slowOperationMs;
@@ -467,7 +481,15 @@ export class EventLogger {
       createdAt,
       level: LOWER_LEVEL[level],
       body,
-      attributes: operationAttributes({ action, status, durationMs, identifier, scope, replay }),
+      attributes: operationAttributes({
+        action,
+        status,
+        durationMs,
+        identifier,
+        scope,
+        replay,
+        errorCode,
+      }),
       traceId,
     });
     if (toLocal) this.dispatch(record);
@@ -623,6 +645,7 @@ export class EventLogger {
     level,
     createdAt = this.now(),
     traceId,
+    errorCode,
   }: {
     status?: number;
     durationMs?: number;
@@ -632,6 +655,8 @@ export class EventLogger {
     level?: LogLevel;
     createdAt?: number;
     traceId?: string;
+    /** 失败时的业务错误码（`AppError.code` 等有限集合），成功时不传。 */
+    errorCode?: string;
   }) {
     this.emitOperation({
       status,
@@ -641,6 +666,7 @@ export class EventLogger {
       level: level ?? levelForStatus(status),
       createdAt,
       traceId: acceptTraceId(traceId),
+      ...(errorCode ? { errorCode: sanitizeLogText(errorCode, 64) } : {}),
     });
   }
 

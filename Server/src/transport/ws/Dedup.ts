@@ -102,6 +102,7 @@ export const createCommandDeduplicator = ({
           identifier: connectionId,
           action: `WS ${parsedType} (replay)`,
           traceId,
+          errorCode: outcome.error.code,
         });
         sendPacket(
           ws,
@@ -120,6 +121,7 @@ export const createCommandDeduplicator = ({
           identifier: connectionId,
           action: `WS ${parsedType} (replay)`,
           traceId,
+          errorCode: "INTERNAL_ERROR",
         });
         sendPacket(
           ws,
@@ -167,6 +169,7 @@ export const createCommandDeduplicator = ({
           identifier: connectionId,
           action: `WS ${parsedType}`,
           traceId,
+          errorCode: error.code,
         });
         sendPacket(
           ws,
@@ -189,6 +192,7 @@ export const createCommandDeduplicator = ({
         identifier: connectionId,
         action: `WS ${parsedType}`,
         traceId,
+        errorCode: "INTERNAL_ERROR",
       });
       sendPacket(
         ws,
