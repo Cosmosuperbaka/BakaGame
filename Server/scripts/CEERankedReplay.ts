@@ -39,8 +39,10 @@ export interface CEERankedReplayPlayer {
   score: CEESeriesScore;
   botPersona: string | null;
   botStrengthRating: number | null;
-  /** 审计里的赛前分：r2 的爱噶按它定节奏，换算她的实战分要用。 */
+  /** 审计里的赛前分：r2 的爱噶按它定节奏，换算她的实战分要用；对手已注销时拿它当对手的分数。 */
   ratingBefore: number | null;
+  /** 审计里的赛前偏差：对手已注销时拿它当对手的偏差。 */
+  rdBefore: number | null;
 }
 
 export interface CEERankedReplaySeries {
@@ -121,12 +123,47 @@ export function replayBotStrength(
 
 export interface CEERankedReplayResult {
   ratings: Map<string, CEERating>;
-  /** 换算不了强度、只能跳过的已计分人机系列赛。 */
+  /** 重放不了、只能跳过的已计分系列赛（换算不了强度的人机局、缺赛前记录的真人局）。 */
   skipped: string[];
   bias: Record<CEERankedBotGroup, number>;
 }
 
 const groupOf = (persona: string): CEERankedBotGroup => (persona === "aiga" ? "aiga" : "regular");
+
+/**
+ * 重放一场真人局，返回是否重放成功。一方账号已注销时，它的席位只剩审计里的赛前分与偏差：
+ * 拿这组记录当对手结算还在的一方，不能整场跳过，否则这一方漏掉一场真实结果。
+ */
+const replayHumanSeries = (
+  item: CEERankedReplaySeries,
+  ratings: Map<string, CEERating>,
+  ratingOf: (userId: string) => CEERating
+): boolean => {
+  const [a, b] = item.players;
+  if (!a || !b) return false;
+  if (a.userId && b.userId) {
+    const [nextA, nextB] = rateCEESeries(
+      ratingOf(a.userId),
+      ratingOf(b.userId),
+      a.score,
+      item.endedAt
+    );
+    ratings.set(a.userId, nextA);
+    ratings.set(b.userId, nextB);
+    return true;
+  }
+  const survivor = a.userId ? a : b;
+  const ghost = survivor === a ? b : a;
+  if (!survivor.userId || ghost.ratingBefore === null || ghost.rdBefore === null) return false;
+  const [next] = rateCEESeries(
+    ratingOf(survivor.userId),
+    { rating: ghost.ratingBefore, rd: ghost.rdBefore, lastPlayedAt: item.endedAt },
+    survivor.score,
+    item.endedAt
+  );
+  ratings.set(survivor.userId, next);
+  return true;
+};
 
 /** 按结束时刻（同刻按编号）重放已计分系列赛；校准偏差在重放中在线估计，与线上同一口径。 */
 export function replayCEERankedRatings(
@@ -140,16 +177,7 @@ export function replayCEERankedRatings(
   for (const item of ordered) {
     if (!item.rated) continue;
     if (!item.bot) {
-      const [a, b] = item.players;
-      if (!a?.userId || !b?.userId) continue;
-      const [nextA, nextB] = rateCEESeries(
-        ratingOf(a.userId),
-        ratingOf(b.userId),
-        a.score,
-        item.endedAt
-      );
-      ratings.set(a.userId, nextA);
-      ratings.set(b.userId, nextB);
+      if (!replayHumanSeries(item, ratings, ratingOf)) skipped.push(item.id);
       continue;
     }
     const human = item.players.find((player) => player.userId !== null);
@@ -225,38 +253,44 @@ const main = async (): Promise<void> => {
   const database = createDatabase(url);
   try {
     const db = await database.client();
-    const seriesRows = await db
-      .select({
-        id: ceeRankedSeries.id,
-        ruleset: ceeRankedSeries.ruleset,
-        endedAt: ceeRankedSeries.endedAt,
-        rated: ceeRankedSeries.rated,
-        bot: ceeRankedSeries.bot,
-      })
-      .from(ceeRankedSeries)
-      .orderBy(asc(ceeRankedSeries.endedAt));
-    const playerRows = await db
-      .select({
-        seriesId: ceeRankedSeriesPlayer.seriesId,
-        seat: ceeRankedSeriesPlayer.seat,
-        userId: ceeRankedSeriesPlayer.userId,
-        placement: ceeRankedSeriesPlayer.placement,
-        score: ceeRankedSeriesPlayer.score,
-        botPersona: ceeRankedSeriesPlayer.botPersona,
-        botStrengthRating: ceeRankedSeriesPlayer.botStrengthRating,
-        ratingBefore: ceeRankedSeriesPlayer.ratingBefore,
-      })
-      .from(ceeRankedSeriesPlayer)
-      .orderBy(asc(ceeRankedSeriesPlayer.seriesId), asc(ceeRankedSeriesPlayer.seat));
-    const stored: StoredRating[] = await db
-      .select({
-        userId: ceeRankedRating.userId,
-        rating: ceeRankedRating.rating,
-        rd: ceeRankedRating.rd,
-        seriesPlayed: ceeRankedRating.seriesPlayed,
-        lastPlayedAt: ceeRankedRating.lastPlayedAt,
-      })
-      .from(ceeRankedRating);
+    // 三张表在同一个事务里读，并且先读评级：重放期间有人结算时，读到的评级只会比审计旧，
+    // 写回时的乐观校验因此一定对不上而整笔回滚，不会拿旧的重放结果盖掉刚结算的新分数。
+    const { stored, seriesRows, playerRows } = await db.transaction(async (tx) => {
+      const ratingRows: StoredRating[] = await tx
+        .select({
+          userId: ceeRankedRating.userId,
+          rating: ceeRankedRating.rating,
+          rd: ceeRankedRating.rd,
+          seriesPlayed: ceeRankedRating.seriesPlayed,
+          lastPlayedAt: ceeRankedRating.lastPlayedAt,
+        })
+        .from(ceeRankedRating);
+      const series = await tx
+        .select({
+          id: ceeRankedSeries.id,
+          ruleset: ceeRankedSeries.ruleset,
+          endedAt: ceeRankedSeries.endedAt,
+          rated: ceeRankedSeries.rated,
+          bot: ceeRankedSeries.bot,
+        })
+        .from(ceeRankedSeries)
+        .orderBy(asc(ceeRankedSeries.endedAt));
+      const players = await tx
+        .select({
+          seriesId: ceeRankedSeriesPlayer.seriesId,
+          seat: ceeRankedSeriesPlayer.seat,
+          userId: ceeRankedSeriesPlayer.userId,
+          placement: ceeRankedSeriesPlayer.placement,
+          score: ceeRankedSeriesPlayer.score,
+          botPersona: ceeRankedSeriesPlayer.botPersona,
+          botStrengthRating: ceeRankedSeriesPlayer.botStrengthRating,
+          ratingBefore: ceeRankedSeriesPlayer.ratingBefore,
+          rdBefore: ceeRankedSeriesPlayer.rdBefore,
+        })
+        .from(ceeRankedSeriesPlayer)
+        .orderBy(asc(ceeRankedSeriesPlayer.seriesId), asc(ceeRankedSeriesPlayer.seat));
+      return { stored: ratingRows, seriesRows: series, playerRows: players };
+    });
 
     const playersBySeries = new Map<string, CEERankedReplayPlayer[]>();
     for (const row of playerRows) {
