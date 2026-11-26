@@ -24,6 +24,7 @@ const human = (
   botPersona: null,
   botStrengthRating: null,
   ratingBefore,
+  rdBefore: ratingBefore === null ? null : 350,
 });
 
 const bot = (persona: string, strength: number | null): CEERankedReplayPlayer => ({
@@ -33,6 +34,7 @@ const bot = (persona: string, strength: number | null): CEERankedReplayPlayer =>
   botPersona: persona,
   botStrengthRating: strength,
   ratingBefore: null,
+  rdBefore: null,
 });
 
 let nextSeries = 0;
@@ -102,6 +104,33 @@ describe("排位分数重放", () => {
     const [a, b] = rateCEESeries(createCEERating(), createCEERating(), 1, 1_000);
     expect(result.ratings.get("u1")).toEqual(a);
     expect(result.ratings.get("u2")).toEqual(b);
+  });
+
+  test("真人局一方已注销：拿它审计里的赛前分与偏差当对手，照样结算还在的一方", () => {
+    const ghost: CEERankedReplayPlayer = {
+      ...human("u-gone", 0, 1620),
+      userId: null,
+      rdBefore: 90,
+    };
+    const result = replayCEERankedRatings([
+      botSeries(1_000, [ghost, human("u2", 1)], { bot: false }),
+    ]);
+    const [expected] = rateCEESeries(
+      createCEERating(),
+      { rating: 1620, rd: 90, lastPlayedAt: 1_000 },
+      1,
+      1_000
+    );
+    expect(result.ratings.get("u2")).toEqual(expected);
+    expect(result.skipped).toEqual([]);
+    // 连赛前记录都没有的注销席位：结算不了，记入跳过。
+    const bare = replayCEERankedRatings([
+      botSeries(2_000, [{ ...ghost, ratingBefore: null, rdBefore: null }, human("u2", 1)], {
+        bot: false,
+      }),
+    ]);
+    expect(bare.ratings.has("u2")).toBe(false);
+    expect(bare.skipped.length).toBe(1);
   });
 
   test("按结束时刻重放，与输入顺序无关", () => {
