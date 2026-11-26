@@ -185,7 +185,10 @@ const initSongLink = async (request: InitRequest): Promise<void> => {
 /** CEE 链路建库：同样失败只记在该侧，查询时再抛出来。 */
 const initCeeLink = async (request: InitRequest): Promise<void> => {
   try {
-    cee = new CEECharacterRepository(linkOptions(request));
+    cee = new CEECharacterRepository({
+      ...linkOptions(request),
+      onBackgroundError: (message, error) => postLog("warn", "cee", message, error),
+    });
     await cee.initialize();
   } catch (error) {
     cee = undefined;
