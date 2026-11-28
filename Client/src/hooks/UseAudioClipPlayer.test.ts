@@ -785,3 +785,149 @@ describe("useAudioClipPlayer", () => {
     });
   });
 });
+
+describe("useAudioClipPlayer · 自选音质", () => {
+  const DEFAULT_URL = "/api/songuessr/audio/1234/ticket";
+  const LOSSLESS_URL = `${DEFAULT_URL}?q=lossless`;
+  let audio: HTMLAudioElement;
+  let playSpy: MockInstance;
+  /** jsdom 没有媒体管线：就绪度由用例摆好；换地址重新 load() 时像真实浏览器一样回到 HAVE_NOTHING。 */
+  let media: { readyState: number; seeking: boolean; networkState: number };
+
+  beforeEach(() => {
+    audio = document.createElement("audio");
+    media = {
+      readyState: HTMLMediaElement.HAVE_NOTHING,
+      seeking: false,
+      networkState: HTMLMediaElement.NETWORK_LOADING,
+    };
+    for (const key of ["readyState", "seeking", "networkState"] as const) {
+      Object.defineProperty(audio, key, { configurable: true, get: () => media[key] });
+    }
+    vi.spyOn(audio, "load").mockImplementation(() => {
+      media.readyState = HTMLMediaElement.HAVE_NOTHING;
+    });
+    playSpy = vi.spyOn(audio, "play").mockResolvedValue(undefined);
+    vi.spyOn(audio, "pause").mockImplementation(() => {});
+  });
+
+  /** 浏览器派发 canplay 时，当前位置的数据已经够往下播。 */
+  const canPlay = () => {
+    media.readyState = HTMLMediaElement.HAVE_FUTURE_DATA;
+    audio.dispatchEvent(new Event("canplay"));
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Props = {
+    url?: string;
+    pending?: boolean;
+    onSourceError?: (url: string, decode: boolean) => boolean;
+  };
+
+  const mount = (sendCommand = vi.fn().mockResolvedValue(undefined)) => {
+    const hook = renderHook(
+      ({ url, pending, onSourceError }: Props) =>
+        useAudioClipPlayer({
+          roomId: "1234",
+          phase: "playing",
+          currentPhaseRoundNumber: 1,
+          currentAudioUrl: url,
+          currentClipStartTime: 10_000,
+          currentClipEndTime: 30_000,
+          isPlayingPhase: true,
+          sendCommand: sendCommand as unknown as GameSendCommand<SonGuessrCommandMap>,
+          sourcePending: pending,
+          onSourceError,
+        }),
+      { initialProps: {} as Props }
+    );
+    hook.result.current.audioRef.current = audio;
+    return { ...hook, sendCommand };
+  };
+
+  const startPlaying = async () => {
+    await act(async () => {
+      canPlay();
+    });
+    Object.defineProperty(audio, "paused", { configurable: true, value: false });
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+  };
+
+  it("地址还在路上时读作加载中，什么都不加载", () => {
+    const { result, rerender } = mount();
+    rerender({ pending: true });
+    expect(result.current.audioStatus).toBe("loading");
+    expect(result.current.audioPlaybackState).toBe("idle");
+    expect(audio.getAttribute("src")).toBeNull();
+    expect(playSpy).not.toHaveBeenCalled();
+  });
+
+  it("换上的那一档放不出来时交给调用方回退：不进失败态，也不上报默认地址失效", async () => {
+    const onSourceError = vi.fn(() => true);
+    const { result, rerender, sendCommand } = mount();
+    rerender({ url: LOSSLESS_URL, onSourceError });
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    expect(onSourceError).toHaveBeenCalledWith(LOSSLESS_URL, false);
+    expect(result.current.audioStatus).toBe("loading");
+    expect(sendCommand).not.toHaveBeenCalledWith("song.game.audioFailed", expect.anything());
+
+    // 调用方不接手（默认地址本身坏了）时照旧进失败态并上报。
+    onSourceError.mockReturnValue(false);
+    rerender({ url: DEFAULT_URL, onSourceError });
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    expect(result.current.audioStatus).toBe("error");
+    expect(sendCommand).toHaveBeenCalledWith("song.game.audioFailed", { roundNumber: 1 });
+  });
+
+  it("同一段里换了地址就从换档前的进度接着放，状态不回到加载中", async () => {
+    const { result, rerender } = mount();
+    rerender({ url: DEFAULT_URL });
+    await startPlaying();
+    expect(audio.currentTime).toBe(10);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    audio.currentTime = 17.5;
+    rerender({ url: LOSSLESS_URL });
+    expect(audio.getAttribute("src")).toBe(LOSSLESS_URL);
+    expect(result.current.audioStatus).toBe("ready");
+    expect(result.current.audioPlaybackState).toBe("playing");
+
+    audio.currentTime = 0;
+    await act(async () => {
+      canPlay();
+    });
+    expect(audio.currentTime).toBe(17.5);
+    expect(playSpy).toHaveBeenCalledTimes(2);
+
+    // 之后再报 canplay（缓冲回来）也不把进度拽回片段起点。
+    audio.currentTime = 19;
+    await act(async () => {
+      canPlay();
+    });
+    expect(audio.currentTime).toBe(19);
+  });
+
+  it("换档前已经停下的不会自己放起来", async () => {
+    const { rerender } = mount();
+    rerender({ url: DEFAULT_URL });
+    await startPlaying();
+    Object.defineProperty(audio, "paused", { configurable: true, value: true });
+    audio.currentTime = 12;
+
+    rerender({ url: LOSSLESS_URL });
+    await act(async () => {
+      canPlay();
+    });
+    expect(audio.currentTime).toBe(12);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+  });
+});

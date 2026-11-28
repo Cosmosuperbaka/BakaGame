@@ -80,6 +80,25 @@ export interface AudioClipPlayerOptions {
   currentClipEndTime?: number;
   isPlayingPhase: boolean;
   sendCommand: GameSendCommand<SonGuessrCommandMap>;
+  /** 播放地址还在路上（等自选音质的回执）：先停在加载态，什么都不加载。 */
+  sourcePending?: boolean;
+  /**
+   * 当前地址放不出来时先问调用方：返回 true 表示它会换一个地址（自选音质回退到默认档），
+   * 这次失败不进入失败态，也不当成默认地址失效去上报。`decode` 为真表示是格式解不了。
+   */
+  onSourceError?: (url: string, decode: boolean) => boolean;
+}
+
+/**
+ * 同一段播放里换了地址（玩家换了音质）时，接着换之前的进度放：卸载旧地址前记下的位置与状态。
+ * 段落按「房间、阶段、回合、片段起止」认，换回合或换阶段不算。
+ */
+interface PlaybackCarryOver {
+  segmentKey: string;
+  url: string;
+  time: number;
+  playing: boolean;
+  completed: boolean;
 }
 
 export function useAudioClipPlayer({
@@ -91,6 +110,8 @@ export function useAudioClipPlayer({
   currentClipEndTime,
   isPlayingPhase,
   sendCommand,
+  sourcePending = false,
+  onSourceError,
 }: AudioClipPlayerOptions) {
   const [volume, setVolumeState] = useState(readSavedVolume);
 
@@ -112,13 +133,19 @@ export function useAudioClipPlayer({
       : `${roomId}:${phase}:${currentPhaseRoundNumber}:${currentAudioUrl}`;
   const loadKey =
     sourceKey && `${sourceKey}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
-  // 状态记在装载名下：换回合、换地址或重试的那一帧，Effect 还没把状态重置成加载中，
-  // 上一次装载的「就绪」不能冒充这一次，否则歌词会先于这一段音频露面。
+  // 段落 = 同一回合、同一段起止，不含地址：同一段里换地址只会是玩家换了音质，从换档前的进度接着放。
+  const segmentKey =
+    sourceKey &&
+    `${roomId}:${phase}:${currentPhaseRoundNumber}:${currentClipStartTime}:${currentClipEndTime}`;
+  const statusKey = segmentKey && `${segmentKey}:${audioRetryToken}`;
+  // 状态记在「段落 + 重试」名下：换回合、换段或重试的那一帧，Effect 还没把状态重置成加载中，
+  // 上一次的「就绪」不能冒充这一次，否则歌词会先于这一段音频露面。同一段里换音质不算换段，
+  // 状态沿用，不闪回加载中。
   const [audioState, setAudioState] = useState<{ key: string | null; status: ClipAudioStatus }>({
     key: null,
     status: "loading",
   });
-  const audioStatus: ClipAudioStatus = audioState.key === loadKey ? audioState.status : "loading";
+  const audioStatus: ClipAudioStatus = audioState.key === statusKey ? audioState.status : "loading";
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioReadyKey = useRef<string | null>(null);
@@ -128,11 +155,22 @@ export function useAudioClipPlayer({
   const audioFailureKey = useRef<string | null>(null);
   const autoReloads = useRef({ key: "", count: 0 });
   const sendCommandRef = useRef(sendCommand);
+  const onSourceErrorRef = useRef(onSourceError);
   const volumeRef = useRef(volume);
+  const playbackStateRef = useRef<"idle" | "playing" | "completed">("idle");
+  const carryOverRef = useRef<PlaybackCarryOver | null>(null);
 
   useEffect(() => {
     sendCommandRef.current = sendCommand;
   }, [sendCommand]);
+
+  useEffect(() => {
+    onSourceErrorRef.current = onSourceError;
+  }, [onSourceError]);
+
+  useEffect(() => {
+    playbackStateRef.current = audioPlaybackState;
+  }, [audioPlaybackState]);
 
   useEffect(() => {
     volumeRef.current = volume;
@@ -162,6 +200,8 @@ export function useAudioClipPlayer({
       !audio ||
       !sourceKey ||
       !loadKey ||
+      !segmentKey ||
+      !statusKey ||
       currentPhaseRoundNumber === undefined ||
       !currentAudioUrl ||
       currentClipStartTime === undefined
@@ -172,14 +212,31 @@ export function useAudioClipPlayer({
       }
       return;
     }
-    const setAudioStatus = (status: ClipAudioStatus) => setAudioState({ key: loadKey, status });
+    const setAudioStatus = (status: ClipAudioStatus) => setAudioState({ key: statusKey, status });
+    // 「已就绪」按段落记：同一段里换了音质不再重复上报，换段或手动重试照常上报。
+    const readyKey = statusKey;
     // 自动重载的次数按「同一回合同一个地址」计：换回合或换地址重新数。
     if (autoReloads.current.key !== sourceKey) autoReloads.current = { key: sourceKey, count: 0 };
-    setAudioStatus("loading");
-    setAudioPlaybackState("idle");
+    const carried = carryOverRef.current;
+    carryOverRef.current = null;
+    const carryOver =
+      carried && carried.segmentKey === segmentKey && carried.url !== currentAudioUrl
+        ? carried
+        : null;
+    // 同一段里换音质：歌词与按钮维持原样，新地址就绪后接着放；从头装载才回到加载中。
+    if (!carryOver) {
+      setAudioStatus("loading");
+      setAudioPlaybackState("idle");
+    }
     audio.volume = volumeRef.current;
     const startSeconds = currentClipStartTime / 1_000;
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
+    const resumeSeconds =
+      carryOver &&
+      carryOver.time > startSeconds &&
+      (endSeconds === undefined || carryOver.time < endSeconds)
+        ? carryOver.time
+        : undefined;
 
     const envelope = createClipEnvelope(
       () => audio,
@@ -201,9 +258,12 @@ export function useAudioClipPlayer({
       audio.volume = volumeRef.current;
     };
 
+    let resumePending = resumeSeconds !== undefined;
     const moveToStart = () => {
-      if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
-      audio.volume = envelope.volumeAt(startSeconds);
+      // 换音质接着放：第一次定位到换档前的进度，之后的回绕照旧回到片段起点。
+      const target = resumePending && resumeSeconds !== undefined ? resumeSeconds : startSeconds;
+      if (Math.abs(audio.currentTime - target) > 0.15) audio.currentTime = target;
+      audio.volume = envelope.volumeAt(target);
     };
     const stopAtEnd = () => {
       if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
@@ -226,7 +286,8 @@ export function useAudioClipPlayer({
     let readyState = false;
     let disposed = false;
     const ready = () => {
-      // 每次装载只就绪一次：弱网下播到一半卡住、缓冲回来会再报 canplay，不能因此把进度拽回起点。
+      // 每次装载只就绪一次：弱网下播到一半卡住、缓冲回来会再报 canplay，不能因此把进度拽回起点
+      // （换音质接着放时，也不能被拽回片段起点）。
       if (disposed || readyState) return;
       moveToStart();
       // 刚发起跳转或起点的数据还不够播：等 seeked / canplay 再来，期间保持加载中。
@@ -244,20 +305,26 @@ export function useAudioClipPlayer({
         currentPrivateState &&
         !(currentPrivateState.isSubmitter && !currentSnapshot?.testMode) &&
         currentPlayer?.membership === "active" &&
-        audioReadyKey.current !== loadKey
+        audioReadyKey.current !== readyKey
       ) {
-        audioReadyKey.current = loadKey;
+        audioReadyKey.current = readyKey;
         void Promise.resolve(
           sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })
         ).catch(() => {
-          if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
+          if (audioReadyKey.current === readyKey) audioReadyKey.current = null;
         });
       }
 
       // 加载完成后自动播放；浏览器禁止自动播放时保留小型播放按钮作为后备。
+      // 换音质接着放时只在换档前正在放才继续放，放完了的停在「已放完」。
       if (audioAutoPlayKey.current !== loadKey) {
         audioAutoPlayKey.current = loadKey;
         moveToStart();
+        resumePending = false;
+        if (carryOver && !carryOver.playing) {
+          if (carryOver.completed) setAudioPlaybackState("completed");
+          return;
+        }
         void Promise.resolve(audio.play()).catch(() => {
           if (!disposed) setAudioPlaybackState("idle");
         });
@@ -277,6 +344,11 @@ export function useAudioClipPlayer({
         return;
       }
       stopFadeLoop();
+      // 自选音质那一档放不出来：调用方换回默认档，这次不算默认地址失效。
+      // 3 = MEDIA_ERR_DECODE，4 = MEDIA_ERR_SRC_NOT_SUPPORTED（不依赖全局 MediaError，测试环境没有它）。
+      const code = audio.error?.code;
+      const decode = code === 3 || code === 4;
+      if (onSourceErrorRef.current?.(currentAudioUrl, decode)) return;
       audio.pause();
       setAudioPlaybackState("idle");
       setAudioStatus("error");
@@ -339,11 +411,25 @@ export function useAudioClipPlayer({
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) ready();
     // 片段起点迟迟不能播就转失败态，给玩家重试按钮；数据之后才到时 ready 仍会接手。
     const loadTimeout = window.setTimeout(() => {
-      if (!disposed && !readyState) setAudioStatus("error");
+      if (!disposed && !readyState) {
+        // 自选的那一档迟迟放不起来（文件大、网慢）：先换回默认档，而不是停在失败态。
+        if (onSourceErrorRef.current?.(currentAudioUrl, false)) return;
+        setAudioStatus("error");
+      }
     }, 15_000);
     return () => {
       disposed = true;
       window.clearTimeout(loadTimeout);
+      // 记下卸载前的进度：下一次只换了地址（同一段换音质）就从这里接着放。
+      if (readyState) {
+        carryOverRef.current = {
+          segmentKey,
+          url: currentAudioUrl,
+          time: audio.currentTime,
+          playing: !audio.paused && !audio.ended,
+          completed: playbackStateRef.current === "completed",
+        };
+      }
       stopFadeLoop();
       audio.pause();
       audio.removeEventListener("loadedmetadata", moveToStart);
@@ -367,7 +453,9 @@ export function useAudioClipPlayer({
     currentPhaseRoundNumber,
     isPlayingPhase,
     loadKey,
+    segmentKey,
     sourceKey,
+    statusKey,
   ]);
 
   useEffect(() => {
@@ -416,12 +504,14 @@ export function useAudioClipPlayer({
     }
   }, [audioPlaybackState, audioStatus, currentClipEndTime, currentClipStartTime]);
 
+  // 地址还在路上：本回合的歌还没开始加载，读作「加载中」，而不是停在上一回合的状态。
+  const waitingForSource = sourcePending && currentPhaseRoundNumber !== undefined;
   return {
     audioRef,
     volume,
     setVolume,
-    audioStatus,
-    audioPlaybackState,
+    audioStatus: waitingForSource ? ("loading" as const) : audioStatus,
+    audioPlaybackState: waitingForSource ? ("idle" as const) : audioPlaybackState,
     playAudio,
     retryAudio,
   };

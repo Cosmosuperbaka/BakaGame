@@ -1,18 +1,24 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, screen, userEvent, within } from "storybook/test";
+import type { SongAudioQualityPreference } from "@bakagame/shared";
+import type { SongAudioQualityState } from "@/hooks/UseSongAudioQuality";
 import { dropFocus } from "@/stories/PlayHelpers";
+import type { AudioQualityControlProps } from "./SongAudioQualityMenu";
 import { SongVolumeControl } from "./SongVolumeControl";
 
-/** 故事内自持音量，拖动滑块能看到百分比随之变化。 */
+/** 故事内自持音量与音质，拖动滑块能看到百分比随之变化，选档后胶囊上的字跟着换。 */
 function StatefulVolume({
   volume: initial,
   onVolumeChange,
+  audioQuality,
 }: {
   volume: number;
   onVolumeChange: (value: number) => void;
+  audioQuality?: AudioQualityControlProps;
 }) {
   const [volume, setVolume] = useState(initial);
+  const [quality, setQuality] = useState(audioQuality?.quality ?? "auto");
   return (
     <SongVolumeControl
       volume={volume}
@@ -20,9 +26,32 @@ function StatefulVolume({
         setVolume(value);
         onVolumeChange(value);
       }}
+      audioQuality={
+        audioQuality
+          ? {
+              ...audioQuality,
+              quality,
+              onQualityChange: (value) => {
+                setQuality(value);
+                audioQuality.onQualityChange(value);
+              },
+            }
+          : undefined
+      }
     />
   );
 }
+
+const withQuality = (
+  quality: SongAudioQualityPreference,
+  qualityState?: SongAudioQualityState
+): AudioQualityControlProps => ({ quality, qualityState, onQualityChange: fn() });
+
+/** 点开胶囊右端的音质选单，等选项出来再截图。 */
+const openQualityMenu = async (canvasElement: HTMLElement) => {
+  await userEvent.click(within(canvasElement).getByRole("combobox", { name: /^播放音质/ }));
+  await screen.findByRole("listbox");
+};
 
 // 取景为房间页顶栏右侧：顶栏高 h-14，控件右对齐；手机宽度下收窄到视口内。
 const meta = {
@@ -83,6 +112,83 @@ export const MobilePopover: Story = {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "调节音量" }));
     const panel = await screen.findByRole("dialog", { name: "播放音量" });
     await expect(within(panel).getByRole("slider", { name: "播放音量" })).toBeVisible();
+    dropFocus();
+  },
+};
+
+/** 房间里的样子：读数之后隔一道细竖线，接写着当前档位的小字按钮。 */
+export const WithQuality: Story = {
+  name: "带音质选择",
+  args: { audioQuality: withQuality("auto") },
+};
+
+/** 选单按「立体声 / 空间音频」分组，右侧是规格；这台设备解不了的档置灰并注明。 */
+export const QualityMenu: Story = {
+  name: "音质选单 · 展开",
+  tags: ["overlay"],
+  args: {
+    audioQuality: withQuality("lossless", {
+      kind: "ready",
+      requested: "lossless",
+      actual: "lossless",
+      format: "flac",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    await openQualityMenu(canvasElement);
+  },
+};
+
+/** 上游降档：选的是母带，本房拿到的最高是极高，胶囊上写实际在放的档，选单顶部说明原因。 */
+export const QualityDowngraded: Story = {
+  name: "音质选单 · 上游降档",
+  tags: ["overlay"],
+  args: {
+    audioQuality: withQuality("master", {
+      kind: "ready",
+      requested: "master",
+      actual: "exhigh",
+      format: "mp3",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    await openQualityMenu(canvasElement);
+    await expect(screen.getByText("这首歌在本房最高到「极高」")).toBeVisible();
+  },
+};
+
+/** 换档途中：胶囊上先写要换去的档并压暗，新地址到手前接着放当前那一档。 */
+export const QualityResolving: Story = {
+  name: "音质 · 换档中",
+  args: { audioQuality: withQuality("hires", { kind: "resolving", requested: "hires" }) },
+};
+
+/** 这一档本回合用不上：胶囊回到「自动」，选单顶部说清楚是拿不到还是放不出来。 */
+export const QualityFallback: Story = {
+  name: "音质选单 · 回到默认档",
+  tags: ["overlay"],
+  args: {
+    audioQuality: withQuality("surround", {
+      kind: "fallback",
+      requested: "surround",
+      reason: "unavailable",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    await openQualityMenu(canvasElement);
+  },
+};
+
+/** 手机上音质跟音量在同一个弹出胶囊里。 */
+export const MobilePopoverWithQuality: Story = {
+  name: "移动端 · 弹出音量与音质",
+  tags: ["overlay", "mobile"],
+  globals: { viewport: { value: "mobile", isRotated: false } },
+  args: { audioQuality: withQuality("exhigh") },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "调节音量与音质" }));
+    const panel = await screen.findByRole("dialog", { name: "播放音量与音质" });
+    await expect(within(panel).getByRole("combobox", { name: /^播放音质/ })).toBeVisible();
     dropFocus();
   },
 };

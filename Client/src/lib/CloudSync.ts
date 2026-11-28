@@ -14,7 +14,7 @@ import {
   saveSongMusicSession,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
+import { SONG_AUDIO_QUALITY_KEY, SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
 
 /**
  * 已登录时的云同步（见 Server/docs/Account.md §6）。
@@ -80,6 +80,7 @@ export function useCloudSyncEnabled(): boolean {
 const isSyncedKey = (key: string): boolean =>
   key === USERNAME_KEY ||
   key === SONG_VOLUME_KEY ||
+  key === SONG_AUDIO_QUALITY_KEY ||
   ROOM_MEMORY_SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
 
 export const readLocalPreferences = (): Record<string, string> => {
