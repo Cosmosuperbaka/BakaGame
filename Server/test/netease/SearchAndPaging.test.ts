@@ -203,6 +203,48 @@ describe("网易云检索与歌单", () => {
     expect(calls).toEqual(["song_detail"]);
   });
 
+  test("详情里的译名、别名与翻唱所指原曲随元数据带出", async () => {
+    // 形状取自真实详情：古典乐的译名是同作品不同上传唯一对得上的写法，
+    // 原曲的曲名与歌手让「其他版本也算对」分得清翻唱翻的是哪一首。
+    const provider = new NeteaseMusicProvider({
+      loadApi: async () => ({
+        song_detail: async () => ({
+          body: {
+            songs: [
+              {
+                id: 1060917,
+                name: "Nocturne No. 3 in B Major, Op. 9, No. 3",
+                ar: [{ name: "Arthur Rubinstein" }],
+                al: { name: "The Chopin Collection: The Nocturnes" },
+                alia: ["肖邦：B大调夜曲，作品第9号第3首"],
+                tns: ["B大调第3号夜曲，作品 9", "Nocturne No. 3 in B Major, Op. 9, No. 3"],
+                originCoverType: 2,
+                originSongSimpleData: {
+                  songId: 473315906,
+                  name: "Nocturne No.3 in B Op.9 No.3",
+                  artists: [{ id: 1, name: "Claudio Arrau" }],
+                },
+              },
+            ],
+          },
+        }),
+      }),
+    });
+
+    const song = await provider.getSongMetadata("1060917");
+    expect(song).toMatchObject({
+      originCoverType: 2,
+      originSongId: "473315906",
+      originSongTitle: "Nocturne No.3 in B Op.9 No.3",
+      originSongArtist: "Claudio Arrau",
+    });
+    // 与曲名相同的译名不重复收。
+    expect(song.encyclopedia.aliases).toEqual([
+      "B大调第3号夜曲，作品 9",
+      "肖邦：B大调夜曲，作品第9号第3首",
+    ]);
+  });
+
   test("出题歌曲没有歌词时仍返回播放资源", async () => {
     const provider = new NeteaseMusicProvider({
       loadApi: async () => ({

@@ -23,6 +23,7 @@ import { NeteaseLogin } from "./NeteaseLogin";
 import { NeteaseLyricChain } from "./NeteaseLyricChain";
 import {
   artistNames,
+  mergeSongAliases,
   normalizeAudioUrl,
   normalizeHttpsUrl,
   normalizeSong,
@@ -619,7 +620,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       language: wiki.language,
       encyclopedia: {
         summary: wiki.summary,
-        aliases: wiki.aliases,
+        aliases: mergeSongAliases(rawSong, base.title, wiki.aliases),
         tags: wiki.tags,
       },
       chorus,

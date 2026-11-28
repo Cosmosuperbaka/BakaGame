@@ -334,6 +334,12 @@ export interface SongSearchResult {
    */
   originSongId?: string;
   /**
+   * 翻唱所指原曲的曲名与歌手（同样随详情返回）。「其他版本也算对」靠它认出翻唱的是哪一首：
+   * 翻唱常把曲名照抄，只比曲名分不清它翻的是哪位歌手的同名歌。
+   */
+  originSongTitle?: string;
+  originSongArtist?: string;
+  /**
    * 本房当下能不能播这首：网易云有解灰兜底恒可播；QQ 免费曲（`pay_play=0`）匿名
    * 也可播，会员专享曲才要求池里有会员账号。
    *
