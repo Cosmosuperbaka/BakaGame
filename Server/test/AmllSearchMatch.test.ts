@@ -34,6 +34,8 @@ describe("AMLL 检索条目的曲名判定", () => {
     ["现场版不能借用录音室版", "晴天 (Live)", "晴天", false],
     ["Remix 不能借用原版", "稻香", "稻香 (Remix摇滚版)", false],
     ["两侧括号段不同", "Song (Part 1)", "Song (Part 2)", false],
+    ["带编次标记的括号段不是说明文字", "Song (Part 1)", "Song", false],
+    ["带集数的出处说明判不准，宁可错过", "Song (TV动画第2-14集片头曲)", "Song", false],
     ["不同的歌", "七里香", "将军", false],
     ["纯符号曲名无可比内容", "！！！", "！！！", false],
   ])("%s", (_name, left, right, expected) => {

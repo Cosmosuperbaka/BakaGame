@@ -175,6 +175,8 @@ describe("SonGuessr 曲名门禁与截断门槛一致性", () => {
     expect(artistOverlap(candidate("Sing My Pleasure", "千早愛音"), characterSong)).toBe(true);
     const cvNotation = track("Snow halation", "高坂穂乃果(CV.新田恵海)");
     expect(artistOverlap(candidate("Snow halation", "新田恵海"), cvNotation)).toBe(true);
+    const voiceNotation = track("Theme", "Character (Voice: Actor Name)");
+    expect(artistOverlap(candidate("Theme", "Actor Name"), voiceNotation)).toBe(true);
     // 拆名只认全等，无关歌手不因此沾边。
     expect(artistOverlap(candidate("Sing My Pleasure", "立石"), characterSong)).toBe(false);
   });
