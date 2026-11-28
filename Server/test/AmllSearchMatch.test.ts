@@ -66,6 +66,9 @@ describe("AMLL 检索条目整体判定", () => {
     const sunny = item("5", ["晴天"], ["周杰伦"]);
     expect(isAmllSearchItemMatch(sunny, "晴天", undefined)).toBe(true);
     expect(isAmllSearchItemMatch(sunny, "晴天", "未知歌手")).toBe(true);
+    // 合辑的通用署名同样不指向真实歌手。
+    expect(isAmllSearchItemMatch(sunny, "晴天", "群星")).toBe(true);
+    expect(isAmllSearchItemMatch(sunny, "晴天", "Various Artists")).toBe(true);
     expect(isAmllSearchItemMatch(item("6", ["晴天"], []), "晴天", "周杰伦")).toBe(true);
   });
 
