@@ -166,6 +166,31 @@ describe("猜歌设置面板的自动保存", () => {
     expect(updateRoomSettingsMemory).toHaveBeenCalledWith("song", expect.any(Function));
   });
 
+  it("猜测设置：其他版本也算对缺省关闭，打开后随猜测设置保存", async () => {
+    render(<SongGameSettings snapshot={snapshot()} />);
+    const toggle = screen.getByRole("switch", { name: "其他版本也算对" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle);
+    await settle();
+
+    expect(sendCommand).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ allowOtherVersions: true })
+    );
+  });
+
+  it("猜测设置：听歌识番不显示其他版本也算对", () => {
+    render(
+      <SongGameSettings
+        snapshot={songSnapshot({
+          phase: "waiting",
+          settings: songSettings({ questionType: "anime" }),
+        })}
+      />
+    );
+    expect(screen.queryByRole("switch", { name: "其他版本也算对" })).not.toBeInTheDocument();
+  });
+
   it("房间设置：私密房间还没有密码时先不保存，填了密码才提交", async () => {
     render(<SongRoomSettings snapshot={snapshot()} />);
     fireEvent.click(screen.getByRole("switch", { name: "私密房间" }));

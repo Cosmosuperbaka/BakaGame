@@ -51,6 +51,8 @@ export interface SongRoomGameMemory {
   guessDurationSeconds: number;
   showGuessTimer: boolean;
   bloodMode: boolean;
+  /** 旧记录没有这一项：缺席时按服务端缺省重放。 */
+  allowOtherVersions?: boolean;
 }
 
 /** 猜歌/猜番的房间设置：旁观者局中能否看到答案，与卧底、猜猜呗同名同义。 */
@@ -145,6 +147,15 @@ const SONG_GAME_KEYS = [
   "guessDurationSeconds",
   "showGuessTimer",
   "bloodMode",
+  "allowOtherVersions",
+] as const;
+const SONG_GAME_REQUIRED = [
+  "lyricsLineCount",
+  "showLyrics",
+  "maxGuessesPerRound",
+  "guessDurationSeconds",
+  "showGuessTimer",
+  "bloodMode",
 ] as const;
 
 const SONG_ROOM_KEYS = ["spectatorsSeeAnswers"] as const;
@@ -188,7 +199,7 @@ const loadValidators = async (): Promise<Record<RoomGame, MemoryValidator>> => {
       (value.question === undefined ||
         matchesPayload(songUpdate, value.question, SONG_QUESTION_KEYS, SONG_QUESTION_REQUIRED)) &&
       (value.game === undefined ||
-        matchesPayload(songUpdate, value.game, SONG_GAME_KEYS, SONG_GAME_KEYS)) &&
+        matchesPayload(songUpdate, value.game, SONG_GAME_KEYS, SONG_GAME_REQUIRED)) &&
       (value.room === undefined ||
         matchesPayload(songUpdate, value.room, SONG_ROOM_KEYS, SONG_ROOM_KEYS)),
     cee: (value) =>

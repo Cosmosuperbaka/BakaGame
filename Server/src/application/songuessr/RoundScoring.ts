@@ -15,6 +15,7 @@ import {
   type SonGuessrRoundRecord,
 } from "./Records";
 import { canTestSubmitterGuess } from "./RoomAccess";
+import { isSameWork } from "./SameWorkMatching";
 import { isSameAnswerSong, normalizeSongText } from "./SongTitleMatching";
 
 /**
@@ -178,6 +179,10 @@ export function buildFeedback(guess: SongDetails, answer: SongDetails): SongGues
   };
 }
 
+/** 判对口径跟随本轮开局时的设置：「其他版本也算对」开启时按同一作品判，否则只认同一首歌。 */
 export function isCorrectSong(guess: SongDetails, round: SonGuessrRoundRecord) {
-  return isSameAnswerSong(guess, round.song, round.alternateSongIds ?? []);
+  const alternateSongIds = round.alternateSongIds ?? [];
+  return round.settings.allowOtherVersions === true
+    ? isSameWork(guess, round.song, alternateSongIds)
+    : isSameAnswerSong(guess, round.song, alternateSongIds);
 }
