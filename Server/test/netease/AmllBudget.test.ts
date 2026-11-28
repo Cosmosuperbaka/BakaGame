@@ -63,7 +63,10 @@ describe("AMLL 确定缺失与瞬态失败缓存边界", () => {
         calls++;
         if (url.includes("q=missing")) return Response.json({ status: 200, data: { items: [] } });
         if (url.includes("search?"))
-          return Response.json({ status: 200, data: { items: [{ id: "ttml" }] } });
+          return Response.json({
+            status: 200,
+            data: { items: [{ id: "ttml", musicNames: ["found"], artistNames: [] }] },
+          });
         return calls === 3 ? new Response(null, { status: 503 }) : amllResponse();
       },
     });
