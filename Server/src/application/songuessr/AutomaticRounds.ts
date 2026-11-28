@@ -142,7 +142,12 @@ export const startAutomaticAnimeRound = async (
   verify: () => void
 ): Promise<void> => {
   const filters = room.settings.animeAutoFilters ?? {};
-  const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
+  // 「前 N 部」按设置取满：本地库与搜索索引都按这个上限放行，只有在线回退接口单页只给得出 50 部。
+  const poolSize = clampInt(
+    filters.subjectLimit ?? 50,
+    SONG_SUBJECT_LIMIT_BOUNDS.min,
+    SONG_SUBJECT_LIMIT_BOUNDS.max
+  );
   const year =
     filters.ranking === "year" && filters.startYear && filters.endYear
       ? filters.startYear + ctx.random.nextInt(filters.endYear - filters.startYear + 1)

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LocalBangumiProvider } from "../src/infrastructure/LocalBangumiProvider";
+import { SONG_SUBJECT_LIMIT_BOUNDS } from "../src/shared/SettingBounds";
 import { requestUrlText } from "./RequestFixtures";
 import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
@@ -606,6 +607,32 @@ describe("LocalBangumiProvider · 图片接口与候选选取", () => {
     expect(fetcherCalls).toBe(0);
     provider.close();
     await removeFiles(songPath, characterPath, enrichmentPath);
+  });
+
+  test("无关键词的热度榜按请求条数取满，超过 50 部也不截断，最多一千部", async () => {
+    const songPath = join(tmpdir(), `bangumi-top-${crypto.randomUUID()}.sqlite`);
+    const songDb = new Database(songPath);
+    songDb.run(
+      "CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)"
+    );
+    songDb.run(
+      "CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)"
+    );
+    const insert = songDb.prepare(
+      "INSERT INTO subjects VALUES (?,2,?,?,'','','2020-01-01',0,'[]','[]',8.0,?,?,'')"
+    );
+    // 1200 部，热度随 id 递增：热度榜第一是 id 1200。
+    for (let id = 1; id <= 1200; id += 1) insert.run(id, `Anime ${id}`, `番剧${id}`, id, id);
+    songDb.close();
+
+    const provider = new LocalBangumiProvider({ dbPath: songPath });
+    const top = await provider.searchSubjects("", 300);
+    expect(top).toHaveLength(300);
+    expect(top[0].id).toBe("1200");
+    expect(top.at(-1)!.id).toBe("901");
+    expect(await provider.searchSubjects("", 5_000)).toHaveLength(SONG_SUBJECT_LIMIT_BOUNDS.max);
+    provider.close();
+    await removeFiles(songPath);
   });
 });
 

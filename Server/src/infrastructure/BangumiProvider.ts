@@ -132,6 +132,8 @@ export class BangumiProvider {
     };
     const key = `search:${JSON.stringify(payload)}:${limit}`;
     return this.cached(key, SEARCH_TTL_MS, async () => {
+      // 在线接口单页最多 50 条。这里只在本地库不可用时兜底，「前 N 部」大于 50 时
+      // 也只取第一页：翻页凑满一千部要连发二十次请求，容易撞上游限流。
       const body = await this.requestJson(
         `/v0/search/subjects?limit=${Math.min(50, Math.max(1, limit))}`,
         {

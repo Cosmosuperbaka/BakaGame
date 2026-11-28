@@ -12,6 +12,7 @@ import type {
 } from "../shared/Index";
 import { BangumiSearchIndex, parseJsonStrings } from "./BangumiSearchIndex";
 import type { BangumiDataProvider } from "./BangumiDataProvider";
+import { SONG_SUBJECT_LIMIT_BOUNDS } from "../shared/SettingBounds";
 import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 import { BangumiUpstream } from "./BangumiUpstream";
@@ -73,6 +74,13 @@ export interface MusicRelationRow {
   relation_type?: number | null;
   relation_order?: number | null;
 }
+
+/**
+ * 一次搜索最多取多少条：与猜番「前 N 部」设置的上限一致，自动出题要的就是热度前 N 部。
+ * 玩家手动搜索由调用方自己传小的条数。搜索索引单次命中总数默认也是一千，两者对得上。
+ */
+const clampSearchLimit = (limit: number) =>
+  Math.min(SONG_SUBJECT_LIMIT_BOUNDS.max, Math.max(1, Math.floor(limit) || 1));
 
 const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult => ({
   id: String(row.id),
@@ -302,7 +310,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       // 猜歌只关心动画（type=2）；无关键词时按热度排序，供随机出题取候选。
       const { ids } = await this.search.searchSubjects({
         keyword: q,
-        limit: Math.min(50, Math.max(1, limit)),
+        limit: clampSearchLimit(limit),
         types: [2],
         startYear: filters.startYear,
         endYear: filters.endYear,
@@ -338,14 +346,14 @@ export class LocalBangumiProvider implements BangumiDataProvider {
           q,
           `${q}%`,
           `${q}%`,
-          Math.min(50, Math.max(1, limit))
+          clampSearchLimit(limit)
         ) as SubjectRow[];
     } else {
       rows = this.db
         .query(
           `SELECT * FROM subjects WHERE ${clauses.join(" AND ")} ORDER BY heat DESC, rank ASC, score DESC, id ASC LIMIT ?`
         )
-        .all(...args, Math.min(50, Math.max(1, limit))) as SubjectRow[];
+        .all(...args, clampSearchLimit(limit)) as SubjectRow[];
     }
     return rows.map((row) => toResult(this.fillPersistedImage(row), this.imageBase));
   }
