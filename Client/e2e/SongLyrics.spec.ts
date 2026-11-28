@@ -364,6 +364,31 @@ test("放得下的片段窗口贴合内容，没有淡出边", async ({ page }) 
   expect(fit.view).toBe(fit.host + fit.inset * 2);
 });
 
+test("音频未就绪时歌词先排好版不露面，揭开时外壳高度不变", async ({ page }) => {
+  const clip = lines.slice(0, 3);
+  await render(page, { lines: clip, audioStatus: "loading", concealed: true });
+  const shell = page.getByTestId("baka-song-lyric-container");
+  const viewport = page.getByTestId("baka-song-lyric-viewport");
+  const pending = page.getByTestId("baka-song-lyric-pending");
+  await expect(pending).toBeVisible();
+  await expect(viewport).toHaveCSS("opacity", "0");
+  const height = () => shell.evaluate((element) => element.getBoundingClientRect().height);
+  const concealedHeight = await height();
+  // 占位不撑框：遮着时框高就是排好版的歌词高度。
+  const fit = await page.evaluate(() => {
+    const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
+    const host = view.querySelector<HTMLElement>(".baka-lyric-host")!;
+    return { view: view.clientHeight, host: host.clientHeight, inset: host.offsetTop };
+  });
+  expect(fit.host).toBeGreaterThan(0);
+  expect(fit.view).toBe(fit.host + fit.inset * 2);
+
+  await render(page, { lines: clip, audioStatus: "ready", concealed: false });
+  await expect(pending).toHaveCount(0);
+  await expect(viewport).toHaveCSS("opacity", "1");
+  expect(await height()).toBe(concealedHeight);
+});
+
 test("和声活动切换不改变外壳高度，也不接管页面滚动", async ({ page }) => {
   const source = lines.flatMap((line) => [
     line,

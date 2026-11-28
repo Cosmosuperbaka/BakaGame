@@ -115,6 +115,30 @@ describe("歌词数据、媒体事件与组件生命周期", () => {
     });
   });
 
+  it("音频未就绪时歌词照常排版但不露面，揭开后读得到歌词", () => {
+    const { rerender } = render(<SongLyricPlayer lines={lines} audioStatus="loading" concealed />);
+    // 排版不等揭开：歌词已经交给内核，揭开时框高不跳。
+    expect(players.at(-1)!.lines).toHaveLength(2);
+    expect(screen.getByText("音频加载后显示歌词")).toBeInTheDocument();
+    expect(screen.queryByText(/浮现在夜空中的群星/)).toBeNull();
+    expect(screen.getByTestId("baka-song-lyric-viewport")).toHaveAttribute(
+      "data-concealed",
+      "true"
+    );
+
+    rerender(<SongLyricPlayer lines={lines} audioStatus="ready" />);
+    expect(screen.getByText(/浮现在夜空中的群星/)).toBeInTheDocument();
+    expect(screen.getByTestId("baka-song-lyric-viewport")).not.toHaveAttribute("data-concealed");
+    // 同一个内核接着用，不因揭开重建。
+    expect(players).toHaveLength(1);
+  });
+
+  it("纯音乐题不受遮挡影响，直接给纯音乐提示", () => {
+    render(<SongLyricPlayer lines={[]} audioStatus="loading" concealed />);
+    expect(screen.getByText("当前歌曲为纯音乐或无歌词")).toBeInTheDocument();
+    expect(screen.queryByText("音频加载后显示歌词")).toBeNull();
+  });
+
   it("快照复制不重建歌词，但相同词数的逐字文本、时间与注音变化必须更新", () => {
     const source = [
       {

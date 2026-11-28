@@ -23,6 +23,12 @@ type Story = StoryObj<typeof meta>;
 
 export const Translated: Story = { name: "未播放 · 逐字歌词与翻译" };
 
+/** 本机音频还不能播：歌词已排好版、框高就位，先不露面。 */
+export const Concealed: Story = {
+  name: "音频加载中 · 歌词待揭开",
+  args: { audioStatus: "loading", concealed: true },
+};
+
 export const Overview: Story = {
   name: "播放结束 · 总览",
   args: { audioPlaybackState: "completed" },
