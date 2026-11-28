@@ -1110,25 +1110,29 @@ describe("上线前 P0 修复回归", () => {
     expect(guessResult.attempt.result).toBe("correct");
   });
 
-  test("近期去重窗口按候选池自适应并在上下界截断", () => {
-    // 池子装不满下限窗口时保持改动前的固定 10 首行为
-    expect(resolveRecentSongWindow(0)).toBe(10);
-    expect(resolveRecentSongWindow(15)).toBe(10);
-    expect(resolveRecentSongWindow(20)).toBe(10);
-    expect(resolveRecentSongWindow(21)).toBe(10);
-    // 超过下限后按池子一半线性放长
-    expect(resolveRecentSongWindow(40)).toBe(20);
-    expect(resolveRecentSongWindow(56)).toBe(28);
-    expect(resolveRecentSongWindow(347)).toBe(173);
+  test("回收窗口取整池扣掉随机余量，并在上界截断", () => {
+    // 没有可回收的池子不需要窗口
+    expect(resolveRecentSongWindow(0)).toBe(0);
+    expect(resolveRecentSongWindow(1)).toBe(0);
+    expect(resolveRecentSongWindow(Number.NaN)).toBe(0);
+    // 两首的池子也至少记住上一首，不连着出同一首
+    expect(resolveRecentSongWindow(2)).toBe(1);
+    // 小池子至少留两首随机余量，第二轮不会按第一轮的顺序原样重放
+    expect(resolveRecentSongWindow(3)).toBe(1);
+    expect(resolveRecentSongWindow(10)).toBe(8);
+    // 更大的池子留五分之一余量（向上取整），整数百分比不受浮点误差影响
+    expect(resolveRecentSongWindow(11)).toBe(8);
+    expect(resolveRecentSongWindow(20)).toBe(16);
+    expect(resolveRecentSongWindow(35)).toBe(28);
+    expect(resolveRecentSongWindow(56)).toBe(44);
+    expect(resolveRecentSongWindow(347)).toBe(277);
     // 上界截断，避免超大歌单把房间的最近列表撑成任意长度
-    expect(resolveRecentSongWindow(990)).toBe(495);
-    expect(resolveRecentSongWindow(1000)).toBe(500);
+    expect(resolveRecentSongWindow(625)).toBe(500);
     expect(resolveRecentSongWindow(1201)).toBe(500);
-    expect(resolveRecentSongWindow(Number.NaN)).toBe(10);
   });
 
   test("大候选池放长去重窗口后，60 轮内不重现旧歌", async () => {
-    // 400 首池子对应窗口 200，远大于本用例的 60 轮：出现任何重现都说明窗口没有生效。
+    // 400 首池子远大于本用例的 60 轮：没出过的歌先出，出现任何重现都说明去重没有生效。
     const poolSize = 400;
     const bigPool = Array.from({ length: poolSize }, (_, index) => ({
       id: `pool-${index}`,
