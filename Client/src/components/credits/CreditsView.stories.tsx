@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { CreditsView, type CreditsTab, type CreditsViewProps } from "./CreditsView";
 import {
   CREDITS_FIXTURE_CHANGELOG,
@@ -160,7 +159,7 @@ export const DependencyDrawer: Story = {
   tags: ["!page", "overlay"],
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 react v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "react" }));
+    const dialog = await findDialog("react");
     await dialog.findByText("许可证原文");
     dropFocus();
   },
@@ -172,7 +171,7 @@ export const DependencyLicense: Story = {
   tags: ["!page", "overlay"],
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 react v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "react" }));
+    const dialog = await findDialog("react");
     await userEvent.click(dialog.getByRole("button", { name: "许可证原文" }));
     await dialog.findByText("LICENSE");
     dropFocus();
@@ -185,10 +184,10 @@ export const DependencyDrilldown: Story = {
   tags: ["!page", "overlay"],
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 vite v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "vite" }));
+    const dialog = await findDialog("vite");
     // 行的可访问名带版本与 License（「查看 rollup v4.48.0（MIT，开发依赖）的依赖详情」），按前缀找。
     await userEvent.click(dialog.getByRole("button", { name: /^查看 rollup v/ }));
-    const childDialog = within(await screen.findByRole("dialog", { name: "rollup" }));
+    const childDialog = await findDialog("rollup");
     await childDialog.findByRole("button", { name: "返回上一层" });
     dropFocus();
   },
@@ -200,7 +199,7 @@ export const DependencyWithoutLicense: Story = {
   tags: ["!page", "overlay"],
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 left-pad v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "left-pad" }));
+    const dialog = await findDialog("left-pad");
     await userEvent.click(dialog.getByRole("button", { name: "许可证原文" }));
     await dialog.findByText("该包未附带许可证原文。");
     dropFocus();
@@ -214,7 +213,7 @@ export const DependencyLicenseLoading: Story = {
   render: () => <CreditsDemo loadLicense={() => new Promise(() => {})} />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 react v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "react" }));
+    const dialog = await findDialog("react");
     await userEvent.click(dialog.getByRole("button", { name: "许可证原文" }));
     await dialog.findByText("正在读取许可证原文…");
     dropFocus();
@@ -228,7 +227,7 @@ export const DependencyLicenseFailed: Story = {
   render: () => <CreditsDemo loadLicense={() => Promise.reject(new Error("offline"))} />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^查看 react v/ }));
-    const dialog = within(await screen.findByRole("dialog", { name: "react" }));
+    const dialog = await findDialog("react");
     await userEvent.click(dialog.getByRole("button", { name: "许可证原文" }));
     await dialog.findByRole("button", { name: "重试" });
     dropFocus();

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { ADMIN_GAMES, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
 import { GamesPanel } from "./GamesPanel";
 
@@ -56,7 +56,7 @@ export const Detail: Story = {
   beforeEach: () => installAdmin(),
   play: async ({ userEvent }) => {
     await userEvent.click(await ready());
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(await dialog.findByText(/^第 1 回合 ·/));
     dropFocus();
   },

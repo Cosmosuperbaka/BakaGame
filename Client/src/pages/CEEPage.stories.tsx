@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import CEEPage from "./CEEPage";
 import { presetCEE } from "@/stories/StorePresets";
 import {
@@ -11,11 +12,6 @@ import {
 /** 已连上 CEE 服务并完成大厅订阅，原版服务器可用。 */
 const lobby = (patch: Parameters<typeof presetCEE>[0] = {}) =>
   presetCEE({ connected: true, lobbyReady: true, originalAvailable: true, ...patch });
-
-/** 模拟点击会让浏览器按键盘操作绘制焦点环，真实鼠标点击没有；交互结束后移开焦点，画面与鼠标操作一致。 */
-function dropFocus() {
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-}
 
 const meta = {
   title: "页面/CEE大厅",
@@ -60,7 +56,7 @@ export const OriginalUnavailable: Story = {
     }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
-    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    const dialog = await findDialog("创建房间");
     await dialog.findByText("原版服务器暂未接入，暂时只能新建普通房间。");
     dropFocus();
   },
@@ -72,7 +68,7 @@ export const CreateDialog: Story = {
   beforeEach: () => lobby({ rooms: CEE_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
-    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    const dialog = await findDialog("创建房间");
     await userEvent.click(dialog.getByRole("switch", { name: "私密房间" }));
     await dialog.findByLabelText("房间密码");
     dropFocus();
@@ -86,7 +82,7 @@ export const CreateOriginalDialog: Story = {
   beforeEach: () => lobby({ rooms: CEE_LOBBY_ROOMS }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
-    const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));
+    const dialog = await findDialog("创建房间");
     await userEvent.click(dialog.getByRole("switch", { name: "兼容原版" }));
     await userEvent.click(await dialog.findByRole("switch", { name: "不在大厅显示" }));
     dropFocus();

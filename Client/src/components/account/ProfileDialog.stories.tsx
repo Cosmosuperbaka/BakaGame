@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
 import type { AccountProfile } from "@bakagame/shared";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { STORY_PROFILE, presetAccount, stubApi, type StubReply } from "@/stories/fixtures/Account";
 import { ProfileDialog } from "./ProfileDialog";
 
@@ -47,7 +46,7 @@ export const Default: Story = {
   name: "查看",
   beforeEach: () => setup({}),
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText("Bitwarden");
+    await (await findDialog()).findByText("Bitwarden");
   },
 };
 
@@ -66,7 +65,7 @@ export const ManyBadges: Story = {
       equippedBadge: "owner",
     }),
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText("Bitwarden");
+    await (await findDialog()).findByText("Bitwarden");
   },
 };
 
@@ -75,7 +74,7 @@ export const Empty: Story = {
   name: "无徽章无密钥",
   beforeEach: () => setup({ badges: [], equippedBadge: null }, []),
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText("还没有添加通行密钥。");
+    await (await findDialog()).findByText("还没有添加通行密钥。");
   },
 };
 
@@ -88,7 +87,7 @@ export const PasskeysFailed: Story = {
   name: "通行密钥读取失败",
   beforeEach: () => setup({}, "error"),
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText(/读取失败|网络/);
+    await (await findDialog()).findByText(/读取失败|网络/);
   },
 };
 
@@ -97,7 +96,7 @@ export const Renaming: Story = {
   name: "通行密钥改名",
   beforeEach: () => setup({}),
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await userEvent.click(await scope.findByRole("button", { name: "重命名「Bitwarden」" }));
     await scope.findByRole("textbox", { name: "通行密钥名称" });
   },
@@ -108,7 +107,7 @@ export const EditingName: Story = {
   name: "修改账号昵称",
   beforeEach: () => setup({}),
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await scope.findByText("Bitwarden");
     const input = scope.getByLabelText("账号昵称");
     await userEvent.clear(input);
@@ -123,7 +122,7 @@ export const NameCooldown: Story = {
   beforeEach: () =>
     setup({ nameChangedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() }),
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText(/后可再次修改/);
+    await (await findDialog()).findByText(/后可再次修改/);
   },
 };
 
@@ -132,7 +131,7 @@ export const Saving: Story = {
   name: "保存中",
   beforeEach: () => setup({}),
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await scope.findByText("Bitwarden");
     await userEvent.click(scope.getByRole("switch", { name: "资料卡显示 QQ 号" }));
     await userEvent.click(scope.getByRole("button", { name: "保存" }));
@@ -152,7 +151,7 @@ export const SaveFailed: Story = {
     };
   },
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await scope.findByText("Bitwarden");
     await userEvent.click(scope.getByRole("switch", { name: "资料卡显示 QQ 号" }));
     await userEvent.click(scope.getByRole("button", { name: "保存" }));

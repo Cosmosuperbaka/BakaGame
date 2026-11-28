@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import CEERoomPage from "./CEERoomPage";
 import { presetCEE } from "@/stories/StorePresets";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -65,11 +66,6 @@ function stubSubjectLookup() {
           })
         : sendCommand(command, payload)) as typeof sendCommand,
   });
-}
-
-/** 模拟点击会让浏览器按键盘操作绘制焦点环，真实鼠标点击没有；交互结束后移开焦点，画面与鼠标操作一致。 */
-function dropFocus() {
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }
 
 /**
@@ -414,7 +410,7 @@ export const JoinPasswordWrong: Story = {
     return presetSavedUsername();
   },
   play: async () => {
-    const dialog = within(await screen.findByRole("dialog", { name: "输入房间密码" }));
+    const dialog = await findDialog("输入房间密码");
     await userEvent.type(dialog.getByLabelText("房间密码"), "1234");
     await userEvent.click(dialog.getByRole("button", { name: "加入房间" }));
     await dialog.findByText("房间密码错误");

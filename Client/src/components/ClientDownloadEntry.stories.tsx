@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import {
   STORY_ANDROID_PACKAGE,
   STORY_MACOS_PACKAGE,
@@ -25,7 +24,7 @@ type Story = StoryObj<typeof meta>;
 
 /** 等发布信息落进弹窗再拍：骨架行换成真实的架构与大小。 */
 const settled = async (text: string) => {
-  await within(await screen.findByRole("dialog")).findByText(text);
+  await (await findDialog()).findByText(text);
 };
 
 /** Mac 包正式分发前的线上形态：只有 Windows 与 Android 两档。 */
@@ -49,7 +48,7 @@ export const MacosSelected: Story = {
   beforeEach: () =>
     stubClientPackages([STORY_WINDOWS_PACKAGE, STORY_MACOS_PACKAGE, STORY_ANDROID_PACKAGE]),
   play: async ({ userEvent }) => {
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(await dialog.findByRole("radio", { name: "macOS" }));
     await dialog.findByText("Intel 与 Apple 芯片");
     dropFocus();
@@ -66,7 +65,7 @@ export const MacosUnpublished: Story = {
       STORY_ANDROID_PACKAGE,
     ]),
   play: async ({ userEvent }) => {
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(await dialog.findByRole("radio", { name: "macOS" }));
     await dialog.findByRole("button", { name: "尚未发布" });
     dropFocus();

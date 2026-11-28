@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
 import { setSoundEnabled } from "@/lib/SoundEffects";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
 import { SettingsDialog } from "./SettingsDialog";
 import { SettingsEntry } from "./SettingsEntry";
@@ -52,7 +51,7 @@ export const ConnectionOpen: Story = {
   tags: ["overlay"],
   beforeEach: () => presetAccount({ status: "guest" }),
   play: async ({ userEvent }) => {
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(dialog.getByRole("button", { name: "连接信息" }));
     await dialog.findByText("复制地址");
     dropFocus();
