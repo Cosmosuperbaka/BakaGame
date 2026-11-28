@@ -4,8 +4,13 @@
 素材里不含任何原曲音频（揭晓答案时的原曲对照除外），只用于评估「分层揭示」玩法的观感。
 
 用法：
-    python dc_preview.py --sf2 GeneralUser-GS.sf2 --out 输出目录 歌1.mp3 歌2.flac ...
-依赖：torch、demucs、librosa、soundfile、numpy、tinysoundfont（只用离线渲染，不需要声卡）。
+    python dc_preview.py --sf2 GeneralUser-GS.sf2 --game game-large-onnx --out 输出目录 歌1.mp3 歌2.flac::ja ...
+依赖：torch、demucs、librosa、soundfile、numpy、tinysoundfont（只用离线渲染，不需要声卡）、onnxruntime。
+
+人声旋律默认用 GAME（openvpi 的歌声转音符模型，ONNX 版）转写，逐字切分音符；
+不给 --game 时退回 pYIN 逐帧音高，漏音明显更多，只作对照。
+歌曲路径后可加 ::zh / ::ja / ::en / ::yue 指定演唱语言，帮助 GAME 按字切分；不加则用通用模式。
+注意：GAME 预训练权重是 CC BY-NC-SA 4.0（非商用），只适合内部评估，上线前须换成可商用的权重或自训模型。
 """
 from __future__ import annotations
 
@@ -32,6 +37,7 @@ CLIP_SECONDS = 16.0
 RHYTHM_SECONDS = 10.0
 CROP_SECONDS = 26.0  # 每个候选窗口送去分离的长度，留出对齐乐句起点的余量
 PIANO, WOODBLOCK = 0, 115  # GM 音色号（0 起算）
+LANGUAGE_SUFFIXES = ("zh", "ja", "en", "yue")
 
 
 def log(*parts: object) -> None:
@@ -86,6 +92,114 @@ class Separator:
         return {name: out[i].numpy() for i, name in enumerate(self.model.sources)}
 
 
+class Game:
+    """GAME 歌声转音符（ONNX）。推理流程照官方 ONNX.md：编码 → D3PM 迭代切分音符边界 → 估计每个音符的音高。"""
+
+    def __init__(self, model_dir: Path) -> None:
+        import onnxruntime as ort
+
+        self.config = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+        self.sr = int(self.config.get("samplerate", SR))
+        self.languages: dict[str, int] = self.config.get("languages", {})
+        options = ort.SessionOptions()
+        options.log_severity_level = 3
+
+        def load(name: str):
+            # 同样读成字节：避免 Windows 中文路径问题
+            return ort.InferenceSession((model_dir / f"{name}.onnx").read_bytes(), options,
+                                        providers=["CPUExecutionProvider"])
+
+        self.encoder, self.segmenter, self.estimator = load("encoder"), load("segmenter"), load("estimator")
+        self.dur2bd, self.bd2dur = load("dur2bd"), load("bd2dur")
+        self.segmenter_inputs = {i.name for i in self.segmenter.get_inputs()}
+
+    def chunk(self, wav: np.ndarray, language: int, steps: int = 8, boundary_threshold: float = 0.2,
+              radius: int = 2, presence_threshold: float = 0.2) -> list[tuple[float, float, float]]:
+        duration = np.array([len(wav) / self.sr], dtype=np.float32)
+        x_seg, x_est, mask_t = self.encoder.run(
+            None, {"waveform": wav[None].astype(np.float32), "duration": duration})
+        known = self.dur2bd.run(None, {"durations": duration[None], "maskT": mask_t})[0]
+        boundaries = known
+        for step in range(steps):
+            feed = {
+                "x_seg": x_seg, "known_boundaries": known, "maskT": mask_t,
+                "threshold": np.array(boundary_threshold, dtype=np.float32),
+                "radius": np.array(radius, dtype=np.int64),
+            }
+            if "language" in self.segmenter_inputs:
+                feed["language"] = np.array([language], dtype=np.int64)
+            if "prev_boundaries" in self.segmenter_inputs:
+                feed["prev_boundaries"] = boundaries
+                feed["t"] = np.array([step / steps], dtype=np.float32)
+            boundaries = self.segmenter.run(None, feed)[0]
+        durations, mask_n = self.bd2dur.run(None, {"boundaries": boundaries, "maskT": mask_t})
+        presence, scores = self.estimator.run(None, {
+            "x_est": x_est, "boundaries": boundaries, "maskT": mask_t, "maskN": mask_n,
+            "threshold": np.array(presence_threshold, dtype=np.float32),
+        })
+        notes, t = [], 0.0
+        valid = mask_n[0].astype(bool)
+        for d, present, score in zip(durations[0][valid], presence[0][valid], scores[0][valid]):
+            if present:
+                notes.append((t, t + float(d), float(score)))
+            t += float(d)
+        return notes
+
+    def __call__(self, vocals: np.ndarray, language: str | None) -> list[dict]:
+        """vocals：44.1 kHz 单声道人声干声。按静音切成短块分别推理（切分器开销随长度超线性增长）。"""
+        lang_id = self.languages.get(language or "", 0)
+        hop = self.sr // 100
+        db = to_db(vocals, hop, 2048)
+        silent = db < max(-40.0, float(db.max()) - 45.0)
+        notes: list[tuple[float, float, float]] = []
+        for a, b in split_on_silence(silent, min_rest=20, max_len=1500):
+            if (~silent[a:b]).sum() < 10:
+                continue
+            for start, end, score in self.chunk(vocals[a * hop: b * hop], lang_id):
+                notes.append((start + a / 100, end + a / 100, score))
+        if not notes:
+            return []
+        # 去整体音准偏差：音高小数部分按时长加权求圆周平均
+        weights = np.array([e - s for s, e, _ in notes])
+        frac = np.array([p - round(p) for _, _, p in notes])
+        tuning = float(np.angle(np.sum(weights * np.exp(2j * np.pi * frac))) / (2 * np.pi))
+        result = []
+        for start, end, score in notes:
+            if end - start < 0.05:
+                continue
+            a, b = int(start * 100), max(int(start * 100) + 1, int(end * 100))
+            result.append({"start": round(start, 3), "end": round(end, 3),
+                           "pitch": int(round(score - tuning)), "db": float(np.median(db[a:b]))})
+        return result
+
+
+def split_on_silence(silent: np.ndarray, min_rest: int, max_len: int) -> list[tuple[int, int]]:
+    """在至少 min_rest 帧的静音中点切开；超过 max_len 帧的块再在最安静处对半切。"""
+    cuts, i, n = [0], 0, len(silent)
+    while i < n:
+        if silent[i]:
+            j = i
+            while j < n and silent[j]:
+                j += 1
+            if j - i >= min_rest and 0 < i and j < n:
+                cuts.append((i + j) // 2)
+            i = j
+        else:
+            i += 1
+    cuts.append(n)
+    spans: list[tuple[int, int]] = []
+    for a, b in zip(cuts, cuts[1:]):
+        stack = [(a, b)]
+        while stack:
+            x, y = stack.pop()
+            if y - x > max_len:
+                mid = x + max_len // 4 + int(np.argmax(silent[x + max_len // 4: y - max_len // 4]))
+                stack += [(mid, y), (x, mid)]
+            else:
+                spans.append((x, y))
+    return sorted(spans)
+
+
 def to_db(x: np.ndarray, hop: int, frame: int) -> np.ndarray:
     rms = librosa.feature.rms(y=x, frame_length=frame, hop_length=hop, center=True)[0]
     return 20 * np.log10(rms + 1e-9)
@@ -95,14 +209,18 @@ def to_db(x: np.ndarray, hop: int, frame: int) -> np.ndarray:
 
 def track_notes(
     y: np.ndarray, sr: int, *, fmin: float, fmax: float, frame: int, hop: int,
-    gate_below_peak_db: float, min_dur: float, split_onsets: bool,
+    gate_below_peak_db: float, min_dur: float, split_onsets: bool, glides: bool = True,
+    onset_delta: float = 0.12,
 ) -> list[dict]:
-    """pYIN 取音高 → 去整体音准偏差 → 众数滤波压掉颤音和滑音 → 同音高连续段即一个音符。"""
-    f0, _, vprob = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr, frame_length=frame, hop_length=hop)
+    """pYIN 取音高 → 去整体音准偏差 → 众数滤波压掉颤音和滑音 → 同音高连续段即一个音符。
+
+    发声与否只用 pYIN 自己的判定加一道音量门限；再按发声概率卡一道会扔掉一半以上的演唱。
+    """
+    f0, _, _ = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=sr, frame_length=frame, hop_length=hop)
     db = to_db(y, hop, frame)[: len(f0)]
     hop_t = hop / sr
     midi = np.where(np.isfinite(f0), 69 + 12 * np.log2(np.where(np.isfinite(f0), f0, 440) / 440.0), np.nan)
-    voiced = np.isfinite(midi) & (vprob > 0.25) & (db > max(db.max() + gate_below_peak_db, -55))
+    voiced = np.isfinite(midi) & (db > max(db.max() + gate_below_peak_db, -55))
     if voiced.sum() < 10:
         return []
     frac = midi[voiced] - np.round(midi[voiced])
@@ -135,15 +253,16 @@ def track_notes(
         else:
             merged.append(seg)
 
-    merged = absorb_glides(merged)
+    if glides:
+        merged = absorb_glides(merged)
 
     if split_onsets:  # 同音高的连续字靠起音切开
         onsets = librosa.onset.onset_detect(
-            y=y, sr=sr, hop_length=hop, backtrack=True, units="time", delta=0.12
+            y=y, sr=sr, hop_length=hop, backtrack=True, units="time", delta=onset_delta
         )
         split: list[list[float]] = []
         for start, end, pitch in merged:
-            cuts = [o for o in onsets if start + 0.12 < o < end - 0.12]
+            cuts = [o for o in onsets if start + min_dur < o < end - min_dur]
             edges = [start, *cuts, end]
             split += [[a, b, pitch] for a, b in zip(edges, edges[1:])]
         merged = split
@@ -298,8 +417,9 @@ def write_audio(path_stem: Path, audio: np.ndarray) -> str:
 
 # ---------- 单首歌 ----------
 
-def process(path: Path, out_dir: Path, sep: Separator, piano: Piano) -> dict:
-    log("读取", path.name)
+def process(path: Path, language: str | None, out_dir: Path, sep: Separator, piano: Piano,
+            game: Game | None) -> dict:
+    log("读取", path.name, f"（{language}）" if language else "")
     audio, _ = librosa.load(str(path), sr=SR, mono=False)
     stereo = np.vstack([audio, audio]) if audio.ndim == 1 else audio[:2]
     mono = stereo.mean(0)
@@ -324,16 +444,21 @@ def process(path: Path, out_dir: Path, sep: Separator, piano: Piano) -> dict:
     assert best is not None
     active, crop_a, crop_b, stems, vocals = best
 
-    log("  转写人声旋律")
-    melody = track_notes(
-        vocals, 22050, fmin=80, fmax=1100, frame=2048, hop=256,
-        gate_below_peak_db=-32, min_dur=0.08, split_onsets=True,
-    )
+    if game is not None:
+        log("  转写人声旋律（GAME）")
+        melody = game(stems["vocals"].mean(0), language)
+    else:
+        log("  转写人声旋律（pYIN）")
+        melody = track_notes(
+            vocals, 22050, fmin=80, fmax=1100, frame=2048, hop=256,
+            gate_below_peak_db=-32, min_dur=0.08, split_onsets=True,
+        )
     log("  转写低音")
     bass_y = librosa.resample(stems["bass"].mean(0), orig_sr=SR, target_sr=11025)
+    # 低音几乎不滑音，但常在同一个音上连弹八分音符，所以不并滑音、按起音切开
     bass = track_notes(
         bass_y, 11025, fmin=30, fmax=320, frame=2048, hop=128,
-        gate_below_peak_db=-28, min_dur=0.12, split_onsets=False,
+        gate_below_peak_db=-28, min_dur=0.1, split_onsets=True, glides=False, onset_delta=0.2,
     )
     if len(melody) < 8:
         raise RuntimeError(f"人声旋律只转出 {len(melody)} 个音，可能是纯音乐或人声太弱")
@@ -383,6 +508,7 @@ def process(path: Path, out_dir: Path, sep: Separator, piano: Piano) -> dict:
     in_clip = window(melody, clip, CLIP_SECONDS)
     info = {
         "title": path.stem,
+        "transcriber": "game" if game is not None else "pyin",
         "dir": q_dir.name,
         "files": files,
         "clip_start_s": round(crop_a + clip, 2),
@@ -466,18 +592,22 @@ QUESTIONS.forEach((q, qi) => {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("songs", nargs="+", type=Path)
+    parser.add_argument("songs", nargs="+", help="歌曲路径，可加 ::zh / ::ja / ::en / ::yue 指定演唱语言")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--sf2", type=Path, required=True)
+    parser.add_argument("--game", type=Path, default=None, help="GAME ONNX 模型目录（含 config.json 与 5 个 .onnx）")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
     torch.set_num_threads(max(1, (os.cpu_count() or 2)))
     args.out.mkdir(parents=True, exist_ok=True)
     sep, piano = Separator(), Piano(args.sf2)
+    game = Game(args.game) if args.game else None
     done, failed = [], []
-    for song in args.songs:
+    for raw in args.songs:
+        name, _, suffix = raw.rpartition("::")
+        song, language = (Path(name), suffix) if name and suffix in LANGUAGE_SUFFIXES else (Path(raw), None)
         try:
-            done.append(process(song, args.out, sep, piano))
+            done.append(process(song, language, args.out, sep, piano, game))
         except Exception as error:  # 单首失败不影响其它
             log("  跳过", song.name, "：", error)
             failed.append({"song": song.name, "error": str(error)})
