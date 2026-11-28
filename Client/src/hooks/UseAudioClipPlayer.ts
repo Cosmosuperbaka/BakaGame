@@ -32,8 +32,9 @@ const playableAtClipStart = (audio: HTMLAudioElement) =>
 /** 缓冲区与片段边界的对齐容差（秒）：与片段内纠偏的容差同档。 */
 const BUFFER_EDGE_TOLERANCE = 0.25;
 
-/** `MediaError.MEDIA_ERR_NETWORK`：规范定值，单独写出是因为测试环境没有 `MediaError` 全局。 */
+/** `MediaError` 的规范定值，单独写出是因为测试环境没有 `MediaError` 全局。 */
 const MEDIA_ERR_NETWORK = 2;
+const MEDIA_ERR_DECODE = 3;
 
 /**
  * 整段片段都已在缓冲区里：之后再拉后续数据失败（例如上游地址到期）不影响这一题。
@@ -322,7 +323,7 @@ export function useAudioClipPlayer({
         moveToStart();
         resumePending = false;
         if (carryOver && !carryOver.playing) {
-          if (carryOver.completed) setAudioPlaybackState("completed");
+          setAudioPlaybackState(carryOver.completed ? "completed" : "idle");
           return;
         }
         void Promise.resolve(audio.play()).catch(() => {
@@ -330,6 +331,7 @@ export function useAudioClipPlayer({
         });
       }
     };
+    let failedWhilePlaying = false;
     const failed = () => {
       if (disposed) return;
       // 就绪之后的出错同样作数：拉后续数据失败或解码出错时元素已经停摆，不转失败态就一直停在
@@ -343,11 +345,13 @@ export function useAudioClipPlayer({
       ) {
         return;
       }
+      // 放到一半出错时记下当时在不在放：自选音质那一档换回默认档后，从出错前的进度接着放。
+      if (readyState) failedWhilePlaying = playbackStateRef.current === "playing";
       stopFadeLoop();
-      // 自选音质那一档放不出来：调用方换回默认档，这次不算默认地址失效。
-      // 3 = MEDIA_ERR_DECODE，4 = MEDIA_ERR_SRC_NOT_SUPPORTED（不依赖全局 MediaError，测试环境没有它）。
-      const code = audio.error?.code;
-      const decode = code === 3 || code === 4;
+      // 自选音质那一档放不出来（开播前后都算）：调用方换回默认档，这次不算默认地址失效。
+      // 只有解码错误才算这台设备解不了；SRC_NOT_SUPPORTED 也可能只是地址过期或被拒，
+      // 不能据此把这一档整页拉黑。
+      const decode = audio.error?.code === MEDIA_ERR_DECODE;
       if (onSourceErrorRef.current?.(currentAudioUrl, decode)) return;
       audio.pause();
       setAudioPlaybackState("idle");
@@ -426,7 +430,7 @@ export function useAudioClipPlayer({
           segmentKey,
           url: currentAudioUrl,
           time: audio.currentTime,
-          playing: !audio.paused && !audio.ended,
+          playing: failedWhilePlaying || (!audio.paused && !audio.ended),
           completed: playbackStateRef.current === "completed",
         };
       }
