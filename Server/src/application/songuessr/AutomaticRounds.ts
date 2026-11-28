@@ -1,6 +1,7 @@
 import { AppError } from "../../domain/Errors";
 import { normalizeWord } from "../../domain/Rules";
 import {
+  canonicalArtistToken,
   extractArtistTokens,
   extractCanonicalTitle,
   isPlayableSong,
@@ -260,7 +261,8 @@ export const splitByRecency = <T extends { id: string }>(
 const songWorkKey = (song: SongSearchResult): string => {
   const title = extractCanonicalTitle(song.title);
   if (!title) return song.id;
-  return `${title}|${extractArtistTokens(song.artist)[0] ?? ""}`;
+  const artist = extractArtistTokens(song.artist)[0];
+  return `${title}|${artist ? canonicalArtistToken(artist) : ""}`;
 };
 
 /**

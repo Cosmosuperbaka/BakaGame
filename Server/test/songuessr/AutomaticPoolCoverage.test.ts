@@ -416,6 +416,15 @@ describe("collapseSameWorks", () => {
     expect(works.map((work) => work.id)).toEqual(["a", "d", "e"]);
   });
 
+  test("别名表里的同一位歌手算同一首（TK 与 TK from 凛として时雨）", () => {
+    const works = collapseSameWorks(
+      [song("a", "unravel", "TK from 凛として時雨"), song("b", "unravel", "TK")],
+      [],
+      always
+    );
+    expect(works).toHaveLength(1);
+  });
+
   test("合作歌手只看第一位", () => {
     const works = collapseSameWorks(
       [song("a", "晴天", "歌手甲"), song("b", "晴天", "歌手甲 / 歌手乙")],

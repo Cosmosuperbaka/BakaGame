@@ -138,6 +138,17 @@ const ARTIST_ALIASES: Record<string, string[]> = {
 };
 
 /**
+ * 歌手词元的规范写法：别名表里互为别名的写法取同一个代表（字典序最小的那个）。
+ * 只按词元全等分组的地方（自动出题的同作品去重）靠它让 `TK` 与 `TK from 凛として时雨` 落在一起；
+ * 两两比对的地方用 `artistsOverlap`，不必经过这里。
+ */
+export function canonicalArtistToken(token: string): string {
+  return [token, ...(ARTIST_ALIASES[token] ?? [])].reduce((best, alias) =>
+    alias < best ? alias : best
+  );
+}
+
+/**
  * 歌手占位：平台缺歌手时填的固定文本与合辑通用署名（归一后的词元）。它们不指向任何真实歌手，
  * 不能参与「歌手有没有交集」的比对，否则两首毫无关系的「群星」曲目会被当成同一位歌手。
  */
