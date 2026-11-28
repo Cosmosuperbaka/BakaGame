@@ -29,6 +29,32 @@ const playableAtClipStart = (audio: HTMLAudioElement) =>
     (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
       audio.networkState === HTMLMediaElement.NETWORK_IDLE));
 
+/** 缓冲区与片段边界的对齐容差（秒）：与片段内纠偏的容差同档。 */
+const BUFFER_EDGE_TOLERANCE = 0.25;
+
+/**
+ * 整段片段都已在缓冲区里：之后再拉后续数据失败（例如上游地址到期）不影响这一题。
+ * 没有终点时按整首算，时长未知就不算整段已缓冲。
+ */
+const clipFullyBuffered = (
+  audio: HTMLAudioElement,
+  startSeconds: number,
+  endSeconds: number | undefined
+) => {
+  const end = endSeconds ?? audio.duration;
+  if (!Number.isFinite(end)) return false;
+  const { buffered } = audio;
+  for (let index = 0; index < buffered.length; index += 1) {
+    if (
+      buffered.start(index) <= startSeconds + BUFFER_EDGE_TOLERANCE &&
+      buffered.end(index) >= end - BUFFER_EDGE_TOLERANCE
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 /** 只采用 0–1 之间的有效存档；缺失、空串、无法解析或越界时用默认音量。 */
 function readSavedVolume(): number {
   try {
@@ -235,8 +261,12 @@ export function useAudioClipPlayer({
       }
     };
     const failed = () => {
-      if (disposed || readyState) return;
+      if (disposed) return;
+      // 就绪之后的出错同样作数：拉后续数据失败或解码出错时元素已经停摆，不转失败态就一直停在
+      // 「播放中」，既不上报刷新地址，也不给重试按钮。整段片段已缓冲时例外，这一题照样听得完。
+      if (readyState && clipFullyBuffered(audio, startSeconds, endSeconds)) return;
       stopFadeLoop();
+      audio.pause();
       setAudioPlaybackState("idle");
       setAudioStatus("error");
       if (

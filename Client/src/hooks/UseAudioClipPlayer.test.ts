@@ -664,4 +664,106 @@ describe("useAudioClipPlayer", () => {
       }
     });
   });
+
+  describe("起播之后出错", () => {
+    const initialStore = useSonGuessrStore.getState();
+
+    beforeEach(() => {
+      useSonGuessrStore.setState({ snapshot: playingSnapshot(), privateState: songPrivate() });
+    });
+
+    afterEach(() => {
+      useSonGuessrStore.setState(initialStore, true);
+    });
+
+    /** 假的缓冲区：每段是 [起, 止]（秒）。 */
+    const setBuffered = (ranges: [number, number][]) => {
+      Object.defineProperty(mockAudio, "buffered", {
+        configurable: true,
+        value: {
+          length: ranges.length,
+          start: (index: number) => ranges[index][0],
+          end: (index: number) => ranges[index][1],
+        },
+      });
+    };
+
+    const startPlaying = async (sendCommand: GameSendCommand<SonGuessrCommandMap>) => {
+      // 与真实浏览器一致：重新 load() 会把就绪度清回零。
+      const load = vi.spyOn(mockAudio, "load").mockImplementation(() => {
+        media.readyState = HTMLMediaElement.HAVE_NOTHING;
+      });
+      const pause = vi.spyOn(mockAudio, "pause").mockImplementation(() => {});
+      const hook = renderHook(
+        ({ audioUrl }) =>
+          useAudioClipPlayer({
+            roomId: "test-room",
+            phase: "playing",
+            currentPhaseRoundNumber: 1,
+            currentAudioUrl: audioUrl,
+            currentClipStartTime: 60_000,
+            currentClipEndTime: 75_000,
+            isPlayingPhase: true,
+            sendCommand,
+          }),
+        { initialProps: { audioUrl: undefined as string | undefined } }
+      );
+      hook.result.current.audioRef.current = mockAudio;
+      hook.rerender({ audioUrl: "https://example.com/song.mp3" });
+      await act(async () => canPlay());
+      Object.defineProperty(mockAudio, "paused", { configurable: true, value: false });
+      await act(async () => void mockAudio.dispatchEvent(new Event("play")));
+      expect(hook.result.current.audioPlaybackState).toBe("playing");
+      pause.mockClear();
+      return { ...hook, load, pause };
+    };
+
+    const fail = () => act(async () => void mockAudio.dispatchEvent(new Event("error")));
+    const failedReports = (sendCommand: ReturnType<typeof vi.fn>) =>
+      sendCommand.mock.calls.filter(([type]) => type === "song.game.audioFailed");
+
+    it("片段还没缓冲完就出错：停下、转失败态并上报刷新，给出重试", async () => {
+      const sendCommand = vi.fn().mockResolvedValue(undefined);
+      const { result, pause } = await startPlaying(sendCommand);
+      setBuffered([[58, 66]]);
+      mockAudio.currentTime = 66;
+
+      await fail();
+
+      expect(pause).toHaveBeenCalled();
+      expect(result.current.audioStatus).toBe("error");
+      expect(result.current.audioPlaybackState).toBe("idle");
+      expect(failedReports(sendCommand)).toEqual([["song.game.audioFailed", { roundNumber: 1 }]]);
+    });
+
+    it("服务端刷新了地址时自动重新请求，重新就绪后照常起播", async () => {
+      const sendCommand = vi.fn().mockResolvedValue({ refreshed: true });
+      const { result, load } = await startPlaying(sendCommand);
+      setBuffered([[58, 66]]);
+      expect(load).toHaveBeenCalledTimes(1);
+
+      await fail();
+
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(result.current.audioStatus).toBe("loading");
+      await act(async () => canPlay());
+      expect(result.current.audioStatus).toBe("ready");
+      expect(playSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("整段片段已缓冲时，之后的预载失败不打断这一题", async () => {
+      const sendCommand = vi.fn().mockResolvedValue({ refreshed: true });
+      const { result, load, pause } = await startPlaying(sendCommand);
+      // 片段 60–75 秒整段都在缓冲区里，浏览器接着预载后面时上游地址到期。
+      setBuffered([[0, 80]]);
+
+      await fail();
+
+      expect(pause).not.toHaveBeenCalled();
+      expect(result.current.audioStatus).toBe("ready");
+      expect(result.current.audioPlaybackState).toBe("playing");
+      expect(failedReports(sendCommand)).toHaveLength(0);
+      expect(load).toHaveBeenCalledTimes(1);
+    });
+  });
 });
