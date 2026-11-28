@@ -189,9 +189,9 @@ const songWorkKey = (song: SongSearchResult): string => {
 /**
  * 把同一作品的多个 ID 合并成一首。
  *
- * 歌单常把一首歌收录多次（专辑版、单曲版、现场版），ID 各不相同。近期窗口按 ID 记账，
+ * 歌单常把一首歌收录多次（专辑版、单曲版、现场版），ID 各不相同。近期记录按 ID 记账，
  * 不合并的话玩家隔几轮就会再听到“同一首”，答案也一样。每首作品只留一个候选：
- * 优先留近期播过的那个 ID，窗口才认得它；其次留能播的。
+ * 优先留近期播过的那个 ID，记录才认得它；其次留能播的。
  */
 export const collapseSameWorks = (
   candidates: readonly SongSearchResult[],
@@ -214,48 +214,58 @@ export const collapseSameWorks = (
 export interface AutomaticCandidateTiers {
   /** 每层按抽取顺序给出；`ordered` 为真的层依次取（最久没播的先出），否则层内均匀随机。 */
   tiers: { name: string; songs: SongSearchResult[]; ordered: boolean }[];
-  fresh: number;
+  unplayed: number;
+  rested: number;
   recycled: number;
   knownUnavailable: number;
 }
 
 /**
- * 把候选池分成「新鲜 → 回收 → 已知取不到」三类，并让可播的先于不可播。
+ * 把候选池分成「没出过 → 歇够了 → 回收 → 已知取不到」四类，并让可播的先于不可播。
  *
- * - 新鲜：不在近期窗口、也不在近期取不到记录里。这一层才是随机出题的主体。
- * - 回收：近期窗口里的歌，按最久没播的先出。只有新鲜层抽空或全部失败才会用到，
- *   这样小歌单耗尽后重复的间隔也最大。
+ * - 没出过：房间的近期记录里根本没有它。整池里还有这类歌时只从这里抽，一轮歌单听完之前
+ *   不会再出猜过的歌。
+ * - 歇够了：出过，但已经落在回收窗口之外。整池都出过一遍之后才轮到它们，每轮在最久没出
+ *   的若干首里随机，同一首至少隔整池的大部分轮数才回来（窗口长度见 `resolveRecentSongWindow`）。
+ * - 回收：回收窗口里的歌，按最久没播的先出。只有前两类抽空或全部失败才会用到。
  * - 已知取不到：近期失败过的候选，放最后兜底（下架、限流恢复后可能又能播）。
+ *
+ * 「没出过」必须单独成层、排在「歇够了」前面：两者混在一层等概率抽时，出过的歌只要
+ * 掉出窗口就和没出过的歌抢同一个签，歌单还没听完就会频繁重复。
  * 软排序必须落实在分层上：此前仅对数组排序再按随机下标抽，排序对结果毫无作用。
  */
 export const buildAutomaticCandidateTiers = (
   candidates: readonly SongSearchResult[],
-  recentIds: readonly string[],
+  history: readonly string[],
+  window: number,
   unavailableIds: ReadonlySet<string>,
   isPlayable: (song: SongSearchResult) => boolean
 ): AutomaticCandidateTiers => {
-  const recentRank = new Map(recentIds.map((id, index) => [id, index]));
-  const fresh = candidates.filter(
-    (song) => !recentRank.has(song.id) && !unavailableIds.has(song.id)
-  );
-  const recycled = candidates
-    .filter((song) => recentRank.has(song.id))
-    .sort((left, right) => recentRank.get(right.id)! - recentRank.get(left.id)!);
-  const knownUnavailable = candidates.filter(
-    (song) => !recentRank.has(song.id) && unavailableIds.has(song.id)
-  );
+  const played = new Set(history);
+  const recentRank = new Map(history.slice(0, window).map((id, index) => [id, index]));
+  const unplayed: SongSearchResult[] = [];
+  const rested: SongSearchResult[] = [];
+  const recycled: SongSearchResult[] = [];
+  const knownUnavailable: SongSearchResult[] = [];
+  for (const song of candidates) {
+    if (recentRank.has(song.id)) recycled.push(song);
+    else if (unavailableIds.has(song.id)) knownUnavailable.push(song);
+    else if (played.has(song.id)) rested.push(song);
+    else unplayed.push(song);
+  }
+  recycled.sort((left, right) => recentRank.get(right.id)! - recentRank.get(left.id)!);
+  const unplayable = (song: SongSearchResult) => !isPlayable(song);
   return {
     tiers: [
-      { name: "fresh-playable", songs: fresh.filter(isPlayable), ordered: false },
-      {
-        name: "fresh-unplayable",
-        songs: fresh.filter((song) => !isPlayable(song)),
-        ordered: false,
-      },
+      { name: "unplayed-playable", songs: unplayed.filter(isPlayable), ordered: false },
+      { name: "rested-playable", songs: rested.filter(isPlayable), ordered: false },
+      { name: "unplayed-unplayable", songs: unplayed.filter(unplayable), ordered: false },
+      { name: "rested-unplayable", songs: rested.filter(unplayable), ordered: false },
       { name: "recycled", songs: recycled, ordered: true },
       { name: "unavailable", songs: knownUnavailable, ordered: false },
     ],
-    fresh: fresh.length,
+    unplayed: unplayed.length,
+    rested: rested.length,
     recycled: recycled.length,
     knownUnavailable: knownUnavailable.length,
   };
@@ -289,7 +299,7 @@ const liveUnavailableIds = (room: SonGuessrRoomRecord, now: number): Set<string>
       .map(([id]) => id)
   );
 
-/** 自动出题（歌曲）：先按整池定近期窗口，再分层抽取，试到能拿到音频的一首。 */
+/** 自动出题（歌曲）：先出整池里没出过的歌，出完一遍再按整池定的近期窗口回收，试到能拿到音频的一首。 */
 export const startAutomaticSongRound = async (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
@@ -304,13 +314,15 @@ export const startAutomaticSongRound = async (
   const now = ctx.now();
   const playability = songPlayabilityContext(ctx, room);
   const isPlayable = (song: SongSearchResult): boolean => isPlayableSong(song, playability);
-  const works = collapseSameWorks(candidates, room.recentSongIds ?? [], isPlayable);
+  const history = room.recentSongIds ?? [];
+  const works = collapseSameWorks(candidates, history, isPlayable);
   // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
   // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
   const recentSongWindow = resolveRecentSongWindow(works.length);
   const layout = buildAutomaticCandidateTiers(
     works,
-    (room.recentSongIds ?? []).slice(0, recentSongWindow),
+    history,
+    recentSongWindow,
     liveUnavailableIds(room, now),
     isPlayable
   );
@@ -318,10 +330,11 @@ export const startAutomaticSongRound = async (
   ctx.log("song.auto.pool", room.id, undefined, {
     candidates: candidates.length,
     works: works.length,
-    fresh: layout.fresh,
+    unplayed: layout.unplayed,
+    rested: layout.rested,
     recycled: layout.recycled,
     knownUnavailable: layout.knownUnavailable,
-    freshPlayable: layout.tiers[0].songs.length,
+    unplayedPlayable: layout.tiers[0].songs.length,
     window: recentSongWindow,
   });
 

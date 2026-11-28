@@ -303,24 +303,22 @@ export const AUTO_ANIME_CANDIDATE_LIMIT = 5;
  */
 export const AUTO_SONG_CANDIDATE_LIMIT = 5;
 /**
- * 「最近不出」窗口相对候选池的目标占比。
+ * 回收期「最近不出」窗口之外留给随机的余量，按整池的百分比计（整数百分比，避免浮点误差）。
  *
- * 固定的 10 首窗口在池子远大于 10 时几乎不消耗池子容量：1000 首的歌单
- * 仍然从第 12 轮起就允许重现已出过的歌。窗口按池子线性放长后，
- * 「不重复」才真正用满池子容量 —— 池 990 时前 495 轮都不会出现旧歌。
- */
-export const RECENT_SONG_WINDOW_RATIO = 0.5;
-/**
- * 「最近不出」窗口下限。
+ * 整池都出过一遍之后才进入回收期（见 `buildAutomaticCandidateTiers`），这时窗口取
+ * 「整池扣掉余量」：余量越小，同一首歌重播的间隔越长，但下一首越可预测 —— 余量为零时
+ * 第二轮会按第一轮的顺序原样重放，听过上一首就知道下一首。取五分之一，回收期任意一首
+ * 至少隔整池八成的轮数才回来，每轮仍在若干首最久没出的歌里随机。
  *
- * 小池子本来就装不满窗口（池 15 时 10 首已占三分之二），继续缩短只会让
- * 旧歌更早回来；而池子耗尽后总重复次数只由轮数决定、与窗口长度无关，
- * 因此小池子保留原有的 10 首行为不变。
+ * 窗口曾经只取整池的一半：出到半个歌单之后，最早出过的歌就和从没出过的歌一起等概率
+ * 回到抽签池，一轮歌单还没听完就频繁听到猜过的歌。
  */
-export const MIN_RECENT_SONG_WINDOW = 10;
+export const RECENT_SONG_RESERVE_PERCENT = 20;
+/** 回收期随机余量的下限：至少在两首里随机，小歌单的第二轮才不会按第一轮的顺序重放。 */
+export const MIN_RECENT_SONG_RESERVE = 2;
 /**
- * 「最近不出」窗口上限。房间是纯内存态，需要给窗口一个与池子无关的上界，
- * 避免超大歌单把每个房间的最近列表撑成任意长度。
+ * 「最近不出」窗口上限，也是房间近期曲目记录的条数上限。房间是纯内存态，需要给记录一个
+ * 与池子无关的上界，避免超大歌单把每个房间的最近列表撑成任意长度。
  */
 export const MAX_RECENT_SONG_WINDOW = 500;
 /** 取不到音频的候选在房间里被降权的时长；过期后允许重试（下架、限流都可能恢复）。 */
@@ -329,15 +327,19 @@ export const UNAVAILABLE_SONG_TTL_MS = 2 * 60 * 60_000;
 export const MAX_UNAVAILABLE_SONG_RECORDS = 1_000;
 
 /**
- * 按候选池规模计算「最近不出」窗口长度。
+ * 按候选池规模计算回收期的「最近不出」窗口长度：整池扣掉随机余量，并在上限处截断。
  *
- * 池子不超过 20 首时恒为 `MIN_RECENT_SONG_WINDOW`（等价于改动前的固定 10 首）；
- * 更大池子按 `RECENT_SONG_WINDOW_RATIO` 放长，并在 `MAX_RECENT_SONG_WINDOW` 处截断。
+ * 池子有两首及以上时窗口至少记住上一首，不会连着出同一首。窗口只决定回收期怎么排，
+ * 整池里还有没出过的歌时先出那些歌，与窗口长度无关。
  */
 export const resolveRecentSongWindow = (poolSize: number): number => {
-  if (!Number.isFinite(poolSize) || poolSize <= 0) return MIN_RECENT_SONG_WINDOW;
-  const adaptive = Math.floor(poolSize * RECENT_SONG_WINDOW_RATIO);
-  return Math.max(MIN_RECENT_SONG_WINDOW, Math.min(MAX_RECENT_SONG_WINDOW, adaptive));
+  if (!Number.isFinite(poolSize) || poolSize <= 1) return 0;
+  const size = Math.floor(poolSize);
+  const reserve = Math.max(
+    MIN_RECENT_SONG_RESERVE,
+    Math.ceil((size * RECENT_SONG_RESERVE_PERCENT) / 100)
+  );
+  return Math.min(MAX_RECENT_SONG_WINDOW, Math.max(1, size - reserve));
 };
 /**
  * 候选级取歌失败：这一首当前拿不到可用播放地址（下架、无版权、解灰全部失败），

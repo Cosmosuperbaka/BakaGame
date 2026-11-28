@@ -66,13 +66,27 @@ const startSoloService = async (
       },
     },
   });
-  /** 打一轮并返回结算后公开的答案 ID；开局失败时返回错误码。 */
-  const playRound = async (round: number): Promise<{ id?: string; error?: string }> => {
+  /**
+   * 打一轮并返回结算后公开的答案 ID；开局失败时返回错误码。
+   * `restart` 为真时先从结算页回到等待阶段再重新开局，与玩家点「结束」后再「开始」同路径。
+   */
+  const playRound = async (
+    round: number,
+    options: { restart?: boolean } = {}
+  ): Promise<{ id?: string; error?: string }> => {
     clock += 1_000;
+    if (options.restart && round > 1) {
+      await execute(service, solo, {
+        id: `finish-${round}`,
+        type: "song.game.finish",
+        roomId,
+        payload: {},
+      });
+    }
     try {
       await execute(service, solo, {
         id: `start-${round}`,
-        type: round === 1 ? "song.game.start" : "song.game.nextRound",
+        type: round === 1 || options.restart ? "song.game.start" : "song.game.nextRound",
         roomId,
         payload: {},
       });
@@ -122,6 +136,67 @@ describe("自动出题的候选池覆盖与去重", () => {
     }
   });
 
+  test("歌单听完一遍之前不出猜过的歌，中途回到等待阶段再开局也接着记", async () => {
+    const pool = makePool(30);
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "中池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id) => makeSong(id, `曲目${id}`, 2020),
+    };
+    const { service, playRound } = await startSoloService(music, "6010", 17, pool.length);
+    const picked: string[] = [];
+    for (let round = 1; round <= 75; round += 1) {
+      // 每 7 轮回到等待阶段再开局一次：近期记录属于房间，不随这一步清空。
+      const result = await playRound(round, { restart: round % 7 === 1 });
+      expect(result.error).toBeUndefined();
+      picked.push(result.id!);
+    }
+    // 第一遍：30 轮恰好把 30 首各出一次，一首都不重复。
+    expect(new Set(picked.slice(0, 30)).size).toBe(30);
+    // 回收期：窗口是 24，任意连续 25 轮里同一首只出现一次。
+    for (let start = 0; start + 25 <= picked.length; start += 1) {
+      expect(new Set(picked.slice(start, start + 25)).size).toBe(25);
+    }
+    // 回收期仍然随机：第二遍不按第一遍的顺序原样重放。
+    expect(picked.slice(30, 60)).not.toEqual(picked.slice(0, 30));
+    expect(service.rooms.get("6010")!.recentSongIds).toHaveLength(30);
+  });
+
+  test("小歌单的第二遍也在多首之间随机，不按第一遍的顺序重放", async () => {
+    const pool = makePool(8);
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "小池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id) => makeSong(id, `曲目${id}`, 2020),
+    };
+    const { playRound } = await startSoloService(music, "6011", 29, pool.length);
+    const picked: string[] = [];
+    for (let round = 1; round <= 40; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      picked.push(result.id!);
+    }
+    expect(new Set(picked.slice(0, 8)).size).toBe(8);
+    // 8 首的窗口是 6：任意连续 7 轮不重复。
+    for (let start = 0; start + 7 <= picked.length; start += 1) {
+      expect(new Set(picked.slice(start, start + 7)).size).toBe(7);
+    }
+    // 记住上一首就能报出下一首，说明顺序被原样重放了；随机余量必须打破这种对应。
+    const successor = new Map<string, Set<string>>();
+    for (let index = 1; index < picked.length; index += 1) {
+      const next = successor.get(picked[index - 1]) ?? new Set<string>();
+      next.add(picked[index]);
+      successor.set(picked[index - 1], next);
+    }
+    expect([...successor.values()].some((next) => next.size > 1)).toBe(true);
+  });
+
   test("同一首歌的多个 ID 合并成一首：窗口内不会再听到同名版本", async () => {
     // 20 首作品，每首在歌单里出现两次：录音室版和现场版，ID 不同。
     const pool: SongSearchResult[] = Array.from({ length: 40 }, (_, index) => {
@@ -148,12 +223,12 @@ describe("自动出题的候选池覆盖与去重", () => {
       expect(result.error).toBeUndefined();
       heard.push(titleOf.get(result.id!)!);
     }
-    // 20 首作品的窗口是 10：任意连续 11 轮里同一作品只能出现一次。
-    for (let start = 0; start + 11 <= heard.length; start += 1) {
-      const slice = heard.slice(start, start + 11);
+    // 20 首作品：前 20 轮恰好把每首作品各出一次；之后回收窗口是 16，任意连续 17 轮不重复。
+    expect(new Set(heard.slice(0, 20)).size).toBe(20);
+    for (let start = 0; start + 17 <= heard.length; start += 1) {
+      const slice = heard.slice(start, start + 17);
       expect(new Set(slice).size).toBe(slice.length);
     }
-    expect(new Set(heard).size).toBeGreaterThan(10);
   });
 
   test("多数候选走跨平台兜底或取不到时，原候选仍被去重且失败轮数有限", async () => {
@@ -348,16 +423,26 @@ describe("collapseSameWorks", () => {
 });
 
 describe("buildAutomaticCandidateTiers", () => {
+  const byName = (layout: ReturnType<typeof buildAutomaticCandidateTiers>) =>
+    Object.fromEntries(layout.tiers.map((tier) => [tier.name, tier.songs.map((song) => song.id)]));
+
   test("近期窗口里的歌进回收层，按最久没播的先出", () => {
-    const tiers = buildAutomaticCandidateTiers(
-      makePool(5),
-      ["netease:1", "netease:3", "netease:2"],
-      new Set(),
-      () => true
-    );
-    expect(tiers.fresh).toBe(2);
-    const recycled = tiers.tiers.find((tier) => tier.name === "recycled")!;
-    expect(recycled.songs.map((song) => song.id)).toEqual(["netease:2", "netease:3", "netease:1"]);
+    const history = ["netease:1", "netease:3", "netease:2"];
+    const layout = buildAutomaticCandidateTiers(makePool(5), history, 3, new Set(), () => true);
+    expect(layout.unplayed).toBe(2);
+    expect(byName(layout).recycled).toEqual(["netease:2", "netease:3", "netease:1"]);
+  });
+
+  test("没出过的歌单独成层，排在已掉出窗口的旧歌前面", () => {
+    // 1、3、2 依次出过，窗口只认最近两首：2 掉出窗口，但它仍然是出过的歌。
+    const history = ["netease:1", "netease:3", "netease:2"];
+    const layout = buildAutomaticCandidateTiers(makePool(5), history, 2, new Set(), () => true);
+    const tiers = byName(layout);
+    expect(layout.tiers[0].name).toBe("unplayed-playable");
+    expect(tiers["unplayed-playable"]).toEqual(["netease:0", "netease:4"]);
+    expect(tiers["rested-playable"]).toEqual(["netease:2"]);
+    expect(tiers.recycled).toEqual(["netease:3", "netease:1"]);
+    expect(layout.tiers.map((tier) => tier.name).indexOf("rested-playable")).toBe(1);
   });
 
   test("取不到的候选落在最后一层，不可播的候选排在可播之后", () => {
@@ -365,18 +450,18 @@ describe("buildAutomaticCandidateTiers", () => {
       ...makePool(3),
       { id: "qq:vip", title: "会员曲", artist: "歌手", requiresVip: true },
     ];
-    const tiers = buildAutomaticCandidateTiers(
+    const layout = buildAutomaticCandidateTiers(
       pool,
       [],
+      0,
       new Set(["netease:0"]),
       (song) => !song.id.startsWith("qq:")
     );
-    const byName = Object.fromEntries(
-      tiers.tiers.map((tier) => [tier.name, tier.songs.map((song) => song.id)])
-    );
-    expect(byName["fresh-playable"]).toEqual(["netease:1", "netease:2"]);
-    expect(byName["fresh-unplayable"]).toEqual(["qq:vip"]);
-    expect(byName.unavailable).toEqual(["netease:0"]);
+    const tiers = byName(layout);
+    expect(tiers["unplayed-playable"]).toEqual(["netease:1", "netease:2"]);
+    expect(tiers["unplayed-unplayable"]).toEqual(["qq:vip"]);
+    expect(tiers.unavailable).toEqual(["netease:0"]);
+    expect(layout.tiers.at(-1)!.name).toBe("unavailable");
   });
 });
 
