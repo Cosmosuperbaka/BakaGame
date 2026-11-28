@@ -173,4 +173,25 @@ describe("自动猜番的番剧轮换", () => {
       missingIds
     );
   });
+
+  test("出过之后才出不了题的番剧也排到最后，不在回收层里每轮挡在最前", async () => {
+    const subjects = Array.from({ length: 12 }, (_, index) => subject(index));
+    const missingIds: string[] = [];
+    const { playRound } = await startAnimeRotation(subjects, 9, { missingIds });
+    const firstCycle: string[] = [];
+    for (let round = 1; round <= 12; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      firstCycle.push(result.id!);
+    }
+    // 最早出过的 8 部之后都查不到了：歇够了的 3 部加上回收层最前面的 5 部。
+    // 它们若留在回收层，按最久没出排在最前，每轮 5 次尝试都耗在它们身上。
+    missingIds.push(...firstCycle.slice(0, 8));
+    const results: { id?: string; error?: string }[] = [];
+    for (let round = 13; round <= 20; round += 1) results.push(await playRound(round));
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(results.slice(1).every((result) => result.id && !missingIds.includes(result.id))).toBe(
+      true
+    );
+  });
 });

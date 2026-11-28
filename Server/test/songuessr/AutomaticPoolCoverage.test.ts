@@ -486,6 +486,22 @@ describe("buildAutomaticCandidateTiers", () => {
     expect(tiers.unavailable).toEqual(["netease:0"]);
     expect(layout.tiers.at(-1)!.name).toBe("unavailable");
   });
+
+  test("出过之后才取不到的歌也落到最后一层，不留在回收层里挡在最前", () => {
+    // 2 是窗口里最久没播的，回收层本该先出它；它取不到了，就得让给 3。
+    const history = ["netease:1", "netease:3", "netease:2"];
+    const layout = buildAutomaticCandidateTiers(
+      makePool(4),
+      history,
+      3,
+      new Set(["netease:2"]),
+      () => true
+    );
+    const tiers = byName(layout);
+    expect(tiers.recycled).toEqual(["netease:3", "netease:1"]);
+    expect(tiers.unavailable).toEqual(["netease:2"]);
+    expect(layout.knownUnavailable).toBe(1);
+  });
 });
 
 describe("近期窗口的写入", () => {
