@@ -69,6 +69,13 @@ export default defineConfig(({ command }) => {
       // 主样式表，每个玩家都要白白下载它。字体一律输出成文件，其余资源沿用默认阈值。
       assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
       rolldownOptions: {
+        treeshake: {
+          // 歌词播放器只用 AMLL 的 DOM 歌词组件，不用它的 WebGL 背景渲染（同包导出，靠 pixi 驱动）。
+          // pixi 各包没声明 sideEffects，打包器只能整包保留，连同它拖进来的 url/qs 等 Node 兼容层，
+          // 约占猜歌房间分片的六成。这里声明 pixi 无副作用，没被引用就整包摇掉；
+          // 以后真用上背景渲染，被引用的部分照常打包，届时再核对 pixi 的扩展注册是否需要保留副作用。
+          moduleSideEffects: [{ test: /node_modules\/@pixi\//, sideEffects: false }],
+        },
         output: {
           // 稳定的第三方依赖单独成块：块名里的内容哈希只随依赖本身变，
           // 只改业务代码的部署不会让它们的文件名变化，老用户的缓存继续命中。

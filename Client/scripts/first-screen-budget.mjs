@@ -21,8 +21,11 @@ export const BUDGETS = {
   entryCssGzBytes: 26_500,
   /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 211.2KB gz（Sentry SDK 改空闲时加载后 −90KB，去掉 Helmet 后 −5.5KB）。 */
   entryJsGraphGzBytes: 221_500,
-  /** 单个路由分片：实测最大 SonGuessrRoomPage 约 136.9KB gz。 */
-  largestChunkGzBytes: 139_000,
+  /**
+   * 单个分片：实测最大 vendor-sentry 约 90.1KB gz（空闲时才加载）。SonGuessrRoomPage 原先约 139.1KB，
+   * 摇掉歌词库用不到的 pixi（见 vite.config.ts 的 treeshake）后约 59.2KB；它重新逼近上限多半是 pixi 又被整包带了回来。
+   */
+  largestChunkGzBytes: 92_000,
   /**
    * 渲染阻塞样式表里的 @font-face 条数：中文字体声明已移到非阻塞的 fonts.css，这里只剩拉丁字体的少数几条。
    * 实测 17：衬线体 11 条，加 v1 等宽体 JetBrains Mono 的 6 条。
