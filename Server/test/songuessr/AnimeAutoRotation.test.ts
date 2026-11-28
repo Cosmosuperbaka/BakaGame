@@ -34,7 +34,12 @@ const subject = (index: number, withMusic = true): BangumiSubjectDetails => ({
  * 单人猜番房：题库是给定的番剧列表，每部番的关联曲都能在音乐平台搜到、能播。
  * 按真人节奏推进注入时钟（每轮一秒），每连接的命令总额度才不会被循环打满。
  */
-const startAnimeRotation = async (subjects: BangumiSubjectDetails[], seed: number) => {
+const startAnimeRotation = async (
+  subjects: BangumiSubjectDetails[],
+  seed: number,
+  options: { missingIds?: string[] } = {}
+) => {
+  const { missingIds = [] } = options;
   const byId = new Map(subjects.map((item) => [item.id, item]));
   const musicProvider: MusicProvider = {
     ...provider,
@@ -46,7 +51,12 @@ const startAnimeRotation = async (subjects: BangumiSubjectDetails[], seed: numbe
   };
   const bangumiProvider = fakeBangumiProvider({
     searchSubjects: async () => subjects,
-    getSubject: async (id) => byId.get(id)!,
+    // 搜索结果里有、取详情却查不到：索引与库不同步时会这样。
+    getSubject: async (id) => {
+      if (missingIds.includes(id))
+        throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+      return byId.get(id)!;
+    },
   });
   let clock = Date.now();
   const service = new SonGuessrService({
@@ -130,5 +140,20 @@ describe("自动猜番的番剧轮换", () => {
     // 8 部出不了题的番剧，每轮最多试 5 部：至多两轮之后它们全被记下。
     expect(failedRounds).toBeLessThanOrEqual(2);
     expect(Object.keys(service.rooms.get(roomId)!.unavailableSubjectIds ?? {})).toHaveLength(8);
+  });
+
+  test("取详情查不到的番剧跳过并记下，不让整轮开局失败", async () => {
+    const subjects = Array.from({ length: 5 }, (_, index) => subject(index));
+    const missingIds = ["subject-1", "subject-2", "subject-3", "subject-4"];
+    const { service, roomId, playRound } = await startAnimeRotation(subjects, 5, { missingIds });
+    // 四部查不到、只有一部能出：每轮最多试五部，先撞上查不到的也要接着试下去。
+    for (let round = 1; round <= 3; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      expect(result.id).toBe("subject-0");
+    }
+    expect(Object.keys(service.rooms.get(roomId)!.unavailableSubjectIds ?? {}).sort()).toEqual(
+      missingIds
+    );
   });
 });

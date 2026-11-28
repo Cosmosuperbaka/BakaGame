@@ -199,7 +199,7 @@ export const startAutomaticAnimeRound = async (
         !isUnusableSongCandidate(error) &&
         !(
           error instanceof AppError &&
-          ["BANGUMI_NO_MUSIC", "BANGUMI_NOT_FOUND"].includes(error.code)
+          ["BANGUMI_NO_MUSIC", "BANGUMI_SUBJECT_NOT_FOUND"].includes(error.code)
         )
       )
         throw error;
