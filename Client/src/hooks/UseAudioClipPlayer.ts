@@ -20,7 +20,7 @@ type ClipAudioStatus = "loading" | "ready" | "error";
 /**
  * 片段起点那一段真的能播：没有在跳转，且数据够往下播。浏览器主动停下预载（网络空闲）时，
  * 手里有当前帧也算：它要等起播才接着拉，干等只会等到超时。
- * 弱网下 `loadeddata` 往往只是文件开头那一帧，跳到片段起点还得另拉一段；那时就报就绪，
+ * 这几个媒体事件只说明「当前位置」有数据：跳转没落地或只有一帧时就报就绪，
  * 歌词先亮、倒计时先走，声音却还没到。
  */
 const playableAtClipStart = (audio: HTMLAudioElement) =>
