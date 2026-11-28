@@ -1,6 +1,6 @@
 import { AppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../EventLogger";
-import { parseSongUrn, buildSongUrn, withUrn } from "./MusicUrn";
+import { parseSongUrn, withSongUrns, withUrn } from "./MusicUrn";
 import { resolvePlatformCookie } from "./MusicCookieResolver";
 import { raceWithTimeout } from "./RaceTimeout";
 import {
@@ -98,15 +98,17 @@ export class AggregatedMusicProvider implements MusicProvider {
       return [];
     }
     return settled.value.map((s, index) => ({
-      ...markSongPlayability(s, playability),
-      id: withUrn(platform, s.id),
+      ...withSongUrns(platform, markSongPlayability(s, playability)),
       upstreamRank: index,
     }));
   }
 
-  /** 子 provider 返回的条目补统一 URN 前缀。 */
-  private withPlatformIds<T extends { id: string }>(platform: MusicPlatform, items: T[]): T[] {
-    return items.map((item) => ({ ...item, id: withUrn(platform, item.id) }));
+  /** 子 provider 返回的歌曲条目补统一 URN 前缀（含翻唱指向的原曲 ID）。 */
+  private withPlatformIds<T extends { id: string; originSongId?: string }>(
+    platform: MusicPlatform,
+    items: T[]
+  ): T[] {
+    return items.map((item) => withSongUrns(platform, item));
   }
 
   async search(
@@ -197,7 +199,7 @@ export class AggregatedMusicProvider implements MusicProvider {
         rawId,
         resolvePlatformCookie(cookie, platform)
       );
-      return { ...details, id: buildSongUrn(platform, rawId) };
+      return withSongUrns(platform, details, rawId);
     } catch (error) {
       if (options.allowFailover === false) throw error;
       this.logger?.warn?.(`${PLATFORM_LABEL[platform]}歌曲加载失败，尝试触发音源 Failover`, {
@@ -260,7 +262,7 @@ export class AggregatedMusicProvider implements MusicProvider {
         ? parseSongUrn(bestCandidate.id).rawId
         : bestCandidate.id;
       const details = await targetProvider.getSong(rawId, targetCookie);
-      return { ...details, id: buildSongUrn(targetPlatform, rawId) };
+      return withSongUrns(targetPlatform, details, rawId);
     } catch (error) {
       // 兜底失败不改变语义（调用方照旧抛原错误），但吞掉的错误要留痕：上游瞬态失败是信息级。
       this.logger?.info?.("音源 Failover 未能取得备用歌曲", {
@@ -301,7 +303,7 @@ export class AggregatedMusicProvider implements MusicProvider {
       rawId,
       resolvePlatformCookie(cookie, platform)
     );
-    return { ...res, id: buildSongUrn(platform, rawId) };
+    return withSongUrns(platform, res, rawId);
   }
 
   async getSongPopularity(songId: string, cookie?: MusicCookieInput): Promise<number | undefined> {

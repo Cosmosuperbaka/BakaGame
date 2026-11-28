@@ -56,6 +56,25 @@ export function withUrn(platform: MusicPlatform, id: string): string {
 }
 
 /**
+ * 歌曲条目补统一 URN：自身 ID 与翻唱指向的原曲 ID（`originSongId`）一起补。
+ *
+ * 子 provider 返回的原曲 ID 是平台裸标识；只补自身 ID 时，调用方拿原曲 ID 去回指原版
+ * （`getSong`）会因为不是 URN 直接抛 `INVALID_SONG_URN`，判对时与 URN 形态的答案 ID
+ * 也永远比不上。原曲 ID 与翻唱同属一个平台。
+ */
+export function withSongUrns<T extends { id: string; originSongId?: string }>(
+  platform: MusicPlatform,
+  song: T,
+  rawId: string = song.id
+): T {
+  return {
+    ...song,
+    id: withUrn(platform, rawId),
+    ...(song.originSongId ? { originSongId: withUrn(platform, song.originSongId) } : {}),
+  };
+}
+
+/**
  * 判断是否为合法音源 URN.
  */
 export function isSongUrn(urn: unknown): boolean {
