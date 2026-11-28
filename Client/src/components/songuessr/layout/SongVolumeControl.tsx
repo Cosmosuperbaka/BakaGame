@@ -17,11 +17,14 @@ import { iconTappable } from "@/lib/motion/Feedback";
 import { popover } from "@/lib/motion/Choreography";
 import { readoutSwap } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
+import { SongAudioQualityMenu, type AudioQualityControlProps } from "./SongAudioQualityMenu";
 import { SongVolumeReadout } from "./SongVolumeReadout";
 
 export interface VolumeControlProps {
   volume: number;
   onVolumeChange: (value: number) => void;
+  /** 给了就在胶囊右端接一颗音质选择；不给（如出题编辑器的试听）只有音量。 */
+  audioQuality?: AudioQualityControlProps;
 }
 
 /** 从静音恢复时没有记过可听的音量（进房时就是 0）就回到默认音量，与 `useAudioClipPlayer` 的缺省一致。 */
@@ -49,9 +52,10 @@ function useMuteToggle(volume: number, onVolumeChange: (value: number) => void) 
 
 /**
  * 房间顶栏的播放音量：图标加细轨道的胶囊。点图标静音 / 恢复；悬停或聚焦时轨道变粗、滑块显出，读数随值逐位滚动。
+ * 给了 `audioQuality` 时读数之后隔一道细竖线接音质选择，同一个胶囊里先调大小、再挑音质。
  * `sm` 起常驻；更窄时收成图标按钮、点开弹出同一个胶囊，把中栏让给轮数与视角徽章。
  */
-export function SongVolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
+export function SongVolumeControl({ volume, onVolumeChange, audioQuality }: VolumeControlProps) {
   const [open, setOpen] = useState(false);
   useCloseFrom(open, setOpen, "sm");
   const toggleMute = useMuteToggle(volume, onVolumeChange);
@@ -62,6 +66,7 @@ export function SongVolumeControl({ volume, onVolumeChange }: VolumeControlProps
       <VolumeCapsule
         volume={volume}
         onVolumeChange={onVolumeChange}
+        audioQuality={audioQuality}
         onToggleMute={toggleMute}
         className="hidden sm:flex"
       />
@@ -72,7 +77,7 @@ export function SongVolumeControl({ volume, onVolumeChange }: VolumeControlProps
             variant="ghost"
             size="icon"
             className="sm:hidden"
-            aria-label="调节音量"
+            aria-label={audioQuality ? "调节音量与音质" : "调节音量"}
           >
             <VolumeGlyph volume={volume} className="h-5 w-5" />
           </Button>
@@ -87,7 +92,7 @@ export function SongVolumeControl({ volume, onVolumeChange }: VolumeControlProps
                 align="end"
                 sideOffset={6}
                 collisionPadding={12}
-                aria-label="播放音量"
+                aria-label={audioQuality ? "播放音量与音质" : "播放音量"}
                 asChild
               >
                 <motion.div
@@ -102,6 +107,7 @@ export function SongVolumeControl({ volume, onVolumeChange }: VolumeControlProps
                   <VolumeCapsule
                     volume={volume}
                     onVolumeChange={onVolumeChange}
+                    audioQuality={audioQuality}
                     onToggleMute={toggleMute}
                     expanded
                     className="flex border-0 bg-transparent shadow-none"
@@ -145,13 +151,14 @@ interface VolumeCapsuleProps extends VolumeControlProps {
 }
 
 /**
- * 胶囊本体：静音按钮、轨道与百分比读数，常驻音量条与弹出层共用。
+ * 胶囊本体：静音按钮、轨道、百分比读数与（可选的）音质选择，常驻音量条与弹出层共用。
  * 轨道细时只有 4px，滑块收起；悬停或键盘聚焦到滑块时轨道补间到 6px、滑块弹出，与 Switch 同一档 `spring.snap` 的 CSS 弹性。
  * 静音开关与离散变化时，以统一的连续动画数值驱动 Slider 与数字，滑块圆点与填充轨道严密同步平滑滑行；手动拖动时保持零延迟极速跟手。
  */
 function VolumeCapsule({
   volume,
   onVolumeChange,
+  audioQuality,
   onToggleMute,
   expanded = false,
   className,
@@ -217,7 +224,8 @@ function VolumeCapsule({
         <VolumeGlyph volume={muted ? 0 : effectiveVolume} className="h-4 w-4" />
       </motion.button>
       <Slider
-        className="h-full w-28"
+        // 顶栏三等分（md 起）时右栏放不下整条轨道再加音质：xl 以下轨道让出宽度，胶囊总宽与没有音质时持平。
+        className={cn("h-full w-28", audioQuality && !expanded && "w-14 xl:w-28")}
         trackClassName={cn(
           "h-1 transition-[height]",
           spring,
@@ -255,6 +263,12 @@ function VolumeCapsule({
         muted={muted}
         onCommit={(value) => onVolumeChange(value / 100)}
       />
+      {audioQuality ? (
+        <>
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+          <SongAudioQualityMenu {...audioQuality} />
+        </>
+      ) : null}
     </div>
   );
 }

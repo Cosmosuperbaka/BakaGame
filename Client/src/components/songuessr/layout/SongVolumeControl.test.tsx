@@ -1,8 +1,17 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canDecodeQuality } from "@/lib/SongAudioQuality";
 import { stubMatchMedia } from "@/test/MatchMedia";
 import { SongVolumeControl } from "./SongVolumeControl";
+
+// jsdom 的 canPlayType 一律回空串：解码能力由用例自己定。
+vi.mock("@/lib/SongAudioQuality", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/SongAudioQuality")>()),
+  canDecodeQuality: vi.fn(() => true),
+}));
+
+beforeEach(() => vi.mocked(canDecodeQuality).mockReturnValue(true));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -131,4 +140,115 @@ it("键盘提交或放弃读数输入后，焦点回到读数按钮；点到别�
   expect(screen.getByRole("textbox", { name: "输入音量百分比" })).toHaveFocus();
   await user.click(screen.getByRole("button", { name: "静音" }));
   expect(screen.getByRole("button", { name: /^(取消静音|静音)$/ })).toHaveFocus();
+});
+
+describe("音质选择", () => {
+  const openMenu = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
+    screen.getByRole("combobox", { name }).focus();
+    await user.keyboard("{Enter}");
+    return screen.findByRole("listbox");
+  };
+
+  it("胶囊右端写着当前档位，选单里挑一档就交给调用方；解不了的档不能选", async () => {
+    vi.mocked(canDecodeQuality).mockImplementation((quality) => quality !== "dolby");
+    const user = userEvent.setup();
+    const onQualityChange = vi.fn();
+    render(
+      <SongVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        audioQuality={{ quality: "auto", onQualityChange }}
+      />
+    );
+    const listbox = await openMenu(user, /^播放音质：自动$/);
+    expect(within(listbox).getByText("用出题时取好的默认档")).toBeInTheDocument();
+    expect(within(listbox).getByRole("group", { name: "立体声" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("group", { name: "空间音频" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: /杜比全景声/ })).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
+    expect(within(listbox).getByRole("option", { name: /杜比全景声/ })).toHaveTextContent(
+      "此设备不支持"
+    );
+
+    await user.click(within(listbox).getByRole("option", { name: /无损/ }));
+    expect(onQualityChange).toHaveBeenCalledWith("lossless");
+  });
+
+  it("上游降档时胶囊写实际在放的档，选单顶部说明原因", async () => {
+    const user = userEvent.setup();
+    render(
+      <SongVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        audioQuality={{
+          quality: "master",
+          onQualityChange: vi.fn(),
+          qualityState: { kind: "ready", requested: "master", actual: "exhigh", format: "mp3" },
+        }}
+      />
+    );
+    const listbox = await openMenu(user, /^播放音质：极高$/);
+    expect(within(listbox).getByText("这首歌在本房最高到「极高」")).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      state: { kind: "fallback", requested: "dolby", reason: "unsupported" },
+      text: "这台设备解不了「杜比全景声」，正在放默认档",
+    },
+    {
+      state: { kind: "fallback", requested: "surround", reason: "unavailable" },
+      text: "这首歌在本房拿不到「沉浸环绕声」，正在放默认档",
+    },
+    {
+      state: { kind: "fallback", requested: "hires", reason: "failed" },
+      text: "「Hi-Res」加载失败，正在放默认档",
+    },
+  ] as const)("回到默认档时胶囊写「自动」：$text", async ({ state, text }) => {
+    const user = userEvent.setup();
+    render(
+      <SongVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        audioQuality={{ quality: state.requested, onQualityChange: vi.fn(), qualityState: state }}
+      />
+    );
+    const listbox = await openMenu(user, /^播放音质：自动$/);
+    expect(within(listbox).getByText(text)).toBeInTheDocument();
+  });
+
+  it("换档途中胶囊标成忙碌，读屏读到要换去的档", () => {
+    render(
+      <SongVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        audioQuality={{
+          quality: "hires",
+          onQualityChange: vi.fn(),
+          qualityState: { kind: "resolving", requested: "hires" },
+        }}
+      />
+    );
+    expect(screen.getByRole("combobox", { name: "播放音质：正在换到Hi-Res" })).toHaveAttribute(
+      "aria-busy",
+      "true"
+    );
+  });
+
+  it("窄屏弹出层里音量与音质在同一个胶囊", async () => {
+    const user = userEvent.setup();
+    stubMatchMedia(false);
+    render(
+      <SongVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        audioQuality={{ quality: "exhigh", onQualityChange: vi.fn() }}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "调节音量与音质" }));
+    const panel = await screen.findByRole("dialog", { name: "播放音量与音质" });
+    expect(within(panel).getByRole("combobox", { name: "播放音质：极高" })).toBeInTheDocument();
+  });
 });

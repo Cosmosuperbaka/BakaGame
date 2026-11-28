@@ -87,10 +87,21 @@ SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayNam
 
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & {
+    /** 选项上方的固定说明：不随选项滚动，矮屏滚动时仍看得见。 */
+    header?: React.ReactNode;
+  }
 >(
   (
-    { className, children, position = "popper", onPointerDownOutside, onCloseAutoFocus, ...props },
+    {
+      className,
+      children,
+      header,
+      position = "popper",
+      onPointerDownOutside,
+      onCloseAutoFocus,
+      ...props
+    },
     ref
   ) => {
     // 收起动画播放的这一小段，内容仍是 Radix 的可关闭层：这时再按触发框重开，紧随其后的「按在外面」会把它又关掉。
@@ -121,6 +132,7 @@ const SelectContent = React.forwardRef<
           onPointerDownOutside={handlePointerDownOutside}
           onCloseAutoFocus={handleCloseAutoFocus}
         >
+          {header}
           <SelectScrollUpButton />
           <SelectPrimitive.Viewport
             className={cn(
@@ -141,8 +153,11 @@ SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+    /** 右侧的一句补充（规格、备注），不进选中后的显示值，也不参与键入查找。 */
+    hint?: React.ReactNode;
+  }
+>(({ className, children, hint, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
@@ -157,9 +172,39 @@ const SelectItem = React.forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {hint ? (
+      <span className="ml-auto shrink-0 pl-4 font-sans text-xs text-muted-foreground">{hint}</span>
+    ) : null}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
+
+const SelectGroup = SelectPrimitive.Group;
+
+/** 分组标题：与选项同一缩进，比选项小一档、取次要文字色。 */
+const SelectLabel = React.forwardRef<
+  React.ComponentRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn("px-2 pb-1 pt-2 text-xs text-muted-foreground", className)}
+    {...props}
+  />
+));
+SelectLabel.displayName = SelectPrimitive.Label.displayName;
+
+const SelectSeparator = React.forwardRef<
+  React.ComponentRef<typeof SelectPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Separator
+    ref={ref}
+    className={cn("-mx-1 my-1 h-px bg-border", className)}
+    {...props}
+  />
+));
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
 export {
   Select,
@@ -167,6 +212,9 @@ export {
   SelectTrigger,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
+  SelectSeparator,
   SelectScrollUpButton,
   SelectScrollDownButton,
 };

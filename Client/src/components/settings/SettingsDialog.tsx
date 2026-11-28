@@ -259,7 +259,7 @@ export function SettingsDialog({
           <SettingsSection title="音效" icon={Volume2}>
             <SettingSwitchRow
               label="提示音"
-              description="行动与聊天提示音；猜歌播放音量仍在猜歌房间顶栏调节。"
+              description="行动与聊天提示音；猜歌的播放音量与音质在猜歌房间顶栏调节。"
               checked={soundEnabled}
               onCheckedChange={setSoundEnabled}
             />

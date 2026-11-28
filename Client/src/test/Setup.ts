@@ -84,6 +84,14 @@ if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// Radix Select 按下时会查询、释放指针捕获，jsdom 没有这两个方法。
+if (typeof Element.prototype.hasPointerCapture === "undefined") {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (typeof Element.prototype.releasePointerCapture === "undefined") {
+  Element.prototype.releasePointerCapture = () => {};
+}
+
 /**
  * 测试环境不建立真实连接。
  *

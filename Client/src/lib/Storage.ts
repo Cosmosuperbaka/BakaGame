@@ -11,6 +11,8 @@ import { localStore, sessionStore } from "@/lib/SafeStorage";
 export const USERNAME_KEY = "bakagame:username";
 /** 猜歌音量（0–1 的字符串）。 */
 export const SONG_VOLUME_KEY = "songuessr_volume";
+/** 猜歌播放音质偏好（`auto` 或共享档位名）。 */
+export const SONG_AUDIO_QUALITY_KEY = "songuessr_audio_quality";
 const SESSION_PREFIX = "whoisfaker_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
 export const CEE_SESSION_PREFIX = "cee_session:";

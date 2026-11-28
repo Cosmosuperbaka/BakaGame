@@ -13,6 +13,7 @@ import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeContr
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { useMinWidth } from "@/hooks/UseMinWidth";
+import { useSongAudioQuality } from "@/hooks/UseSongAudioQuality";
 import { useUnreadCount } from "@/hooks/UseUnreadCount";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoom } from "@/components/songuessr/UseSongRoom";
@@ -83,11 +84,22 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const isPlayingPhase = snapshot?.phase === "playing";
   const playback = pickPlayback(snapshot, snapshot?.phase);
 
+  // 快照里的是默认档的站内地址；玩家选了别的档，就换成那一档的地址再交给播放器。
+  const audioQuality = useSongAudioQuality({
+    roomId,
+    roundNumber: playback.currentPhaseRoundNumber,
+    ticketUrl: playback.currentAudioUrl,
+    sendCommand,
+  });
+
   const { audioRef, volume, setVolume, audioStatus, audioPlaybackState, playAudio, retryAudio } =
     useAudioClipPlayer({
       roomId,
       phase: snapshot?.phase,
       ...playback,
+      currentAudioUrl: audioQuality.audioUrl,
+      sourcePending: audioQuality.pending,
+      onSourceError: audioQuality.reportSourceError,
       isPlayingPhase,
       sendCommand,
     });
@@ -223,7 +235,15 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         }
         actions={
           <>
-            <SongVolumeControl volume={volume} onVolumeChange={setVolume} />
+            <SongVolumeControl
+              volume={volume}
+              onVolumeChange={setVolume}
+              audioQuality={{
+                quality: audioQuality.preference,
+                onQualityChange: audioQuality.setPreference,
+                qualityState: audioQuality.state,
+              }}
+            />
             <RoomUtilityActions agentsBlocked={snapshot.settings.allowAgents !== true} />
           </>
         }
