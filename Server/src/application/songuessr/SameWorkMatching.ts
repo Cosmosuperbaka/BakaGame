@@ -8,8 +8,8 @@
  *    原曲回指经常指错（《离别曲》回指到 Op.9 No.1 夜曲），所以排在回指之前。
  * 3. 网易云的翻唱回指：一边是另一边的原曲，或两边指向同一首原曲。
  * 4. 去掉版本装饰后曲名相同（含译名与别名）。两边原唱都知道时要求原唱有交集：两位歌手
- *    各自的原创同名歌是两首歌，翻唱照抄曲名也分不清它翻的是谁。有一边是来源不明的翻唱
- *    或改编时放行，但「夜曲」「Intro」这类通用曲名不放行。
+ *    各自的原创同名歌是两首歌，翻唱照抄曲名也分不清它翻的是谁。原唱不全时只在有一边是
+ *    来源不明的翻唱或改编时放行（歌手缺失的普通上传不算），且「夜曲」「Intro」这类通用曲名不放行。
  *
  * 宽松模式也宁可错过不可错配：判不出的一律判错，玩家可以换一个版本再猜。
  */
@@ -45,16 +45,22 @@ export type WorkComparableSong = Pick<SongDetails, "id" | "title" | "artist"> &
 /** 网易云的版本关系：2 = 翻唱，3 = 改编（器乐版、DJ 版等）。 */
 const DERIVED_COVER_TYPES = new Set([2, 3]);
 
-/** 装饰段里表明「这是别人的版本」的写法，补足通用标记表没有的「×× 版」、DJ、女声版等。 */
+/**
+ * 装饰段里表明「这是别人的版本」的写法，补足通用标记表没有的「×× 版」、DJ、女声版、
+ * 弹唱与日文投稿常见的「歌ってみた」「弾いてみた」等。
+ */
 const VERSION_DECORATION_PATTERN =
-  /版|\b(?:remix|mix|ver(?:sion)?|dj|bootleg|mashup|nightcore|sped\s*up|slowed|cover)\b|原唱|翻自|女声|男声|童声/iu;
+  /版|\b(?:remix|mix|ver(?:sion)?|dj|bootleg|mashup|nightcore|sped\s*up|slowed|cover)\b|原唱|翻自|女声|男声|童声|弹唱|弾き語り|歌ってみた|弾いてみた|演奏してみた/iu;
 
 /** 装饰段里点名原唱的写法：`(原唱 周杰伦)`、`[原唱: 周杰伦]`、`(翻自 周杰伦)`、`(Cover 贝多芬)`。 */
 const ORIGIN_ARTIST_DECORATION_PATTERN =
   /(?:原唱|翻自|cover(?!\s*by\b)(?:\s*from\b)?)\s*[:：]?\s*(.+)$/iu;
 
-/** 尾部的 ` - 钢琴版`、` ～弾き語り～` 一类后缀。 */
-const DECORATED_SUFFIX_PATTERN = /\s[-–—~～〜]+\s*([^-–—~～〜]+?)\s*[-–—~～〜]*\s*$/u;
+/**
+ * 尾部的 ` - 钢琴版`、`～弾き語り～`、`——钢琴版` 一类后缀。波浪线与长短破折号可以紧贴曲名；
+ * ASCII 连字符要求前面有空格，否则 `Re-birth` 这类曲名本身的连字符会被拆开。
+ */
+const DECORATED_SUFFIX_PATTERN = /(?:\s-+|\s*[–—~～〜]+)\s*([^-–—~～〜]+?)\s*[-–—~～〜]*\s*$/u;
 
 /**
  * 通用曲名：不同作品共用的体裁名与段落名。曲名相同只能说明体裁相同，
@@ -184,6 +190,13 @@ const sharesOriginSong = (
   return [guess.id, guess.originSongId].some((id) => id !== undefined && answerIds.has(id));
 };
 
+/**
+ * 来源不明的版本：是别人的版本，却说不出原唱。只有它才凭曲名放行；
+ * 歌手缺失（`未知歌手`）的普通上传不算，它同样可能是另一首同名原创。
+ */
+const isUnresolvedVersion = (song: WorkComparableSong, creators: string[] | undefined) =>
+  creators === undefined && isDerivedVersion(song);
+
 const sameTitledVersion = (guess: WorkComparableSong, answer: WorkComparableSong): boolean => {
   const answerKeys = workTitleKeys(answer);
   const shared = [...workTitleKeys(guess)].filter((key) => answerKeys.has(key));
@@ -191,6 +204,9 @@ const sameTitledVersion = (guess: WorkComparableSong, answer: WorkComparableSong
   const guessCreators = originCreatorsOf(guess);
   const answerCreators = originCreatorsOf(answer);
   if (guessCreators && answerCreators) return artistsOverlap(guessCreators, answerCreators);
+  if (!isUnresolvedVersion(guess, guessCreators) && !isUnresolvedVersion(answer, answerCreators)) {
+    return false;
+  }
   return shared.some((key) => !GENERIC_TITLE_KEYS.has(key));
 };
 

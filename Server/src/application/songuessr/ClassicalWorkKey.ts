@@ -476,10 +476,12 @@ export const compareClassicalWorks = (
   right: ClassicalWorkProfile
 ): ClassicalWorkVerdict => {
   if (left.catalogues.length === 0 || right.catalogues.length === 0) return "unknown";
-  const shared = left.catalogues.filter((ref) =>
-    right.catalogues.some((other) => sameCatalogue(ref, other))
+  const matched = left.catalogues.flatMap((ref) =>
+    right.catalogues
+      .filter((other) => sameCatalogue(ref, other))
+      .map((other) => [ref, other] as const)
   );
-  if (shared.length === 0) return "different";
+  if (matched.length === 0) return "different";
   if (!indicesCompatible(left.indices, right.indices)) return "different";
   const tonalityKnown = left.tonalities.length > 0 && right.tonalities.length > 0;
   const tonalityMatch =
@@ -494,7 +496,10 @@ export const compareClassicalWorks = (
   const genreKnown = left.genres.size > 0 && right.genres.size > 0;
   const genreMatch = genreKnown && intersects(left.genres, right.genres);
   if (genreKnown && !genreMatch) return "different";
-  const specific = shared.some((ref) => !GENERIC_SYSTEMS.has(ref.system));
+  // 两边都写明专属体系才算专属证据：`作品 1007` 对 `BWV 1007` 仍要旁证，且与左右顺序无关。
+  const specific = matched.some(
+    ([ref, other]) => !GENERIC_SYSTEMS.has(ref.system) && !GENERIC_SYSTEMS.has(other.system)
+  );
   if (specific || composerMatch || tonalityMatch || genreMatch) return "same";
   return "unknown";
 };

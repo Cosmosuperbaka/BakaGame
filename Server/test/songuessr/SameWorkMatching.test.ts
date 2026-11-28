@@ -142,6 +142,24 @@ describe("其他版本也算对：翻唱与改编", () => {
       answer: song("netease:12", "Song (Part 2)", "原唱"),
       expected: false,
     },
+    {
+      name: "波浪线紧贴曲名的版本后缀",
+      guess: song("netease:13", "晴天～钢琴版～", "某钢琴"),
+      answer: jayChouSunny,
+      expected: true,
+    },
+    {
+      name: "弹唱后缀（弾き語り）",
+      guess: song("netease:14", "晴天 ～弾き語り～", "某弹唱"),
+      answer: jayChouSunny,
+      expected: true,
+    },
+    {
+      name: "歌手缺失的普通上传不凭曲名放行",
+      guess: song("netease:15", "Hello", "未知歌手"),
+      answer: song("netease:35847388", "Hello", "Adele", { originCoverType: 1 }),
+      expected: false,
+    },
   ];
 
   test.each(cases)("$name", ({ guess, answer, expected }) => {
@@ -307,6 +325,12 @@ describe("其他版本也算对：古典乐同一作品", () => {
         }
       ),
       expected: true,
+    },
+    {
+      name: "通用的「作品 N」对专属目录号缺旁证时不论谁是答案都不定论",
+      guess: song("netease:16", "作品 1007", "某演奏"),
+      answer: song("netease:17", "BWV 1007", "另一演奏"),
+      expected: false,
     },
   ];
 
