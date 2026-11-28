@@ -1,4 +1,5 @@
 import { isRecord } from "../shared/Json";
+import type { ToolMedia } from "./Media";
 import { FOCUS_AFTER_TOOLS, focusGame, publishToolFocus } from "./Focus";
 import { GAME_IDS, type AgentGameClient, type GameId } from "./GameClient";
 import {
@@ -33,14 +34,17 @@ export const rpcError = (id: unknown, code: number, message: string) => ({
   error: { code, message },
 });
 
-const toolText = (text: string, isError: boolean) => ({
-  content: [{ type: "text", text }],
+/** 文本永远是第一个内容块；媒体（片段音频）只在工具真的带了时才追加，没带时回包与原来逐字节一致。 */
+const toolText = (text: string, isError: boolean, media: readonly ToolMedia[]) => ({
+  content: [{ type: "text", text }, ...media],
   isError,
 });
 
-export const toolResult = (text: string) => toolText(text, false);
+export const toolResult = (text: string, media: readonly ToolMedia[] = []) =>
+  toolText(text, false, media);
 
-export const toolFailure = (text: string) => toolText(text, true);
+export const toolFailure = (text: string, media: readonly ToolMedia[] = []) =>
+  toolText(text, true, media);
 
 export const initializeResult = (params: Record<string, unknown>) => ({
   protocolVersion: protocolVersionOf(params.protocolVersion),

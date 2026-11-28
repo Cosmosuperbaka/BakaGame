@@ -4,6 +4,7 @@ import { isRecord } from "../shared/Json";
 import { mergeChatWindow, type ChatWindowEntry } from "../shared/ChatWindow";
 import { isPermanentRoomError } from "../shared/Model";
 import { GAME_IDS, type GameId } from "../shared/Protocol";
+import { SongClipLoader, type SongClipPort } from "./audio/SongClip";
 import { COMMAND_TIMEOUT_MS, LONG_COMMAND_TIMEOUT_MS } from "./Timeouts";
 import { SeatUi } from "./ui/SeatUi";
 
@@ -119,6 +120,8 @@ export interface AgentGameClientOptions {
   agentName: string;
   /** 测试里关掉人类速度节拍；线上保持默认。 */
   uiPacing?: boolean;
+  /** 猜歌片段音频的取用端口；缺省按 serverUrl 回源，测试注入假实现。 */
+  songClips?: SongClipPort;
 }
 
 /**
@@ -194,11 +197,17 @@ export class AgentGameClient {
   private socketGeneration = 0;
   /** 与人类页面同构的“屏幕”与控件操作层。 */
   readonly ui: SeatUi;
+  /**
+   * 猜歌「播放片段」：票据路径拼在游戏连接的目标上（远程入口是回环地址），
+   * 不取请求里的任何地址；Agent 拿到的只有片段数据。
+   */
+  readonly songClips: SongClipPort;
 
   constructor(options: AgentGameClientOptions) {
     this.serverUrl = (options.serverUrl ?? "http://127.0.0.1:4850").replace(/\/+$/, "");
     this.siteUrl = (options.siteUrl ?? this.serverUrl).replace(/\/+$/, "");
     this.agentName = options.agentName;
+    this.songClips = options.songClips ?? new SongClipLoader({ serverUrl: this.serverUrl });
     this.ui = new SeatUi(this, { pacing: options.uiPacing !== false });
   }
 

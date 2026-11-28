@@ -1,4 +1,5 @@
 import type { AgentGameClient, GameId } from "../GameClient";
+import { attachMedia } from "../Media";
 import { ceeUiAdapter } from "./Cee";
 import { fakerUiAdapter } from "./Faker";
 import type { GameUiAdapter } from "./GameUi";
@@ -310,6 +311,7 @@ export class SeatUi {
   async run(game: GameId, steps: readonly UiStep[]): Promise<UiRunResult> {
     if (!Array.isArray(steps) || steps.length === 0) throw new Error("steps 至少包含一个步骤");
     if (steps.length > MAX_STEPS) throw new Error(`一次最多串行 ${MAX_STEPS} 个步骤`);
+    this.state(game).media = undefined;
     const reports: UiStepReport[] = [];
     let ok = true;
     for (let index = 0; index < steps.length; index += 1) {
@@ -324,6 +326,9 @@ export class SeatUi {
         break;
       }
     }
-    return { ok, steps: reports, screen: await this.screen(game) };
+    const state = this.state(game);
+    const media = state.media ?? [];
+    state.media = undefined;
+    return attachMedia({ ok, steps: reports, screen: await this.screen(game) }, media);
   }
 }

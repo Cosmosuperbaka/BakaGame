@@ -11,7 +11,10 @@ import {
 } from "./SiteMap";
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
-import type { SitePageResult, SitePageStep } from "../shared/AgentActivity";
+import type { SitePageAudioClip, SitePageResult, SitePageStep } from "../shared/AgentActivity";
+import { songClipFeedback, songClipMedia } from "./audio/ClipMedia";
+import { ClipAudioError } from "./audio/RangeReader";
+import { attachMedia, type ToolMedia } from "./Media";
 import {
   SITE_PAGE_ACTIONS,
   SITE_PAGE_KEYS,
@@ -215,6 +218,29 @@ const pageStepOf = (raw: unknown, withView: boolean): SitePageStep => {
   if (typeof raw.direction === "string")
     step.direction = raw.direction as SitePageStep["direction"];
   return step;
+};
+
+/**
+ * 接管页面上点了「播放片段」：用页面交回的本回合站内地址取片段。取不到不算这一步失败——
+ * 页面上的点击已经发生，人类那边照常在播，Agent 只是这次没听到，可以再点一次。
+ */
+const listenPageClip = async (
+  context: ToolContext,
+  clip: SitePageAudioClip,
+  media: ToolMedia[]
+): Promise<string> => {
+  try {
+    const audio = await context.client.songClips.load({
+      audioUrl: clip.src,
+      startTime: clip.startTime,
+      endTime: clip.endTime,
+    });
+    media.push(songClipMedia(audio));
+    return songClipFeedback(audio, clip.startTime, clip.endTime);
+  } catch (error) {
+    const reason = error instanceof ClipAudioError ? error.message : "暂时取不到本回合的音频";
+    return `页面已开始播放，但这次没能取到片段音频：${reason}`;
+  }
 };
 
 const uiStepSchema = {
@@ -431,6 +457,7 @@ export const TOOLS: McpTool[] = [
     name: "ui_run",
     description:
       "像人类一样操作界面：按顺序串行执行多个步骤，并以人类速度回放。输入前必须先 focus 输入框（type 只能作用于当前焦点），再逐字输入；点结果或按钮用 click。每次操作后返回步骤结果与最新屏幕，屏幕里始终同步玩家栏、聊天栏和可见面板。" +
+      "猜歌里点 song.audio.play 时，本回合的片段音频作为 audio 内容块跟在文本后面返回（不提供任何地址）。" +
       policyNotice,
     inputSchema: objectSchema(
       {
@@ -506,6 +533,7 @@ export const TOOLS: McpTool[] = [
       "动作：navigate 打开站内路径；click 点击控件；focus 聚焦控件；type 向控件或当前焦点逐字输入" +
       "（replace 先清空）；press 按键；select 选中下拉或滑杆的取值；scroll 滚动页面或把控件滚入视野。" +
       "下拉、弹窗的选项在点击后才出现，点开后看返回的 view 再点选项。" +
+      "猜歌页点「播放片段」或「重播音频」时，本回合的片段音频作为 audio 内容块跟在文本后面返回（不提供任何地址）。" +
       policyNotice,
     inputSchema: objectSchema({
       ...pageStepProperties,
@@ -526,20 +554,27 @@ export const TOOLS: McpTool[] = [
       const { pages, controllerId } = requirePageControl(context);
       const steps = Array.isArray(args.steps) ? args.steps : [args];
       if (steps.length === 0 || steps.length > 8) throw new Error("steps 需要 1 到 8 步");
-      const results: Array<{ action: unknown; ok: boolean; error?: string }> = [];
+      const results: Array<{ action: unknown; ok: boolean; error?: string; feedback?: string }> =
+        [];
+      const media: ToolMedia[] = [];
       let view: unknown;
       for (const [index, raw] of steps.entries()) {
         const step = pageStepOf(raw, index === steps.length - 1);
         const result = await pages.dispatch(controllerId, step);
+        // 页面交回的播放地址只在这里用来取片段，回给 Agent 的只有音频与一句反馈。
+        const feedback = result.audioClip
+          ? await listenPageClip(context, result.audioClip, media)
+          : undefined;
         results.push({
           action: step.action,
           ok: result.ok,
           ...(result.error ? { error: result.error } : {}),
+          ...(feedback ? { feedback } : {}),
         });
         view = result.view ?? view;
-        if (!result.ok) return { ok: false, steps: results, view };
+        if (!result.ok) return attachMedia({ ok: false, steps: results, view }, media);
       }
-      return { ok: true, steps: results, view };
+      return attachMedia({ ok: true, steps: results, view }, media);
     },
   },
   {

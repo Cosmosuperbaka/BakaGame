@@ -19,6 +19,10 @@ export interface SitePage {
   tabs?: readonly string[];
 }
 
+/** 猜歌两处入口都带上「不许查」的指路：Agent 可能只看地图就直接进房。 */
+const SONG_RULE_POINTER =
+  "游玩时禁止任何形式的联网搜索与听歌识曲类识别工具，完整规则见 get_mcp_policy。";
+
 export const SITE_PAGES: readonly SitePage[] = [
   {
     path: SITE_PAGE_ENTRIES.home.path,
@@ -37,13 +41,14 @@ export const SITE_PAGES: readonly SitePage[] = [
     path: SITE_PAGE_ENTRIES.song.path,
     title: lobbyTitleOf(SITE_PAGE_ENTRIES.song.shortTitle),
     description:
-      "听歌识曲 / 听歌识番的大厅：查看公开房间、创建房间或加入房间；也可进入 /songuessr/solo 单人练习。",
+      "听歌识曲 / 听歌识番的大厅：查看公开房间、创建房间或加入房间；也可进入 /songuessr/solo 单人练习。" +
+      SONG_RULE_POINTER,
     access: "public",
   },
   {
     path: "/songuessr/solo",
     title: "Songuessr 单人练习",
-    description: "自动出题的单人房，不需要等待其他玩家，适合先熟悉玩法。",
+    description: `自动出题的单人房，不需要等待其他玩家，适合先熟悉玩法。${SONG_RULE_POINTER}`,
     access: "public",
   },
   {

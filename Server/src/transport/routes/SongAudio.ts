@@ -42,6 +42,8 @@ const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
  * - 本路由不发任何出站请求；302 带 `Referrer-Policy: no-referrer`（全局安全头），
  *   浏览器据此跳转后不会把本站地址作为来源带给上游。
  * - 残余风险：打开浏览器网络面板的人仍能看到跳转目标。
+ * - Agent 听片段也走这张票据：MCP 侧（远程入口经回环）请求本路由拿到跳转目标，自己按 Range
+ *   只取片段那几帧，见 `mcp/audio/SongClip.ts`；本路由的行为不因此改变。
  */
 export const songAudioRoutes = ({ song, rateLimiter }: SongAudioRoutesOptions) => {
   const limiter =

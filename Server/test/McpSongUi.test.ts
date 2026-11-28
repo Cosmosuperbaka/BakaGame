@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { idsOf, lastPayloadOf, mcpFixture, payloadOf, typesOf } from "./McpFixtures";
+import type { SongClipPort } from "../src/mcp/audio/SongClip";
+import { mediaOf } from "../src/mcp/Media";
+import { SONGUESSR_NO_SEARCH_RULE } from "../src/mcp/Policy";
+import { fakeSongClips, idsOf, lastPayloadOf, mcpFixture, payloadOf, typesOf } from "./McpFixtures";
 
 const player = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
@@ -51,6 +54,7 @@ const open = (
     snapshot?: Record<string, unknown>;
     privateState?: Record<string, unknown>;
     handler?: (type: string, payload: Record<string, unknown>) => unknown;
+    songClips?: SongClipPort;
   } = {}
 ) =>
   mcpFixture({
@@ -63,6 +67,7 @@ const open = (
       ...options.privateState,
     },
     handler: options.handler,
+    ...(options.songClips ? { songClips: options.songClips } : {}),
   });
 
 const searchResults = (
@@ -259,9 +264,13 @@ describe("猜歌界面：阶段与控件", () => {
   });
 
   test("局中屏幕与播放反馈里没有上游主机名、歌曲标识和音轨地址", async () => {
-    const { ui } = open("playing", { privateState: { canGuess: true } });
+    const clips = fakeSongClips();
+    const { ui } = open("playing", { privateState: { canGuess: true }, songClips: clips.port });
     const screen = await ui.screen("song");
     const run = await ui.run("song", [{ action: "click", control: "song.audio.play" }]);
+    expect(run.ok).toBe(true);
+    // 播放地址只交给 MCP 进程内的片段端口，屏幕与回包的文本部分一个字都不带。
+    expect(clips.loads[0]?.audioUrl).toBe(round.audioUrl);
     const dumped = JSON.stringify([screen, run]);
     for (const leak of ["qq.example", "abcdef", "M500", ".mp3", "audioUrl"])
       expect(dumped).not.toContain(leak);
@@ -269,6 +278,23 @@ describe("猜歌界面：阶段与控件", () => {
     expect(screen.panel).toMatchObject({
       audio: { clip: { startTime: 1000, endTime: 16000 }, lyricsVisible: true },
     });
+  });
+
+  test("屏幕、播放提示与反馈都写明玩猜歌禁止联网搜索", async () => {
+    const { ui } = open("playing", {
+      privateState: { canGuess: true },
+      songClips: fakeSongClips().port,
+    });
+    const screen = await ui.screen("song");
+    const play = screen.controls.find((entry) => entry.id === "song.audio.play");
+    expect(play?.hint).toContain(SONGUESSR_NO_SEARCH_RULE);
+    expect((screen.panel.audio as Record<string, unknown>).hint).toContain(
+      SONGUESSR_NO_SEARCH_RULE
+    );
+    const run = await ui.run("song", [{ action: "click", control: "song.audio.play" }]);
+    expect(run.steps[0]?.feedback).toContain(SONGUESSR_NO_SEARCH_RULE);
+    for (const banned of ["歌词", "歌名", "歌手", "听歌识曲"])
+      expect(SONGUESSR_NO_SEARCH_RULE).toContain(banned);
   });
 
   test("出题确认台不下发选中歌曲的上游音轨地址", async () => {
@@ -804,16 +830,44 @@ describe("猜歌界面：控件动作", () => {
     expect(run.steps[0]?.feedback).toContain("在当前页面不可见");
   });
 
-  test("播放与重取音频按回合口径回话", async () => {
-    const { ui, calls } = open("playing", { privateState: { canGuess: true } });
+  test("播放片段把音频作为内容块挂在结果上，重取音频作废旧片段", async () => {
+    const clips = fakeSongClips();
+    const { ui, calls } = open("playing", {
+      privateState: { canGuess: true },
+      songClips: clips.port,
+    });
     await ui.screen("song");
     let run = await ui.run("song", [{ action: "click", control: "song.audio.play" }]);
     expect(run.steps[0]?.feedback).toContain("1000–16000 毫秒");
+    expect(run.steps[0]?.feedback).toContain("audio/mpeg");
     expect(run.steps[0]?.feedback).not.toContain("qq.example");
+    expect(clips.loads).toEqual([{ audioUrl: round.audioUrl, startTime: 1000, endTime: 16000 }]);
+    const data = Buffer.from([0xff, 0xfb, 0x90, 0x00, 1, 2, 3]).toString("base64");
+    expect(mediaOf(run)).toEqual([{ type: "audio", mimeType: "audio/mpeg", data }]);
+    // 媒体不进文本：序列化与展开都看不到它。
+    expect(JSON.stringify(run)).not.toContain(data);
+    expect(mediaOf({ ...run })).toEqual([]);
 
+    // 下一次 ui_run 不会把上一次的音频再带一遍。
     run = await ui.run("song", [{ action: "click", control: "song.audio.retry" }]);
     expect(run.ok).toBe(true);
+    expect(mediaOf(run)).toEqual([]);
     expect(payloadOf(calls, "song.game.audioFailed")).toEqual({ roundNumber: 3 });
+    expect(clips.invalidated).toEqual([round.audioUrl]);
+
+    const failing = open("playing", {
+      privateState: { canGuess: true },
+      songClips: fakeSongClips({}, { fail: new Error("取音频超时，请稍后再试") }).port,
+    });
+    await failing.ui.screen("song");
+    run = await failing.ui.run("song", [{ action: "click", control: "song.audio.play" }]);
+    expect(run.ok).toBe(false);
+    expect(run.steps[0]?.feedback).toBe("取音频超时，请稍后再试");
+
+    const portless = open("playing", { privateState: { canGuess: true } });
+    await portless.ui.screen("song");
+    run = await portless.ui.run("song", [{ action: "click", control: "song.audio.play" }]);
+    expect(run.steps[0]?.feedback).toBe("本回合没有可播放的音频");
 
     const noRound = open("waiting", { snapshot: songSnapshot("waiting", { currentRound: null }) });
     await noRound.ui.screen("song");

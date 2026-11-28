@@ -4,6 +4,11 @@ import { createConnection, createTestContext, execute, getLastEventPayload } fro
 import { createRoom } from "./whoisfaker/Fixtures";
 import { TOOLS, type PageControlPort, type ToolContext } from "../src/mcp/Tools";
 import type { AgentGameClient } from "../src/mcp/GameClient";
+import type { SongClipPort } from "../src/mcp/audio/SongClip";
+import { ClipAudioError } from "../src/mcp/audio/RangeReader";
+import { mediaOf } from "../src/mcp/Media";
+import { SONGUESSR_NO_SEARCH_RULE } from "../src/mcp/Policy";
+import { fakeSongClips } from "./McpFixtures";
 import type { SitePageResult, SitePageStep } from "../src/shared/AgentActivity";
 import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 
@@ -116,8 +121,8 @@ describe("工具：接管与自有座位互斥", () => {
     return found;
   };
 
-  const client = (rooms: Record<string, string> = {}) =>
-    ({ currentRoom: (game: string) => rooms[game] }) as unknown as AgentGameClient;
+  const client = (rooms: Record<string, string> = {}, songClips?: SongClipPort) =>
+    ({ currentRoom: (game: string) => rooms[game], songClips }) as unknown as AgentGameClient;
 
   const port = (results: (step: SitePageStep) => SitePageResult) => {
     const steps: SitePageStep[] = [];
@@ -213,6 +218,47 @@ describe("工具：接管与自有座位互斥", () => {
     expect(failed.ok).toBe(false);
     expect(failed.steps[0]?.error).toBe("控件不存在");
     expect(steps).toHaveLength(1);
+  });
+
+  test("接管时点「播放片段」：页面交回的地址只用来取片段，Agent 拿到音频与反馈，拿不到地址", async () => {
+    const src = "https://game.example.com/api/songuessr/audio/1234/TICKETSECRET";
+    const { pages } = port((step) =>
+      step.control === "song.audio.play"
+        ? { id: "1", ok: true, view, audioClip: { src, startTime: 1000, endTime: 16000 } }
+        : { id: "1", ok: true, view }
+    );
+    const clips = fakeSongClips();
+    const withClips: ToolContext = { ...context(pages), client: client({}, clips.port) };
+    await tool("control_page").handler({ code: "ABCD2345" }, withClips);
+    const result = await tool("page_act").handler(
+      { action: "click", control: "song.audio.play" },
+      withClips
+    );
+    expect(clips.loads).toEqual([{ audioUrl: src, startTime: 1000, endTime: 16000 }]);
+    expect(mediaOf(result)).toHaveLength(1);
+    expect(mediaOf(result)[0]).toMatchObject({ type: "audio", mimeType: "audio/mpeg" });
+    const text = JSON.stringify(result);
+    expect(text).not.toContain("TICKETSECRET");
+    expect(text).not.toContain("audioClip");
+    expect(text).toContain(SONGUESSR_NO_SEARCH_RULE);
+
+    // 取不到片段不算这一步失败：页面上的点击已经发生，只是这次没听到。
+    const failing = fakeSongClips({}, { fail: new ClipAudioError("取音频超时，请稍后再试") });
+    const missed = (await tool("page_act").handler(
+      { action: "click", control: "song.audio.play" },
+      { ...context(pages), client: client({}, failing.port) }
+    )) as { ok: boolean; steps: Array<{ feedback?: string }> };
+    expect(missed.ok).toBe(true);
+    expect(missed.steps[0]?.feedback).toContain("取音频超时");
+    expect(mediaOf(missed)).toEqual([]);
+
+    // 其它控件不带片段，也不碰片段端口。
+    const other = await tool("page_act").handler(
+      { action: "click", control: "chat.send" },
+      withClips
+    );
+    expect(mediaOf(other)).toEqual([]);
+    expect(clips.loads).toHaveLength(1);
   });
 
   test("page_act 不接受 read，也不接受未知动作；单步写法继续可用", async () => {

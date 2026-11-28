@@ -23,6 +23,7 @@ import {
 } from "./Rpc";
 import { withRemoteSessionSchema, type McpTool, type PageControlPort } from "./Tools";
 import { isRecord } from "../shared/Json";
+import { mediaOf } from "./Media";
 
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_SESSIONS = 256;
@@ -425,15 +426,17 @@ async function runRemoteTool(
       },
       (result) => {
         // 每个绑定会话的调用都把会话号带回给 Agent：无状态客户端要把它放进下一次 arguments.session。
+        // 媒体挂在不可枚举属性上，展开时不会跟过去，要在补会话号之前从原结果里取。
+        const media = mediaOf(result);
         const enriched =
           !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
         const stepFailed = isRecord(enriched) && enriched.ok === false;
-        return { stepFailed, text: JSON.stringify(enriched) };
+        return { stepFailed, text: JSON.stringify(enriched), media };
       }
     );
     const durationMs = Math.round(performance.now() - startedAt);
     if (run.ok) {
-      const { stepFailed, text } = run.value;
+      const { stepFailed, text, media } = run.value;
       logger.info("mcp.remote.tool", {
         ...auditContext(session, args),
         tool: tool.name,
@@ -443,7 +446,10 @@ async function runRemoteTool(
       return {
         status: 200,
         headers: context.headers,
-        payload: rpcResult(context.id, stepFailed ? toolFailure(text) : toolResult(text)),
+        payload: rpcResult(
+          context.id,
+          stepFailed ? toolFailure(text, media) : toolResult(text, media)
+        ),
       };
     }
     // 工具失败是回给调用方的业务拒绝（未入房、阶段不对、被限流等），属调用方的错，信息级；
