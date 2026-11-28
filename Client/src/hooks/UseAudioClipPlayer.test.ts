@@ -4,16 +4,35 @@ import type { SonGuessrCommandMap } from "@/lib/SonGuessrWs";
 import type { GameSendCommand } from "@/lib/GameWs";
 import { notifyPreferencesApplied } from "@/lib/PreferenceBus";
 import { SONG_VOLUME_KEY } from "@/lib/Storage";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { playingSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
 import { useAudioClipPlayer } from "./UseAudioClipPlayer";
 
 describe("useAudioClipPlayer", () => {
   let mockAudio: HTMLAudioElement;
+  /** jsdom 没有媒体管线：就绪度、跳转与网络状态由用例按真实浏览器派发事件时的样子摆好。 */
+  let media: { readyState: number; seeking: boolean; networkState: number };
+  let playSpy: MockInstance;
 
   beforeEach(() => {
     mockAudio = document.createElement("audio");
-    vi.spyOn(mockAudio, "play").mockResolvedValue(undefined);
+    media = {
+      readyState: HTMLMediaElement.HAVE_NOTHING,
+      seeking: false,
+      networkState: HTMLMediaElement.NETWORK_LOADING,
+    };
+    for (const key of ["readyState", "seeking", "networkState"] as const) {
+      Object.defineProperty(mockAudio, key, { configurable: true, get: () => media[key] });
+    }
+    playSpy = vi.spyOn(mockAudio, "play").mockResolvedValue(undefined);
     vi.spyOn(mockAudio, "pause").mockImplementation(() => {});
   });
+
+  /** 浏览器派发 canplay 时，当前位置的数据已经够往下播。 */
+  const canPlay = () => {
+    media.readyState = HTMLMediaElement.HAVE_FUTURE_DATA;
+    mockAudio.dispatchEvent(new Event("canplay"));
+  };
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -44,7 +63,7 @@ describe("useAudioClipPlayer", () => {
 
     // 模拟 canplay 触发就绪
     await act(async () => {
-      mockAudio.dispatchEvent(new Event("canplay"));
+      canPlay();
     });
 
     expect(result.current.audioStatus).toBe("ready");
@@ -73,7 +92,7 @@ describe("useAudioClipPlayer", () => {
     rerender({ audioUrl: "https://example.com/song.mp3" });
 
     await act(async () => {
-      mockAudio.dispatchEvent(new Event("canplay"));
+      canPlay();
       mockAudio.currentTime = 19.5; // 剩余 0.5s，进入渐出区间
       mockAudio.dispatchEvent(new Event("timeupdate"));
     });
@@ -304,7 +323,7 @@ describe("useAudioClipPlayer", () => {
     ) => {
       hook.rerender(props);
       await act(async () => {
-        mockAudio.dispatchEvent(new Event("canplay"));
+        canPlay();
       });
       Object.defineProperty(mockAudio, "paused", { configurable: true, value: false });
       await act(async () => {
@@ -512,6 +531,137 @@ describe("useAudioClipPlayer", () => {
       expect(mockAudio.volume).toBe(0.3);
       act(() => flushFrame());
       expect(mockAudio.volume).toBeCloseTo(0.3, 5);
+    });
+  });
+
+  describe("就绪以片段起点能播为准", () => {
+    const initialStore = useSonGuessrStore.getState();
+
+    beforeEach(() => {
+      // 本人是在场的猜歌玩家：就绪时要向服务端报 audioReady。
+      useSonGuessrStore.setState({ snapshot: playingSnapshot(), privateState: songPrivate() });
+    });
+
+    afterEach(() => {
+      useSonGuessrStore.setState(initialStore, true);
+    });
+
+    const mountPlayer = (sendCommand = vi.fn().mockResolvedValue(undefined)) => {
+      vi.spyOn(mockAudio, "load").mockImplementation(() => {});
+      // 逐帧记下每次渲染看到的状态：Effect 补上之前的那一帧也算数。
+      const seen: { roundNumber: number; status: string }[] = [];
+      const hook = renderHook(
+        ({ audioUrl, roundNumber }) => {
+          const player = useAudioClipPlayer({
+            roomId: "test-room",
+            phase: "playing",
+            currentPhaseRoundNumber: roundNumber,
+            currentAudioUrl: audioUrl,
+            currentClipStartTime: 60_000,
+            currentClipEndTime: 75_000,
+            isPlayingPhase: true,
+            sendCommand,
+          });
+          seen.push({ roundNumber, status: player.audioStatus });
+          return player;
+        },
+        { initialProps: { audioUrl: undefined as string | undefined, roundNumber: 1 } }
+      );
+      hook.result.current.audioRef.current = mockAudio;
+      hook.rerender({ audioUrl: "https://example.com/round-1.mp3", roundNumber: 1 });
+      return { ...hook, seen, sendCommand };
+    };
+
+    const fire = (type: string) => act(async () => void mockAudio.dispatchEvent(new Event(type)));
+    const audioReadyCalls = (sendCommand: ReturnType<typeof vi.fn>) =>
+      sendCommand.mock.calls.filter(([type]) => type === "song.game.audioReady");
+
+    it("只拿到文件开头、片段起点还在跳转时保持加载中，不报就绪也不起播", async () => {
+      const { result, sendCommand } = mountPlayer();
+
+      // 弱网常见：开头那一帧到了（loadeddata），跳到 60 秒的那一段还在路上。
+      media.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+      await fire("loadeddata");
+      expect(mockAudio.currentTime).toBe(60);
+      media.seeking = true;
+      media.readyState = HTMLMediaElement.HAVE_FUTURE_DATA;
+      await fire("canplay");
+
+      expect(result.current.audioStatus).toBe("loading");
+      expect(audioReadyCalls(sendCommand)).toHaveLength(0);
+      expect(playSpy).not.toHaveBeenCalled();
+
+      // 跳转落地且数据够播：这时才算就绪，报一次就绪并自动起播。
+      media.seeking = false;
+      await fire("seeked");
+
+      expect(result.current.audioStatus).toBe("ready");
+      expect(audioReadyCalls(sendCommand)).toEqual([["song.game.audioReady", { roundNumber: 1 }]]);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("只有当前帧且浏览器仍在拉数据时不算就绪", async () => {
+      const { result } = mountPlayer();
+
+      media.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+      await fire("loadeddata");
+
+      expect(result.current.audioStatus).toBe("loading");
+    });
+
+    it("浏览器停下预载等起播时，有当前帧就算就绪", async () => {
+      const { result } = mountPlayer();
+
+      media.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+      media.networkState = HTMLMediaElement.NETWORK_IDLE;
+      await fire("suspend");
+
+      expect(result.current.audioStatus).toBe("ready");
+    });
+
+    it("播到一半卡顿、缓冲回来再报 canplay 时不拽回片段起点", async () => {
+      const { result, sendCommand } = mountPlayer();
+      await act(async () => canPlay());
+      expect(result.current.audioStatus).toBe("ready");
+
+      mockAudio.currentTime = 66;
+      await act(async () => canPlay());
+      await fire("canplaythrough");
+
+      expect(mockAudio.currentTime).toBe(66);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      expect(audioReadyCalls(sendCommand)).toHaveLength(1);
+    });
+
+    it("换回合的第一帧不沿用上一回合的就绪", async () => {
+      const { rerender, seen } = mountPlayer();
+      await act(async () => canPlay());
+      expect(seen.at(-1)).toEqual({ roundNumber: 1, status: "ready" });
+
+      media.readyState = HTMLMediaElement.HAVE_METADATA;
+      rerender({ audioUrl: "https://example.com/round-2.mp3", roundNumber: 2 });
+
+      const secondRound = seen.filter((entry) => entry.roundNumber === 2);
+      expect(secondRound.length).toBeGreaterThan(0);
+      expect(secondRound.every((entry) => entry.status === "loading")).toBe(true);
+    });
+
+    it("片段起点 15 秒仍不能播就转失败态，数据之后才到也照样接回就绪", async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = mountPlayer();
+        // 开头那一帧早就到了：旧判定按 HAVE_CURRENT_DATA 放过，会一直卡在加载中。
+        media.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+        await fire("loadeddata");
+
+        await act(async () => void vi.advanceTimersByTime(15_000));
+        expect(result.current.audioStatus).toBe("error");
+
+        await act(async () => canPlay());
+        expect(result.current.audioStatus).toBe("ready");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

@@ -15,6 +15,20 @@ const DEFAULT_SONG_VOLUME = 0.65;
  */
 const MAX_AUTO_RELOADS = 2;
 
+type ClipAudioStatus = "loading" | "ready" | "error";
+
+/**
+ * 片段起点那一段真的能播：没有在跳转，且数据够往下播。浏览器主动停下预载（网络空闲）时，
+ * 手里有当前帧也算：它要等起播才接着拉，干等只会等到超时。
+ * 弱网下 `loadeddata` 往往只是文件开头那一帧，跳到片段起点还得另拉一段；那时就报就绪，
+ * 歌词先亮、倒计时先走，声音却还没到。
+ */
+const playableAtClipStart = (audio: HTMLAudioElement) =>
+  !audio.seeking &&
+  (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA ||
+    (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+      audio.networkState === HTMLMediaElement.NETWORK_IDLE));
+
 /** 只采用 0–1 之间的有效存档；缺失、空串、无法解析或越界时用默认音量。 */
 function readSavedVolume(): number {
   try {
@@ -57,11 +71,25 @@ export function useAudioClipPlayer({
     return onPreferencesApplied(reload);
   }, []);
 
-  const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
   const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">(
     "idle"
   );
   const [audioRetryToken, setAudioRetryToken] = useState(0);
+
+  // 一次装载 = 同一回合、同一地址、同一段起止、同一次重试。
+  const sourceKey =
+    currentPhaseRoundNumber === undefined || !currentAudioUrl || currentClipStartTime === undefined
+      ? null
+      : `${roomId}:${phase}:${currentPhaseRoundNumber}:${currentAudioUrl}`;
+  const loadKey =
+    sourceKey && `${sourceKey}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
+  // 状态记在装载名下：换回合、换地址或重试的那一帧，Effect 还没把状态重置成加载中，
+  // 上一次装载的「就绪」不能冒充这一次，否则歌词会先于这一段音频露面。
+  const [audioState, setAudioState] = useState<{ key: string | null; status: ClipAudioStatus }>({
+    key: null,
+    status: "loading",
+  });
+  const audioStatus: ClipAudioStatus = audioState.key === loadKey ? audioState.status : "loading";
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioReadyKey = useRef<string | null>(null);
@@ -103,6 +131,8 @@ export function useAudioClipPlayer({
     const audio = audioRef.current;
     if (
       !audio ||
+      !sourceKey ||
+      !loadKey ||
       currentPhaseRoundNumber === undefined ||
       !currentAudioUrl ||
       currentClipStartTime === undefined
@@ -113,8 +143,7 @@ export function useAudioClipPlayer({
       }
       return;
     }
-    const sourceKey = `${roomId}:${phase}:${currentPhaseRoundNumber}:${currentAudioUrl}`;
-    const loadKey = `${sourceKey}:${currentClipStartTime}:${currentClipEndTime}:${audioRetryToken}`;
+    const setAudioStatus = (status: ClipAudioStatus) => setAudioState({ key: loadKey, status });
     // 自动重载的次数按「同一回合同一个地址」计：换回合或换地址重新数。
     if (autoReloads.current.key !== sourceKey) autoReloads.current = { key: sourceKey, count: 0 };
     setAudioStatus("loading");
@@ -168,8 +197,11 @@ export function useAudioClipPlayer({
     let readyState = false;
     let disposed = false;
     const ready = () => {
-      if (disposed) return;
+      // 每次装载只就绪一次：弱网下播到一半卡住、缓冲回来会再报 canplay，不能因此把进度拽回起点。
+      if (disposed || readyState) return;
       moveToStart();
+      // 刚发起跳转或起点的数据还不够播：等 seeked / canplay 再来，期间保持加载中。
+      if (!playableAtClipStart(audio)) return;
       readyState = true;
       setAudioStatus("ready");
       const state = useSonGuessrStore.getState();
@@ -249,6 +281,8 @@ export function useAudioClipPlayer({
     audio.addEventListener("canplay", ready);
     audio.addEventListener("canplaythrough", ready);
     audio.addEventListener("loadeddata", ready);
+    audio.addEventListener("seeked", ready);
+    audio.addEventListener("suspend", ready);
     audio.addEventListener("error", failed);
     // 失败后元素停在无可用源状态，src 没变就不会重新加载；重试必须强制重设 src 并 load()。
     if (handledRetryTokenRef.current !== audioRetryToken) {
@@ -262,10 +296,9 @@ export function useAudioClipPlayer({
     }
     if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) moveToStart();
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) ready();
+    // 片段起点迟迟不能播就转失败态，给玩家重试按钮；数据之后才到时 ready 仍会接手。
     const loadTimeout = window.setTimeout(() => {
-      if (!disposed && !readyState && audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        setAudioStatus("error");
-      }
+      if (!disposed && !readyState) setAudioStatus("error");
     }, 15_000);
     return () => {
       disposed = true;
@@ -281,6 +314,8 @@ export function useAudioClipPlayer({
       audio.removeEventListener("canplay", ready);
       audio.removeEventListener("canplaythrough", ready);
       audio.removeEventListener("loadeddata", ready);
+      audio.removeEventListener("seeked", ready);
+      audio.removeEventListener("suspend", ready);
       audio.removeEventListener("error", failed);
     };
   }, [
@@ -290,8 +325,8 @@ export function useAudioClipPlayer({
     currentClipStartTime,
     currentPhaseRoundNumber,
     isPlayingPhase,
-    roomId,
-    phase,
+    loadKey,
+    sourceKey,
   ]);
 
   useEffect(() => {
