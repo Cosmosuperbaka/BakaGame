@@ -1,6 +1,7 @@
 import PQueue from "p-queue";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { parseTTML } from "./LyricTtml";
+import { isAmllSearchItemMatch } from "./AmllSearchMatch";
 import { asRecord } from "../../JsonReaders";
 import type { MusicCache } from "../MusicCache";
 
@@ -96,8 +97,13 @@ export class AmllLyricClient {
       if (!json) return undefined;
       const items = asRecord(json.data).items;
       if (!Array.isArray(items)) throw new Error("AMLL 搜索响应无效");
-      if (!items.length) return undefined;
-      const id = asRecord(items[0]).id;
+      // 检索是「所有词都出现在曲名、歌手或专辑名之一」的宽匹配：同专辑的别的歌（专辑名
+      // 恰好等于本曲名）也会被召回。只认曲名与歌手都对得上的条目，都对不上就当作没有。
+      const item = items
+        .map((entry) => asRecord(entry))
+        .find((entry) => isAmllSearchItemMatch(entry, title, artistName));
+      if (!item) return undefined;
+      const id = item.id;
       if (typeof id !== "string" && typeof id !== "number") throw new Error("AMLL 搜索条目无效");
       return this.readLyrics(
         await this.requestJson(`get?id=${encodeURIComponent(String(id))}`, signal)
