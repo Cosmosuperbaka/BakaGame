@@ -131,9 +131,9 @@ const runLoggedAutomaticRound = async (
  * 自动出题（番剧）：与歌曲同一口径，先出筛选池里没出过的番，出完一遍再按回收窗口避让，
  * 逐个试到第一部有可播关联曲的番剧为止。
  *
- * 试过却出不了题的番剧（没有关联曲、关联曲都取不到）记进房间并排到最后：它们永远进不了
- * 近期记录，不单独记的话会一直留在「没出过」层，池里能出题的番剧都出过之后，每轮的
- * 尝试次数就全耗在它们身上。
+ * 试过却出不了题的番剧（没有关联曲、关联曲都取不到、取详情查不到）记进房间并排到最后：
+ * 从没出过的那些进不了近期记录，不单独记的话会一直留在「没出过」层；出过之后才出不了的
+ * 那些留在回收层，又会因为最久没出而每轮排在最前。两种都会把每轮的尝试次数耗光。
  */
 export const startAutomaticAnimeRound = async (
   ctx: SonGuessrContext,
@@ -170,9 +170,11 @@ export const startAutomaticAnimeRound = async (
   const tiers = [
     { items: recency.unplayed.filter(usable), ordered: false },
     { items: recency.rested.filter(usable), ordered: false },
-    { items: recency.recycled, ordered: true },
+    { items: recency.recycled.filter(usable), ordered: true },
     {
-      items: [...recency.unplayed, ...recency.rested].filter((subject) => !usable(subject)),
+      items: [...recency.unplayed, ...recency.rested, ...recency.recycled].filter(
+        (subject) => !usable(subject)
+      ),
       ordered: false,
     },
   ];
@@ -320,8 +322,12 @@ export const buildAutomaticCandidateTiers = (
   const usable = (song: SongSearchResult) => !unavailableIds.has(song.id);
   const unplayed = recency.unplayed.filter(usable);
   const rested = recency.rested.filter(usable);
-  const recycled = recency.recycled;
-  const knownUnavailable = [...recency.unplayed, ...recency.rested].filter((song) => !usable(song));
+  // 回收层按最久没出的先取、顺序固定：出过之后才取不到的候选若留在这层，会每轮排在最前，
+  // 几个就能把尝试次数耗光，失败又刷新记录时刻，能出的候选永远轮不到。所以三层都要剔出去。
+  const recycled = recency.recycled.filter(usable);
+  const knownUnavailable = [...recency.unplayed, ...recency.rested, ...recency.recycled].filter(
+    (song) => !usable(song)
+  );
   const unplayable = (song: SongSearchResult) => !isPlayable(song);
   return {
     tiers: [
