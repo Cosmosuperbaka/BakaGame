@@ -99,7 +99,7 @@ export const isSameAnswerSong = (
  * 平台上可能只记其中一个名字；艺名后括注读音或本名（`Aimer(エメ)`）也是同一个人。
  */
 const BRACKETED_CREDIT_PATTERN =
-  /^(.+?)\s*[(（]\s*(?:(?:cv|c\.v\.|vo|voice|声|聲)\s*[.．:：]?\s*)?([^()（）]+?)\s*[)）]\s*$/iu;
+  /^(.+?)\s*[(（]\s*(?:(?:voice|cv|c\.v\.|vo|声|聲)\s*[.．:：]?\s*)?([^()（）]+?)\s*[)）]\s*$/iu;
 
 /** 一段歌手署名的全部可比写法：整串，以及括号内外各自的名字（单字残段不要）。 */
 export const artistCreditNames = (credit: string): string[] => {

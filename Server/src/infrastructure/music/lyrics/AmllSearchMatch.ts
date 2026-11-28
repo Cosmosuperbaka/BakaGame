@@ -18,6 +18,18 @@ const RECORDING_VARIANT_PATTERN =
 /** 括号段（含日文引号）：`ブルーバード (青鸟)` 的译名、`小幸运 (电影《…》主题曲)` 的出处说明。 */
 const BRACKETED_PART_PATTERN = /[（(【[「『][^）)】\]」』]*[）)】\]」』]/gu;
 
+/**
+ * 区分「同一首歌的不同部分或编次」的括号段：带数字，或 Part、Vol.、Chapter、Edition、
+ * 第…部/章/話 这类标记。它们不是说明文字，不能去掉，否则 `Song (Part 1)` 会借用 `Song` 的歌词。
+ * 判不准的一律当作有区分意义（宁可错过）。
+ */
+const DISTINCT_PART_PATTERN =
+  /\p{Nd}|\b(?:part|pt|vol(?:ume)?|chapter|act|episode|ep|edition|side|reprise)\b|[上中下]篇|[前后後][编編]|第.+?[部章話话幕]/iu;
+
+/** 去掉只是说明文字的括号段（译名、出处），保留带编次标记的括号段。 */
+const stripInformationalBrackets = (title: string): string =>
+  title.replace(BRACKETED_PART_PATTERN, (part) => (DISTINCT_PART_PATTERN.test(part) ? part : " "));
+
 /** 歌手占位：平台缺歌手时填的固定文本，不能当作真实歌手参与比对。 */
 const UNKNOWN_ARTIST_NAMES = new Set(["未知歌手", "未知艺人", "unknown", "unknownartist"]);
 
@@ -29,7 +41,7 @@ const readStrings = (value: unknown): string[] =>
 /**
  * 两个曲名是否指同一次录音：完整写法归一后相同；或一侧去掉括号段后与另一侧完整写法相同
  * （译名、出处说明这类括号段），且两侧都带或都不带录音版本标记。
- * 两侧都带**不同**的括号段（`Part 1` 与 `Part 2`）不算同一首。
+ * 带编次标记的括号段（`Part 1`、`Vol.2`）不算说明文字，`Song (Part 1)` 与 `Song` 不是同一首。
  */
 export const isSameRecordingTitle = (left: string, right: string): boolean => {
   const fullLeft = normalizeComparableText(left);
@@ -37,8 +49,8 @@ export const isSameRecordingTitle = (left: string, right: string): boolean => {
   if (!fullLeft || !fullRight) return false;
   if (fullLeft === fullRight) return true;
   if (RECORDING_VARIANT_PATTERN.test(left) !== RECORDING_VARIANT_PATTERN.test(right)) return false;
-  const coreLeft = normalizeComparableText(left.replace(BRACKETED_PART_PATTERN, " "));
-  const coreRight = normalizeComparableText(right.replace(BRACKETED_PART_PATTERN, " "));
+  const coreLeft = normalizeComparableText(stripInformationalBrackets(left));
+  const coreRight = normalizeComparableText(stripInformationalBrackets(right));
   return (
     (Boolean(coreLeft) && coreLeft === fullRight) || (Boolean(coreRight) && coreRight === fullLeft)
   );
