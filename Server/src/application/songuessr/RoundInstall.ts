@@ -123,10 +123,11 @@ export const installRound = (
     ...recentSongIds.filter((id) => !recordedIds.includes(id)),
   ].slice(0, MAX_RECENT_HISTORY);
   if (anime) {
+    // 番剧记录与歌曲同一口径：存满上限，自动猜番按它先出没出过的番（见 `startAutomaticAnimeRound`）。
     const recentSubjectIds = room.recentSubjectIds ?? [];
     room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(
       0,
-      10
+      MAX_RECENT_HISTORY
     );
   }
 

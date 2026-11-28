@@ -127,7 +127,14 @@ const runLoggedAutomaticRound = async (
   }
 };
 
-/** 自动出题（番剧）：在筛选池里逐个试到第一部有可播关联曲的番剧为止。 */
+/**
+ * 自动出题（番剧）：与歌曲同一口径，先出筛选池里没出过的番，出完一遍再按回收窗口避让，
+ * 逐个试到第一部有可播关联曲的番剧为止。
+ *
+ * 试过却出不了题的番剧（没有关联曲、关联曲都取不到）记进房间并排到最后：它们永远进不了
+ * 近期记录，不单独记的话会一直留在「没出过」层，池里能出题的番剧都出过之后，每轮的
+ * 尝试次数就全耗在它们身上。
+ */
 export const startAutomaticAnimeRound = async (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
@@ -151,14 +158,36 @@ export const startAutomaticAnimeRound = async (
         }
       : filters
   );
-  const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
-  const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
-  const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
+  const window = resolveRecentWindow(candidates.length);
+  const recency = splitByRecency(candidates, room.recentSubjectIds ?? [], window);
+  const unavailable = liveUnavailableIds(room.unavailableSubjectIds, ctx.now());
+  const usable = (subject: { id: string }) => !unavailable.has(subject.id);
+  const tiers = [
+    { items: recency.unplayed.filter(usable), ordered: false },
+    { items: recency.rested.filter(usable), ordered: false },
+    { items: recency.recycled, ordered: true },
+    {
+      items: [...recency.unplayed, ...recency.rested].filter((subject) => !usable(subject)),
+      ordered: false,
+    },
+  ];
+  ctx.log("song.auto.pool", room.id, undefined, {
+    questionType: "anime",
+    candidates: candidates.length,
+    unplayed: tiers[0].items.length,
+    rested: tiers[1].items.length,
+    recycled: tiers[2].items.length,
+    knownUnavailable: tiers[3].items.length,
+    window,
+  });
   let attempts = 0;
-  while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
+  for (
+    let selected = drawFromTiers(tiers, ctx.random);
+    selected && attempts < AUTO_ANIME_CANDIDATE_LIMIT;
+    selected = drawFromTiers(tiers, ctx.random)
+  ) {
     attempts += 1;
     verify();
-    const selected = pool.splice(ctx.random.nextInt(pool.length), 1)[0];
     try {
       const anime = await provider.getSubject(selected.id, { waitForImage: true });
       const resolved = await resolveAnimeSong(ctx, room, anime);
@@ -174,9 +203,50 @@ export const startAutomaticAnimeRound = async (
         )
       )
         throw error;
+      room.unavailableSubjectIds = rememberUnavailable(
+        room.unavailableSubjectIds,
+        selected.id,
+        ctx.now()
+      );
     }
   }
   throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
+};
+
+/** 从靠前的非空层取一项：`ordered` 的层按顺序取头一个，其余层内均匀随机。取出即移除。 */
+const drawFromTiers = <T>(
+  tiers: { items: T[]; ordered: boolean }[],
+  random: SonGuessrContext["random"]
+): T | undefined => {
+  const tier = tiers.find((candidate) => candidate.items.length > 0);
+  if (!tier) return undefined;
+  const index = tier.ordered ? 0 : random.nextInt(tier.items.length);
+  return tier.items.splice(index, 1)[0];
+};
+
+/**
+ * 按房间近期记录把候选分成三类，歌曲与番剧共用：
+ * - 没出过：近期记录里根本没有它；
+ * - 歇够了：出过，但已经落在回收窗口之外；
+ * - 回收：回收窗口里的，按最久没出的在前排好。
+ */
+export const splitByRecency = <T extends { id: string }>(
+  candidates: readonly T[],
+  history: readonly string[],
+  window: number
+): { unplayed: T[]; rested: T[]; recycled: T[] } => {
+  const played = new Set(history);
+  const recentRank = new Map(history.slice(0, window).map((id, index) => [id, index]));
+  const unplayed: T[] = [];
+  const rested: T[] = [];
+  const recycled: T[] = [];
+  for (const candidate of candidates) {
+    if (recentRank.has(candidate.id)) recycled.push(candidate);
+    else if (played.has(candidate.id)) rested.push(candidate);
+    else unplayed.push(candidate);
+  }
+  recycled.sort((left, right) => recentRank.get(right.id)! - recentRank.get(left.id)!);
+  return { unplayed, rested, recycled };
 };
 
 /** 同一作品的归并键：曲名去掉版本后缀，歌手取第一位。 */
@@ -241,19 +311,12 @@ export const buildAutomaticCandidateTiers = (
   unavailableIds: ReadonlySet<string>,
   isPlayable: (song: SongSearchResult) => boolean
 ): AutomaticCandidateTiers => {
-  const played = new Set(history);
-  const recentRank = new Map(history.slice(0, window).map((id, index) => [id, index]));
-  const unplayed: SongSearchResult[] = [];
-  const rested: SongSearchResult[] = [];
-  const recycled: SongSearchResult[] = [];
-  const knownUnavailable: SongSearchResult[] = [];
-  for (const song of candidates) {
-    if (recentRank.has(song.id)) recycled.push(song);
-    else if (unavailableIds.has(song.id)) knownUnavailable.push(song);
-    else if (played.has(song.id)) rested.push(song);
-    else unplayed.push(song);
-  }
-  recycled.sort((left, right) => recentRank.get(right.id)! - recentRank.get(left.id)!);
+  const recency = splitByRecency(candidates, history, window);
+  const usable = (song: SongSearchResult) => !unavailableIds.has(song.id);
+  const unplayed = recency.unplayed.filter(usable);
+  const rested = recency.rested.filter(usable);
+  const recycled = recency.recycled;
+  const knownUnavailable = [...recency.unplayed, ...recency.rested].filter((song) => !usable(song));
   const unplayable = (song: SongSearchResult) => !isPlayable(song);
   return {
     tiers: [
@@ -277,24 +340,35 @@ const songPlatformOf = (id: string): "qq" | "netease" => (id.startsWith("qq:") ?
 const hasNoPopularitySource = (song: SongSearchResult): boolean =>
   songPlatformOf(song.id) === "qq" && song.popularity === undefined;
 
-/** 取不到音频的候选记进房间：过期项顺手清掉，总量封顶。 */
-const rememberUnavailableSong = (room: SonGuessrRoomRecord, id: string, now: number): void => {
-  const records = room.unavailableSongIds ?? {};
-  for (const [key, at] of Object.entries(records)) {
-    if (now - at >= UNAVAILABLE_SONG_TTL_MS) delete records[key];
+/**
+ * 出不了题的候选记一笔（候选 ID → 记下的时刻），返回更新后的记录：过期项顺手清掉，总量封顶。
+ * 歌曲（取不到音频）与番剧（没有可播关联曲）各用一份记录。
+ */
+const rememberUnavailable = (
+  records: Record<string, number> | undefined,
+  id: string,
+  now: number
+): Record<string, number> => {
+  const next = records ?? {};
+  for (const [key, at] of Object.entries(next)) {
+    if (now - at >= UNAVAILABLE_SONG_TTL_MS) delete next[key];
   }
-  records[id] = now;
-  const overflow = Object.keys(records).length - MAX_UNAVAILABLE_SONG_RECORDS;
+  // 重新记的条目挪到最后：对象键按插入序遍历，封顶时最早记下的先丢。
+  delete next[id];
+  next[id] = now;
+  const overflow = Object.keys(next).length - MAX_UNAVAILABLE_SONG_RECORDS;
   if (overflow > 0) {
-    // 对象键按插入序遍历，最早记下的先丢。
-    for (const key of Object.keys(records).slice(0, overflow)) delete records[key];
+    for (const key of Object.keys(next).slice(0, overflow)) delete next[key];
   }
-  room.unavailableSongIds = records;
+  return next;
 };
 
-const liveUnavailableIds = (room: SonGuessrRoomRecord, now: number): Set<string> =>
+const liveUnavailableIds = (
+  records: Record<string, number> | undefined,
+  now: number
+): Set<string> =>
   new Set(
-    Object.entries(room.unavailableSongIds ?? {})
+    Object.entries(records ?? {})
       .filter(([, at]) => now - at < UNAVAILABLE_SONG_TTL_MS)
       .map(([id]) => id)
   );
@@ -323,7 +397,7 @@ export const startAutomaticSongRound = async (
     works,
     history,
     recentSongWindow,
-    liveUnavailableIds(room, now),
+    liveUnavailableIds(room.unavailableSongIds, now),
     isPlayable
   );
   // 候选被近期窗口、失败记录或不可播悄悄缩小时必须留痕，否则「总是那几首」无从排查。
@@ -384,7 +458,11 @@ export const startAutomaticSongRound = async (
       }
       if (!isUnusableSongCandidate(error)) throw error;
       failures += 1;
-      rememberUnavailableSong(room, selected.id, ctx.now());
+      room.unavailableSongIds = rememberUnavailable(
+        room.unavailableSongIds,
+        selected.id,
+        ctx.now()
+      );
       continue;
     }
     verify();

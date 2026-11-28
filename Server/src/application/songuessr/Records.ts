@@ -193,6 +193,8 @@ export interface SonGuessrRoomRecord {
    * 同一批取不到的歌不再每轮占用有限的尝试次数，也让命中率不再决定「实际抽到的是哪几首」。
    */
   unavailableSongIds?: Record<string, number>;
+  /** 近期试过却出不了题的番剧（条目 ID → 记下的时刻），口径同 `unavailableSongIds`。纯内存态。 */
+  unavailableSubjectIds?: Record<string, number>;
   /** 已为哪一次活动发过闲置预警（记的是当时的 `lastActivityAt`），有新活动后下一段闲置会重新预警。 */
   idleWarningFor?: number;
   recentSubjectIds?: string[];
