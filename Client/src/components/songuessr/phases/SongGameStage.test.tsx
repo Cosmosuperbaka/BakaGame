@@ -14,12 +14,12 @@ import {
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 import { GameStage, SongGameArea } from "./SongGameStage";
 
-// 歌词播放器的排版与媒体演出由歌词专项用例与浏览器回归覆盖；这里只记它收到的歌词。
+// 歌词播放器的排版与媒体演出由歌词专项用例与浏览器回归覆盖；这里只记它收到的歌词与遮挡。
 const lyricLines: unknown[] = [];
 vi.mock("@/components/songuessr/lyrics/SongLyricPlayer", () => ({
-  SongLyricPlayer: ({ lines }: { lines: unknown[] }) => {
+  SongLyricPlayer: ({ lines, concealed }: { lines: unknown[]; concealed?: boolean }) => {
     lyricLines.push(lines);
-    return <div data-testid="lyric-player" />;
+    return <div data-testid="lyric-player" data-concealed={concealed ? "true" : "false"} />;
   },
 }));
 
@@ -269,6 +269,49 @@ describe("作答阶段：歌词与提示", () => {
     );
     screen.getByRole("button", { name: "重播音频" }).click();
     expect(onPlayAudio).toHaveBeenCalledTimes(2);
+  });
+
+  it("歌词等本机音频能播了才揭开，同一回合揭开后不再收回", () => {
+    const concealed = () => screen.getByTestId("lyric-player").dataset.concealed;
+    const waiting = songPrivate({ canGuess: false, canGiveUp: false, remainingGuesses: 3 });
+    const { rerender } = render(
+      <GameStage {...props({ audioStatus: "loading", privateState: waiting })} />
+    );
+    expect(concealed()).toBe("true");
+
+    rerender(<GameStage {...props({ audioStatus: "ready", privateState: waiting })} />);
+    expect(concealed()).toBe("false");
+
+    // 失败后重试又回到加载中：已经看过的歌词不再藏起来。
+    rerender(<GameStage {...props({ audioStatus: "loading", privateState: waiting })} />);
+    expect(concealed()).toBe("false");
+
+    // 下一回合重新等音频。
+    const next = playingSnapshot();
+    rerender(
+      <GameStage
+        {...props({
+          snapshot: { ...next, currentRound: { ...next.currentRound!, roundNumber: 4 } },
+          audioStatus: "loading",
+          privateState: waiting,
+        })}
+      />
+    );
+    expect(concealed()).toBe("true");
+  });
+
+  it("音频加载失败、或服务端已放行作答时，歌词不再等音频", () => {
+    const concealed = () => screen.getByTestId("lyric-player").dataset.concealed;
+    const waiting = songPrivate({ canGuess: false, canGiveUp: false, remainingGuesses: 3 });
+    const { unmount } = render(
+      <GameStage {...props({ audioStatus: "error", privateState: waiting })} />
+    );
+    expect(concealed()).toBe("false");
+    unmount();
+
+    // 就绪宽限期到了或重连回到进行中的回合：倒计时已在走，不让玩家对着空框作答。
+    render(<GameStage {...props({ audioStatus: "loading" })} />);
+    expect(concealed()).toBe("false");
   });
 
   it("加载中与播放中只是状态，不给按钮", () => {

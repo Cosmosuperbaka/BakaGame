@@ -1,5 +1,8 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { SongLyricLine } from "@bakagame/shared";
+import { skeletonFade } from "@/lib/motion/Choreography";
+import { lyricReveal } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
 import { SongLyricScene } from "./SongLyricScene";
 
@@ -10,6 +13,11 @@ export interface SongLyricPlayerProps {
   clipStartTime?: number;
   audioPlaybackState?: "idle" | "playing" | "paused" | "completed";
   audioStatus?: "loading" | "ready" | "error";
+  /**
+   * 歌词先排好版但不露面：猜歌时本机音频还不能播，歌词不能先于声音出现。
+   * 占位与歌词共用同一个框，揭开时占位原地淡出、歌词淡入，框的高度不跳。
+   */
+  concealed?: boolean;
   className?: string;
 }
 
@@ -19,6 +27,7 @@ export function SongLyricPlayer({
   clipStartTime,
   audioPlaybackState = "idle",
   audioStatus = "ready",
+  concealed = false,
   className,
 }: SongLyricPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -42,6 +51,7 @@ export function SongLyricPlayer({
   }, [lines, audioRef, clipStartTime, audioPlaybackState, audioStatus]);
 
   const empty = lines.length === 0;
+  const pending = concealed && !empty;
   return (
     <div
       className={cn(
@@ -54,7 +64,7 @@ export function SongLyricPlayer({
     >
       {empty ? (
         "当前歌曲为纯音乐或无歌词"
-      ) : (
+      ) : pending ? null : (
         <div className="sr-only">
           {lines
             .map((line) =>
@@ -63,10 +73,14 @@ export function SongLyricPlayer({
             .join(" ")}
         </div>
       )}
-      <div
+      <motion.div
         hidden={empty}
         className="baka-lyric-viewport scrollbar-hidden p-3 sm:p-4"
         data-testid="baka-song-lyric-viewport"
+        data-concealed={pending || undefined}
+        variants={lyricReveal}
+        initial={false}
+        animate={pending ? "concealed" : "revealed"}
       >
         <div
           ref={hostRef}
@@ -79,7 +93,19 @@ export function SongLyricPlayer({
               : "baka-song-lyric-player"
           }
         />
-      </div>
+      </motion.div>
+      <AnimatePresence initial={false}>
+        {pending ? (
+          <motion.p
+            key="pending"
+            exit={skeletonFade.exit}
+            className="pointer-events-none absolute inset-0 flex items-center justify-center p-3 text-center text-sm text-muted-foreground sm:p-4"
+            data-testid="baka-song-lyric-pending"
+          >
+            音频加载后显示歌词
+          </motion.p>
+        ) : null}
+      </AnimatePresence>
       <div aria-hidden="true" className="baka-lyric-edge baka-lyric-edge-top" />
       <div aria-hidden="true" className="baka-lyric-edge baka-lyric-edge-bottom" />
     </div>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AudioLines,
@@ -207,14 +208,30 @@ const myGuessedIds = (privateState: SonGuessrPrivateState): string[] =>
 /** 没有歌词时传同一个空数组：每次渲染新建一个会让歌词播放器把它当成新歌词，白白重排一遍。 */
 const NO_LINES: SongLyricLine[] = [];
 
+/**
+ * 歌词随音频一起亮相：本机音频能从片段起点播了才揭开，弱网下不让歌词先于声音出现。
+ * 加载失败、或服务端已经开始替本人计时（就绪宽限期到了、重连回到进行中的回合）时也揭开，
+ * 不让玩家对着空框倒计时。同一回合揭开过就不再收回：失败后重试重新加载的那几秒，歌词照旧留着。
+ */
+function useLyricsRevealed(roundNumber: number, revealNow: boolean): boolean {
+  const [revealedRound, setRevealedRound] = useState<number | null>(null);
+  if (revealNow && revealedRound !== roundNumber) setRevealedRound(roundNumber);
+  return revealNow || revealedRound === roundNumber;
+}
+
 /** 片段展示区：开歌词挂歌词播放器，关掉后给同一外壳的提示。 */
 function ClipArea({
   snapshot,
+  privateState,
   round,
   audioRef,
   audioPlaybackState,
   audioStatus,
 }: PlayingPhaseProps) {
+  const revealed = useLyricsRevealed(
+    round.roundNumber,
+    audioStatus !== "loading" || privateState.canGuess
+  );
   if (!snapshot.settings.showLyrics) {
     // 与歌词框（SongLyricPlayer 的无歌词态）同一外壳
     return (
@@ -230,6 +247,7 @@ function ClipArea({
       audioRef={audioRef}
       audioPlaybackState={audioPlaybackState}
       audioStatus={audioStatus}
+      concealed={!revealed}
     />
   );
 }

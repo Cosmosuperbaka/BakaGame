@@ -53,6 +53,15 @@ export const fadeSwap: Variants = {
   exit: { opacity: 0, transition: { duration: duration.instant } },
 };
 
+/**
+ * 猜歌歌词揭开：本机音频能播之前歌词先排好版但不露面，能播了原地淡入。
+ * 只动透明度、不带位移，框高不跳；占位文字的退场走 `skeletonFade`。
+ */
+export const lyricReveal: Variants = {
+  concealed: { opacity: 0 },
+  revealed: { opacity: 1, transition: { duration: duration.base, ease: ease.out } },
+};
+
 /** 跟手的悬停标记显隐：指针扫过时要跟得上，进退都用 instant，不拖尾。 */
 export const hoverMarkFade: Variants = {
   initial: { opacity: 0 },
