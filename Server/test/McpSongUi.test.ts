@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { SongClipPort } from "../src/mcp/audio/SongClip";
+import { MAX_RESULT_MEDIA_CHARS } from "../src/mcp/audio/ClipMedia";
 import { mediaOf } from "../src/mcp/Media";
 import { SONGUESSR_NO_SEARCH_RULE } from "../src/mcp/Policy";
 import { fakeSongClips, idsOf, lastPayloadOf, mcpFixture, payloadOf, typesOf } from "./McpFixtures";
@@ -828,6 +829,44 @@ describe("猜歌界面：控件动作", () => {
     };
     const run = await ui.run("song", [{ action: "click", control: "song.guess.search.result.0" }]);
     expect(run.steps[0]?.feedback).toContain("在当前页面不可见");
+  });
+
+  test("一次结果里连点播放：同样的片段只附一份，不同片段超出总量就不再附带", async () => {
+    const repeated = open("playing", {
+      privateState: { canGuess: true },
+      songClips: fakeSongClips().port,
+    });
+    await repeated.ui.screen("song");
+    let run = await repeated.ui.run("song", [
+      { action: "click", control: "song.audio.play" },
+      { action: "click", control: "song.audio.play" },
+    ]);
+    expect(mediaOf(run)).toHaveLength(1);
+    expect(run.steps[1]?.feedback).toContain("不再重复附带");
+
+    // 每次回的都是不同的数据，各占总量的六成：第二段放不下。
+    let seq = 0;
+    const bytes = Math.floor((MAX_RESULT_MEDIA_CHARS * 0.6) / 4) * 3;
+    const distinct = fakeSongClips().port;
+    const big = open("playing", {
+      privateState: { canGuess: true },
+      songClips: {
+        ...distinct,
+        load: async (request) => ({
+          ...(await distinct.load(request)),
+          data: new Uint8Array(bytes).fill((seq += 1)),
+        }),
+      },
+    });
+    await big.ui.screen("song");
+    run = await big.ui.run("song", [
+      { action: "click", control: "song.audio.play" },
+      { action: "click", control: "song.audio.play" },
+    ]);
+    expect(run.ok).toBe(true);
+    expect(mediaOf(run)).toHaveLength(1);
+    expect(run.steps[1]?.feedback).toContain("没有附上");
+    expect(run.steps[1]?.feedback).toContain(SONGUESSR_NO_SEARCH_RULE);
   });
 
   test("播放片段把音频作为内容块挂在结果上，重取音频作废旧片段", async () => {
