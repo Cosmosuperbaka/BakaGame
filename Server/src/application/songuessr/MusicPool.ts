@@ -94,7 +94,7 @@ export const acquireMusicAccount = async (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   platform: MusicAuthPlatform,
-  options: { requireVip?: boolean } = {}
+  options: MusicAccountPickOptions = {}
 ): Promise<MusicAccountLease | undefined> => {
   const deadline = ctx.now() + MUSIC_POOL_QUEUE_TIMEOUT_MS;
   for (;;) {
@@ -113,12 +113,26 @@ export const acquireMusicAccount = async (
   }
 };
 
+/**
+ * 取号偏好。`requireVip` 见 `acquireMusicAccount`；`preferHigherTier` 让会员档高的号先上
+ * （超级会员 > 会员 > 音乐包 > 非会员），给按音质取流用：高音质档要看账号权限，
+ * 拿低档号去试只会被上游降档。它只排序、不筛号，档位不够时照样用低档号。
+ */
+export interface MusicAccountPickOptions {
+  requireVip?: boolean;
+  preferHigherTier?: boolean;
+}
+
+const VIP_TIER_RANK: Record<string, number> = { svip: 0, vip: 1, musicPackage: 2 };
+const vipTierRank = (entry: SonGuessrMusicPoolEntry): number =>
+  VIP_TIER_RANK[entry.account.vipTier ?? ""] ?? 3;
+
 /** 取号候选：`enforceCap` 为 false 时只按「有凭据且可用」，用于判断是否存在替代号。 */
 export const pickMusicPoolEntry = (
   ctx: SonGuessrContext,
   room: SonGuessrRoomRecord,
   platform: MusicAuthPlatform,
-  options: { requireVip?: boolean },
+  options: MusicAccountPickOptions,
   enforceCap: boolean
 ): SonGuessrMusicPoolEntry | undefined => {
   const now = ctx.now();
@@ -133,6 +147,10 @@ export const pickMusicPoolEntry = (
     ? tiered.filter((entry) => entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT)
     : tiered;
   return [...candidates].sort((left, right) => {
+    if (options.preferHigherTier) {
+      const tier = vipTierRank(left) - vipTierRank(right);
+      if (tier !== 0) return tier;
+    }
     if (platform === "qq") {
       const leftVip = left.account.vipStatus === "vip" ? 0 : 1;
       const rightVip = right.account.vipStatus === "vip" ? 0 : 1;
@@ -307,7 +325,7 @@ export const withSongAccount = async <T>(
   room: SonGuessrRoomRecord,
   songId: string | undefined,
   run: (cookie: string | undefined) => Promise<T>,
-  options: { requireVip?: boolean } = {}
+  options: MusicAccountPickOptions = {}
 ): Promise<T> => {
   const platform: MusicAuthPlatform = songId?.startsWith("qq:") ? "qq" : "netease";
   const lease = await acquireMusicAccount(ctx, room, platform, options);

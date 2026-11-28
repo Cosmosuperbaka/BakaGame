@@ -33,6 +33,7 @@ import { requestSync, setReady, setSpectator, setTeam, updateSettings } from "./
 import { chooseSubmitter, finishGame, isRoomStarting, nextRound, startGame } from "./RoundFlow";
 import { getSongClipPreview, submitAnime, submitSong } from "./SongSubmission";
 import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from "./RoundEngine";
+import { audioQuality } from "./AudioQuality";
 
 export interface SonGuessrCommandDeps {
   readonly ctx: SonGuessrContext;
@@ -302,6 +303,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     access: "seat",
     phases: "any",
     run: (deps, at, m) => audioFailed(deps.ctx, at, m.payload.roundNumber),
+  },
+  "song.game.audioQuality": {
+    access: "seat",
+    phases: "any",
+    run: (deps, at, m) =>
+      asResult(audioQuality(deps.ctx, at, m.payload.roundNumber, m.payload.quality)),
   },
   "song.game.guess": {
     access: "seat",

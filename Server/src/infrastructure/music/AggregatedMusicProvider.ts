@@ -20,9 +20,11 @@ import type {
   MusicSearchOptions,
   SongFailoverHint,
 } from "./MusicProvider";
+import type { SongAudioVariant } from "./AudioQuality";
 import type {
   SongAlbumSearchResult,
   SongArtistSearchResult,
+  SongAudioQuality,
   SongChorus,
   SongDetails,
   SongPlaylistInfo,
@@ -278,6 +280,19 @@ export class AggregatedMusicProvider implements MusicProvider {
       provider.refreshSongAudio?.(rawId, platformCookie) ??
       (await provider.getSong(rawId, platformCookie)).audioUrl
     );
+  }
+
+  async getSongAudioVariant(
+    songId: string,
+    quality: SongAudioQuality,
+    cookie?: MusicCookieInput
+  ): Promise<SongAudioVariant> {
+    const { platform, rawId } = parseSongUrn(songId);
+    const provider = this.providerFor(platform);
+    if (!provider.getSongAudioVariant) {
+      throw new AppError("SONG_UNAVAILABLE", `${PLATFORM_LABEL[platform]}暂不支持选择音质`);
+    }
+    return provider.getSongAudioVariant(rawId, quality, resolvePlatformCookie(cookie, platform));
   }
 
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {

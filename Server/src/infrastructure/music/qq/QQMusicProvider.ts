@@ -23,6 +23,14 @@ import {
   withAnonymousTimeout,
   type SearchSettlementNotes,
 } from "./QQAnonymousCircuit";
+import { AUDIO_QUALITY_ATTEMPTS, type SongAudioVariant } from "../AudioQuality";
+import {
+  QQ_AUDIO_FILES,
+  readQqAudioQualities,
+  readQqVkeyUrl,
+  requestQqVkey,
+  type QqAudioFile,
+} from "./QQAudioQuality";
 import { audioCacheScope, extractQqCookie } from "./QQCookie";
 import { QQLogin } from "./QQLogin";
 import { QQLyricChain } from "./QQLyrics";
@@ -40,6 +48,7 @@ import type { QQMusicProviderOptions } from "./QQTypes";
 import { QQUpstream } from "./QQUpstream";
 import type {
   SongArtistSearchResult,
+  SongAudioQuality,
   SongDetails,
   SongPlaylistInfo,
   SongSearchResult,
@@ -61,6 +70,13 @@ const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 1000;
 /** AMLL 歌词缓存的条目数上限，与改造前 LRU 一致。 */
 const AMLL_CACHE_MAX_ENTRIES = 500;
+/** 记住多少首歌的可用音质档；超出时丢最早记下的，缺了只是取音质时多试几档。 */
+const AUDIO_QUALITY_MEMORY_MAX_ENTRIES = 1000;
+
+const readLibraryAudioUrl = (response: unknown): string => {
+  const url = asRecord(asArray(asRecord(asRecord(response).body).data)[0]).url;
+  return typeof url === "string" && url && !url.includes("RS02") ? url : "";
+};
 // QQ 音乐上游返回的是未标注类型的 JSON：通用窄化助手取自 JsonReaders（与网易云
 // 同一套约定）；`readString` 留在本地——它不 trim、不接受数字，与通用版语义不同，
 // 音频直链与 Cookie 判定依赖这一差异。不引入 any。
@@ -75,6 +91,8 @@ export class QQMusicProvider implements MusicProvider {
   private readonly options: QQMusicProviderOptions;
   private readonly now: () => number;
   private warmupPromise?: Promise<void>;
+  /** 每首歌有哪些音质档，读自歌曲详情的 `file`；取音质时跳过这首歌没有的档，不白打上游。 */
+  private readonly audioQualities = new Map<string, Set<SongAudioQuality>>();
 
   constructor(options: QQMusicProviderOptions = {}) {
     this.options = options;
@@ -276,6 +294,61 @@ export class QQMusicProvider implements MusicProvider {
     return this.loadAudioUrl(mid, cookie, true);
   }
 
+  async getSongAudioVariant(
+    songId: string,
+    quality: SongAudioQuality,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongAudioVariant> {
+    const cookie = extractQqCookie(rawCookie);
+    const mid = this.resolveMid(songId);
+    const known = this.audioQualities.get(mid);
+    for (const attempt of AUDIO_QUALITY_ATTEMPTS[quality]) {
+      const entry = QQ_AUDIO_FILES[attempt];
+      if (!entry || (known && !known.has(attempt))) continue;
+      const url = await this.loadAudioVariantUrl(mid, attempt, entry, cookie);
+      if (url) return { url, quality: attempt, format: entry.ext.slice(1) };
+    }
+    throw new AppError("SONG_UNAVAILABLE", `这首歌没有可用的该档音质: ${mid}`);
+  }
+
+  /** 按档取直链。空串表示这一档拿不到，不缓存：账号换了或权限恢复后重试可能成功。 */
+  private async loadAudioVariantUrl(
+    mid: string,
+    quality: SongAudioQuality,
+    entry: QqAudioFile,
+    cookie?: string
+  ): Promise<string> {
+    return this.musicCache.cached(
+      `audio-${quality}:${audioCacheScope(cookie)}:${mid}`,
+      SONG_AUDIO_CACHE_TTL_MS,
+      async () => {
+        const libraryType = entry.libraryType;
+        if (libraryType) {
+          const response = await this.upstream.callUpstream(cookie, () =>
+            qqmusic.song_url({ id: mid, type: libraryType, cookie })
+          );
+          return readLibraryAudioUrl(response);
+        }
+        const response = await this.upstream.callUpstream(cookie, () =>
+          requestQqVkey(mid, entry, cookie)
+        );
+        return readQqVkeyUrl(response);
+      },
+      { priority: 4, cacheNegative: false }
+    );
+  }
+
+  private rememberAudioQualities(mid: string, file: unknown) {
+    const qualities = readQqAudioQualities(file);
+    if (!qualities) return;
+    this.audioQualities.delete(mid);
+    this.audioQualities.set(mid, qualities);
+    if (this.audioQualities.size > AUDIO_QUALITY_MEMORY_MAX_ENTRIES) {
+      const oldest = this.audioQualities.keys().next().value;
+      if (oldest !== undefined) this.audioQualities.delete(oldest);
+    }
+  }
+
   async getSongMetadata(songId: string, rawCookie?: MusicCookieInput): Promise<SongDetails> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
@@ -318,6 +391,7 @@ export class QQMusicProvider implements MusicProvider {
     if (!title) {
       throw new AppError("INVALID_SONG", `未找到 QQ 音乐歌曲信息: ${mid}`);
     }
+    this.rememberAudioQualities(mid, rawTrack.file);
 
     const album = asRecord(rawTrack.album);
     const releaseYear = rawTrack.time_public

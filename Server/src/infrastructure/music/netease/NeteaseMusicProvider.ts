@@ -1,6 +1,7 @@
 import { AppError } from "../../../domain/Errors";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { AmllLyricClient } from "../lyrics/AmllLyricClient";
+import { AUDIO_QUALITY_ATTEMPTS, readAudioFormat, type SongAudioVariant } from "../AudioQuality";
 import type {
   MusicCookieInput,
   MusicLoginSession,
@@ -31,6 +32,7 @@ import {
 } from "./NeteaseResponse";
 import type { NeteaseMusicProviderOptions } from "./NeteaseTypes";
 import type {
+  SongAudioQuality,
   SongDetails,
   SongAlbumSearchResult,
   SongArtistSearchResult,
@@ -48,6 +50,30 @@ const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const POPULARITY_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_CHORUS_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
 const AUDIO_URL_CACHE_TTL_MS = 10 * 60_000;
+
+/**
+ * 统一音质档位到 `song_url_v1` 的 `level`。`sky`（沉浸环绕声）沿用接口包缺省的声道类型；
+ * 杜比全景声要求凭据带 `os=pc`，扫码登录写入的 Cookie 已经带上。
+ */
+const NETEASE_AUDIO_LEVELS: Record<SongAudioQuality, string> = {
+  standard: "standard",
+  higher: "higher",
+  exhigh: "exhigh",
+  lossless: "lossless",
+  hires: "hires",
+  effect: "jyeffect",
+  surround: "sky",
+  dolby: "dolby",
+  vivid: "vivid",
+  master: "jymaster",
+};
+
+const NETEASE_LEVEL_QUALITIES = new Map(
+  Object.entries(NETEASE_AUDIO_LEVELS).map(([quality, level]) => [
+    level,
+    quality as SongAudioQuality,
+  ])
+);
 export class NeteaseMusicProvider implements MusicProvider {
   private readonly musicCache: MusicCache;
   private readonly amllClient: AmllLyricClient;
@@ -146,6 +172,20 @@ export class NeteaseMusicProvider implements MusicProvider {
     const key = this.gateway.cacheKey("audio", cookie, id);
     this.musicCache.invalidate(key);
     return this.loadAudioUrl(id, cookie, true);
+  }
+
+  async getSongAudioVariant(
+    songId: string,
+    quality: SongAudioQuality,
+    cookie?: MusicCookieInput
+  ): Promise<SongAudioVariant> {
+    const id = songId.trim();
+    if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
+    for (const attempt of AUDIO_QUALITY_ATTEMPTS[quality]) {
+      const variant = await this.loadAudioVariant(id, attempt, cookie);
+      if (variant) return variant;
+    }
+    throw new AppError("SONG_UNAVAILABLE", "这首歌没有可用的该档音质");
   }
 
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
@@ -584,6 +624,40 @@ export class NeteaseMusicProvider implements MusicProvider {
       },
       chorus,
     };
+  }
+
+  /**
+   * 按档取一次 `song_url_v1`。上游会把没有权限或曲目没有的档位降到能给的最高一档，
+   * 实际档位读响应的 `level`。试听片段与空地址都算「这一档拿不到」：不走解灰（第三方音源
+   * 没有档位可言），也不缓存空结果，下一回合重试仍可能拿到。
+   */
+  private async loadAudioVariant(
+    songId: string,
+    quality: SongAudioQuality,
+    cookie?: MusicCookieInput
+  ): Promise<SongAudioVariant | undefined> {
+    const value = await this.musicCache.cached(
+      this.gateway.cacheKey(`audio-${quality}`, cookie, songId),
+      AUDIO_URL_CACHE_TTL_MS,
+      async (): Promise<SongAudioVariant | undefined> => {
+        const response = await this.gateway.call(
+          ["song_url_v1"],
+          { id: songId, level: NETEASE_AUDIO_LEVELS[quality] },
+          cookie
+        );
+        const songData = asRecord(asArray(responseBody(response).data)[0]);
+        const url = normalizeAudioUrl(songData.url);
+        if (!url || songData.freeTrialInfo != null || songData.code === 404) return undefined;
+        const level = typeof songData.level === "string" ? songData.level : "";
+        return {
+          url,
+          quality: NETEASE_LEVEL_QUALITIES.get(level) ?? quality,
+          format: readAudioFormat(songData.type),
+        };
+      },
+      { priority: 4, cacheNegative: false }
+    );
+    return value ?? undefined;
   }
 
   private async loadAudioUrl(
