@@ -1,6 +1,7 @@
 import { AppError } from "../../../domain/Errors";
 import { asArray, asRecord, readNumber, readString } from "../../JsonReaders";
 import { isCreditLyricLine } from "../lyrics/LyricCreditClassifier";
+import { normalizeComparableText } from "../MusicDeduplicator";
 import type {
   SongEncyclopedia,
   SongSearchResult,
@@ -171,7 +172,32 @@ export const normalizeSong = (value: unknown): SongSearchResult | undefined => {
     requiresVip: fee === 1,
     originCoverType: readNumber(song.originCoverType),
     originSongId: readString(originCover.songId),
+    originSongTitle: readString(originCover.name),
+    originSongArtist: originCover.artists ? artistNames(originCover) : undefined,
   };
+};
+
+/**
+ * 歌曲自带的译名与别名（`tns`、`alia`），并入百科别名，去掉与曲名相同和彼此重复的写法。
+ * 古典乐的译名尤其关键：`Nocturne in E-Flat Major, Op. 9, No. 2` 的译名是
+ * 「降E大调第2号夜曲，作品 9」，同一作品的不同上传常常只有译名对得上。
+ */
+export const mergeSongAliases = (
+  song: unknown,
+  title: string,
+  wikiAliases: readonly string[] | undefined
+): string[] | undefined => {
+  const record = asRecord(song);
+  const seen = new Set([normalizeComparableText(title)]);
+  const aliases: string[] = [];
+  for (const value of [...asArray(record.tns), ...asArray(record.alia), ...(wikiAliases ?? [])]) {
+    const alias = readString(value);
+    const key = alias ? normalizeComparableText(alias) : "";
+    if (!alias || !key || seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(alias);
+  }
+  return aliases.length ? aliases : undefined;
 };
 
 interface WikiAccumulator {
