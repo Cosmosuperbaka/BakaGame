@@ -176,6 +176,11 @@ export interface SonGuessrSettings {
   maxGuessesPerRound: number;
   guessDurationSeconds: number;
   showGuessTimer: boolean;
+  /**
+   * 听歌识曲的判对口径；缺省 false，只认同一首歌（同一录音或同名同歌手的版本）。
+   * 开启后原曲相同就算对：翻唱、改编、现场、伴奏与古典乐的不同演奏都判对。
+   */
+  allowOtherVersions?: boolean;
   /** 是否允许 Agent（MCP）加入；缺省 false。 */
   allowAgents?: boolean;
   /**
@@ -669,6 +674,7 @@ export const SonGuessrPayloadSchemas = {
       guessDurationSeconds: t.Optional(t.Integer({ minimum: 10, maximum: 180 })),
       bloodMode: t.Optional(t.Boolean()),
       showGuessTimer: t.Optional(t.Boolean()),
+      allowOtherVersions: t.Optional(t.Boolean()),
       allowAgents: t.Optional(t.Boolean()),
       spectatorsSeeAnswers: t.Optional(t.Boolean()),
     },

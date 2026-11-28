@@ -166,6 +166,9 @@ function applyRoundSettings(
     settings.guessDurationSeconds = payload.guessDurationSeconds;
   }
   if (payload.showGuessTimer !== undefined) settings.showGuessTimer = payload.showGuessTimer;
+  if (payload.allowOtherVersions !== undefined) {
+    settings.allowOtherVersions = payload.allowOtherVersions;
+  }
   if (payload.bloodMode !== undefined) settings.bloodMode = payload.bloodMode;
   if (payload.allowAgents !== undefined) settings.allowAgents = payload.allowAgents;
   if (payload.spectatorsSeeAnswers !== undefined) {

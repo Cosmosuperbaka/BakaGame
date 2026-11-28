@@ -531,9 +531,11 @@ const gameOf = (snapshot: SonGuessrRoomSnapshot) => ({
   guessDurationSeconds: snapshot.settings.guessDurationSeconds,
   showGuessTimer: snapshot.settings.showGuessTimer,
   bloodMode: snapshot.settings.bloodMode,
+  // 旧房间的设置里没有这一项：按服务端缺省（关闭）显示。
+  allowOtherVersions: snapshot.settings.allowOtherVersions === true,
 });
 
-/** 猜测设置：歌词、次数、时限与血战。键名即协议字段，草稿原样保存。 */
+/** 猜测设置：歌词、次数、时限、判对口径与血战。键名即协议字段，草稿原样保存。 */
 export function SongGameSettings({
   snapshot,
   solo = false,
@@ -600,6 +602,15 @@ export function SongGameSettings({
           maximum={180}
           step={10}
           onChange={(value) => edit("guessDurationSeconds", value)}
+        />
+      </SettingReveal>
+      {/* 判对口径只对听歌识曲有意义：听歌识番猜的是番剧，与歌曲版本无关。 */}
+      <SettingReveal open={snapshot.settings.questionType === "song"}>
+        <SettingSwitchRow
+          label="其他版本也算对"
+          description="翻唱、改编、现场与古典乐的不同演奏，只要原曲相同都判对。"
+          checked={values.allowOtherVersions}
+          onCheckedChange={(value) => edit("allowOtherVersions", value)}
         />
       </SettingReveal>
       {!solo ? (
@@ -701,7 +712,7 @@ function questionSummaryLines(snapshot: SonGuessrRoomSnapshot): string[] {
   ];
 }
 
-/** 歌词、次数、时限与血战的摘要行。 */
+/** 歌词、次数、时限、判对口径与血战的摘要行。 */
 function gameSummaryLines(settings: SonGuessrRoomSnapshot["settings"], solo: boolean): string[] {
   return [
     settings.showLyrics
@@ -709,6 +720,7 @@ function gameSummaryLines(settings: SonGuessrRoomSnapshot["settings"], solo: boo
       : `${settings.lyricsLineCount} 行片段，不显示歌词`,
     `${settings.maxGuessesPerRound} 次猜测`,
     settings.showGuessTimer ? `每次 ${settings.guessDurationSeconds} 秒` : "不限时",
+    settings.questionType === "song" && settings.allowOtherVersions ? "其他版本也算对" : "",
     solo ? "" : settings.bloodMode ? "血战模式" : "",
   ];
 }

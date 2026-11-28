@@ -90,6 +90,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
             guessDurationSeconds: 90,
             showGuessTimer: true,
             bloodMode: false,
+            allowOtherVersions: false,
           },
         ]);
       }
@@ -208,6 +209,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
             guessDurationSeconds: 90,
             showGuessTimer: true,
             bloodMode: false,
+            allowOtherVersions: false,
           },
         ]);
       }
@@ -240,6 +242,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
       guessDurationSeconds: 90,
       showGuessTimer: true,
       bloodMode: false,
+      allowOtherVersions: false,
     });
     fireEvent.change(duration, { target: { value: "120" } });
     fireEvent.blur(duration);

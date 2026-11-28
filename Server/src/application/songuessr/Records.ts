@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: SonGuessrSettings = {
   maxGuessesPerRound: 3,
   guessDurationSeconds: 60,
   showGuessTimer: true,
+  allowOtherVersions: false,
   allowAgents: false,
   spectatorsSeeAnswers: false,
 };

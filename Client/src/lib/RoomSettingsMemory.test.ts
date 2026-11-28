@@ -101,6 +101,7 @@ describe("room settings memory", () => {
         guessDurationSeconds: 30,
         showGuessTimer: true,
         bloodMode: false,
+        allowOtherVersions: true,
       };
 
       updateRoomSettingsMemory("song", (current) => ({ ...current, question }));
@@ -206,6 +207,7 @@ describe("room settings memory", () => {
         showGuessTimer: false,
         bloodMode: true,
       };
+      // 旧记录没有「其他版本也算对」：缺这一项仍是合法记忆。
       saveRoomSettingsMemory("song", { game });
       markPendingRestore("song", "ROOM1");
 
