@@ -1,6 +1,6 @@
 import {
   AUDIO_READY_GRACE_MS,
-  MAX_RECENT_SONG_WINDOW,
+  MAX_RECENT_HISTORY,
   cloneSettings,
   type SonGuessrRoomRecord,
   type SonGuessrRoundPlayerState,
@@ -121,7 +121,7 @@ export const installRound = (
   room.recentSongIds = [
     ...recordedIds,
     ...recentSongIds.filter((id) => !recordedIds.includes(id)),
-  ].slice(0, MAX_RECENT_SONG_WINDOW);
+  ].slice(0, MAX_RECENT_HISTORY);
   if (anime) {
     const recentSubjectIds = room.recentSubjectIds ?? [];
     room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(

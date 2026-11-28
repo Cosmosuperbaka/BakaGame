@@ -3,7 +3,7 @@ import {
   AUTO_ANIME_CANDIDATE_LIMIT,
   AUTO_SONG_CANDIDATE_LIMIT,
   SUBMIT_SONG_TIMEOUT_MS,
-  resolveRecentSongWindow,
+  resolveRecentWindow,
 } from "../../src/application/songuessr/Records";
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
@@ -1112,23 +1112,24 @@ describe("上线前 P0 修复回归", () => {
 
   test("回收窗口取整池扣掉随机余量，并在上界截断", () => {
     // 没有可回收的池子不需要窗口
-    expect(resolveRecentSongWindow(0)).toBe(0);
-    expect(resolveRecentSongWindow(1)).toBe(0);
-    expect(resolveRecentSongWindow(Number.NaN)).toBe(0);
+    expect(resolveRecentWindow(0)).toBe(0);
+    expect(resolveRecentWindow(1)).toBe(0);
+    expect(resolveRecentWindow(Number.NaN)).toBe(0);
     // 两首的池子也至少记住上一首，不连着出同一首
-    expect(resolveRecentSongWindow(2)).toBe(1);
+    expect(resolveRecentWindow(2)).toBe(1);
     // 小池子至少留两首随机余量，第二轮不会按第一轮的顺序原样重放
-    expect(resolveRecentSongWindow(3)).toBe(1);
-    expect(resolveRecentSongWindow(10)).toBe(8);
+    expect(resolveRecentWindow(3)).toBe(1);
+    expect(resolveRecentWindow(10)).toBe(8);
     // 更大的池子留五分之一余量（向上取整），整数百分比不受浮点误差影响
-    expect(resolveRecentSongWindow(11)).toBe(8);
-    expect(resolveRecentSongWindow(20)).toBe(16);
-    expect(resolveRecentSongWindow(35)).toBe(28);
-    expect(resolveRecentSongWindow(56)).toBe(44);
-    expect(resolveRecentSongWindow(347)).toBe(277);
-    // 上界截断，避免超大歌单把房间的最近列表撑成任意长度
-    expect(resolveRecentSongWindow(625)).toBe(500);
-    expect(resolveRecentSongWindow(1201)).toBe(500);
+    expect(resolveRecentWindow(11)).toBe(8);
+    expect(resolveRecentWindow(20)).toBe(16);
+    expect(resolveRecentWindow(35)).toBe(28);
+    expect(resolveRecentWindow(56)).toBe(44);
+    expect(resolveRecentWindow(347)).toBe(277);
+    expect(resolveRecentWindow(625)).toBe(500);
+    // 上界与房间近期记录同一上限，避免超大歌单把房间的最近列表撑成任意长度
+    expect(resolveRecentWindow(2500)).toBe(2000);
+    expect(resolveRecentWindow(10_000)).toBe(2000);
   });
 
   test("大候选池放长去重窗口后，60 轮内不重现旧歌", async () => {
