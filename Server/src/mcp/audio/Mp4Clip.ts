@@ -184,10 +184,17 @@ const tableEntries = (bytes: Uint8Array, box: Box | undefined, width: number): n
   return rows;
 };
 
+/** 整条音轨最多这么多个样本（AAC 每样本 1024 点，约合 44.1 kHz 下 26 小时）；表头写的数不可信。 */
+const MAX_TRACK_SAMPLES = 1 << 22;
+/** 一个片段最多这么多个样本：60 秒的 AAC 在 96 kHz 下也只有五千多个。 */
+const MAX_CLIP_SAMPLES = 16_384;
+
 const chunkOffsetsOf = (bytes: Uint8Array, stbl: Box): number[] => {
   const co64 = child(bytes, stbl, "co64");
   if (co64) {
     const count = readUint32(bytes, co64.start + 4);
+    // 条目数先和盒子大小对上再分配：坏文件写个 0xffffffff 就能让服务端申请几十亿个元素。
+    if (co64.start + 8 + count * 8 > co64.end) throw new ClipAudioError("M4A 样本表不完整");
     return Array.from({ length: count }, (_, index) =>
       readUint64(bytes, co64.start + 8 + index * 8)
     );
@@ -200,7 +207,9 @@ const sampleSizesOf = (bytes: Uint8Array, stbl: Box): Pick<AacTrack, "sizes" | "
   if (!stsz) throw new ClipAudioError("M4A 样本表不完整");
   const fixed = readUint32(bytes, stsz.start + 4);
   const sampleCount = readUint32(bytes, stsz.start + 8);
+  if (sampleCount > MAX_TRACK_SAMPLES) throw new ClipAudioError("M4A 样本数异常，暂不支持");
   if (fixed > 0) return { sampleCount, sizes: () => fixed };
+  if (stsz.start + 12 + sampleCount * 4 > stsz.end) throw new ClipAudioError("M4A 样本表不完整");
   return { sampleCount, sizes: (index) => readUint32(bytes, stsz.start + 12 + index * 4) };
 };
 
@@ -366,6 +375,8 @@ export const sliceMp4 = async (
   if (moov.length < moovAt.size) throw new ClipAudioError("M4A 索引不完整");
   const track = parseTrack(moov);
   const span = sampleSpan(track, target);
+  if (span.last - span.first + 1 > MAX_CLIP_SAMPLES)
+    throw new ClipAudioError("M4A 样本过于细碎，暂不支持");
   let locations = sampleLocations(track, span);
   let truncated = false;
   let total = 0;

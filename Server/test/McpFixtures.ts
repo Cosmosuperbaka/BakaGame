@@ -110,7 +110,6 @@ export const fakeSongClips = (
   options: { fail?: Error } = {}
 ) => {
   const loads: SongClipRequest[] = [];
-  const invalidated: string[] = [];
   const port: SongClipPort = {
     load: async (request) => {
       loads.push(request);
@@ -126,9 +125,6 @@ export const fakeSongClips = (
         ...overrides,
       };
     },
-    invalidate: (audioUrl) => {
-      invalidated.push(audioUrl);
-    },
   };
-  return { port, loads, invalidated };
+  return { port, loads };
 };

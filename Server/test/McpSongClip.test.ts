@@ -19,18 +19,23 @@ import {
 } from "./support/SyntheticAudio";
 
 const SERVER = "http://127.0.0.1:4850";
-const UPSTREAM = "https://cdn.example.com/M500abcdef.mp3?vkey=SIGNATURE";
-let ticketSeq = 0;
+let caseSeq = 0;
 
-/** 站内票据路由回 302 到上游；每个用例用不同票据，避免进程内缓存串味。 */
+/**
+ * 站内票据路由回 302 到上游。片段缓存按上游地址分键，每个用例用不同的上游地址，避免进程内缓存串味；
+ * `retarget` 模拟「重新获取音频」：票据不变，跳转目标换成另一个地址。
+ */
 const setup = (audio: Uint8Array, options: { ignoreRange?: boolean } = {}) => {
-  const ticket = `ticket-${(ticketSeq += 1)}`;
-  const path = `/api/songuessr/audio/1234/${ticket}`;
-  const upstream = rangeServer({ [UPSTREAM]: audio }, options);
+  caseSeq += 1;
+  const path = `/api/songuessr/audio/1234/ticket-${caseSeq}`;
+  const first = `https://cdn.example.com/M500abcdef.mp3?vkey=SIGNATURE&case=${caseSeq}`;
+  const fresh = `https://cdn.example.net/fresh/after-refresh.mp3?case=${caseSeq}`;
+  const upstream = rangeServer({ [first]: audio, [fresh]: audio }, options);
+  let location = first;
   const fetcher = async (input: string | URL, init?: RequestInit): Promise<Response> => {
     if (String(input) === `${SERVER}${path}`) {
       upstream.requests.push({ url: String(input), range: null });
-      return new Response(null, { status: 302, headers: { location: UPSTREAM } });
+      return new Response(null, { status: 302, headers: { location } });
     }
     return upstream.fetcher(input, init);
   };
@@ -39,6 +44,12 @@ const setup = (audio: Uint8Array, options: { ignoreRange?: boolean } = {}) => {
     loader,
     requests: upstream.requests,
     audioUrl: `https://game.example.com${path}`,
+    retarget: () => {
+      location = fresh;
+    },
+    /** 打到某个上游地址的取数请求（不含票据解析）。 */
+    fetchesTo: (which: "first" | "fresh") =>
+      upstream.requests.filter((entry) => entry.url === (which === "first" ? first : fresh)).length,
   };
 };
 
@@ -88,39 +99,42 @@ describe("片段截取：MP3", () => {
     expect(mp3Indexes(right.data)).toEqual(mp3Indexes(left.data));
   });
 
-  test("同一片段重复播放走缓存；换了票据（刷新音频）后重新回源", async () => {
-    const { loader, audioUrl, requests } = setup(buildMp3(600));
-    const first = await loader.load({ audioUrl, startTime: 1_000, endTime: 6_000 });
-    const count = requests.length;
-    const again = await loader.load({ audioUrl, startTime: 1_000, endTime: 6_000 });
-    expect(again).toBe(first);
-    expect(requests.length).toBe(count);
-    loader.invalidate(audioUrl);
-    await loader.load({ audioUrl, startTime: 1_000, endTime: 6_000 });
-    expect(requests.length).toBeGreaterThan(count);
+  test("同一片段重复播放不再取音频；刷新音频换了上游就从新上游取", async () => {
+    const { loader, audioUrl, fetchesTo, retarget } = setup(buildMp3(600));
+    const target = { audioUrl, startTime: 1_000, endTime: 6_000 };
+    const first = await loader.load(target);
+    const count = fetchesTo("first");
+    expect(count).toBeGreaterThan(0);
+    expect(await loader.load(target)).toBe(first);
+    expect(fetchesTo("first")).toBe(count);
+    // 票据不变，跳转目标换了：不用谁来通知作废，下一次播放就从新上游取。
+    retarget();
+    const refreshed = await loader.load(target);
+    expect(refreshed).not.toBe(first);
+    expect(fetchesTo("fresh")).toBeGreaterThan(0);
+    expect(fetchesTo("first")).toBe(count);
   });
 
-  test("并发的同一请求只回源一次", async () => {
+  test("并发的同一请求只取一次音频", async () => {
     const { loader, audioUrl, requests } = setup(buildMp3(600));
     const [left, right] = await Promise.all([
       loader.load({ audioUrl, startTime: 2_000, endTime: 7_000 }),
       loader.load({ audioUrl, startTime: 2_000, endTime: 7_000 }),
     ]);
     expect(left).toBe(right);
-    expect(requests.filter((entry) => entry.range === null)).toHaveLength(1);
+    expect(requests.filter((entry) => entry.range === "bytes=0-65535")).toHaveLength(1);
   });
 
-  test("取片段途中刷新音频：之后的播放重新回源，旧请求晚到的结果不写回缓存", async () => {
-    const { loader, audioUrl, requests } = setup(buildMp3(600));
+  test("取片段途中刷新音频：之后的播放连新上游，旧上游晚到的结果不会被它拿到", async () => {
+    const { loader, audioUrl, fetchesTo, retarget } = setup(buildMp3(600));
     const target = { audioUrl, startTime: 3_000, endTime: 6_000 };
     const stale = loader.load(target);
-    loader.invalidate(audioUrl);
+    retarget();
     const fresh = loader.load(target);
-    expect(fresh).not.toBe(stale);
     const [old, current] = await Promise.all([stale, fresh]);
     expect(old).not.toBe(current);
-    // 票据各解析了一次；之后的重播命中的是新请求的结果。
-    expect(requests.filter((entry) => entry.range === null)).toHaveLength(2);
+    expect(fetchesTo("first")).toBeGreaterThan(0);
+    expect(fetchesTo("fresh")).toBeGreaterThan(0);
     expect(await loader.load(target)).toBe(current);
   });
 
@@ -220,6 +234,37 @@ describe("片段截取：M4A", () => {
     );
   });
 
+  test("样本表里的条目数先对过盒子大小：坏文件不会让服务端按表头数字申请内存", async () => {
+    const patched = (mutate: (file: Uint8Array, at: (type: string) => number) => void) => {
+      const file = buildMp4(600, true);
+      const at = (type: string) => Buffer.from(file).indexOf(type);
+      mutate(file, at);
+      return file;
+    };
+    const u32At = (file: Uint8Array, offset: number, value: number) =>
+      new DataView(file.buffer, file.byteOffset).setUint32(offset, value);
+    const cases: Array<[Uint8Array, string]> = [
+      // stsz：盒头 8 字节、版本 4 字节、定长 4 字节之后是样本数。
+      [patched((file, at) => u32At(file, at("stsz") + 12, 0xffffffff)), "样本数异常"],
+      [patched((file, at) => u32At(file, at("stsz") + 12, 5_000)), "样本表不完整"],
+      // 把 stco 改名成 co64 并写一个巨大的条目数。
+      [
+        patched((file, at) => {
+          const offset = at("stco");
+          file.set(Buffer.from("co64"), offset);
+          u32At(file, offset + 8, 0x7fffffff);
+        }),
+        "样本表不完整",
+      ],
+    ];
+    for (const [file, message] of cases) {
+      const { loader, audioUrl } = setup(file);
+      await expect(loader.load({ audioUrl, startTime: 0, endTime: 3_000 })).rejects.toThrow(
+        message
+      );
+    }
+  });
+
   test("HE-AAC 的配置退回核心 AAC-LC，非 AAC 规格明确拒绝", () => {
     // AOT 5（SBR）+ 22.05 kHz 核心 + 双声道 + 扩展 44.1 kHz + 底层 AOT 2。
     expect(parseAudioSpecificConfig(new Uint8Array([0x2b, 0x92, 0x08, 0x00]))).toEqual({
@@ -281,6 +326,8 @@ describe("片段截取：取用与失败", () => {
       "暂不支持这种音源格式"
     );
   });
+
+  const UPSTREAM = "https://cdn.example.com/M500abcdef.mp3?vkey=SIGNATURE";
 
   test("区间读取遵守 Content-Range，越过末尾返回空", async () => {
     const data = new Uint8Array(1000).map((_, index) => index % 251);

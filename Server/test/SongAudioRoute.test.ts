@@ -227,6 +227,26 @@ describe("Agent 听片段走同一张票据", () => {
     expect(ranged.every((entry) => entry.range?.startsWith("bytes="))).toBe(true);
   });
 
+  test("刷新音频后同一张票据从新上游取片段，不需要谁来通知作废", async () => {
+    const FRESH = "https://cdn.example.net/fresh/after-refresh.mp3";
+    const { app, service, guest, path } = await openRound({ refreshSongAudio: async () => FRESH });
+    const { loader, upstream } = loaderFor(app, {
+      [UPSTREAM]: buildMp3(1200),
+      [FRESH]: buildMp3(1200),
+    });
+    const target = { audioUrl: path, startTime: 20_000, endTime: 22_000 };
+    const before = await loader.load(target);
+    await execute(service, guest, {
+      id: "audio-failed",
+      type: "song.game.audioFailed",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    const after = await loader.load(target);
+    expect(after).not.toBe(before);
+    expect(upstream.requests.some((entry) => entry.url === FRESH)).toBe(true);
+  });
+
   test("回合换掉之后旧票据取不到片段，错误里不带上游主机", async () => {
     const { app, service, guest, host, path } = await openRound();
     const { loader } = loaderFor(app, { [UPSTREAM]: buildMp3(1200) });
