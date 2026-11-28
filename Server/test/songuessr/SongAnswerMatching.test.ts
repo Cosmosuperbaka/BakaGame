@@ -71,6 +71,18 @@ describe("猜歌判对规则", () => {
       expected: true,
     },
     {
+      name: "日文波浪线两种字符与顿号",
+      guess: song("qq:1", "secret base ～君がくれたもの～", "ZONE"),
+      answer: song("163:1", "secret base 〜君がくれたもの〜", "ZONE"),
+      expected: true,
+    },
+    {
+      name: "同名歌的歌手只共享公共词（The）",
+      guess: song("qq:1", "Funny Bunny", "The Oral Cigarettes"),
+      answer: song("163:1", "Funny Bunny", "the pillows"),
+      expected: false,
+    },
+    {
       name: "纯符号曲名归一后为空，不能互相判对",
       guess: song("qq:1", "！！！", "同一歌手"),
       answer: song("163:1", "？？？", "同一歌手"),

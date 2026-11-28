@@ -66,13 +66,18 @@ export function markSongPlayability<T extends SongSearchResult>(
 }
 
 /**
- * 文本强规范化：繁简归一、NFKC 字符归一、小写化、剥离所有空格与标点符号.
+ * 文本强规范化：繁简归一、NFKC 字符归一、小写化、剥离所有空白、标点与符号.
+ *
+ * 用 Unicode 类别（`\p{P}` 标点、`\p{S}` 符号）而不是手列字符：两个平台与 Bangumi 的
+ * 写法差异集中在手列表容易漏掉的字符上，最典型的是日文波浪线（`〜` U+301C 与 `～`
+ * U+FF5E 是两个字符，NFKC 也不会把前者归成 `~`）、顿号 `、`、引号 `「」『』` 与 `☆ ♪`。
+ * 曲名去重、判对、Bangumi 曲目匹配与歌词避让共用这一个口径。
  */
 export function normalizeComparableText(value: string): string {
   return toSimplified(value || "")
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[\s\-_—–/:：·.'"“”‘’()（）[\]【】{}《》〈〉~～!！?？`#@*^&|\\+=]+/g, "");
+    .replace(/[\p{P}\p{S}\s]+/gu, "");
 }
 
 /**
@@ -98,14 +103,28 @@ export function extractCanonicalTitle(title: string): string {
 }
 
 /**
+ * 多歌手署名的分隔符：两个平台都用 ` / ` 连接歌手，合作署名另见 `&` `、` `×` `feat.` 等。
+ *
+ * **不按空白切分**：空白是人名内部的一部分（`The Oral Cigarettes`、`Taylor Swift`），
+ * 切开后 `the`、`taylor` 这类公共词会让两个毫无关系的歌手判成有交集，同名歌因此被
+ * 合并成一首、判对也跟着放宽。小写 `x` 只在两侧都有空白时才算分隔（`X JAPAN` 不能拆）。
+ */
+const ARTIST_SEPARATOR_PATTERN =
+  /\s*(?:[/／&＆、+＋×;；]|\s[x]\s|\bfeat(?:uring)?\b\.?|\bft\b\.?)\s*/giu;
+
+/**
  * 歌手字符串拆分为独立人名集合 (支持各种常见分隔符).
+ *
+ * 括号里的别名、本名、CV 不单独拆出：比对走 `artistsOverlap` 的互相包含，
+ * 「角色名(CV.声优名)」规范化后天然包含声优名。
  */
 export function extractArtistTokens(artistStr: string): string[] {
   if (!artistStr) return [];
-  return artistStr
-    .split(/[/&、+×\s]+|(?:\s+feat\.?\s+)|\bft\.?\b/gi)
+  const tokens = artistStr
+    .split(ARTIST_SEPARATOR_PATTERN)
     .map((token) => normalizeComparableText(token))
     .filter((token) => token.length > 0);
+  return [...new Set(tokens)];
 }
 
 const ARTIST_ALIASES: Record<string, string[]> = {

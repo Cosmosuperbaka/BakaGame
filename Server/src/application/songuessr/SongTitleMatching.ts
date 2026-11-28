@@ -5,6 +5,7 @@ import {
   artistsOverlap,
   extractArtistTokens,
   extractCanonicalTitle,
+  normalizeComparableText,
 } from "../../infrastructure/music/MusicDeduplicator";
 import {
   BangumiMusicTrack,
@@ -15,11 +16,12 @@ import {
   isBangumiCreditsEntry,
 } from "../../shared/Index";
 
-export const normalizeSongText = (value: string) =>
-  value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
+/**
+ * Bangumi 曲目与平台候选比对用的归一：与去重、判对同一口径（繁简、全半角、大小写、
+ * 空白、标点与符号）。Bangumi 的曲目名、番剧名多是人工录入，波浪线、顿号与繁简写法
+ * 常和平台不一样；两边口径不一致时，同一首歌在出题门禁里会被当成两首。
+ */
+export const normalizeSongText = (value: string) => normalizeComparableText(value);
 
 export const normalizeSongTitle = (value: string) => normalizeSongText(stripVersionInfo(value));
 
@@ -92,10 +94,31 @@ export const isSameAnswerSong = (
   return artistsOverlap(extractArtistTokens(guess.artist), extractArtistTokens(answer.artist));
 };
 
+/**
+ * 歌手署名末尾的括号段：Bangumi 的角色歌写成「角色名(声优名)」或「角色名(CV.声优名)」，
+ * 平台上可能只记其中一个名字；艺名后括注读音或本名（`Aimer(エメ)`）也是同一个人。
+ */
+const BRACKETED_CREDIT_PATTERN =
+  /^(.+?)\s*[(（]\s*(?:(?:cv|c\.v\.|vo|voice|声|聲)\s*[.．:：]?\s*)?([^()（）]+?)\s*[)）]\s*$/iu;
+
+/** 一段歌手署名的全部可比写法：整串，以及括号内外各自的名字（单字残段不要）。 */
+export const artistCreditNames = (credit: string): string[] => {
+  const trimmed = credit.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.match(BRACKETED_CREDIT_PATTERN);
+  if (!parts) return [trimmed];
+  return [trimmed, ...[parts[1]!, parts[2]!].filter((name) => normalizeSongText(name).length >= 2)];
+};
+
+/**
+ * Bangumi 歌手字段与候选歌手的词元集合（按全等比较，不做子串包含，所以括号内外的名字
+ * 要单独拆出来，见 `artistCreditNames`）。
+ */
 export const normalizedArtists = (value: string) =>
   new Set(
     value
       .split(/\s*(?:,|，|、|&|＆|\/|／|;|；|\bx\b|\bfeat(?:uring)?\.?\b|\bwith\b)\s*/iu)
+      .flatMap(artistCreditNames)
       .map(normalizeSongText)
       .filter(Boolean)
   );
