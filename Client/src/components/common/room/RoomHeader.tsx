@@ -188,9 +188,11 @@ export function RoomHeader({
   // 单人模式没有对应的大厅卡片，不命名，免得返回主页时房名脱离整页单独淡出。
   const titleName = useSharedElementName("room-title", roomId ? undefined : false);
   return (
+    // md 起三栏：两侧 1fr 平分剩余宽度，中栏按内容居中；右栏的按钮排不下时它按内容宽度占位、
+    // 左栏（房名可截断）让出，中栏跟着左移，不会像三等分那样让右栏溢出压住中栏的徽章。
     <header
       data-room-part="header"
-      className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 md:grid-cols-3 md:gap-2 md:px-4 lg:px-6"
+      className="grid h-14 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 md:grid-cols-[1fr_auto_1fr] md:gap-2 md:px-4 lg:px-6"
     >
       <div className="flex min-w-0 items-center gap-2">
         <Button
