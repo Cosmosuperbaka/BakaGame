@@ -14,7 +14,6 @@ export const fakeBangumiProvider = (
 ): BangumiDataProvider => ({
   searchSubjects: notStubbed("searchSubjects"),
   getSubject: notStubbed("getSubject"),
-  chooseRandomSubject: notStubbed("chooseRandomSubject"),
   resolveCharacterImage: notStubbed("resolveCharacterImage"),
   resolveSubjectImage: notStubbed("resolveSubjectImage"),
   ...overrides,

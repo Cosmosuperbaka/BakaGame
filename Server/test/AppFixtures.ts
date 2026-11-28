@@ -33,7 +33,6 @@ export function createTestApp(
       bangumiProvider: {
         searchSubjects: unused,
         getSubject: unused,
-        chooseRandomSubject: unused,
         resolveCharacterImage: unused,
         resolveSubjectImage: unused,
       },

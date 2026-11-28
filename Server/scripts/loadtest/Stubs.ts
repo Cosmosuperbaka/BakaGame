@@ -373,8 +373,6 @@ export const createStubBangumiProvider = (): BangumiDataProvider => {
       }).map(({ musicTracks: _musicTracks, ...rest }) => rest);
     },
     getSubject: async (subjectId) => subjectOf(subjectId),
-    chooseRandomSubject: async (filters) =>
-      subjectOf(`${Number(filters?.songMinPopularity ?? 0) + 7}`),
     resolveCharacterImage: async (characterId) =>
       `https://s3.picovideo.cc/crt/${characterId}_large.jpg`,
     resolveSubjectImage: async (subjectId) =>

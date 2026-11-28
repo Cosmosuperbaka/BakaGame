@@ -3,7 +3,6 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { rewriteBangumiImageUrl } from "./BangumiImagePaths";
 import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
-import { pickRandomSubject } from "./BangumiDataProvider";
 import { extractBangumiMusicTracks, extractPerformers } from "./BangumiMusicParsing";
 import type {
   AnimeAutoFilters,
@@ -166,13 +165,6 @@ export class BangumiProvider {
         musicTracks: extractBangumiMusicTracks(asRecord(body).infobox, relationsBody, performers),
       };
     });
-  }
-
-  chooseRandomSubject(
-    filters: AnimeAutoFilters = {},
-    random = Math.random
-  ): Promise<BangumiSubjectDetails> {
-    return pickRandomSubject(this, filters, random);
   }
 
   /**

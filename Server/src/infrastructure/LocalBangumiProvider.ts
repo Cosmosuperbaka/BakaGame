@@ -11,7 +11,7 @@ import type {
   BangumiSubjectSearchResult,
 } from "../shared/Index";
 import { BangumiSearchIndex, parseJsonStrings } from "./BangumiSearchIndex";
-import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
+import type { BangumiDataProvider } from "./BangumiDataProvider";
 import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 import { BangumiUpstream } from "./BangumiUpstream";
@@ -410,9 +410,6 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (waitForImage) return this.resolveEntityImage("subject", id);
     void this.resolveEntityImage("subject", id);
     return undefined;
-  }
-  chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
-    return pickRandomSubject(this, filters, random);
   }
   close() {
     this.db.close();

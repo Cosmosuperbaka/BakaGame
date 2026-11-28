@@ -607,36 +607,6 @@ describe("LocalBangumiProvider · 图片接口与候选选取", () => {
     provider.close();
     await removeFiles(songPath, characterPath, enrichmentPath);
   });
-
-  test("chooseRandomSubject：空数据集报错，单条候选直达详情", async () => {
-    const songPath = join(tmpdir(), `bangumi-pick-${crypto.randomUUID()}.sqlite`);
-    const characterPath = join(tmpdir(), `bangumi-pick-char-${crypto.randomUUID()}.sqlite`);
-    const songDb = new Database(songPath);
-    songDb.run(
-      "CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)"
-    );
-    songDb.run(
-      "CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)"
-    );
-    songDb.close();
-    new Database(characterPath).close();
-
-    const empty = new LocalBangumiProvider({ dbPath: songPath });
-    await expect(empty.chooseRandomSubject()).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
-    empty.close();
-
-    const writer = new Database(songPath);
-    writer.run(
-      "INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',8.5,10,100,'')"
-    );
-    writer.close();
-    const provider = new LocalBangumiProvider({ dbPath: songPath });
-    const picked = await provider.chooseRandomSubject({}, () => 0.99);
-    expect(picked.id).toBe("1");
-    expect(picked.nameCn).toBe("测试中心");
-    provider.close();
-    await removeFiles(songPath, characterPath);
-  });
 });
 
 describe("LocalBangumiProvider · 取条目不等封面回源", () => {

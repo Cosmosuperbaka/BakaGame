@@ -3,11 +3,7 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import {
-  pickRandomSubject,
-  type BangumiDataProvider,
-  type BangumiGetSubjectOptions,
-} from "./BangumiDataProvider";
+import type { BangumiDataProvider, BangumiGetSubjectOptions } from "./BangumiDataProvider";
 import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
 /**
@@ -59,13 +55,6 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
     return this.client.request({ method: "song.resolveSubjectImage", subjectId }) as Promise<
       string | undefined
     >;
-  }
-
-  chooseRandomSubject(
-    filters: AnimeAutoFilters = {},
-    random = Math.random
-  ): Promise<BangumiSubjectDetails> {
-    return pickRandomSubject(this, filters, random);
   }
 
   close() {
