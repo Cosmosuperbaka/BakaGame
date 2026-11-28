@@ -30,7 +30,7 @@ import {
 } from "./Support";
 import { idMatcher, type GameUiAdapter } from "./GameUi";
 import type { UiControl, UiScreen } from "./Types";
-import { songClipFeedback, songClipMedia } from "../audio/ClipMedia";
+import { attachSongClip } from "../audio/ClipMedia";
 import { SONGUESSR_NO_SEARCH_RULE } from "../Policy";
 
 const MIN_CLIP_MS = 5_000;
@@ -611,8 +611,7 @@ const playSongClip = async (
   const clips = context.client.songClips;
   if (!audioUrl || !clips) throw new Error("本回合没有可播放的音频");
   const audio = await clips.load({ audioUrl, startTime: start, endTime: end });
-  (context.state.media ??= []).push(songClipMedia(audio));
-  return songClipFeedback(audio, start, end);
+  return attachSongClip((context.state.media ??= []), audio, start, end);
 };
 
 const clickSongAudio = async (context: UiContext, id: string): Promise<string> => {

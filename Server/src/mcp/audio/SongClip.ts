@@ -152,13 +152,20 @@ export class SongClipLoader implements SongClipPort {
     if (cached) return Promise.resolve(cached);
     const running = INFLIGHT.get(key);
     if (running) return running;
-    const task = this.fetchClip(path, { startTime, endTime, maxBytes: AGENT_CLIP_MAX_BYTES })
+    const task: Promise<SongClipAudio> = this.fetchClip(path, {
+      startTime,
+      endTime,
+      maxBytes: AGENT_CLIP_MAX_BYTES,
+    })
       .then((clip) => {
         const audio = { ...clip, clipped: endTime < wantedEnd };
-        CACHE.set(key, audio);
+        // 途中被作废（重新获取音频换了上游）的请求结果只交给已经在等它的调用方，不写回缓存。
+        if (INFLIGHT.get(key) === task) CACHE.set(key, audio);
         return audio;
       })
-      .finally(() => INFLIGHT.delete(key));
+      .finally(() => {
+        if (INFLIGHT.get(key) === task) INFLIGHT.delete(key);
+      });
     INFLIGHT.set(key, task);
     return task;
   }
@@ -172,6 +179,8 @@ export class SongClipLoader implements SongClipPort {
     }
     const prefix = `${this.serverUrl}${path}|`;
     for (const key of [...CACHE.keys()]) if (key.startsWith(prefix)) CACHE.delete(key);
+    // 进行中的请求连的是旧上游：摘掉之后再播放会重新回源，旧请求晚到的结果也不会写回缓存。
+    for (const key of [...INFLIGHT.keys()]) if (key.startsWith(prefix)) INFLIGHT.delete(key);
   }
 
   private async fetchClip(path: string, target: ClipTarget): Promise<ClipBytes> {

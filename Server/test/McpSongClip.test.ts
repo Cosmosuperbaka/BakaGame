@@ -110,6 +110,20 @@ describe("片段截取：MP3", () => {
     expect(requests.filter((entry) => entry.range === null)).toHaveLength(1);
   });
 
+  test("取片段途中刷新音频：之后的播放重新回源，旧请求晚到的结果不写回缓存", async () => {
+    const { loader, audioUrl, requests } = setup(buildMp3(600));
+    const target = { audioUrl, startTime: 3_000, endTime: 6_000 };
+    const stale = loader.load(target);
+    loader.invalidate(audioUrl);
+    const fresh = loader.load(target);
+    expect(fresh).not.toBe(stale);
+    const [old, current] = await Promise.all([stale, fresh]);
+    expect(old).not.toBe(current);
+    // 票据各解析了一次；之后的重播命中的是新请求的结果。
+    expect(requests.filter((entry) => entry.range === null)).toHaveLength(2);
+    expect(await loader.load(target)).toBe(current);
+  });
+
   test("超过单次上限的片段只截开头，并如实标出", async () => {
     const { loader, audioUrl } = setup(buildMp3(4000));
     const clip = await loader.load({ audioUrl, startTime: 0, endTime: 100_000 });
@@ -185,6 +199,26 @@ describe("片段截取：M4A", () => {
       expect(indexes).toEqual(indexes.map((_, offset) => first + offset));
     });
   }
+
+  test("音频块与别的数据交错存放时分段读取，不把中间的数据一起下载", async () => {
+    // 每块 10 个样本（约 1.8KB）后面垫 200KB：6 秒的片段若整段读取要拉下几 MB。
+    const { loader, audioUrl, requests } = setup(buildMp4(600, true, 200 * 1024));
+    const clip = await loader.load({ audioUrl, startTime: 3_000, endTime: 9_000 });
+    const indexes = adtsFrames(clip.data);
+    const first = Math.floor(3_000 / AAC_FRAME_MS);
+    expect(indexes[0]).toBe(first);
+    expect(indexes).toEqual(indexes.map((_, offset) => first + offset));
+    const fetched = requests
+      .map((entry) => /^bytes=(\d+)-(\d+)$/.exec(entry.range ?? ""))
+      .filter((match) => match !== null)
+      .map((match) => Number(match[2]) - Number(match[1]) + 1);
+    // 第一次是文件头探测（moov 就在里面）；之后样本只按块读，合计与输出同一数量级。
+    expect(fetched[0]).toBe(64 * 1024);
+    expect(fetched.length).toBeGreaterThan(2);
+    expect(fetched.slice(1).reduce((sum, size) => sum + size, 0)).toBeLessThan(
+      clip.data.length * 2
+    );
+  });
 
   test("HE-AAC 的配置退回核心 AAC-LC，非 AAC 规格明确拒绝", () => {
     // AOT 5（SBR）+ 22.05 kHz 核心 + 双声道 + 扩展 44.1 kHz + 底层 AOT 2。

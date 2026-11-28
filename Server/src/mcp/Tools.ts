@@ -12,7 +12,7 @@ import {
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
 import type { SitePageAudioClip, SitePageResult, SitePageStep } from "../shared/AgentActivity";
-import { songClipFeedback, songClipMedia } from "./audio/ClipMedia";
+import { attachSongClip } from "./audio/ClipMedia";
 import { ClipAudioError } from "./audio/RangeReader";
 import { attachMedia, type ToolMedia } from "./Media";
 import {
@@ -235,8 +235,7 @@ const listenPageClip = async (
       startTime: clip.startTime,
       endTime: clip.endTime,
     });
-    media.push(songClipMedia(audio));
-    return songClipFeedback(audio, clip.startTime, clip.endTime);
+    return attachSongClip(media, audio, clip.startTime, clip.endTime);
   } catch (error) {
     const reason = error instanceof ClipAudioError ? error.message : "暂时取不到本回合的音频";
     return `页面已开始播放，但这次没能取到片段音频：${reason}`;

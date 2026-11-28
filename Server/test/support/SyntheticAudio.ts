@@ -196,13 +196,23 @@ const moovOf = (samples: number, chunkOffsets: number[]): Uint8Array => {
   return box("moov", box("trak", mdia), udta);
 };
 
-/** `moovFirst` 对应「快速启动」布局；否则 moov 在文件尾，截取时要先跳过整个 mdat。 */
-export const buildMp4 = (samples: number, moovFirst: boolean): Uint8Array => {
+/**
+ * `moovFirst` 对应「快速启动」布局；否则 moov 在文件尾，截取时要先跳过整个 mdat。
+ * `gapBytes` 在每个音频块后面垫一段别的数据，模拟与其它轨交错存放的文件。
+ */
+export const buildMp4 = (samples: number, moovFirst: boolean, gapBytes = 0): Uint8Array => {
   const ftyp = box("ftyp", ascii("M4A "), u32(0), ascii("M4A mp42isom"));
-  const media = bytes(
-    ...Array.from({ length: samples }, (_, index) => indexPayload(index, aacSampleSize(index)))
-  );
   const chunkCount = Math.ceil(samples / SAMPLES_PER_CHUNK);
+  const media = bytes(
+    ...Array.from({ length: chunkCount }, (_, chunk) =>
+      bytes(
+        ...Array.from({ length: SAMPLES_PER_CHUNK }, (_, step) => chunk * SAMPLES_PER_CHUNK + step)
+          .filter((index) => index < samples)
+          .map((index) => indexPayload(index, aacSampleSize(index))),
+        new Uint8Array(gapBytes)
+      )
+    )
+  );
   const offsetsFrom = (mdatData: number) => {
     const offsets: number[] = [];
     let at = mdatData;
@@ -212,6 +222,7 @@ export const buildMp4 = (samples: number, moovFirst: boolean): Uint8Array => {
         const index = chunk * SAMPLES_PER_CHUNK + step;
         if (index < samples) at += aacSampleSize(index);
       }
+      at += gapBytes;
     }
     return offsets;
   };

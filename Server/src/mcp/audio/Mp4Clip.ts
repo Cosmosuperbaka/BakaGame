@@ -314,6 +314,47 @@ const adtsHeader = (track: AacTrack, payload: number): Uint8Array => {
   ]);
 };
 
+/** 相邻样本之间空出不超过这么多字节才考虑并进同一次读取。 */
+const MERGE_GAP_BYTES = 64 * 1024;
+/** 为少发几次请求而顺带下载的间隙字节，整个片段合计不超过这么多。 */
+const MERGE_WASTE_BYTES = 512 * 1024;
+/** 一个片段最多分这么多次读取；再零散就不是正常的音乐文件了。 */
+const MAX_SAMPLE_READS = 64;
+
+/**
+ * 按存放位置把样本分成几段连续区间分别读：音频块与别的轨交错存放时，
+ * 中间那些不属于本片段的字节不下载，回源量最多比输出多出有上限的合并间隙。
+ */
+const readSamples = async (
+  reader: RangeReader,
+  locations: ReadonlyArray<[number, number]>
+): Promise<Uint8Array[]> => {
+  const runs: Array<{ from: number; to: number; samples: Array<[number, number]> }> = [];
+  let wasted = 0;
+  for (const [offset, size] of locations) {
+    const last = runs.at(-1);
+    const gap = last ? offset - last.to : -1;
+    if (last && gap >= 0 && gap <= MERGE_GAP_BYTES && wasted + gap <= MERGE_WASTE_BYTES) {
+      wasted += gap;
+      last.to = offset + size;
+      last.samples.push([offset, size]);
+    } else {
+      runs.push({ from: offset, to: offset + size, samples: [[offset, size]] });
+    }
+  }
+  if (runs.length > MAX_SAMPLE_READS) throw new ClipAudioError("M4A 音频存放过于零散，暂不支持");
+  const payloads: Uint8Array[] = [];
+  for (const run of runs) {
+    const bytes = await reader.read(run.from, run.to - 1);
+    for (const [offset, size] of run.samples) {
+      const payload = bytes.subarray(offset - run.from, offset - run.from + size);
+      if (payload.length < size) return payloads;
+      payloads.push(payload);
+    }
+  }
+  return payloads;
+};
+
 export const sliceMp4 = async (
   reader: RangeReader,
   audioStart: number,
@@ -337,15 +378,9 @@ export const sliceMp4 = async (
     truncated = true;
   }
   if (locations.length === 0) throw new ClipAudioError("片段位置超出了音源长度");
-  const from = Math.min(...locations.map(([offset]) => offset));
-  const to = Math.max(...locations.map(([offset, size]) => offset + size));
-  const media = await reader.read(from, to - 1);
   const parts: Uint8Array[] = [];
-  for (const [offset, size] of locations) {
-    const payload = media.subarray(offset - from, offset - from + size);
-    if (payload.length < size) break;
-    parts.push(adtsHeader(track, size), payload);
-  }
+  for (const payload of await readSamples(reader, locations))
+    parts.push(adtsHeader(track, payload.length), payload);
   const frameMs = (span.endMs - span.startMs) / Math.max(1, span.last - span.first + 1);
   return {
     mimeType: "audio/aac",
