@@ -314,13 +314,17 @@ export const AUTO_SONG_CANDIDATE_LIMIT = 5;
  * 回到抽签池，一轮歌单还没听完就频繁听到猜过的歌。
  */
 export const RECENT_SONG_RESERVE_PERCENT = 20;
-/** 回收期随机余量的下限：至少在两首里随机，小歌单的第二轮才不会按第一轮的顺序重放。 */
+/** 回收期随机余量的下限：至少在两项里随机，小题库的第二遍才不会按第一遍的顺序重放。 */
 export const MIN_RECENT_SONG_RESERVE = 2;
 /**
- * 「最近不出」窗口上限，也是房间近期曲目记录的条数上限。房间是纯内存态，需要给记录一个
- * 与池子无关的上界，避免超大歌单把每个房间的最近列表撑成任意长度。
+ * 房间近期记录（近期歌曲、近期番剧）的条数上限，也是回收窗口的上限。
+ *
+ * 它决定「整池出完一遍之前不重复」能撑多少轮：记录被挤掉的条目会重新算作没出过。
+ * 记录只随实际出题增长，一轮一到两条（跨平台兜底的回合，候选与实际播放的歌各记一条），
+ * 取两千条时兜底占满也能撑过一千轮，远超一局的实际轮数。房间是纯内存态、停机还要落盘，
+ * 所以仍要一个与歌单大小无关的上界。
  */
-export const MAX_RECENT_SONG_WINDOW = 500;
+export const MAX_RECENT_HISTORY = 2_000;
 /** 取不到音频的候选在房间里被降权的时长；过期后允许重试（下架、限流都可能恢复）。 */
 export const UNAVAILABLE_SONG_TTL_MS = 2 * 60 * 60_000;
 /** 取不到音频记录的条数上界，避免超大歌单撑大房间内存。 */
@@ -328,18 +332,19 @@ export const MAX_UNAVAILABLE_SONG_RECORDS = 1_000;
 
 /**
  * 按候选池规模计算回收期的「最近不出」窗口长度：整池扣掉随机余量，并在上限处截断。
+ * 自动出题的歌曲与番剧共用这一个口径。
  *
- * 池子有两首及以上时窗口至少记住上一首，不会连着出同一首。窗口只决定回收期怎么排，
- * 整池里还有没出过的歌时先出那些歌，与窗口长度无关。
+ * 池子有两项及以上时窗口至少记住上一项，不会连着出同一项。窗口只决定回收期怎么排，
+ * 整池里还有没出过的候选时先出那些，与窗口长度无关。
  */
-export const resolveRecentSongWindow = (poolSize: number): number => {
+export const resolveRecentWindow = (poolSize: number): number => {
   if (!Number.isFinite(poolSize) || poolSize <= 1) return 0;
   const size = Math.floor(poolSize);
   const reserve = Math.max(
     MIN_RECENT_SONG_RESERVE,
     Math.ceil((size * RECENT_SONG_RESERVE_PERCENT) / 100)
   );
-  return Math.min(MAX_RECENT_SONG_WINDOW, Math.max(1, size - reserve));
+  return Math.min(MAX_RECENT_HISTORY, Math.max(1, size - reserve));
 };
 /**
  * 候选级取歌失败：这一首当前拿不到可用播放地址（下架、无版权、解灰全部失败），

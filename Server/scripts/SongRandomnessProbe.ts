@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { SonGuessrService } from "../src/application/SonGuessrService";
-import { MAX_RECENT_SONG_WINDOW } from "../src/application/songuessr/Records";
+import { MAX_RECENT_HISTORY } from "../src/application/songuessr/Records";
 import { NeteaseMusicProvider } from "../src/infrastructure/music/netease/NeteaseMusicProvider";
 import { type MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import type {
@@ -61,7 +61,7 @@ export function measureSongNames(songs: SongSearchResult[], ids: string[]) {
  */
 export function expectedUnique(pool: number, rounds: number) {
   if (!pool || !rounds) return 0;
-  const history = MAX_RECENT_SONG_WINDOW;
+  const history = MAX_RECENT_HISTORY;
   if (pool <= history) return Math.min(rounds, pool);
   const initial = Math.min(rounds, history + 1);
   return pool - (pool - initial) * (1 - 1 / (pool - history)) ** (rounds - initial);

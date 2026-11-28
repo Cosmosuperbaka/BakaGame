@@ -39,7 +39,7 @@ import {
   SonGuessrRoomRecord,
   clampInt,
   isUnusableSongCandidate,
-  resolveRecentSongWindow,
+  resolveRecentWindow,
 } from "./Records";
 import type { SonGuessrContext } from "./Context";
 import { parsePlaylistId } from "./PlaylistId";
@@ -226,7 +226,7 @@ export interface AutomaticCandidateTiers {
  * - 没出过：房间的近期记录里根本没有它。整池里还有这类歌时只从这里抽，一轮歌单听完之前
  *   不会再出猜过的歌。
  * - 歇够了：出过，但已经落在回收窗口之外。整池都出过一遍之后才轮到它们，每轮在最久没出
- *   的若干首里随机，同一首至少隔整池的大部分轮数才回来（窗口长度见 `resolveRecentSongWindow`）。
+ *   的若干首里随机，同一首至少隔整池的大部分轮数才回来（窗口长度见 `resolveRecentWindow`）。
  * - 回收：回收窗口里的歌，按最久没播的先出。只有前两类抽空或全部失败才会用到。
  * - 已知取不到：近期失败过的候选，放最后兜底（下架、限流恢复后可能又能播）。
  *
@@ -318,7 +318,7 @@ export const startAutomaticSongRound = async (
   const works = collapseSameWorks(candidates, history, isPlayable);
   // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
   // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
-  const recentSongWindow = resolveRecentSongWindow(works.length);
+  const recentSongWindow = resolveRecentWindow(works.length);
   const layout = buildAutomaticCandidateTiers(
     works,
     history,

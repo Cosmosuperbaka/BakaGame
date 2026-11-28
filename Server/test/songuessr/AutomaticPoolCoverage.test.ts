@@ -123,7 +123,7 @@ describe("自动出题的候选池覆盖与去重", () => {
       expect(result.error).toBeUndefined();
       picked.push(result.id!);
     }
-    // 窗口是 500，400 轮内任何重复都说明去重失效。
+    // 1000 首都没出过之前只出没出过的歌：400 轮内任何重复都说明去重失效。
     expect(new Set(picked).size).toBe(400);
     // 抽样范围要铺满整个歌单，而不是集中在前面或某一段。
     const indices = picked.map((id) => Number(id.split(":")[1]));
@@ -195,6 +195,29 @@ describe("自动出题的候选池覆盖与去重", () => {
       successor.set(picked[index - 1], next);
     }
     expect([...successor.values()].some((next) => next.size > 1)).toBe(true);
+  });
+
+  test("每轮都走跨平台兜底时，记录占两条也撑得过整池一遍", async () => {
+    // 每轮记下候选与实际播放的歌两条：记录上限若只按轮数估，几百轮后最早的候选就会被挤掉、
+    // 重新算作没出过，整池还没出完一遍就开始重复。
+    const pool = makePool(600);
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "兜底池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id) => makeSong(`qq:played-${id.split(":")[1]}`, `兜底${id}`, 2020),
+    };
+    const { service, playRound } = await startSoloService(music, "6012", 31, pool.length);
+    const picked: string[] = [];
+    for (let round = 1; round <= 600; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      picked.push(result.id!);
+    }
+    expect(new Set(picked).size).toBe(600);
+    expect(service.rooms.get("6012")!.recentSongIds).toHaveLength(1_200);
   });
 
   test("同一首歌的多个 ID 合并成一首：窗口内不会再听到同名版本", async () => {

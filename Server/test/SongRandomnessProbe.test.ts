@@ -31,11 +31,12 @@ test("理论唯一数按生产选歌策略：整池出完一遍之前不重复",
   expect(expectedUnique(15, 12)).toBe(12);
   expect(expectedUnique(15, 30)).toBe(15);
   expect(expectedUnique(10, 30)).toBe(10);
-  expect(expectedUnique(500, 800)).toBe(500);
-  // 记录装不下整池时，前 501 轮仍然不重复，之后才在最近 500 首之外均匀抽。
-  expect(expectedUnique(1000, 400)).toBe(400);
-  expect(expectedUnique(1000, 501)).toBe(501);
-  expect(expectedUnique(1000, 600)).toBeCloseTo(1000 - 499 * (1 - 1 / 500) ** 99);
+  expect(expectedUnique(1000, 1600)).toBe(1000);
+  expect(expectedUnique(2000, 2500)).toBe(2000);
+  // 记录装不下整池时，前 2001 轮仍然不重复，之后才在最近 2000 首之外均匀抽。
+  expect(expectedUnique(3000, 1500)).toBe(1500);
+  expect(expectedUnique(3000, 2001)).toBe(2001);
+  expect(expectedUnique(3000, 2100)).toBeCloseTo(3000 - 999 * (1 - 1 / 1000) ** 99);
 });
 
 test("实测驱动执行真实回合并保留最近十首防重行为", async () => {
