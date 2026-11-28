@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentGameClient } from "../src/mcp/GameClient";
-import { auditTarget, routeRpc, type RpcHandlers } from "../src/mcp/Rpc";
+import { attachMedia, mediaOf } from "../src/mcp/Media";
+import { auditTarget, routeRpc, toolFailure, toolResult, type RpcHandlers } from "../src/mcp/Rpc";
 import { COMMAND_TIMEOUT_MS, GAME_COMMAND_TIMEOUT_MS } from "../src/mcp/Timeouts";
 import { SeatUi } from "../src/mcp/ui/SeatUi";
 import { baseFakerSnapshot } from "./McpFixtures";
@@ -47,6 +48,27 @@ describe("方法路由", () => {
     });
     await routeRpc("ping", null, {}, handlers);
     expect(asked).toEqual([["ping", null]]);
+  });
+});
+
+describe("工具回包的媒体内容块", () => {
+  const audio = { type: "audio" as const, mimeType: "audio/mpeg", data: "AAAA" };
+
+  test("没有媒体时只有一个文本块，有媒体时音频块排在文本之后", () => {
+    expect(toolResult("{}")).toEqual({ content: [{ type: "text", text: "{}" }], isError: false });
+    expect(toolResult("{}", [audio]).content).toEqual([{ type: "text", text: "{}" }, audio]);
+    expect(toolFailure("x", [audio])).toEqual({
+      content: [{ type: "text", text: "x" }, audio],
+      isError: true,
+    });
+  });
+
+  test("媒体挂在不可枚举属性上：序列化与展开都带不出去，原对象仍能取回", () => {
+    const result = attachMedia({ ok: true }, [audio]);
+    expect(JSON.stringify(result)).toBe('{"ok":true}');
+    expect(mediaOf({ ...result })).toEqual([]);
+    expect(mediaOf(result)).toEqual([audio]);
+    expect(mediaOf("text")).toEqual([]);
   });
 });
 

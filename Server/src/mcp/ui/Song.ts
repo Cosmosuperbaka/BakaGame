@@ -30,6 +30,8 @@ import {
 } from "./Support";
 import { idMatcher, type GameUiAdapter } from "./GameUi";
 import type { UiControl, UiScreen } from "./Types";
+import { songClipFeedback, songClipMedia } from "../audio/ClipMedia";
+import { SONGUESSR_NO_SEARCH_RULE } from "../Policy";
 
 const MIN_CLIP_MS = 5_000;
 
@@ -306,7 +308,7 @@ const playingControls = (context: UiContext): UiControl[] => {
   if (round) {
     controls.push(
       button("song.audio.play", "播放片段", "game", {
-        hint: "点击后返回本回合的片段区间；音频本身 Agent 听不到",
+        hint: `点击后本回合的片段音频会作为 audio 内容块随 ui_run 结果返回。${SONGUESSR_NO_SEARCH_RULE}`,
       })
     );
     controls.push(
@@ -369,7 +371,7 @@ const audioPanel = (context: UiContext): Record<string, unknown> => {
       ...(showLyrics && Array.isArray(clip.lines) ? { lines: clip.lines } : {}),
     },
     lyricsVisible: showLyrics,
-    hint: "Agent 听不到音频：只给出片段区间与歌词开关；开启歌词时线索在 clip.lines",
+    hint: `点 song.audio.play 收听片段（音频随 ui_run 结果返回，不提供音轨地址）；开启歌词时线索在 clip.lines。${SONGUESSR_NO_SEARCH_RULE}`,
   };
 };
 
@@ -594,18 +596,35 @@ const clickGuessResult = async (context: UiContext, search: UiSearchState, index
   return `已猜《${str(result.title) ?? songId}》`;
 };
 
+/**
+ * 「播放片段」：按本回合的站内播放地址取片段音频，挂到本次结果上。
+ * 地址只在 MCP 进程内用来回源，屏幕、反馈与审计里都不出现。
+ */
+const playSongClip = async (
+  context: UiContext,
+  round: Record<string, unknown>
+): Promise<string> => {
+  const clip = isRecord(round.lyricClip) ? round.lyricClip : {};
+  const start = typeof clip.startTime === "number" ? clip.startTime : 0;
+  const end = typeof clip.endTime === "number" ? clip.endTime : 0;
+  const audioUrl = str(round.audioUrl);
+  const clips = context.client.songClips;
+  if (!audioUrl || !clips) throw new Error("本回合没有可播放的音频");
+  const audio = await clips.load({ audioUrl, startTime: start, endTime: end });
+  (context.state.media ??= []).push(songClipMedia(audio));
+  return songClipFeedback(audio, start, end);
+};
+
 const clickSongAudio = async (context: UiContext, id: string): Promise<string> => {
   const round = currentRound(context);
   if (!round) throw new Error("当前没有播放中的回合");
-  if (id === "song.audio.play") {
-    const clip = isRecord(round.lyricClip) ? round.lyricClip : {};
-    const start = typeof clip.startTime === "number" ? clip.startTime : 0;
-    const end = typeof clip.endTime === "number" ? clip.endTime : 0;
-    return `本回合片段区间为 ${start}–${end} 毫秒；音频不下发给 Agent，歌词开启时见 panel.audio.clip.lines`;
-  }
+  if (id === "song.audio.play") return playSongClip(context, round);
   const roundNumber = round.roundNumber;
   if (typeof roundNumber !== "number") throw new Error("当前没有播放中的回合");
   await send(context, "song.game.audioFailed", { roundNumber });
+  // 服务端会换上游地址：同一张票据下的旧片段作废，下次播放重新回源。
+  const audioUrl = str(round.audioUrl);
+  if (audioUrl) context.client.songClips?.invalidate(audioUrl);
   return "已请求刷新音频";
 };
 

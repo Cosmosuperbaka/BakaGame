@@ -8,7 +8,9 @@ import type { MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import type { AppEnv } from "../src/config/Env";
 import { REAL_CLIENT_IP_HEADER } from "../src/transport/ClientIp";
 import { songAudioRoutes } from "../src/transport/routes/SongAudio";
+import { SongClipLoader } from "../src/mcp/audio/SongClip";
 import { createTestApp } from "./AppFixtures";
+import { buildMp3, containsSecret, rangeServer } from "./support/SyntheticAudio";
 import {
   audioTicketOf,
   connection,
@@ -194,6 +196,64 @@ describe("猜歌站内播放地址路由", () => {
       globalThis.fetch = originalFetch;
     }
     expect(outbound).toBe(0);
+  });
+});
+
+describe("Agent 听片段走同一张票据", () => {
+  /** 回环请求交给真实应用处理，其余地址交给内存里的上游。 */
+  const loaderFor = (
+    app: { handle: (request: Request) => Promise<Response> },
+    files: Record<string, Uint8Array>
+  ) => {
+    const upstream = rangeServer(files);
+    const fetcher = (input: string | URL, init?: RequestInit) =>
+      String(input).startsWith(env.serverUrl)
+        ? app.handle(new Request(String(input), init))
+        : upstream.fetcher(input, init);
+    return { loader: new SongClipLoader({ serverUrl: env.serverUrl, fetcher }), upstream };
+  };
+
+  test("经真实路由解析到上游，只取片段附近的字节，回给 Agent 的数据里不带标签", async () => {
+    const { app, path } = await openRound();
+    const { loader, upstream } = loaderFor(app, { [UPSTREAM]: buildMp3(1200) });
+    const clip = await loader.load({ audioUrl: path, startTime: 10_000, endTime: 12_000 });
+    expect(clip.mimeType).toBe("audio/mpeg");
+    expect(clip.startTime).toBeLessThanOrEqual(10_000);
+    expect(clip.endTime).toBeGreaterThanOrEqual(12_000);
+    expect(containsSecret(clip.data)).toBe(false);
+    // 上游只收到带 Range 的请求，没有整首下载。
+    const ranged = upstream.requests.filter((entry) => entry.url === UPSTREAM);
+    expect(ranged.length).toBeGreaterThan(0);
+    expect(ranged.every((entry) => entry.range?.startsWith("bytes="))).toBe(true);
+  });
+
+  test("回合换掉之后旧票据取不到片段，错误里不带上游主机", async () => {
+    const { app, service, guest, host, path } = await openRound();
+    const { loader } = loaderFor(app, { [UPSTREAM]: buildMp3(1200) });
+    await execute(service, guest, {
+      id: "ready-1",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    await execute(service, guest, {
+      id: "guess-1",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    await execute(service, host, {
+      id: "next",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    const failure = await loader.load({ audioUrl: path, startTime: 0, endTime: 2_000 }).then(
+      () => undefined,
+      (error: unknown) => error as Error
+    );
+    expect(failure?.message).toContain("已失效");
+    expect(failure?.message).not.toContain("qqmusic");
   });
 });
 

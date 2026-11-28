@@ -148,6 +148,22 @@ export interface SitePageCommand extends SitePageStep {
   id: string;
 }
 
+/**
+ * 接管时点了猜歌的「播放片段」：页面把本回合的站内播放地址与片段区间交回服务端，
+ * 由远程 MCP 截出片段音频附给 Agent。这个字段只到服务端为止，不进任何回给 Agent 的数据——
+ * 站内地址会跳转到带歌曲标识的上游地址，交出去等于交出答案。
+ */
+export const SitePageAudioClipSchema = t.Object(
+  {
+    src: t.String({ minLength: 1, maxLength: 512 }),
+    startTime: t.Number({ minimum: 0 }),
+    endTime: t.Number({ minimum: 0 }),
+  },
+  { additionalProperties: false }
+);
+
+export type SitePageAudioClip = Static<typeof SitePageAudioClipSchema>;
+
 /** 页面执行结果：失败原因只回给服务端与发起指令的那条 Agent 会话。 */
 export const SitePageResultSchema = t.Object(
   {
@@ -155,6 +171,7 @@ export const SitePageResultSchema = t.Object(
     ok: t.Boolean(),
     error: t.Optional(t.String({ maxLength: 160 })),
     view: t.Optional(SitePageViewSchema),
+    audioClip: t.Optional(SitePageAudioClipSchema),
   },
   { additionalProperties: false }
 );

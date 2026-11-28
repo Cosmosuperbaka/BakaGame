@@ -1,5 +1,6 @@
 import type { SitePageCommand, SitePageResult } from "@bakagame/shared";
 import { isAgentPagePath } from "@bakagame/shared/values";
+import { agentAudioClipFor } from "@/lib/AgentAudioClip";
 import { agentPace } from "@/lib/motion/NamedMoves";
 import {
   controlLabelOf,
@@ -329,7 +330,13 @@ const scrollPage = (direction: SitePageCommand["direction"]): void => {
   else scroller.scrollBy({ top: direction === "up" ? -page : page, behavior });
 };
 
-type ActionRunner = (command: SitePageCommand, context: PageActionContext) => Promise<void>;
+/** 动作在结果里额外交回服务端的数据：目前只有猜歌「播放片段」的本回合片段。 */
+type ActionExtras = Pick<SitePageResult, "audioClip">;
+
+type ActionRunner = (
+  command: SitePageCommand,
+  context: PageActionContext
+) => Promise<ActionExtras | void>;
 
 const targetOf = (command: SitePageCommand): HTMLElement =>
   resolveTarget(command.control ?? refuse("缺少 control"));
@@ -356,7 +363,10 @@ const ACTIONS: Record<SitePageCommand["action"], ActionRunner> = {
     const element = targetOf(command);
     assertLinkAllowed(element);
     await approach(element, "click", context);
+    // 点击之前取：点完按钮会换成「正在播放」的状态图标，标记跟着消失。
+    const audioClip = agentAudioClipFor(element);
     pressElement(element);
+    return audioClip ? { audioClip } : undefined;
   },
   focus: async (command, context) => {
     const element = targetOf(command);
@@ -412,10 +422,11 @@ export async function runPageCommand(
 ): Promise<SitePageResult> {
   try {
     assertPageAllowed(command.action);
-    await ACTIONS[command.action](command, context);
-    if (command.action !== "read" && !command.withView) return { id: command.id, ok: true };
+    const extras = (await ACTIONS[command.action](command, context)) ?? {};
+    if (command.action !== "read" && !command.withView)
+      return { id: command.id, ok: true, ...extras };
     await waitForQuiet(context);
-    return { id: command.id, ok: true, view: readPageView() };
+    return { id: command.id, ok: true, ...extras, view: readPageView() };
   } catch (error) {
     const message = error instanceof Error ? error.message : "页面执行失败";
     return { id: command.id, ok: false, error: message.slice(0, 160), view: readPageView() };

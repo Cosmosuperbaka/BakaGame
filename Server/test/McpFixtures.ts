@@ -1,4 +1,5 @@
 import type { AgentGameClient, GameId } from "../src/mcp/GameClient";
+import type { SongClipAudio, SongClipPort, SongClipRequest } from "../src/mcp/audio/SongClip";
 import { SeatUi } from "../src/mcp/ui/SeatUi";
 
 export interface SentCall {
@@ -57,8 +58,10 @@ export const mcpFixture = (options: {
   snapshot: Record<string, unknown>;
   privateState: Record<string, unknown>;
   handler?: (type: string, payload: Record<string, unknown>) => unknown;
+  /** 猜歌片段音频的假端口；缺省不带，「播放片段」会明确失败。 */
+  songClips?: SongClipPort;
 }) => {
-  const { game, snapshot, privateState, handler } = options;
+  const { game, snapshot, privateState, handler, songClips } = options;
   const calls: SentCall[] = [];
   let version = 0;
   const client = {
@@ -76,6 +79,7 @@ export const mcpFixture = (options: {
     stateVersion: () => version,
     waitForStateChange: async () => true,
     requestSync: async () => ({ synced: true }),
+    ...(songClips ? { songClips } : {}),
   } as unknown as AgentGameClient;
   const ui = new SeatUi(client, { pacing: false });
   (client as unknown as { ui: SeatUi }).ui = ui;
@@ -99,3 +103,32 @@ export const lastPayloadOf = (calls: SentCall[], type: string): Record<string, u
 export const typesOf = (calls: SentCall[]): string[] => calls.map((call) => call.type);
 
 export const idsOf = (controls: Array<{ id: string }>): string[] => controls.map((c) => c.id);
+
+/** 假的片段端口：记下每次请求与作废，返回固定的几个字节。 */
+export const fakeSongClips = (
+  overrides: Partial<SongClipAudio> = {},
+  options: { fail?: Error } = {}
+) => {
+  const loads: SongClipRequest[] = [];
+  const invalidated: string[] = [];
+  const port: SongClipPort = {
+    load: async (request) => {
+      loads.push(request);
+      if (options.fail) throw options.fail;
+      return {
+        mimeType: "audio/mpeg",
+        format: "mp3",
+        data: new Uint8Array([0xff, 0xfb, 0x90, 0x00, 1, 2, 3]),
+        startTime: request.startTime,
+        endTime: request.endTime,
+        truncated: false,
+        clipped: false,
+        ...overrides,
+      };
+    },
+    invalidate: (audioUrl) => {
+      invalidated.push(audioUrl);
+    },
+  };
+  return { port, loads, invalidated };
+};

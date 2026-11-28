@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect } from "react";
 import {
   AudioLines,
   Check,
@@ -22,6 +23,7 @@ import {
   AnimeAutoFilterSummary,
   SongAutoFilterSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
+import { AGENT_AUDIO_ATTRIBUTE, registerAgentAudioClip } from "@/lib/AgentAudioClip";
 import { listItem } from "@/lib/motion/Choreography";
 import { readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/motion/NamedMoves";
 import { cn } from "@/lib/Utils";
@@ -91,7 +93,12 @@ function AudioCueControl({
               加载失败，重试
             </Button>
           ) : cue === "idle" ? (
-            <Button size="sm" onClick={onPlayAudio} data-agent-control="song.audio.play">
+            <Button
+              size="sm"
+              onClick={onPlayAudio}
+              data-agent-control="song.audio.play"
+              {...{ [AGENT_AUDIO_ATTRIBUTE]: "" }}
+            >
               <Play aria-hidden="true" />
               播放片段
             </Button>
@@ -109,6 +116,7 @@ function AudioCueControl({
               onClick={onPlayAudio}
               aria-label="重播音频"
               data-agent-control="song.audio.play"
+              {...{ [AGENT_AUDIO_ATTRIBUTE]: "" }}
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -353,6 +361,14 @@ export function SongPlayingPhase(props: PlayingPhaseProps) {
     privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
   const hasLyrics = (round.lyricClip?.lines?.length ?? 0) > 0;
   const stage = resolveGuessStage(privateState, me);
+  const { audioUrl } = round;
+  const clipStart = round.lyricClip?.startTime;
+  const clipEnd = round.lyricClip?.endTime;
+  // 接管时 Agent 点「播放片段」要能听到同一段：登记本回合的站内地址与区间，换回合或离开即撤销。
+  useEffect(() => {
+    if (!audioUrl || clipStart === undefined || clipEnd === undefined) return undefined;
+    return registerAgentAudioClip({ src: audioUrl, startTime: clipStart, endTime: clipEnd });
+  }, [audioUrl, clipStart, clipEnd]);
 
   return (
     <div className="relative mx-auto max-w-2xl space-y-5">

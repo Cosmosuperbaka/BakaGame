@@ -18,6 +18,7 @@ import {
   type RpcHandlers,
 } from "./Rpc";
 import { isRecord } from "../shared/Json";
+import { mediaOf } from "./Media";
 
 const writeStderr = (record: Record<string, unknown>): void => {
   process.stderr.write(`${JSON.stringify(record)}\n`);
@@ -79,7 +80,7 @@ const handleToolCall = async (id: unknown, params: Record<string, unknown>): Pro
       context: { client, agentName },
       consumeWrite: () => consumeWrite(bucketKey),
     },
-    (result) => toolResult(JSON.stringify(result))
+    (result) => toolResult(JSON.stringify(result), mediaOf(result))
   );
   const durationMs = Math.round(performance.now() - startedAt);
   if (run.ok) {

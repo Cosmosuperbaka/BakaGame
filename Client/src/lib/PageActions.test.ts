@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SitePageCommand } from "@bakagame/shared";
 import { getAgentFocus, clearAgentFocus } from "@/stores/UsePageControl";
+import { registerAgentAudioClip } from "./AgentAudioClip";
 import { runPageCommand } from "./PageActions";
 
 const navigate = vi.fn();
@@ -46,6 +47,32 @@ describe("Agent 动作", () => {
     expect(result).toEqual({ id: "1", ok: true });
     expect(order).toEqual(["down:click", "click:false"]);
     expect(getAgentFocus()).toMatchObject({ element: button, label: "准备" });
+  });
+
+  it("点带片段标记的播放按钮时把本回合片段交回，地址不出现在页面上；其它控件和撤销后都不带", async () => {
+    mount(
+      `<button data-agent-control="song.play" data-agent-audio="">播放片段</button>` +
+        `<button data-agent-control="song.skip">跳过</button>`
+    );
+    const clip = { src: "/api/songuessr/audio/1234/TICKET", startTime: 1000, endTime: 6000 };
+    const unregister = registerAgentAudioClip(clip);
+    // 后登记的回合覆盖前一份；旧回合的撤销不会误清新回合。
+    const stale = registerAgentAudioClip({ ...clip, src: "/api/songuessr/audio/1234/OLD" });
+    stale();
+    const next = registerAgentAudioClip(clip);
+    stale();
+    expect(document.body.innerHTML).not.toContain("TICKET");
+
+    expect(await run({ action: "click", control: "song.play" })).toEqual({
+      id: "1",
+      ok: true,
+      audioClip: clip,
+    });
+    expect(await run({ action: "click", control: "song.skip" })).toEqual({ id: "1", ok: true });
+
+    next();
+    unregister();
+    expect(await run({ action: "click", control: "song.play" })).toEqual({ id: "1", ok: true });
   });
 
   it("屏幕外的目标先滚入视野再移动焦点", async () => {

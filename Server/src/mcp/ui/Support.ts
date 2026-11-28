@@ -1,4 +1,6 @@
 import type { GameId } from "../GameClient";
+import type { SongClipPort } from "../audio/SongClip";
+import type { ToolMedia } from "../Media";
 import type { UiControl, UiPart, UiScreen, UiSection } from "./Types";
 import { isRecord } from "../../shared/Json";
 import { GAME_COMMAND_TIMEOUT_MS } from "../Timeouts";
@@ -33,6 +35,8 @@ export interface UiState {
   lastFeedback?: string;
   /** 已就当前回合上报过音频就绪，避免每次读屏都重复发命令。 */
   audioReadyRound?: number;
+  /** 本次 ui_run 里要随结果回给 Agent 的媒体（猜歌的片段音频）；回包后清空。 */
+  media?: ToolMedia[];
 }
 
 export const createUiState = (): UiState => ({
@@ -66,6 +70,8 @@ export interface UiContext {
       options?: { timeoutMs?: number }
     ): Promise<unknown>;
     currentPlayerId(game: GameId): string | undefined;
+    /** 猜歌片段音频；界面层测试的假客户端可以不带，缺了「播放片段」会明确失败。 */
+    songClips?: SongClipPort;
   };
   playerId?: string;
   snapshot: Record<string, unknown>;
