@@ -888,6 +888,42 @@ describe("useAudioClipPlayer · 自选音质", () => {
     expect(sendCommand).toHaveBeenCalledWith("song.game.audioFailed", { roundNumber: 1 });
   });
 
+  it.each([
+    { code: 3, decode: true },
+    { code: 4, decode: false },
+  ])("只有解码错误才算设备解不了：错误码 $code", async ({ code, decode }) => {
+    const onSourceError = vi.fn(() => true);
+    const { rerender } = mount();
+    rerender({ url: LOSSLESS_URL, onSourceError });
+    Object.defineProperty(audio, "error", { configurable: true, value: { code } });
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    expect(onSourceError).toHaveBeenCalledWith(LOSSLESS_URL, decode);
+  });
+
+  it("换上的那一档放到一半出错也交给调用方回退，并从出错前的进度接着放", async () => {
+    const onSourceError = vi.fn(() => true);
+    const { result, rerender } = mount();
+    rerender({ url: LOSSLESS_URL, onSourceError });
+    await startPlaying();
+    audio.currentTime = 16;
+    // 出错后元素停下：只靠 paused 判断会把「接着放」丢掉。
+    Object.defineProperty(audio, "paused", { configurable: true, value: true });
+    await act(async () => {
+      audio.dispatchEvent(new Event("error"));
+    });
+    expect(onSourceError).toHaveBeenCalledWith(LOSSLESS_URL, false);
+    expect(result.current.audioStatus).toBe("ready");
+
+    rerender({ url: DEFAULT_URL, onSourceError });
+    await act(async () => {
+      audio.dispatchEvent(new Event("canplay"));
+    });
+    expect(audio.currentTime).toBe(16);
+    expect(playSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("同一段里换了地址就从换档前的进度接着放，状态不回到加载中", async () => {
     const { result, rerender } = mount();
     rerender({ url: DEFAULT_URL });
