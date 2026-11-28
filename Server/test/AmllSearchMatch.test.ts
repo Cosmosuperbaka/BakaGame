@@ -33,6 +33,8 @@ describe("AMLL 检索条目的曲名判定", () => {
     ["括号里的出处说明", "小幸运 (电影《我的少女时代》主题曲)", "小幸运", true],
     ["现场版不能借用录音室版", "晴天 (Live)", "晴天", false],
     ["Remix 不能借用原版", "稻香", "稻香 (Remix摇滚版)", false],
+    ["剪辑版时间轴不同", "Song (Radio Edit)", "Song", false],
+    ["混音版时间轴不同", "Song (Extended Mix)", "Song", false],
     ["两侧括号段不同", "Song (Part 1)", "Song (Part 2)", false],
     ["带编次标记的括号段不是说明文字", "Song (Part 1)", "Song", false],
     ["带集数的出处说明判不准，宁可错过", "Song (TV动画第2-14集片头曲)", "Song", false],
@@ -70,6 +72,8 @@ describe("AMLL 检索条目整体判定", () => {
     expect(isAmllSearchItemMatch(sunny, "晴天", "群星")).toBe(true);
     expect(isAmllSearchItemMatch(sunny, "晴天", "Various Artists")).toBe(true);
     expect(isAmllSearchItemMatch(item("6", ["晴天"], []), "晴天", "周杰伦")).toBe(true);
+    // 条目只登记了占位署名，同样等于没登记歌手。
+    expect(isAmllSearchItemMatch(item("6", ["晴天"], ["未知歌手"]), "晴天", "周杰伦")).toBe(true);
   });
 
   test("条目没有登记曲名时无法确认，不采纳", () => {

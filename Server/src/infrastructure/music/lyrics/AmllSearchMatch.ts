@@ -1,10 +1,5 @@
 import { BRACKETED_PART_PATTERN, DISTINCT_PART_PATTERN } from "../../../domain/TitlePatterns";
-import {
-  artistsOverlap,
-  extractArtistTokens,
-  knownArtistTokens,
-  normalizeComparableText,
-} from "../MusicDeduplicator";
+import { artistsOverlap, knownArtistTokens, normalizeComparableText } from "../MusicDeduplicator";
 
 /**
  * AMLL 按歌名检索的结果校验：检索词里的每个词只要出现在曲名、歌手或专辑名之一就算命中，
@@ -15,11 +10,12 @@ import {
  */
 
 /**
- * 同一曲名的不同录音：现场、伴奏、Remix、TV Size、不插电、Demo、各种 ver.。
+ * 同一曲名的不同录音：现场、伴奏、Remix 与各种 Mix、Radio Edit 等剪辑版、TV Size、不插电、
+ * Demo、各种 ver.。
  * 时间轴和原版对不上，两边是否带这类标记必须一致。
  */
 const RECORDING_VARIANT_PATTERN =
-  /\b(?:live|remix(?:ed)?|inst(?:rumental)?|off\s*vocal|karaoke|tv\s*size|short\s*size|acoustic|demo|ver(?:sion)?)\b|伴奏|纯音乐|純音樂|現場|现场|カラオケ|インスト|リミックス|弾き語り|弹唱/iu;
+  /\b(?:live|remix(?:ed)?|mix|edit|inst(?:rumental)?|off\s*vocal|karaoke|tv\s*size|short\s*size|acoustic|demo|ver(?:sion)?)\b|伴奏|纯音乐|純音樂|現場|现场|カラオケ|インスト|リミックス|弾き語り|弹唱/iu;
 
 /** 去掉只是说明文字的括号段（译名、出处），保留带编次标记的括号段。 */
 const stripInformationalBrackets = (title: string): string =>
@@ -61,7 +57,8 @@ export const isAmllSearchItemMatch = (
   if (!names.some((name) => isSameRecordingTitle(name, title))) return false;
   const expectedArtists = knownArtistTokens(artist);
   if (expectedArtists.length === 0) return true;
-  const itemArtists = readStrings(item.artistNames).flatMap((name) => extractArtistTokens(name));
+  // 条目侧同样去掉占位署名：只登记了「未知歌手」的条目等于没登记歌手，不能凭它否决。
+  const itemArtists = readStrings(item.artistNames).flatMap((name) => knownArtistTokens(name));
   if (itemArtists.length === 0) return true;
   return artistsOverlap(expectedArtists, itemArtists);
 };
