@@ -23,8 +23,11 @@ interface RoundAudioVariants {
   readonly byRequest: Map<SongAudioQuality, SongAudioVariant | null>;
   /** 同一档的并发请求合并成一次上游调用。 */
   readonly inFlight: Map<SongAudioQuality, Promise<SongAudioVariant | null>>;
-  /** 站内地址按实际档位跳转：请求无损、实际拿到极高时，跳转键是极高。 */
-  readonly byActual: Map<SongAudioQuality, string>;
+  /**
+   * 按实际档位记：站内地址按它跳转（请求无损、实际拿到极高时，跳转键是极高）；
+   * 之后有人直接要这一档也直接复用，不再打上游。
+   */
+  readonly byActual: Map<SongAudioQuality, SongAudioVariant>;
 }
 
 const roundVariants = new WeakMap<SonGuessrRoundRecord, RoundAudioVariants>();
@@ -42,7 +45,7 @@ const variantsOf = (round: SonGuessrRoundRecord): RoundAudioVariants => {
 export const roundAudioVariantUrl = (
   round: SonGuessrRoundRecord,
   quality: SongAudioQuality
-): string | undefined => roundVariants.get(round)?.byActual.get(quality);
+): string | undefined => roundVariants.get(round)?.byActual.get(quality)?.url;
 
 /** 回合的站内播放地址加上档位参数。档位只是跳转选择，凭据仍是票据本身。 */
 const variantTicketUrl = (
@@ -79,7 +82,7 @@ const loadVariant = async (
       }
     );
     variants.byRequest.set(quality, variant);
-    variants.byActual.set(variant.quality, variant.url);
+    variants.byActual.set(variant.quality, variant);
     return variant;
   } catch (error) {
     // 「这首歌没有这一档」本回合记住；限流、超时这类瞬态失败不记，原样报给客户端，
@@ -109,7 +112,10 @@ export async function audioQuality(
     return { ignored: true };
   }
   const variants = variantsOf(round);
-  let variant = variants.byRequest.get(quality);
+  // 本回合要过这一档就用记下的结果（null 是「拿不到」，不再打上游）；没要过但别的档降档时拿到过它，也直接用。
+  const requested = variants.byRequest.get(quality);
+  let variant: SongAudioVariant | null | undefined =
+    requested !== undefined ? requested : variants.byActual.get(quality);
   if (variant === undefined) {
     let pending = variants.inFlight.get(quality);
     if (!pending) {
