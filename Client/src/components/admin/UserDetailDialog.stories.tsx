@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import {
   ADMIN_USER_FULL,
   ADMIN_USER_OWNER,
@@ -36,7 +36,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const body = async () => within(await screen.findByRole("dialog"));
+const body = async () => await findDialog();
 
 /** 信息很全：封禁中带原因与解除时间、两枚徽章、8 局对局、长昵称。 */
 export const Full: Story = {
@@ -116,7 +116,7 @@ export const ActionFailed: Story = {
   play: async ({ userEvent }) => {
     const scope = await body();
     await userEvent.click(await scope.findByRole("button", { name: "强制下线" }));
-    const confirm = within(await screen.findByRole("dialog", { name: "强制下线" }));
+    const confirm = await findDialog("强制下线");
     await userEvent.click(confirm.getByRole("button", { name: "强制下线" }));
     await confirm.findByRole("alert");
     dropFocus();
@@ -131,7 +131,7 @@ export const ConfirmRunning: Story = {
   play: async ({ userEvent }) => {
     const scope = await body();
     await userEvent.click(await scope.findByRole("button", { name: "强制下线" }));
-    const confirm = within(await screen.findByRole("dialog", { name: "强制下线" }));
+    const confirm = await findDialog("强制下线");
     await userEvent.click(confirm.getByRole("button", { name: "强制下线" }));
     dropFocus();
   },
@@ -158,7 +158,7 @@ export const ActionDone: Story = {
   play: async ({ userEvent }) => {
     const scope = await body();
     await userEvent.click(await scope.findByRole("button", { name: "设为管理员" }));
-    const confirm = within(await screen.findByRole("dialog", { name: "设为管理员" }));
+    const confirm = await findDialog("设为管理员");
     await userEvent.click(confirm.getByRole("button", { name: "设为管理员" }));
     await scope.findByText(/已把「.*」设为管理员/);
     dropFocus();

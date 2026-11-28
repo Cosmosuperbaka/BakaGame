@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { STORY_PROFILE, presetAccount, stubApi } from "@/stories/fixtures/Account";
 import { FeedbackDialog } from "./FeedbackDialog";
 
@@ -86,7 +85,7 @@ export const Guest: Story = {
   name: "游客提交",
   beforeEach: () => presetAccount({ status: "guest" }),
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await userEvent.type(scope.getByLabelText("标题"), "结算页按钮太小");
     await userEvent.type(scope.getByLabelText("详细说明"), "手机上不好点。");
     dropFocus();
@@ -98,7 +97,7 @@ export const GuestConfirm: Story = {
   name: "游客匿名确认",
   beforeEach: () => presetAccount({ status: "guest" }),
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await userEvent.type(scope.getByLabelText("标题"), "结算页按钮太小");
     await userEvent.type(scope.getByLabelText("详细说明"), "手机上不好点。");
     await userEvent.click(scope.getByRole("button", { name: "匿名提交" }));
@@ -112,7 +111,7 @@ export const MyList: Story = {
   name: "我的反馈列表",
   beforeEach: signedIn,
   play: async () => {
-    await within(await screen.findByRole("dialog")).findByText("希望谁是卧底可以自定义词库");
+    await (await findDialog()).findByText("希望谁是卧底可以自定义词库");
   },
 };
 
@@ -121,7 +120,7 @@ export const Thread: Story = {
   name: "反馈详情",
   beforeEach: signedIn,
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await userEvent.click(await scope.findByText(LIST.items[0].title));
     await scope.findByText(DETAIL.replies[0].content);
     dropFocus();
@@ -155,7 +154,7 @@ export const ListEmpty: Story = {
     };
   },
   play: async ({ userEvent }) => {
-    const scope = within(await screen.findByRole("dialog"));
+    const scope = await findDialog();
     await userEvent.click(scope.getByRole("tab", { name: "我的反馈" }));
     await scope.findByText("还没有提交过反馈");
     dropFocus();

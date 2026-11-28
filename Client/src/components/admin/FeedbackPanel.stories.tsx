@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import {
   ADMIN_FEEDBACK,
   ADMIN_FEEDBACK_ANON,
@@ -72,9 +72,7 @@ export const Detail: Story = {
   beforeEach: () => installAdmin(),
   play: async ({ userEvent }) => {
     await userEvent.click(await ready());
-    await within(await screen.findByRole("dialog")).findByText(
-      ADMIN_FEEDBACK_DETAIL.replies[0].content
-    );
+    await (await findDialog()).findByText(ADMIN_FEEDBACK_DETAIL.replies[0].content);
     dropFocus();
   },
 };
@@ -85,7 +83,7 @@ export const DetailAnonymous: Story = {
   beforeEach: () => installAdmin({ "admin/feedback/get": ADMIN_FEEDBACK_ANON }),
   play: async ({ userEvent }) => {
     await userEvent.click((await screen.findAllByText(ADMIN_FEEDBACK[4].title))[0]);
-    await within(await screen.findByRole("dialog")).findByText(ADMIN_FEEDBACK_ANON.content);
+    await (await findDialog()).findByText(ADMIN_FEEDBACK_ANON.content);
     dropFocus();
   },
 };
@@ -95,7 +93,7 @@ export const ReplyFailed: Story = {
   beforeEach: () => installAdmin({ "admin/feedback/reply": "error" }),
   play: async ({ userEvent }) => {
     await userEvent.click(await ready());
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.type(await dialog.findByLabelText("回复"), "已经修好了，请更新后再试。");
     await userEvent.click(dialog.getByRole("button", { name: "发送回复" }));
     await dialog.findByRole("alert");

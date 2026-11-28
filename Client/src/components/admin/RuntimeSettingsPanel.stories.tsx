@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { ADMIN_SETTINGS, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
 import { RuntimeSettingsPanel } from "./RuntimeSettingsPanel";
 
@@ -19,7 +19,7 @@ const ready = () => screen.findByText(ADMIN_SETTINGS[0].title);
 const edit = async (userEvent: { click: (element: Element) => Promise<void> }, index: number) => {
   await ready();
   await userEvent.click(screen.getAllByRole("button", { name: "修改" })[index]);
-  return within(await screen.findByRole("dialog"));
+  return await findDialog();
 };
 
 export const WithData: Story = {

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { ADMIN_STATUS_EVENTS, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
 import { StatusEventsPanel } from "./StatusEventsPanel";
 
@@ -67,7 +67,7 @@ export const CreateInvalid: Story = {
   play: async ({ userEvent }) => {
     await ready();
     await userEvent.click(screen.getByRole("button", { name: "发布事件" }));
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(dialog.getByRole("radio", { name: "维护窗口" }));
     await userEvent.type(dialog.getByLabelText("标题"), "数据库升级");
     await userEvent.type(dialog.getByLabelText("内容"), "预计停机半小时。");
@@ -84,7 +84,7 @@ export const EditFailed: Story = {
   play: async ({ userEvent }) => {
     await ready();
     await userEvent.click(screen.getAllByRole("button", { name: "修改" })[0]);
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(dialog.getByRole("button", { name: "保存修改" }));
     await dialog.findByRole("alert");
     dropFocus();

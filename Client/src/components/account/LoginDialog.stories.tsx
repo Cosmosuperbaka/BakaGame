@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { presetAccount, stubApi } from "@/stories/fixtures/Account";
 import { LoginDialog } from "./LoginDialog";
 
@@ -35,7 +34,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const dialog = async () => within(await screen.findByRole("dialog"));
+const dialog = async () => await findDialog();
 
 /** 刚打开：占位头像、空的 QQ 号框，发送验证码禁用。 */
 export const Empty: Story = { name: "输入 QQ 号" };

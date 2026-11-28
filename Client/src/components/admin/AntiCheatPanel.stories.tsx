@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { ADMIN_REVIEWS, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
 import { AntiCheatPanel } from "./AntiCheatPanel";
 
@@ -49,7 +49,7 @@ export const Failed: Story = {
 
 const openFirst = async (userEvent: { click: (element: Element) => Promise<void> }) => {
   await userEvent.click((await ready())[0]);
-  return within(await screen.findByRole("dialog"));
+  return await findDialog();
 };
 
 export const Detail: Story = {

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { screen, within } from "storybook/test";
-import { dropFocus } from "@/stories/PlayHelpers";
+import { screen } from "storybook/test";
+import { dropFocus, findDialog } from "@/stories/PlayHelpers";
 import { ADMIN_ROOMS, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
 import { RoomsPanel } from "./RoomsPanel";
 
@@ -64,7 +64,7 @@ export const KickRunning: Story = {
     await userEvent.click(
       screen.getByRole("button", { name: `移出 ${ADMIN_ROOMS[0].players[1].name}` })
     );
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(dialog.getByRole("button", { name: "移出" }));
     dropFocus();
   },
@@ -76,7 +76,7 @@ export const ConfirmFailed: Story = {
   play: async ({ userEvent }) => {
     await screen.findByText(ADMIN_ROOMS[1].name);
     await userEvent.click(screen.getAllByRole("button", { name: "关闭房间" })[1]);
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = await findDialog();
     await userEvent.click(dialog.getByRole("button", { name: "关闭房间" }));
     await dialog.findByRole("alert");
     dropFocus();
