@@ -77,6 +77,19 @@ describe("MusicDeduplicator", () => {
     expect(normalizeComparableText("極楽浄土")).toBe("极乐净土");
   });
 
+  test("normalizeComparableText 按 Unicode 类别剥离标点与符号（含日文波浪线两种字符）", () => {
+    // `〜`（U+301C）与 `～`（U+FF5E）是两个字符，NFKC 也不把前者归成 `~`。
+    expect(normalizeComparableText("secret base 〜君がくれたもの〜")).toBe(
+      normalizeComparableText("secret base ～君がくれたもの～")
+    );
+    expect(normalizeComparableText("ここではない、どこかへ")).toBe(
+      normalizeComparableText("ここではない どこかへ")
+    );
+    expect(normalizeComparableText("「いいね!」☆♪")).toBe("いいね");
+    // 片假名长音符是字母，不能被当成标点剥掉。
+    expect(normalizeComparableText("ブルーバード")).toBe("ブルーバード");
+  });
+
   test("extractCanonicalTitle 剥离版本后缀与括号噪音", () => {
     expect(extractCanonicalTitle("晴天 (Live)")).toBe("晴天");
     expect(extractCanonicalTitle("晴天 - 伴奏")).toBe("晴天");
@@ -96,6 +109,53 @@ describe("MusicDeduplicator", () => {
 
     // GARNiDELiA <-> 美依礼芽
     expect(artistsOverlap(["garnidelia"], ["美依礼芽"])).toBe(true);
+  });
+
+  test("extractArtistTokens 不按空白切分人名，公共词不制造交集", () => {
+    expect(extractArtistTokens("The Oral Cigarettes")).toEqual(["theoralcigarettes"]);
+    expect(extractArtistTokens("Taylor Swift / Ed Sheeran")).toEqual(["taylorswift", "edsheeran"]);
+    expect(extractArtistTokens("A feat. B")).toEqual(["a", "b"]);
+    expect(extractArtistTokens("milet x Aimer x 幾田りら")).toEqual(["milet", "aimer", "几田りら"]);
+    expect(extractArtistTokens("X JAPAN")).toEqual(["xjapan"]);
+    expect(
+      artistsOverlap(extractArtistTokens("the pillows"), extractArtistTokens("The Oral Cigarettes"))
+    ).toBe(false);
+    // 括号里的别名照旧靠互相包含互通。
+    expect(
+      artistsOverlap(extractArtistTokens("LiSA"), extractArtistTokens("LiSA (织部里沙)"))
+    ).toBe(true);
+  });
+
+  test("isSameSongWork 同名歌的歌手只共享公共词时不合并", () => {
+    const pillows = {
+      id: "netease:1",
+      title: "Funny Bunny",
+      artist: "the pillows",
+      durationMs: 200000,
+    };
+    const other = {
+      id: "qq:1",
+      title: "Funny Bunny",
+      artist: "The Oral Cigarettes",
+      durationMs: 200500,
+    };
+    expect(isSameSongWork(pillows, other)).toBe(false);
+  });
+
+  test("isSameSongWork 日文波浪线写法不同的同一首歌合并", () => {
+    const netease = {
+      id: "netease:1",
+      title: "secret base 〜君がくれたもの〜",
+      artist: "ZONE",
+      durationMs: 330000,
+    };
+    const qq = {
+      id: "qq:1",
+      title: "secret base ～君がくれたもの～",
+      artist: "ZONE",
+      durationMs: 331000,
+    };
+    expect(isSameSongWork(netease, qq)).toBe(true);
   });
 
   test("durationMatches 物理时长容差门限", () => {

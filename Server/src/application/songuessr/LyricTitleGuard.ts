@@ -22,9 +22,8 @@ export const SHORT_LATIN_TITLE_MAX_LENGTH = 2;
 /** 含日文假名、汉字、韩文的名字走紧凑子串匹配；纯拉丁字母数字走词边界匹配。 */
 const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
-/** 紧凑形：繁简、全半角、大小写、空白与标点全部抹平。 */
-const compact = (value: string): string =>
-  normalizeComparableText(value).replace(/[\p{P}\p{S}\s]+/gu, "");
+/** 紧凑形：繁简、全半角、大小写、空白、标点与符号全部抹平（与判对、去重同一口径）。 */
+const compact = (value: string): string => normalizeComparableText(value);
 
 /** 词形：保留词边界，非字母数字一律折成单个空格，两端补空格便于整词匹配。 */
 const tokens = (value: string): string => {

@@ -5,6 +5,7 @@ import {
   isNonVocalTrack,
 } from "../../src/application/songuessr/AnimeSongEvidence";
 import {
+  artistOverlap,
   isSongTitleMatch,
   isUnplayableAlbumTrack,
 } from "../../src/application/songuessr/SongTitleMatching";
@@ -156,6 +157,26 @@ describe("SonGuessr 曲名门禁与截断门槛一致性", () => {
     expect(
       hasAnimeSongEvidence(candidate("Free", "Bling047", "Free"), cd, { animeScoped: true })
     ).toBe(false);
+  });
+
+  test("曲名门禁与平台同一口径：波浪线、顿号与繁简写法不同仍是同一首", () => {
+    expect(
+      isSongTitleMatch("secret base ～君がくれたもの～", "secret base 〜君がくれたもの〜")
+    ).toBe(true);
+    expect(isSongTitleMatch("ここではない どこかへ", "ここではない、どこかへ")).toBe(true);
+    expect(isSongTitleMatch("戀愛サーキュレーション", "恋愛サーキュレーション")).toBe(true);
+    // 波浪线包着的版本后缀照样剥掉，候选的短名不会被当成「长条目名的一截」。
+    expect(isSongTitleMatch("ハッピーエンド", "ハッピーエンド 〜TV size〜")).toBe(true);
+  });
+
+  test("角色歌署名「角色名(声优名)」：平台只记声优名时也算歌手交集", () => {
+    const characterSong = track("Sing My Pleasure", "千早愛音(立石凛) / 長崎そよ(小日向美香)");
+    expect(artistOverlap(candidate("Sing My Pleasure", "立石凛"), characterSong)).toBe(true);
+    expect(artistOverlap(candidate("Sing My Pleasure", "千早愛音"), characterSong)).toBe(true);
+    const cvNotation = track("Snow halation", "高坂穂乃果(CV.新田恵海)");
+    expect(artistOverlap(candidate("Snow halation", "新田恵海"), cvNotation)).toBe(true);
+    // 拆名只认全等，无关歌手不因此沾边。
+    expect(artistOverlap(candidate("Sing My Pleasure", "立石"), characterSong)).toBe(false);
   });
 
   test("双 A 面单曲拆段命中仍然准入", () => {
