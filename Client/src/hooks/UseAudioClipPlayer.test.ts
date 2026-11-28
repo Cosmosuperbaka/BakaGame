@@ -918,7 +918,7 @@ describe("useAudioClipPlayer · 自选音质", () => {
 
     rerender({ url: DEFAULT_URL, onSourceError });
     await act(async () => {
-      audio.dispatchEvent(new Event("canplay"));
+      canPlay();
     });
     expect(audio.currentTime).toBe(16);
     expect(playSpy).toHaveBeenCalledTimes(2);
