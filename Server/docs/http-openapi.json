@@ -1568,6 +1568,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 16,
+              "description": "玩家自选的音质档；本回合没取过这一档时按默认地址跳转",
+              "type": "string"
+            }
           }
         ],
         "operationId": "getApiSonguessrAudioByRoomIdByTicket"

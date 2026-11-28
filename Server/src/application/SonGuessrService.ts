@@ -1,4 +1,5 @@
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
+import { roundAudioVariantUrl } from "./songuessr/AudioQuality";
 import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
@@ -6,6 +7,7 @@ import {
 import { ADMIN_CLOSE_REASON, AdminRoomView } from "../domain/AdminRoom";
 import type { GameService } from "./GameService";
 import {
+  isSongAudioQuality,
   SERVER_SHUTDOWN_MESSAGE,
   SonGuessrClientMessage,
   SonGuessrRoomSummary,
@@ -67,10 +69,13 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
    * 房间不在、没有进行中的回合、票据不符都返回 undefined，调用方不得把三者区分开来回给客户端。
    * 目标只来自回合记录，不接受任何请求里的地址。
    */
-  resolveAudioRedirect(roomId: string, ticket: string): string | undefined {
+  resolveAudioRedirect(roomId: string, ticket: string, quality?: string): string | undefined {
     const round = this.ctx.rooms.get(roomId)?.currentRound;
     if (!round || !isAudioTicketMatch(ticket, round.audioTicket)) return undefined;
-    return round.song.audioUrl || undefined;
+    // 档位参数只在本回合真取到过那一档时生效，否则回到默认地址：参数是玩家可改的，
+    // 不认识或没取过的值都不该让播放失败。
+    const variant = isSongAudioQuality(quality) ? roundAudioVariantUrl(round, quality) : undefined;
+    return variant ?? (round.song.audioUrl || undefined);
   }
 
   getRoomSummaries(): SonGuessrRoomSummary[] {

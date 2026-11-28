@@ -165,6 +165,35 @@ describe("猜歌站内播放地址路由", () => {
     expect(response.headers.get("location")).toBe(UPSTREAM);
   });
 
+  test("带音质参数时跳到本回合取到的那一档；没取过的档与乱写的值回到默认地址", async () => {
+    const LOSSLESS = "https://ws.stream.qqmusic.example/F000abcdefabcdef.flac?vkey=SIGNATURE";
+    const { app, service, guest, path } = await openRound({
+      getSongAudioVariant: async (_id, quality) => ({ url: LOSSLESS, quality, format: "flac" }),
+    });
+    // 还没人要过这一档：带参数也只回默认地址，不在路由里临时回源。
+    expect((await request(app, `${path}?q=lossless`)).headers.get("location")).toBe(UPSTREAM);
+    await expect(
+      execute(service, guest, {
+        id: "quality",
+        type: "song.game.audioQuality",
+        roomId: "1234",
+        payload: { roundNumber: 1, quality: "lossless" },
+      })
+    ).resolves.toMatchObject({ audioUrl: `${path}?q=lossless` });
+    const variant = await request(app, `${path}?q=lossless`);
+    expect(variant.status).toBe(302);
+    expect(variant.headers.get("location")).toBe(LOSSLESS);
+    expect(variant.headers.get("cache-control")).toBe("no-store");
+    expect((await request(app, `${path}?q=master`)).headers.get("location")).toBe(UPSTREAM);
+    expect((await request(app, `${path}?q=evil`)).headers.get("location")).toBe(UPSTREAM);
+    // 超长参数在入口就被拒，既不跳转也不查表。
+    const oversized = await request(app, `${path}?q=${"x".repeat(64)}`);
+    expect(oversized.status).toBeGreaterThanOrEqual(400);
+    expect(oversized.headers.get("location")).toBeNull();
+    // 票据不符时带不带档位都是同一个 404。
+    expect((await request(app, `${path}x?q=lossless`)).status).toBe(404);
+  });
+
   test("刷新上游地址后，重新请求同一个票据地址拿到新地址", async () => {
     const { app, service, guest, path } = await openRound({
       refreshSongAudio: async () => "https://cdn.example.net/fresh/after-refresh.mp3",

@@ -513,6 +513,7 @@ const SONGUESSR_COMMAND_CASES = [
   { type: "song.game.submitAnime", payload: { subjectId: "10380" } },
   { type: "song.game.audioReady", payload: { roundNumber: 1 } },
   { type: "song.game.audioFailed", payload: { roundNumber: 1 } },
+  { type: "song.game.audioQuality", payload: { roundNumber: 1, quality: "lossless" } },
   { type: "song.game.guess", payload: { songId: "qq:0017K7gL4WYnw2" } },
   { type: "song.game.guessAnime", payload: { subjectId: "1701" } },
   { type: "song.game.giveUp", payload: {} },

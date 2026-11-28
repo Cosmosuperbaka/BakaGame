@@ -6,7 +6,9 @@ import type {
   SongPlaylistInfo,
   SongSearchResult,
   SonGuessrMusicAccount,
+  SongAudioQuality,
 } from "../../shared/Index";
+import type { SongAudioVariant } from "./AudioQuality";
 
 /**
  * 房间侧的取歌凭据有两种形状：只登录了一端时是裸字符串（`MUSIC_U=…`、`qm_keyst=…`），
@@ -68,6 +70,16 @@ export interface MusicProvider {
     options?: { allowFailover?: boolean; hint?: SongFailoverHint }
   ): Promise<SongDetails>;
   refreshSongAudio?(songId: string, cookie?: MusicCookieInput): Promise<string>;
+  /**
+   * 按玩家选的音质取播放地址，拿不到时按 `AUDIO_QUALITY_ATTEMPTS` 往下退，回报实际档位；
+   * 都拿不到抛 `SONG_UNAVAILABLE`。只取本 ID 所属平台，不做跨平台兜底：换了平台就不是同一档音质了。
+   * 试听片段与第三方解灰地址都不算这一档的地址，调用方回退到回合的默认地址。
+   */
+  getSongAudioVariant?(
+    songId: string,
+    quality: SongAudioQuality,
+    cookie?: MusicCookieInput
+  ): Promise<SongAudioVariant>;
   getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
   getSongPopularity?(songId: string, cookie?: MusicCookieInput): Promise<number | undefined>;
   getSongChorus?(songId: string, cookie?: MusicCookieInput): Promise<SongChorus | undefined>;

@@ -15,7 +15,11 @@ import {
 } from "./SonGuessrFilters";
 import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 // 纯值住在 SonGuessrValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
-import { ALL_BANGUMI_TRACK_KINDS } from "./SonGuessrValues";
+import {
+  ALL_BANGUMI_TRACK_KINDS,
+  SONG_AUDIO_QUALITIES,
+  type SongAudioQuality,
+} from "./SonGuessrValues";
 import { SONG_SUBJECT_LIMIT_BOUNDS, SONG_TEAM_BOUNDS, SUBJECT_YEAR_BOUNDS } from "./SettingBounds";
 export * from "./SonGuessrValues";
 
@@ -609,6 +613,7 @@ const songId = t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]
 const songPickSources = t.Optional(t.Array(songId, { maxItems: 6 }));
 const musicPlatform = t.Union([t.Literal("netease"), t.Literal("qq")]);
 const qrChannelType = t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")]);
+const audioQuality = t.Union(SONG_AUDIO_QUALITIES.map((quality) => t.Literal(quality)));
 
 export const SonGuessrPayloadSchemas = {
   "song.lobby.subscribeRooms": emptyPayload,
@@ -739,6 +744,11 @@ export const SonGuessrPayloadSchemas = {
   "song.game.submitAnime": t.Object({ subjectId, songId: t.Optional(songId) }, strict),
   "song.game.audioReady": t.Object({ roundNumber: positiveInt }, strict),
   "song.game.audioFailed": t.Object({ roundNumber: positiveInt }, strict),
+  /**
+   * 按本人的音质偏好取本回合另一档的播放地址。音质是每个人自己的事，不改公共快照：
+   * 回合内同一档只向上游取一次、全房共用，拿不到这一档时按退路往下取，回执报实际档位。
+   */
+  "song.game.audioQuality": t.Object({ roundNumber: positiveInt, quality: audioQuality }, strict),
   "song.game.guess": t.Object({ songId }, strict),
   "song.game.guessAnime": t.Object({ subjectId }, strict),
   "song.game.giveUp": emptyPayload,
@@ -779,6 +789,18 @@ export interface SonGuessrRoomEnterAck {
   sessionToken: string;
   snapshot: SonGuessrRoomSnapshot;
   privateState: SonGuessrPrivateState;
+}
+
+/**
+ * 取另一档音质的回执。拿到时带实际档位、站内播放地址与上游给出的文件格式（`flac`、`mp3` 等，
+ * 客户端据此判断能不能解码）；这首歌在本房拿不到合适的档位时 `unavailable`，回合已换时 `ignored`。
+ */
+export interface SonGuessrAudioQualityAck {
+  quality?: SongAudioQuality;
+  audioUrl?: string;
+  format?: string;
+  unavailable?: boolean;
+  ignored?: boolean;
 }
 
 /**
@@ -833,4 +855,6 @@ export type SonGuessrAck<TCommand extends SonGuessrCommand> = TCommand extends
                         ? { playlist: SongPlaylistInfo }
                         : TCommand extends "song.subject.image"
                           ? { imageUrl: string | undefined }
-                          : Record<string, unknown>;
+                          : TCommand extends "song.game.audioQuality"
+                            ? SonGuessrAudioQualityAck
+                            : Record<string, unknown>;

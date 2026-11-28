@@ -214,3 +214,29 @@ export const hasMusicAccount = (snapshot: {
   musicAccountReady: boolean;
   qqMusicAccountReady?: boolean;
 }): boolean => snapshot.musicAccountReady || Boolean(snapshot.qqMusicAccountReady);
+
+/**
+ * 播放音质档位：两家平台的档位并成一条从低到高的序列，同一档合并成一项
+ * （QQ 音乐的 HQ 就是网易云的极高、SQ 就是无损）。各平台怎么对上这些档位只在服务端的 provider 里。
+ * 档位只是偏好：实际拿到哪一档取决于曲目有没有、房内账号有没有权限，服务端如实回报。
+ */
+export const SONG_AUDIO_QUALITIES = [
+  "standard",
+  "higher",
+  "exhigh",
+  "lossless",
+  "hires",
+  "effect",
+  "surround",
+  "dolby",
+  "vivid",
+  "master",
+] as const;
+
+export type SongAudioQuality = (typeof SONG_AUDIO_QUALITIES)[number];
+
+/** 玩家的音质偏好。`auto` 用回合装题时服务端已经取好的那一档，不再额外请求上游。 */
+export type SongAudioQualityPreference = SongAudioQuality | "auto";
+
+export const isSongAudioQuality = (value: unknown): value is SongAudioQuality =>
+  typeof value === "string" && (SONG_AUDIO_QUALITIES as readonly string[]).includes(value);
