@@ -732,3 +732,42 @@ describe("AggregatedMusicProvider · 跨平台兜底失败留痕", () => {
     expect(JSON.stringify(swallowed?.context)).toContain("QQ 限流");
   });
 });
+
+describe("AggregatedMusicProvider · 翻唱原曲 ID", () => {
+  test("翻唱指向的原曲 ID 与自身 ID 一起补成 URN，回指原版能直接取歌", async () => {
+    // 网易云详情里的 originSongSimpleData.songId 是裸标识；只补自身 ID 时，拿它回指原版
+    // 会因为不是 URN 抛 INVALID_SONG_URN，判对时也比不上 URN 形态的答案 ID。
+    const cover = (id: string): SongDetails => ({
+      id,
+      title: "君の知らない物語",
+      artist: "翻唱歌手",
+      lyrics: [],
+      audioUrl: "https://audio.invalid/cover.mp3",
+      encyclopedia: { tags: [] },
+      originCoverType: 2,
+      originSongId: "26608973",
+    });
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async (id: string) => cover(id)),
+      getSongMetadata: mock(async (id: string) => cover(id)),
+      search: mock(async () => [{ ...cover("2001"), originSongId: "26608973" }]),
+    });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: createMockProvider("qq"),
+    });
+
+    expect(await agg.getSong("netease:2001")).toMatchObject({
+      id: "netease:2001",
+      originSongId: "netease:26608973",
+    });
+    expect(await agg.getSongMetadata("netease:2001")).toMatchObject({
+      originSongId: "netease:26608973",
+    });
+    const [found] = await agg.search("君の知らない物語", 5);
+    expect(found?.originSongId).toBe("netease:26608973");
+    // 回指原版走的是同一个 getSong，URN 形态才能被解析。
+    await agg.getSong(found!.originSongId!);
+    expect(neteaseMock.getSong).toHaveBeenLastCalledWith("26608973", undefined);
+  });
+});
