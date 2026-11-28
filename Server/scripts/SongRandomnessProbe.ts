@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { SonGuessrService } from "../src/application/SonGuessrService";
-import { resolveRecentSongWindow } from "../src/application/songuessr/Records";
+import { MAX_RECENT_SONG_WINDOW } from "../src/application/songuessr/Records";
 import { NeteaseMusicProvider } from "../src/infrastructure/music/netease/NeteaseMusicProvider";
 import { type MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import type {
@@ -52,15 +52,17 @@ export function measureSongNames(songs: SongSearchResult[], ids: string[]) {
   );
 }
 
-// 候选数超过窗口且加载均成功时，与生产的近期去重窗口策略对应的期望唯一数。
-// 窗口长度直接取生产实现：窗口已随候选池自适应，写死 10 会让理论与实测脱钩。
-export function expectedUnique(
-  pool: number,
-  rounds: number,
-  history = resolveRecentSongWindow(pool)
-) {
+/**
+ * 加载均成功时，生产选歌策略下的期望唯一数。
+ *
+ * 整池出完一遍之前只出没出过的歌，所以房间记录装得下整池时唯一数就是轮数与池子的较小者。
+ * 记录装不下整池时，最早的歌被挤出记录后又算「没出过」，等价于在最近若干首之外均匀抽取。
+ * 记录上限直接取生产实现，写死会让理论与实测脱钩。
+ */
+export function expectedUnique(pool: number, rounds: number) {
   if (!pool || !rounds) return 0;
-  if (pool <= history) return null;
+  const history = MAX_RECENT_SONG_WINDOW;
+  if (pool <= history) return Math.min(rounds, pool);
   const initial = Math.min(rounds, history + 1);
   return pool - (pool - initial) * (1 - 1 / (pool - history)) ** (rounds - initial);
 }
