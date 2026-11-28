@@ -220,17 +220,4 @@ describe("BangumiWorkerProvider 其余门面方法", () => {
     expect(await facade.resolveSubjectImage("5")).toBeUndefined();
     expect(calls[3]).toEqual({ method: "song.resolveSubjectImage", subjectId: "5" });
   });
-
-  test("chooseRandomSubject：搜索 + 详情两跳取一条，空候选报错", async () => {
-    const { facade } = createFacade((payload) => {
-      if (payload.method === "song.searchSubjects") return [{ id: "1" }, { id: "2" }];
-      return { id: payload.subjectId, name: `S-${payload.subjectId}`, musicTracks: [] };
-    });
-
-    expect((await facade.chooseRandomSubject({}, () => 0)).id).toBe("1");
-    expect((await facade.chooseRandomSubject({ subjectLimit: 99 }, () => 0.99)).id).toBe("2");
-
-    const empty = createFacade(() => []).facade;
-    await expect(empty.chooseRandomSubject()).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
-  });
 });

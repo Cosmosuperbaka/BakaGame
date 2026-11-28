@@ -1,4 +1,3 @@
-import { AppError } from "../domain/Errors";
 import type {
   AnimeAutoFilters,
   BangumiSubjectDetails,
@@ -22,10 +21,6 @@ export interface BangumiDataProvider {
    * 在线 provider 的详情本就带封面，忽略该选项。
    */
   getSubject(subjectId: string, options?: BangumiGetSubjectOptions): Promise<BangumiSubjectDetails>;
-  chooseRandomSubject(
-    filters?: AnimeAutoFilters,
-    random?: () => number
-  ): Promise<BangumiSubjectDetails>;
   /** 角色立绘：本地数据集不含图片，只能回源取，结果写进回填缓存。 */
   resolveCharacterImage(characterId: number): Promise<string | undefined>;
   /**
@@ -39,23 +34,3 @@ export interface BangumiDataProvider {
    */
   close?: () => void | Promise<void>;
 }
-
-/**
- * 「搜一页、随机取一条、再取详情」的随机出题：三种数据提供者（本地库、数据线程门面、在线）
- * 的流程完全相同，只有底层的搜索与详情不同，所以只写一份。
- */
-export const pickRandomSubject = async (
-  provider: Pick<BangumiDataProvider, "searchSubjects" | "getSubject">,
-  filters: AnimeAutoFilters,
-  random: () => number
-): Promise<BangumiSubjectDetails> => {
-  const candidates = await provider.searchSubjects(
-    "",
-    Math.min(filters.subjectLimit ?? 50, 50),
-    filters
-  );
-  if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
-  const selected =
-    candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
-  return provider.getSubject(selected.id, { waitForImage: true });
-};

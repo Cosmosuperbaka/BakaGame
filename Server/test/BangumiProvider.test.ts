@@ -402,35 +402,6 @@ describe("BangumiProvider 远端接口", () => {
     });
   });
 
-  test("chooseRandomSubject：按随机索引取详情，空候选报错", async () => {
-    const provider = new BangumiProvider({
-      apiUrl: "https://api.invalid",
-      fetcher: async (input) => {
-        const url = String(input);
-        if (url.includes("/v0/search/subjects")) {
-          return jsonResponse({
-            data: [
-              { id: 1, name: "One" },
-              { id: 2, name: "Two" },
-            ],
-          });
-        }
-        if (url.endsWith("/2/subjects")) return jsonResponse([]);
-        if (url.endsWith("/v0/subjects/2")) return jsonResponse({ id: 2, name: "Two" });
-        return jsonResponse({ id: 1, name: "One" });
-      },
-    });
-    const picked = await provider.chooseRandomSubject({}, () => 0.99);
-    expect(picked.id).toBe("2");
-    expect(picked.name).toBe("Two");
-
-    const empty = new BangumiProvider({
-      apiUrl: "https://api.invalid",
-      fetcher: async () => jsonResponse({ data: [] }),
-    });
-    await expect(empty.chooseRandomSubject()).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
-  });
-
   test("resolveCharacterImage：成功结果才进缓存，失败与非法 id 不回源", async () => {
     let calls = 0;
     let mode: "ok" | "fail" | "empty" = "fail";

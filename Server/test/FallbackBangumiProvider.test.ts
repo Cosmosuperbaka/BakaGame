@@ -25,11 +25,6 @@ const makeProviders = (healthy: () => boolean) => {
       if (!healthy()) unavailable();
       return { ...result[0], locked: false, musicTracks: [] };
     },
-    chooseRandomSubject: async () => {
-      calls.local += 1;
-      if (!healthy()) unavailable();
-      return { ...result[0], locked: false, musicTracks: [] };
-    },
     resolveCharacterImage: async () => {
       calls.local += 1;
       if (!healthy()) unavailable();
@@ -47,10 +42,6 @@ const makeProviders = (healthy: () => boolean) => {
       return result;
     },
     getSubject: async () => {
-      calls.remote += 1;
-      return { ...result[0], locked: false, musicTracks: [] };
-    },
-    chooseRandomSubject: async () => {
       calls.remote += 1;
       return { ...result[0], locked: false, musicTracks: [] };
     },
@@ -130,13 +121,10 @@ describe("FallbackBangumiProvider", () => {
     const local: BangumiDataProvider = {
       searchSubjects: async () => {
         calls.local += 1;
-        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
+        throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "查不到");
       },
       getSubject: async () => {
-        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
-      },
-      chooseRandomSubject: async () => {
-        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
+        throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "查不到");
       },
       resolveCharacterImage: async () => undefined,
       resolveSubjectImage: async () => undefined,
@@ -144,7 +132,7 @@ describe("FallbackBangumiProvider", () => {
     const provider = new FallbackBangumiProvider({ local, remote });
 
     await expect(provider.searchSubjects("测试")).rejects.toMatchObject({
-      code: "BANGUMI_NO_SUBJECT",
+      code: "BANGUMI_SUBJECT_NOT_FOUND",
     });
     expect(calls.local).toBe(1);
     expect(calls.remote).toBe(0);
@@ -157,9 +145,6 @@ describe("FallbackBangumiProvider", () => {
         throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
       },
       getSubject: async () => {
-        throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
-      },
-      chooseRandomSubject: async () => {
         throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
       },
       resolveCharacterImage: async () => undefined,

@@ -90,16 +90,6 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     );
   }
 
-  chooseRandomSubject(
-    filters?: AnimeAutoFilters,
-    random?: () => number
-  ): Promise<BangumiSubjectDetails> {
-    return this.run(
-      () => this.local.chooseRandomSubject(filters, random),
-      () => this.remote.chooseRandomSubject(filters, random)
-    );
-  }
-
   resolveCharacterImage(characterId: number): Promise<string | undefined> {
     return this.run(
       () => this.local.resolveCharacterImage(characterId),
