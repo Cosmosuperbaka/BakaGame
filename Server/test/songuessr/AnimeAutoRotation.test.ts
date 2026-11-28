@@ -37,9 +37,9 @@ const subject = (index: number, withMusic = true): BangumiSubjectDetails => ({
 const startAnimeRotation = async (
   subjects: BangumiSubjectDetails[],
   seed: number,
-  options: { missingIds?: string[] } = {}
+  options: { subjectLimit?: number; missingIds?: string[] } = {}
 ) => {
-  const { missingIds = [] } = options;
+  const { subjectLimit, missingIds = [] } = options;
   const byId = new Map(subjects.map((item) => [item.id, item]));
   const musicProvider: MusicProvider = {
     ...provider,
@@ -50,7 +50,8 @@ const startAnimeRotation = async (
     getSong: async (id) => makeSong(id, id.replace("netease:", ""), 2024),
   };
   const bangumiProvider = fakeBangumiProvider({
-    searchSubjects: async () => subjects,
+    // 与本地库同口径：无关键词时按热度给前 limit 部。
+    searchSubjects: async (_keyword, limit) => subjects.slice(0, limit),
     // 搜索结果里有、取详情却查不到：索引与库不同步时会这样。
     getSubject: async (id) => {
       if (missingIds.includes(id))
@@ -72,7 +73,10 @@ const startAnimeRotation = async (
     id: "settings",
     type: "song.room.updateSettings",
     roomId,
-    payload: { questionType: "anime" },
+    payload: {
+      questionType: "anime",
+      ...(subjectLimit ? { animeAutoFilters: { ranking: "all", subjectLimit } } : {}),
+    },
   });
   let started = false;
   /** 打一轮并返回结算后公开的番剧 ID；开局失败时返回错误码。 */
@@ -117,6 +121,19 @@ describe("自动猜番的番剧轮换", () => {
       expect(new Set(picked.slice(start, start + 25)).size).toBe(25);
     }
     expect(picked.slice(30, 60)).not.toEqual(picked.slice(0, 30));
+  });
+
+  test("「前 N 部」大于 50 时按设置取满，不悄悄只用前 50 部", async () => {
+    const subjects = Array.from({ length: 150 }, (_, index) => subject(index));
+    const { playRound } = await startAnimeRotation(subjects, 11, { subjectLimit: 120 });
+    const picked = new Set<string>();
+    for (let round = 1; round <= 120; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      picked.add(result.id!);
+    }
+    // 前 120 部各出一次，热度榜之外的 30 部一次也不出。
+    expect(picked).toEqual(new Set(subjects.slice(0, 120).map((item) => item.id)));
   });
 
   test("出不了题的番剧记下后排到最后，不再每轮耗尽尝试次数", async () => {
