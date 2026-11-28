@@ -46,8 +46,6 @@ export interface SongClipAudio extends ClipBytes {
 
 export interface SongClipPort {
   load(request: SongClipRequest): Promise<SongClipAudio>;
-  /** 「重新获取音频」之后上游地址会换，旧缓存作废。 */
-  invalidate(audioUrl: string): void;
 }
 
 /** 已经读过的文件开头直接复用，格式探测与帧解析不再重复请求同一段。 */
@@ -110,8 +108,8 @@ const sliceClip = async (reader: RangeReader, target: ClipTarget): Promise<ClipB
 };
 
 /**
- * 同一回合的片段在进程内共用：同房多个 Agent、同一 Agent 重播都不再回源。
- * 键里带票据，换回合即换键；按字节计容量，最旧的先淘汰。
+ * 同一上游的片段在进程内共用：同房多个 Agent、同一 Agent 重播都不再回源取音频。
+ * 键里带上游地址，换回合或刷新音频即换键；按字节计容量，最旧的先淘汰。
  */
 const CACHE = new LRUCache<string, SongClipAudio>({
   maxSize: 32 * 1024 * 1024,
@@ -138,61 +136,44 @@ export class SongClipLoader implements SongClipPort {
     this.timeoutMs = options.timeoutMs ?? CLIP_TIMEOUT_MS;
   }
 
-  private keyOf(path: string, startTime: number, endTime: number): string {
-    return `${this.serverUrl}${path}|${startTime}|${endTime}`;
-  }
-
-  load(request: SongClipRequest): Promise<SongClipAudio> {
+  async load(request: SongClipRequest): Promise<SongClipAudio> {
     const path = ticketPathOf(request.audioUrl);
     const startTime = Math.max(0, Math.round(request.startTime));
     const wantedEnd = Math.max(startTime + 1, Math.round(request.endTime));
     const endTime = Math.min(wantedEnd, startTime + AGENT_CLIP_MAX_MS);
-    const key = this.keyOf(path, startTime, endTime);
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    // 每次播放都先经票据问一次当前上游，缓存按上游地址分键：「重新获取音频」换了上游，
+    // 键跟着换，自有座位与接管页面都不需要另外通知作废，旧上游晚到的结果也只落在旧键上。
+    const upstream = await this.guard(signal, () =>
+      resolveUpstream(this.fetcher, `${this.serverUrl}${path}`, signal)
+    );
+    const key = `${upstream}|${startTime}|${endTime}`;
     const cached = CACHE.get(key);
-    if (cached) return Promise.resolve(cached);
+    if (cached) return cached;
     const running = INFLIGHT.get(key);
     if (running) return running;
-    const task: Promise<SongClipAudio> = this.fetchClip(path, {
-      startTime,
-      endTime,
-      maxBytes: AGENT_CLIP_MAX_BYTES,
-    })
-      .then((clip) => {
-        const audio = { ...clip, clipped: endTime < wantedEnd };
-        // 途中被作废（重新获取音频换了上游）的请求结果只交给已经在等它的调用方，不写回缓存。
-        if (INFLIGHT.get(key) === task) CACHE.set(key, audio);
-        return audio;
-      })
-      .finally(() => {
-        if (INFLIGHT.get(key) === task) INFLIGHT.delete(key);
-      });
-    INFLIGHT.set(key, task);
-    return task;
-  }
-
-  invalidate(audioUrl: string): void {
-    let path: string;
-    try {
-      path = ticketPathOf(audioUrl);
-    } catch {
-      return;
-    }
-    const prefix = `${this.serverUrl}${path}|`;
-    for (const key of [...CACHE.keys()]) if (key.startsWith(prefix)) CACHE.delete(key);
-    // 进行中的请求连的是旧上游：摘掉之后再播放会重新回源，旧请求晚到的结果也不会写回缓存。
-    for (const key of [...INFLIGHT.keys()]) if (key.startsWith(prefix)) INFLIGHT.delete(key);
-  }
-
-  private async fetchClip(path: string, target: ClipTarget): Promise<ClipBytes> {
-    const signal = AbortSignal.timeout(this.timeoutMs);
-    try {
-      const upstream = await resolveUpstream(this.fetcher, `${this.serverUrl}${path}`, signal);
+    const target = { startTime, endTime, maxBytes: AGENT_CLIP_MAX_BYTES };
+    const task = this.guard(signal, () => {
       const reader = new HttpRangeReader(upstream, {
         fetcher: this.fetcher,
         maxStreamBytes: MAX_STREAM_BYTES,
         signal,
       });
-      return await sliceClip(reader, target);
+      return sliceClip(reader, target);
+    })
+      .then((clip) => {
+        const audio = { ...clip, clipped: endTime < wantedEnd };
+        CACHE.set(key, audio);
+        return audio;
+      })
+      .finally(() => INFLIGHT.delete(key));
+    INFLIGHT.set(key, task);
+    return task;
+  }
+
+  private async guard<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
     } catch (error) {
       if (error instanceof ClipAudioError) throw error;
       if (signal.aborted) throw new ClipAudioError("取音频超时，请稍后再试");

@@ -620,10 +620,8 @@ const clickSongAudio = async (context: UiContext, id: string): Promise<string> =
   if (id === "song.audio.play") return playSongClip(context, round);
   const roundNumber = round.roundNumber;
   if (typeof roundNumber !== "number") throw new Error("当前没有播放中的回合");
+  // 服务端会换上游地址；片段缓存按上游分键，下次播放自然取到新音源。
   await send(context, "song.game.audioFailed", { roundNumber });
-  // 服务端会换上游地址：同一张票据下的旧片段作废，下次播放重新回源。
-  const audioUrl = str(round.audioUrl);
-  if (audioUrl) context.client.songClips?.invalidate(audioUrl);
   return "已请求刷新音频";
 };
 

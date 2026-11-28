@@ -869,7 +869,7 @@ describe("猜歌界面：控件动作", () => {
     expect(run.steps[1]?.feedback).toContain(SONGUESSR_NO_SEARCH_RULE);
   });
 
-  test("播放片段把音频作为内容块挂在结果上，重取音频作废旧片段", async () => {
+  test("播放片段把音频作为内容块挂在结果上，重取音频只发刷新请求", async () => {
     const clips = fakeSongClips();
     const { ui, calls } = open("playing", {
       privateState: { canGuess: true },
@@ -892,7 +892,6 @@ describe("猜歌界面：控件动作", () => {
     expect(run.ok).toBe(true);
     expect(mediaOf(run)).toEqual([]);
     expect(payloadOf(calls, "song.game.audioFailed")).toEqual({ roundNumber: 3 });
-    expect(clips.invalidated).toEqual([round.audioUrl]);
 
     const failing = open("playing", {
       privateState: { canGuess: true },
