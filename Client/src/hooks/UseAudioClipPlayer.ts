@@ -32,6 +32,9 @@ const playableAtClipStart = (audio: HTMLAudioElement) =>
 /** 缓冲区与片段边界的对齐容差（秒）：与片段内纠偏的容差同档。 */
 const BUFFER_EDGE_TOLERANCE = 0.25;
 
+/** `MediaError.MEDIA_ERR_NETWORK`：规范定值，单独写出是因为测试环境没有 `MediaError` 全局。 */
+const MEDIA_ERR_NETWORK = 2;
+
 /**
  * 整段片段都已在缓冲区里：之后再拉后续数据失败（例如上游地址到期）不影响这一题。
  * 没有终点时按整首算，时长未知就不算整段已缓冲。
@@ -263,8 +266,16 @@ export function useAudioClipPlayer({
     const failed = () => {
       if (disposed) return;
       // 就绪之后的出错同样作数：拉后续数据失败或解码出错时元素已经停摆，不转失败态就一直停在
-      // 「播放中」，既不上报刷新地址，也不给重试按钮。整段片段已缓冲时例外，这一题照样听得完。
-      if (readyState && clipFullyBuffered(audio, startSeconds, endSeconds)) return;
+      // 「播放中」，既不上报刷新地址，也不给重试按钮。只有网络错误且整段片段已缓冲时例外：
+      // 网络错误只是拉不到后面的数据，已缓冲的部分照常能播完这一题；解码错误会让播放管线
+      // 停下，缓冲区再完整也播不了。
+      if (
+        readyState &&
+        audio.error?.code === MEDIA_ERR_NETWORK &&
+        clipFullyBuffered(audio, startSeconds, endSeconds)
+      ) {
+        return;
+      }
       stopFadeLoop();
       audio.pause();
       setAudioPlaybackState("idle");
