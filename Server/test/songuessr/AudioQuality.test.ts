@@ -105,6 +105,29 @@ describe("猜歌自选音质", () => {
     expect(service.resolveAudioRedirect("1234", ticket, "master")).toBe(DEFAULT_URL);
   });
 
+  test("别的档降档时拿到过的那一档，之后直接要它也复用，不再打上游", async () => {
+    const calls: SongAudioQuality[] = [];
+    const { service, guest } = await setup(
+      qualityProvider(async (_songId, quality) => {
+        calls.push(quality);
+        return {
+          url: "https://m801.music.example.net/exhigh.mp3",
+          quality: "exhigh",
+          format: "mp3",
+        };
+      })
+    );
+    await expect(requestQuality(service, guest, "master")).resolves.toMatchObject({
+      quality: "exhigh",
+    });
+    await expect(requestQuality(service, guest, "exhigh")).resolves.toEqual({
+      quality: "exhigh",
+      audioUrl: expect.stringMatching(/\?q=exhigh$/),
+      format: "mp3",
+    });
+    expect(calls).toEqual(["master"]);
+  });
+
   test("同一回合同一档全房只打一次上游：并发合并、之后直接复用，复用不扣额度", async () => {
     let calls = 0;
     let release!: () => void;
