@@ -718,7 +718,12 @@ describe("useAudioClipPlayer", () => {
       return { ...hook, load, pause };
     };
 
-    const fail = () => act(async () => void mockAudio.dispatchEvent(new Event("error")));
+    /** 按 `MediaError` 的规范码报错：2 是网络错误，3 是解码错误。 */
+    const fail = (code = 2) =>
+      act(async () => {
+        Object.defineProperty(mockAudio, "error", { configurable: true, value: { code } });
+        mockAudio.dispatchEvent(new Event("error"));
+      });
     const failedReports = (sendCommand: ReturnType<typeof vi.fn>) =>
       sendCommand.mock.calls.filter(([type]) => type === "song.game.audioFailed");
 
@@ -764,6 +769,19 @@ describe("useAudioClipPlayer", () => {
       expect(result.current.audioPlaybackState).toBe("playing");
       expect(failedReports(sendCommand)).toHaveLength(0);
       expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    it("整段已缓冲但解码出错时照样转失败态：播放管线停了，缓冲区再完整也播不了", async () => {
+      const sendCommand = vi.fn().mockResolvedValue(undefined);
+      const { result, pause } = await startPlaying(sendCommand);
+      setBuffered([[0, 80]]);
+
+      await fail(3);
+
+      expect(pause).toHaveBeenCalled();
+      expect(result.current.audioStatus).toBe("error");
+      expect(result.current.audioPlaybackState).toBe("idle");
+      expect(failedReports(sendCommand)).toEqual([["song.game.audioFailed", { roundNumber: 1 }]]);
     });
   });
 });
