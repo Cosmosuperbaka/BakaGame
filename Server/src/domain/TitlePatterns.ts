@@ -14,6 +14,17 @@ export const BARE_VERSION_SUFFIX_PATTERN =
 export const FEAT_SUFFIX_PATTERN =
   /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
+/** 括号段（含日文引号）：`ブルーバード (青鸟)` 的译名、`小幸运 (电影《…》主题曲)` 的出处说明。 */
+export const BRACKETED_PART_PATTERN = /[（(【[「『][^）)】\]」』]*[）)】\]」』]/gu;
+
+/**
+ * 区分「同一首歌的不同部分或编次」的括号段：带数字，或 Part、Vol.、Chapter、Edition、
+ * 第…部/章/話 这类标记。它们不是说明文字，不能去掉，否则 `Song (Part 1)` 会被当成 `Song`。
+ * 判不准的一律当作有区分意义（宁可错过）。
+ */
+export const DISTINCT_PART_PATTERN =
+  /\p{Nd}|\b(?:part|pt|vol(?:ume)?|chapter|act|episode|ep|edition|side|reprise)\b|[上中下]篇|[前后後][编編]|第.+?[部章話话幕]/iu;
+
 /**
  * 剥掉曲名里的版本标记（括号内的伴奏/Live/Remix 说明、尾部装饰后缀、feat 署名）。
  *

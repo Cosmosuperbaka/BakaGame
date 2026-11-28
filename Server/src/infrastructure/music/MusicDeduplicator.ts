@@ -138,6 +138,28 @@ const ARTIST_ALIASES: Record<string, string[]> = {
 };
 
 /**
+ * 歌手占位：平台缺歌手时填的固定文本与合辑通用署名（归一后的词元）。它们不指向任何真实歌手，
+ * 不能参与「歌手有没有交集」的比对，否则两首毫无关系的「群星」曲目会被当成同一位歌手。
+ */
+const PLACEHOLDER_ARTIST_TOKENS = new Set([
+  "未知歌手",
+  "未知艺人",
+  "佚名",
+  "群星",
+  "网络歌手",
+  "unknown",
+  "unknownartist",
+  "various",
+  "variousartists",
+  "va",
+]);
+
+/** 去掉占位署名后的歌手词元；只剩占位时为空，调用方按「歌手未知」处理。 */
+export function knownArtistTokens(artist: string | undefined): string[] {
+  return extractArtistTokens(artist ?? "").filter((token) => !PLACEHOLDER_ARTIST_TOKENS.has(token));
+}
+
+/**
  * 检查两个歌手集合是否存在显著交集.
  */
 export function artistsOverlap(artistsA: string[], artistsB: string[]): boolean {

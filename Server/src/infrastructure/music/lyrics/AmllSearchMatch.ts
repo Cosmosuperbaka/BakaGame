@@ -1,4 +1,10 @@
-import { artistsOverlap, extractArtistTokens, normalizeComparableText } from "../MusicDeduplicator";
+import { BRACKETED_PART_PATTERN, DISTINCT_PART_PATTERN } from "../../../domain/TitlePatterns";
+import {
+  artistsOverlap,
+  extractArtistTokens,
+  knownArtistTokens,
+  normalizeComparableText,
+} from "../MusicDeduplicator";
 
 /**
  * AMLL 按歌名检索的结果校验：检索词里的每个词只要出现在曲名、歌手或专辑名之一就算命中，
@@ -15,23 +21,9 @@ import { artistsOverlap, extractArtistTokens, normalizeComparableText } from "..
 const RECORDING_VARIANT_PATTERN =
   /\b(?:live|remix(?:ed)?|inst(?:rumental)?|off\s*vocal|karaoke|tv\s*size|short\s*size|acoustic|demo|ver(?:sion)?)\b|伴奏|纯音乐|純音樂|現場|现场|カラオケ|インスト|リミックス|弾き語り|弹唱/iu;
 
-/** 括号段（含日文引号）：`ブルーバード (青鸟)` 的译名、`小幸运 (电影《…》主题曲)` 的出处说明。 */
-const BRACKETED_PART_PATTERN = /[（(【[「『][^）)】\]」』]*[）)】\]」』]/gu;
-
-/**
- * 区分「同一首歌的不同部分或编次」的括号段：带数字，或 Part、Vol.、Chapter、Edition、
- * 第…部/章/話 这类标记。它们不是说明文字，不能去掉，否则 `Song (Part 1)` 会借用 `Song` 的歌词。
- * 判不准的一律当作有区分意义（宁可错过）。
- */
-const DISTINCT_PART_PATTERN =
-  /\p{Nd}|\b(?:part|pt|vol(?:ume)?|chapter|act|episode|ep|edition|side|reprise)\b|[上中下]篇|[前后後][编編]|第.+?[部章話话幕]/iu;
-
 /** 去掉只是说明文字的括号段（译名、出处），保留带编次标记的括号段。 */
 const stripInformationalBrackets = (title: string): string =>
   title.replace(BRACKETED_PART_PATTERN, (part) => (DISTINCT_PART_PATTERN.test(part) ? part : " "));
-
-/** 歌手占位：平台缺歌手时填的固定文本，不能当作真实歌手参与比对。 */
-const UNKNOWN_ARTIST_NAMES = new Set(["未知歌手", "未知艺人", "unknown", "unknownartist"]);
 
 const readStrings = (value: unknown): string[] =>
   Array.isArray(value)
@@ -55,9 +47,6 @@ export const isSameRecordingTitle = (left: string, right: string): boolean => {
     (Boolean(coreLeft) && coreLeft === fullRight) || (Boolean(coreRight) && coreRight === fullLeft)
   );
 };
-
-const knownArtistTokens = (artist: string | undefined): string[] =>
-  extractArtistTokens(artist ?? "").filter((token) => !UNKNOWN_ARTIST_NAMES.has(token));
 
 /**
  * AMLL 检索条目是否就是这首歌：条目登记的曲名里至少一个写法与本曲名是同一次录音，
